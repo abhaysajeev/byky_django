@@ -102,10 +102,16 @@ class DashboardView(PagePermissionMixin, ThemedTemplateView):
     our own tables, so counts read zero and the charts are empty until the
     modules that own those numbers are built -- nothing is seeded to make the
     page look busy.
+
+    No `page_code` -- deliberately. `general.dashboard` stays registered in
+    `page_registry.py` (other consumers, e.g. the app `permissions_for`
+    response, still see it), but the web view itself is never permission-gated:
+    any signed-in user lands here regardless of what their role's
+    `RolePermission` rows say, so a brand-new role with nothing granted yet
+    doesn't 403 on its own landing page.
     """
 
     template_name = "portal/dashboard.html"
-    page_code = "general.dashboard"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

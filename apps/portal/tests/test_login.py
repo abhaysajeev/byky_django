@@ -303,3 +303,15 @@ def test_next_never_leaves_the_site(client, user, target):
 
     assert response.status_code == 302
     assert response.url == "/"
+
+
+def test_the_dashboard_is_reachable_with_no_permissions_granted(client, user):
+    """`user`'s role has zero RolePermission rows -- exactly a brand-new role
+    right after account creation, before anyone has ticked a single box.
+    DashboardView carries no `page_code`, so PagePermissionMixin's `has_permission`
+    check never runs for it; only being signed in is required."""
+    client.post("/login/", {"username": "sara.k", "password": PASSWORD})
+
+    response = client.get("/dashboard/")
+
+    assert response.status_code == 200
