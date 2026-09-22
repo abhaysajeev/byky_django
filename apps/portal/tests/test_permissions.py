@@ -26,14 +26,19 @@ def world(db):
         short_code="BYKY", name="BYKY", country=country, state=state,
         phone_number="+9710000000", email="ops@byky.test",
     )
-    fleet = Module.objects.create(code="fleet", name="Vehicle Management", sort_order=1)
-    rental = Module.objects.create(code="rental", name="Rental Management", sort_order=2)
+    # Codes are made-up placeholders for this permission-mechanics test, not
+    # real modules -- picked to be unlikely to collide with an actual entry
+    # in apps/portal/page_registry.py (which migration 0011 seeds into every
+    # fresh test database). "fleet"/"rental" used to be safe placeholders
+    # until the real fleet app shipped and collided on Module.code.
+    fleet = Module.objects.create(code="sample_a", name="Sample Module A", sort_order=1)
+    rental = Module.objects.create(code="sample_b", name="Sample Module B", sort_order=2)
     vehicle = Page.objects.create(
-        module=fleet, code="fleet.vehicle", name="Vehicles", url_name="fleet-vehicle-list",
+        module=fleet, code="sample_a.widget", name="Widgets", url_name="sample-a-widget-list",
         channels=["web", "operator"], actions=["create", "read", "update", "delete"],
     )
     order = Page.objects.create(
-        module=rental, code="rental.order", name="Rentals", url_name="rental-order-list",
+        module=rental, code="sample_b.gadget", name="Gadgets", url_name="sample-b-gadget-list",
         channels=["web"], actions=["read", "print"],
     )
     role = Role.objects.create(company=company, name="Branch Manager")
@@ -48,22 +53,22 @@ def world(db):
 
 
 def test_a_role_with_no_permissions_grants_nothing(world):
-    assert has_permission(world["user"], "fleet.vehicle", "read") is False
+    assert has_permission(world["user"], "sample_a.widget", "read") is False
 
 
 def test_adding_a_module_lists_its_screens_but_grants_nothing(world):
     add_role_to_module(world["role"], world["fleet"])
 
     assert RolePermission.objects.filter(role=world["role"]).count() == 1
-    assert has_permission(world["user"], "fleet.vehicle", "read") is False
+    assert has_permission(world["user"], "sample_a.widget", "read") is False
 
 
 def test_ticking_a_box_grants_exactly_that_action(world):
     add_role_to_module(world["role"], world["fleet"])
     RolePermission.objects.filter(role=world["role"]).update(can_read=True)
 
-    assert has_permission(world["user"], "fleet.vehicle", "read") is True
-    assert has_permission(world["user"], "fleet.vehicle", "update") is False
+    assert has_permission(world["user"], "sample_a.widget", "read") is True
+    assert has_permission(world["user"], "sample_a.widget", "update") is False
 
 
 def test_an_action_the_screen_does_not_offer_is_never_granted(world):
@@ -73,14 +78,14 @@ def test_an_action_the_screen_does_not_offer_is_never_granted(world):
         role=world["role"], page=world["order"], can_read=True, can_approve=True
     )
     assert permission.can_approve is True
-    assert has_permission(world["user"], "rental.order", "approve") is False
+    assert has_permission(world["user"], "sample_b.gadget", "approve") is False
 
 
 def test_a_user_without_a_role_has_no_permissions(world):
     world["user"].role = None
     world["user"].save()
 
-    assert has_permission(world["user"], "fleet.vehicle", "read") is False
+    assert has_permission(world["user"], "sample_a.widget", "read") is False
 
 
 def test_an_inactive_user_has_no_permissions(world):
@@ -88,7 +93,7 @@ def test_an_inactive_user_has_no_permissions(world):
     RolePermission.objects.filter(role=world["role"]).update(can_read=True)
     world["user"].is_active = False
 
-    assert has_permission(world["user"], "fleet.vehicle", "read") is False
+    assert has_permission(world["user"], "sample_a.widget", "read") is False
 
 
 def test_an_inactive_page_grants_nothing(world):
@@ -96,7 +101,7 @@ def test_an_inactive_page_grants_nothing(world):
     RolePermission.objects.filter(role=world["role"]).update(can_read=True)
     Page.objects.filter(pk=world["vehicle"].pk).update(is_active=False)
 
-    assert has_permission(world["user"], "fleet.vehicle", "read") is False
+    assert has_permission(world["user"], "sample_a.widget", "read") is False
 
 
 def test_removing_a_module_leaves_the_other_modules_alone(world):
@@ -107,7 +112,7 @@ def test_removing_a_module_leaves_the_other_modules_alone(world):
 
     remaining = RolePermission.objects.filter(role=world["role"])
     assert remaining.count() == 1
-    assert remaining.first().page.code == "rental.order"
+    assert remaining.first().page.code == "sample_b.gadget"
 
 
 def test_permissions_for_a_channel_lists_only_that_apps_screens(world):
@@ -118,8 +123,8 @@ def test_permissions_for_a_channel_lists_only_that_apps_screens(world):
     web = [row["page"] for row in permissions_for(world["user"], "web")]
     operator = [row["page"] for row in permissions_for(world["user"], "operator")]
 
-    assert web == ["fleet.vehicle", "rental.order"]
-    assert operator == ["fleet.vehicle"]
+    assert web == ["sample_a.widget", "sample_b.gadget"]
+    assert operator == ["sample_a.widget"]
 
 
 def test_permission_rows_carry_only_the_screens_own_actions(world):

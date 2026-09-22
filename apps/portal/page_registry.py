@@ -28,6 +28,9 @@ COMPANY_SVG = (
 CREW_SVG = "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8M4 21a8 8 0 0 1 16 0"
 DEVICES_SVG = "M7 2h10a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1M10.5 18h3"
 SYSTEM_SVG = "M12 3 4 6v6c0 5 3.4 8.7 8 9 4.6-.3 8-4 8-9V6l-8-3M12 11a2 2 0 1 0 0-4 2 2 0 0 0 0 4M12 11v4"
+# A packing box -- lid seam plus the front vertical seam, matching the other
+# modules' two/three-stroke visual weight.
+FLEET_SVG = "M12 3 4 7l8 4 8-4-8-4M4 7v10l8 4 8-4V7M12 11v10"
 
 # code, name, menu header (blank = no divider), sort order, is_flat, svg, svg2
 MODULES = [
@@ -35,6 +38,7 @@ MODULES = [
     ("company", "Company", "Operations", 10, False, COMPANY_SVG, ""),
     ("crew", "Crew", "Operations", 20, False, CREW_SVG, ""),
     ("devices", "Devices", "Operations", 30, False, DEVICES_SVG, ""),
+    ("fleet", "Inventory", "Operations", 40, False, FLEET_SVG, ""),
     ("system", "Users & Roles", "System", 90, False, SYSTEM_SVG, ""),
 ]
 
@@ -90,6 +94,8 @@ PAGES = [
     ("devices.device_settings", "devices", "Device Settings", "devices-device-settings",
      ["create", "read", "update", "print"], 5, False),
     ("devices.privileges", "devices", "Privileges", "devices-privileges", ["read", "update"], 9, False),
+
+    ("fleet.brand", "fleet", "Brand", "fleet-brand-list", CRUD_PRINT, 1, False),
 
     ("system.role", "system", "Roles", "portal-role-list", CRUD, 1, False),
     ("system.user", "system", "Users", "portal-user-list", CRUD, 2, False),
