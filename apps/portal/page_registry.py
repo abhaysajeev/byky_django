@@ -96,6 +96,7 @@ PAGES = [
     ("devices.privileges", "devices", "Privileges", "devices-privileges", ["read", "update"], 9, False),
 
     ("fleet.brand", "fleet", "Brand", "fleet-brand-list", CRUD_PRINT, 1, False),
+    ("fleet.category", "fleet", "Category", "fleet-category-list", CRUD_PRINT, 2, False),
 
     ("system.role", "system", "Roles", "portal-role-list", CRUD, 1, False),
     ("system.user", "system", "Users", "portal-user-list", CRUD, 2, False),

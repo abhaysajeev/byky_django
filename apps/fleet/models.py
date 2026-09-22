@@ -48,3 +48,35 @@ class Brand(ApprovalMixin, TimeStampedModel):
 
     def __str__(self):
         return self.brand_name
+
+
+class Category(ApprovalMixin, TimeStampedModel):
+    """A vehicle category (e.g. BYKY, Karty, Two Wheels).
+
+    Legacy carried ImsCategory.ParentCategoryID (self-referencing hierarchy)
+    and CategoryImage -- neither was ever populated across the 18 real rows,
+    so neither is carried forward here.
+    """
+
+    company = models.ForeignKey(
+        "company.Company", on_delete=models.PROTECT, related_name="categories"
+    )
+    category_code = models.CharField("Category Code", max_length=20)
+    category_name = models.CharField("Category Name", max_length=100)
+    description = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "category"
+        verbose_name_plural = "categories"
+        ordering = ["category_name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "category_code"],
+                name="uniq_category_code_per_company",
+                violation_error_message="A category with this code already exists.",
+            ),
+        ]
+        indexes = [models.Index(fields=["company"])]
+
+    def __str__(self):
+        return self.category_name

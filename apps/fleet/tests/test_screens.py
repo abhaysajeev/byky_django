@@ -1,13 +1,12 @@
-"""The Brand screen renders, refuses, and survives an empty database.
+"""Every fleet screen renders, refuses, and survives an empty database.
 
-Same shape as apps/company/tests/test_screens.py, scoped to the one screen
-this module has so far.
+Same shape as apps/company/tests/test_screens.py.
 """
 
 import pytest
 
 from apps.company.models import Company, Country, State
-from apps.fleet.models import Brand
+from apps.fleet.models import Brand, Category
 from apps.portal.models import Page, Role, RolePermission
 from apps.portal.services import grant_all
 from core.enums import Channel
@@ -17,6 +16,7 @@ PASSWORD = "Byky#2026"
 
 SCREENS = [
     ("/fleet/brand/list/", "fleet.brand"),
+    ("/fleet/category/list/", "fleet.category"),
 ]
 
 
@@ -100,6 +100,16 @@ def test_screens_render_with_data(signed_in, company):
     assert b"BYK" in response.content
 
 
+def test_the_category_screen_renders_with_data(signed_in, company):
+    Category.objects.create(company=company, category_code="BYKY", category_name="Byky")
+
+    response = signed_in.get("/fleet/category/list/")
+
+    assert response.status_code == 200
+    assert b"Byky" in response.content
+    assert b"BYKY" in response.content
+
+
 def test_the_sidebar_lists_brand_once_granted(signed_in):
     assert b">Brand<" in signed_in.get("/dashboard/").content
 
@@ -111,3 +121,19 @@ def test_the_sidebar_hides_brand_when_permission_is_revoked(signed_in, company):
     body = signed_in.get("/dashboard/").content
 
     assert b">Brand<" not in body
+
+
+def test_the_sidebar_lists_category_once_granted(signed_in):
+    # "Category" alone collides with the dashboard's own "Revenue by
+    # Category" chart and a table column header -- match the sidebar's own
+    # menu-label markup instead (theme/templates/sidebar/menu_link_template.html).
+    assert b'class="menu-label">Category</span>' in signed_in.get("/dashboard/").content
+
+
+def test_the_sidebar_hides_category_when_permission_is_revoked(signed_in, company):
+    role = Role.objects.get(name="Administrator")
+    RolePermission.objects.filter(role=role, page__code="fleet.category").update(can_read=False)
+
+    body = signed_in.get("/dashboard/").content
+
+    assert b'class="menu-label">Category</span>' not in body

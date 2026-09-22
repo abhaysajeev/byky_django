@@ -11,7 +11,7 @@ from django.urls import reverse
 from apps.company import writes as company_writes
 from apps.company.scoping import companies_for
 from apps.fleet import drawers, forms, scoping
-from apps.fleet.models import Brand
+from apps.fleet.models import Brand, Category
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.services import has_permission
 from theme import drawers as theme_drawers
@@ -90,3 +90,46 @@ class BrandDelete(company_writes.EntityDeleteView):
     model = Brand
     page_code = "fleet.brand"
     noun = "Brand"
+
+
+class CategoryListView(FleetScreenView):
+    template_name = "fleet/category_list.html"
+    page_code = "fleet.category"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        rows = []
+        for i, category in enumerate(scoping.categories_for(self.request.user)):
+            rows.append({
+                "code": category.category_code,
+                "name": category.category_name,
+                "active": category.is_active,
+                "pk": category.pk,
+                "json_id": f"scr-record-category-{i}",
+                "fields_json": {
+                    "pk": category.pk,
+                    "company": category.company_id,
+                    "category_code": category.category_code,
+                    "category_name": category.category_name,
+                    "description": category.description,
+                    "is_active": category.is_active,
+                },
+            })
+        context["categories"] = rows
+        context["save_url_category"] = reverse("fleet-category-save")
+        context["delete_url_category"] = reverse("fleet-category-delete", args=[0])
+        context["noun_category"] = "Category"
+        return context
+
+
+class CategorySave(company_writes.EntitySaveView):
+    model = Category
+    form_class = forms.CategoryForm
+    page_code = "fleet.category"
+    noun = "Category"
+
+
+class CategoryDelete(company_writes.EntityDeleteView):
+    model = Category
+    page_code = "fleet.category"
+    noun = "Category"
