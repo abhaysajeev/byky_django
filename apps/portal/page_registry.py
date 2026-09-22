@@ -97,6 +97,7 @@ PAGES = [
 
     ("fleet.brand", "fleet", "Brand", "fleet-brand-list", CRUD_PRINT, 1, False),
     ("fleet.category", "fleet", "Category", "fleet-category-list", CRUD_PRINT, 2, False),
+    ("fleet.vehicle_type", "fleet", "Vehicle Type", "fleet-vehicle-type-list", CRUD_PRINT, 3, False),
 
     ("system.role", "system", "Roles", "portal-role-list", CRUD, 1, False),
     ("system.user", "system", "Users", "portal-user-list", CRUD, 2, False),

@@ -97,7 +97,66 @@ CATEGORY = {
     ],
 }
 
+VEHICLE_TYPE = {
+    "drawer_id": "drawerVehicleType",
+    "scr_name": "vehicle_type",
+    "model": "fleet.VehicleType",
+    "add_label": "Add Vehicle Type",
+    "title_field": "vehicle_type_name",
+    "sections": [
+        {
+            "title": "",
+            "fields": [
+                {
+                    "id": "company",
+                    "label": "Company",
+                    "kind": "select",
+                    "required": True,
+                    "options_from": "companies_list",
+                    "option_key": "name",
+                    "system_only": True,
+                },
+                {
+                    "id": "category",
+                    "label": "Category",
+                    "kind": "select",
+                    "required": True,
+                    "options_from": "categories_list",
+                    "option_key": "category_name",
+                },
+                {
+                    "id": "brand",
+                    "label": "Brand",
+                    "kind": "select",
+                    "required": True,
+                    "options_from": "brands_list",
+                    "option_key": "brand_name",
+                },
+                {
+                    "id": "vehicle_type_code",
+                    "label": "Vehicle Type Code",
+                    "kind": "text",
+                    "required": False,
+                },
+                {
+                    "id": "vehicle_type_name",
+                    "label": "Vehicle Type Name",
+                    "kind": "text",
+                    "required": True,
+                },
+                {
+                    "id": "description",
+                    "label": "Description",
+                    "kind": "textarea",
+                    "required": False,
+                },
+            ],
+        }
+    ],
+}
+
 SPECS = {
     "drawer_brand": BRAND,
     "drawer_category": CATEGORY,
+    "drawer_vehicle_type": VEHICLE_TYPE,
 }

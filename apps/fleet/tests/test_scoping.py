@@ -12,7 +12,7 @@ tests prove it, and prove Category inherits it for free.
 import pytest
 
 from apps.company.models import Company, Country, State
-from apps.fleet.models import Brand, Category
+from apps.fleet.models import Brand, Category, VehicleType
 from apps.portal.models import Role
 from apps.portal.services import grant_all
 from core.enums import Channel, UserScope
@@ -37,10 +37,20 @@ def two_companies(db):
         timezone="Asia/Kuwait", phone_number="+9650000000", email="ops@bykykw.test",
     )
 
-    Brand.objects.create(company=byky, brand_code="BYK", brand_name="Byky UAE Brand")
-    Brand.objects.create(company=byky_kw, brand_code="BYK", brand_name="Byky Kuwait Brand")
-    Category.objects.create(company=byky, category_code="BYKY", category_name="Byky UAE Category")
-    Category.objects.create(company=byky_kw, category_code="BYKY", category_name="Byky Kuwait Category")
+    uae_brand = Brand.objects.create(company=byky, brand_code="BYK", brand_name="Byky UAE Brand")
+    kw_brand = Brand.objects.create(company=byky_kw, brand_code="BYK", brand_name="Byky Kuwait Brand")
+    uae_category = Category.objects.create(
+        company=byky, category_code="BYKY", category_name="Byky UAE Category"
+    )
+    kw_category = Category.objects.create(
+        company=byky_kw, category_code="BYKY", category_name="Byky Kuwait Category"
+    )
+    VehicleType.objects.create(
+        company=byky, category=uae_category, brand=uae_brand, vehicle_type_name="Byky UAE Type"
+    )
+    VehicleType.objects.create(
+        company=byky_kw, category=kw_category, brand=kw_brand, vehicle_type_name="Byky Kuwait Type"
+    )
 
     return {"uae": byky, "kuwait": byky_kw}
 
@@ -152,3 +162,66 @@ def test_a_system_user_must_choose_a_company_for_a_category(client, two_companie
     body = client.get("/fleet/category/list/").content
 
     assert b'data-field="company"' in body
+
+
+# --- Vehicle Type: rows ------------------------------------------------------
+
+def test_a_company_user_never_sees_another_companys_vehicle_type(client, two_companies):
+    _company_user(client, two_companies["uae"], "uae.admin")
+
+    body = client.get("/fleet/vehicle-type/list/").content
+
+    assert b"Byky UAE Type" in body
+    assert b"Byky Kuwait Type" not in body
+
+
+def test_a_system_user_sees_every_companys_vehicle_type(client, two_companies):
+    _system_user(client, "platform.admin")
+
+    body = client.get("/fleet/vehicle-type/list/").content
+
+    assert b"Byky UAE Type" in body
+    assert b"Byky Kuwait Type" in body
+
+
+# --- Vehicle Type: the drawer's company field follows the same rule ------------
+
+def test_a_company_user_is_not_asked_which_company_for_a_vehicle_type(client, two_companies):
+    _company_user(client, two_companies["uae"], "uae.admin")
+
+    body = client.get("/fleet/vehicle-type/list/").content
+
+    assert b'data-field="vehicle_type_name"' in body
+    assert b'data-field="company"' not in body
+
+
+def test_a_system_user_must_choose_a_company_for_a_vehicle_type(client, two_companies):
+    _system_user(client, "platform.admin")
+
+    body = client.get("/fleet/vehicle-type/list/").content
+
+    assert b'data-field="company"' in body
+
+
+# --- Vehicle Type: the category/brand dropdowns are scoped too ------------------
+# Unlike company (special-cased in ScopedModelForm), category and brand are
+# plain cross-referencing FKs -- apps/fleet/forms.py::VehicleTypeForm scopes
+# their querysets by hand. These prove that scoping actually reaches the
+# rendered drawer, not just the form's server-side validation.
+
+def test_a_company_users_vehicle_type_drawer_only_offers_their_own_categories(client, two_companies):
+    _company_user(client, two_companies["uae"], "uae.admin")
+
+    body = client.get("/fleet/vehicle-type/list/").content
+
+    assert b"Byky UAE Category" in body
+    assert b"Byky Kuwait Category" not in body
+
+
+def test_a_company_users_vehicle_type_drawer_only_offers_their_own_brands(client, two_companies):
+    _company_user(client, two_companies["uae"], "uae.admin")
+
+    body = client.get("/fleet/vehicle-type/list/").content
+
+    assert b"Byky UAE Brand" in body
+    assert b"Byky Kuwait Brand" not in body

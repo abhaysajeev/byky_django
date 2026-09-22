@@ -11,7 +11,7 @@ from django.urls import reverse
 from apps.company import writes as company_writes
 from apps.company.scoping import companies_for
 from apps.fleet import drawers, forms, scoping
-from apps.fleet.models import Brand, Category
+from apps.fleet.models import Brand, Category, VehicleType
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.services import has_permission
 from theme import drawers as theme_drawers
@@ -31,6 +31,12 @@ class FleetScreenView(PagePermissionMixin, ThemedTemplateView):
         user = self.request.user
         context.update({
             "companies_list": list(companies_for(user).filter(is_active=True).values("id", "name")),
+            "categories_list": list(
+                scoping.categories_for(user).filter(is_active=True).values("id", "category_name")
+            ),
+            "brands_list": list(
+                scoping.brands_for(user).filter(is_active=True).values("id", "brand_name")
+            ),
             "perm": {action: has_permission(user, self.page_code, action) for action in ACTIONS},
         })
         return context
@@ -133,3 +139,53 @@ class CategoryDelete(company_writes.EntityDeleteView):
     model = Category
     page_code = "fleet.category"
     noun = "Category"
+
+
+class VehicleTypeListView(FleetScreenView):
+    template_name = "fleet/vehicle_type_list.html"
+    page_code = "fleet.vehicle_type"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        rows = []
+        vehicle_types = (
+            scoping.vehicle_types_for(self.request.user).select_related("category", "brand")
+        )
+        for i, vehicle_type in enumerate(vehicle_types):
+            rows.append({
+                "code": vehicle_type.vehicle_type_code,
+                "name": vehicle_type.vehicle_type_name,
+                "category": vehicle_type.category.category_name,
+                "brand": vehicle_type.brand.brand_name,
+                "active": vehicle_type.is_active,
+                "pk": vehicle_type.pk,
+                "json_id": f"scr-record-vehicle-type-{i}",
+                "fields_json": {
+                    "pk": vehicle_type.pk,
+                    "company": vehicle_type.company_id,
+                    "category": vehicle_type.category_id,
+                    "brand": vehicle_type.brand_id,
+                    "vehicle_type_code": vehicle_type.vehicle_type_code,
+                    "vehicle_type_name": vehicle_type.vehicle_type_name,
+                    "description": vehicle_type.description,
+                    "is_active": vehicle_type.is_active,
+                },
+            })
+        context["vehicle_types"] = rows
+        context["save_url_vehicle_type"] = reverse("fleet-vehicle-type-save")
+        context["delete_url_vehicle_type"] = reverse("fleet-vehicle-type-delete", args=[0])
+        context["noun_vehicle_type"] = "Vehicle Type"
+        return context
+
+
+class VehicleTypeSave(company_writes.EntitySaveView):
+    model = VehicleType
+    form_class = forms.VehicleTypeForm
+    page_code = "fleet.vehicle_type"
+    noun = "Vehicle Type"
+
+
+class VehicleTypeDelete(company_writes.EntityDeleteView):
+    model = VehicleType
+    page_code = "fleet.vehicle_type"
+    noun = "Vehicle Type"

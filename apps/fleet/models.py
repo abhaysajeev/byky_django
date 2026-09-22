@@ -80,3 +80,40 @@ class Category(ApprovalMixin, TimeStampedModel):
 
     def __str__(self):
         return self.category_name
+
+
+class VehicleType(ApprovalMixin, TimeStampedModel):
+    """A vehicle type/model, nested under a Category and tied to a Brand
+    (e.g. "Monaco" under BYKY / brand Byky).
+
+    Legacy (ImsSubcategory) had no code column at all -- only a name --
+    which is why vehicle_type_code is optional here, unlike Brand/Category's
+    required, unique codes. It also carried a self-reference
+    (ParentSubCategoryId) that, like Category's, is left out: not evidenced
+    as used.
+    """
+
+    company = models.ForeignKey(
+        "company.Company", on_delete=models.PROTECT, related_name="vehicle_types"
+    )
+    category = models.ForeignKey(
+        "fleet.Category", on_delete=models.PROTECT, related_name="vehicle_types"
+    )
+    brand = models.ForeignKey(
+        "fleet.Brand", on_delete=models.PROTECT, related_name="vehicle_types"
+    )
+    vehicle_type_code = models.CharField("Vehicle Type Code", max_length=20, blank=True)
+    vehicle_type_name = models.CharField("Vehicle Type Name", max_length=100)
+    description = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "vehicle_type"
+        ordering = ["vehicle_type_name"]
+        indexes = [
+            models.Index(fields=["company"]),
+            models.Index(fields=["category"]),
+            models.Index(fields=["brand"]),
+        ]
+
+    def __str__(self):
+        return self.vehicle_type_name

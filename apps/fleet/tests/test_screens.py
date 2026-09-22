@@ -6,7 +6,7 @@ Same shape as apps/company/tests/test_screens.py.
 import pytest
 
 from apps.company.models import Company, Country, State
-from apps.fleet.models import Brand, Category
+from apps.fleet.models import Brand, Category, VehicleType
 from apps.portal.models import Page, Role, RolePermission
 from apps.portal.services import grant_all
 from core.enums import Channel
@@ -17,6 +17,7 @@ PASSWORD = "Byky#2026"
 SCREENS = [
     ("/fleet/brand/list/", "fleet.brand"),
     ("/fleet/category/list/", "fleet.category"),
+    ("/fleet/vehicle-type/list/", "fleet.vehicle_type"),
 ]
 
 
@@ -137,3 +138,30 @@ def test_the_sidebar_hides_category_when_permission_is_revoked(signed_in, compan
     body = signed_in.get("/dashboard/").content
 
     assert b'class="menu-label">Category</span>' not in body
+
+
+def test_the_vehicle_type_screen_renders_with_data(signed_in, company):
+    category = Category.objects.create(company=company, category_code="BYKY", category_name="Byky")
+    brand = Brand.objects.create(company=company, brand_code="BYK", brand_name="Byky")
+    VehicleType.objects.create(
+        company=company, category=category, brand=brand, vehicle_type_name="Monaco",
+    )
+
+    response = signed_in.get("/fleet/vehicle-type/list/")
+
+    assert response.status_code == 200
+    assert b"Monaco" in response.content
+    assert b"Byky" in response.content            # category and brand names both render
+
+
+def test_the_sidebar_lists_vehicle_type_once_granted(signed_in):
+    assert b'class="menu-label">Vehicle Type</span>' in signed_in.get("/dashboard/").content
+
+
+def test_the_sidebar_hides_vehicle_type_when_permission_is_revoked(signed_in, company):
+    role = Role.objects.get(name="Administrator")
+    RolePermission.objects.filter(role=role, page__code="fleet.vehicle_type").update(can_read=False)
+
+    body = signed_in.get("/dashboard/").content
+
+    assert b'class="menu-label">Vehicle Type</span>' not in body

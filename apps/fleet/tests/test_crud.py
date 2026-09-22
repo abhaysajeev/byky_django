@@ -11,7 +11,7 @@ import json
 import pytest
 
 from apps.company.models import Company, Country, State
-from apps.fleet.models import Brand, Category
+from apps.fleet.models import Brand, Category, VehicleType
 from apps.portal.models import Role, RolePermission
 from apps.portal.services import grant_all
 from core.enums import ApprovalStatus, Channel
@@ -350,3 +350,193 @@ def test_one_company_cannot_reuse_its_own_category_code(world):
     Category.objects.create(company=world["company"], category_code="BYKY", category_name="First")
     with pytest.raises(IntegrityError):
         Category.objects.create(company=world["company"], category_code="BYKY", category_name="Second")
+
+
+# =============================== Vehicle Type =====================================
+
+@pytest.fixture
+def taxonomy(world):
+    """A category and a brand for each company, so a vehicle type has
+    something real to point at -- and so the cross-company rejection tests
+    have another company's category/brand to try posting."""
+    return {
+        "category": Category.objects.create(
+            company=world["company"], category_code="BYKY", category_name="Byky"
+        ),
+        "brand": Brand.objects.create(
+            company=world["company"], brand_code="BYK", brand_name="Byky"
+        ),
+        "their_category": Category.objects.create(
+            company=world["other"], category_code="OTH", category_name="Their Category"
+        ),
+        "their_brand": Brand.objects.create(
+            company=world["other"], brand_code="OTH", brand_name="Their Brand"
+        ),
+    }
+
+
+# --- create, update, delete ---------------------------------------------------
+
+def test_create_a_vehicle_type(client_in, world, taxonomy):
+    response = post(client_in, "/fleet/vehicle-type/save/", {
+        "category": taxonomy["category"].pk, "brand": taxonomy["brand"].pk,
+        "vehicle_type_name": "Monaco", "vehicle_type_code": "MON",
+    })
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["message"] == "Vehicle Type saved."
+
+    vehicle_type = VehicleType.objects.get(pk=body["pk"])
+    assert vehicle_type.company == world["company"]        # from the user, not the payload
+    assert vehicle_type.is_active is True
+    assert vehicle_type.approval_status == ApprovalStatus.APPROVED
+    assert vehicle_type.category == taxonomy["category"]
+    assert vehicle_type.brand == taxonomy["brand"]
+
+
+def test_vehicle_type_code_is_optional(client_in, world, taxonomy):
+    response = post(client_in, "/fleet/vehicle-type/save/", {
+        "category": taxonomy["category"].pk, "brand": taxonomy["brand"].pk,
+        "vehicle_type_name": "Monaco",
+    })
+
+    assert response.status_code == 200
+    vehicle_type = VehicleType.objects.get(pk=response.json()["pk"])
+    assert vehicle_type.vehicle_type_code == ""
+
+
+def test_update_a_vehicle_type(client_in, world, taxonomy):
+    vehicle_type = VehicleType.objects.create(
+        company=world["company"], category=taxonomy["category"], brand=taxonomy["brand"],
+        vehicle_type_name="Monaco",
+    )
+
+    post(client_in, "/fleet/vehicle-type/save/", {
+        "pk": vehicle_type.pk, "category": taxonomy["category"].pk, "brand": taxonomy["brand"].pk,
+        "vehicle_type_name": "Monaco XL",
+    })
+
+    vehicle_type.refresh_from_db()
+    assert vehicle_type.vehicle_type_name == "Monaco XL"
+    assert VehicleType.objects.count() == 1                # updated, not duplicated
+
+
+def test_delete_an_unused_vehicle_type(client_in, world, taxonomy):
+    vehicle_type = VehicleType.objects.create(
+        company=world["company"], category=taxonomy["category"], brand=taxonomy["brand"],
+        vehicle_type_name="Monaco",
+    )
+
+    response = post(client_in, f"/fleet/vehicle-type/{vehicle_type.pk}/delete/", {})
+
+    assert response.json()["ok"] is True
+    assert VehicleType.objects.count() == 0
+
+
+# --- validation -----------------------------------------------------------------
+
+def test_missing_required_vehicle_type_fields_are_reported_at_once(client_in, world, taxonomy):
+    response = post(client_in, "/fleet/vehicle-type/save/", {
+        "category": taxonomy["category"].pk, "brand": taxonomy["brand"].pk, "vehicle_type_name": "",
+    })
+
+    assert response.status_code == 400
+    errors = response.json()["errors"]
+    fields = {error["field"] for error in errors}
+
+    assert "Vehicle Type Name" in fields                    # labelled as the drawer labels it
+    assert "vehicle_type_name" not in fields                 # never a column name
+
+
+def test_a_company_user_cannot_pick_another_companys_category(client_in, world, taxonomy):
+    """VehicleTypeForm scopes the category/brand querysets to the signed-in
+    user's own company (apps/fleet/forms.py) -- posting another company's id
+    must be rejected the same way an out-of-range choice is, not silently
+    accepted and left pointing at data the user cannot even see."""
+    response = post(client_in, "/fleet/vehicle-type/save/", {
+        "category": taxonomy["their_category"].pk, "brand": taxonomy["brand"].pk,
+        "vehicle_type_name": "Monaco",
+    })
+
+    assert response.status_code == 400
+    assert any("valid choice" in error["message"] for error in response.json()["errors"])
+    assert VehicleType.objects.count() == 0
+
+
+def test_a_company_user_cannot_pick_another_companys_brand(client_in, world, taxonomy):
+    response = post(client_in, "/fleet/vehicle-type/save/", {
+        "category": taxonomy["category"].pk, "brand": taxonomy["their_brand"].pk,
+        "vehicle_type_name": "Monaco",
+    })
+
+    assert response.status_code == 400
+    assert any("valid choice" in error["message"] for error in response.json()["errors"])
+    assert VehicleType.objects.count() == 0
+
+
+# --- permission on the write -----------------------------------------------------
+
+@pytest.mark.parametrize("action", ["create", "update"])
+def test_a_role_without_the_vehicle_type_action_is_refused(client_in, world, taxonomy, action):
+    vehicle_type = VehicleType.objects.create(
+        company=world["company"], category=taxonomy["category"], brand=taxonomy["brand"],
+        vehicle_type_name="Monaco",
+    )
+    payload = {"category": taxonomy["category"].pk, "brand": taxonomy["brand"].pk, "vehicle_type_name": "X"}
+    if action == "update":
+        payload["pk"] = vehicle_type.pk
+    RolePermission.objects.filter(
+        role=client_in.role, page__code="fleet.vehicle_type"
+    ).update(**{f"can_{action}": False})
+
+    response = post(client_in, "/fleet/vehicle-type/save/", payload)
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "forbidden"
+
+
+def test_a_role_without_vehicle_type_delete_is_refused(client_in, world, taxonomy):
+    vehicle_type = VehicleType.objects.create(
+        company=world["company"], category=taxonomy["category"], brand=taxonomy["brand"],
+        vehicle_type_name="Monaco",
+    )
+    RolePermission.objects.filter(
+        role=client_in.role, page__code="fleet.vehicle_type"
+    ).update(can_delete=False)
+
+    response = post(client_in, f"/fleet/vehicle-type/{vehicle_type.pk}/delete/", {})
+
+    assert response.status_code == 403
+    assert VehicleType.objects.count() == 1
+
+
+# --- scope on the write -----------------------------------------------------------
+
+def test_a_company_user_cannot_edit_another_companys_vehicle_type(client_in, world, taxonomy):
+    theirs = VehicleType.objects.create(
+        company=world["other"], category=taxonomy["their_category"], brand=taxonomy["their_brand"],
+        vehicle_type_name="Their Monaco",
+    )
+
+    response = post(client_in, "/fleet/vehicle-type/save/", {
+        "pk": theirs.pk, "category": taxonomy["category"].pk, "brand": taxonomy["brand"].pk,
+        "vehicle_type_name": "Hijacked",
+    })
+
+    assert response.status_code == 404                    # not even acknowledged
+    theirs.refresh_from_db()
+    assert theirs.vehicle_type_name == "Their Monaco"
+
+
+def test_a_company_user_cannot_delete_another_companys_vehicle_type(client_in, world, taxonomy):
+    theirs = VehicleType.objects.create(
+        company=world["other"], category=taxonomy["their_category"], brand=taxonomy["their_brand"],
+        vehicle_type_name="Their Monaco",
+    )
+
+    response = post(client_in, f"/fleet/vehicle-type/{theirs.pk}/delete/", {})
+
+    assert response.status_code == 404
+    assert VehicleType.objects.filter(pk=theirs.pk).exists()
