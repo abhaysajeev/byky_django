@@ -21,7 +21,9 @@ SCREENS = [
     ("/company/department/list/", "company.department"),
     ("/company/branch/list/", "company.branch"),
     ("/company/branch-working-time/edit/", "company.branch_working_time"),
-    ("/dashboard/", "general.dashboard"),
+    # Not "/dashboard/": DashboardView carries no page_code (apps/portal/views.py)
+    # -- it's deliberately ungated, not a Company screen, and its own contract
+    # is covered by apps/portal/tests/test_login.py.
 ]
 
 
