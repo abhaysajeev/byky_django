@@ -1,0 +1,50 @@
+/* BYKY footer -- the site-wide credit line.
+   Typography from byky-screen-design-system.md section 9: Sora 500/600, the
+   muted grey ramp, hairline #f0eff7. Loaded globally like byky-navbar.css,
+   since the footer is on every screen and is not part of any one of them. */
+
+.byky-footer {
+  font-family: 'Sora', sans-serif;
+  border-top: 1px solid #f0eff7;
+  background: transparent;
+  margin-top: 8px;
+}
+.byky-footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 20px;
+  flex-wrap: wrap;
+  padding: 16px 0;
+}
+.byky-footer p { margin: 0; }
+
+/* One line, three weights: the year recedes, the product name carries the
+   emphasis, the descriptor sits between them. */
+.byky-footer-credit {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: #9490bb;
+}
+.byky-footer-mark { color: #c9c6dd; font-variant-numeric: tabular-nums; }
+.byky-footer-name { color: #6b6790; font-weight: 600; letter-spacing: -0.1px; }
+.byky-footer-sep { color: #d9d5ea; }
+.byky-footer-suffix { color: #9490bb; font-weight: 450; }
+
+.byky-footer-note {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  color: #c9c6dd;
+}
+
+/* Below the desktop breakpoint the two halves stack and read left-aligned,
+   rather than one drifting to a right edge that is no longer there. */
+@media (max-width: 767px) {
+  .byky-footer-row { flex-direction: column; align-items: flex-start; padding: 14px 0; }
+}

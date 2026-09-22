@@ -1,0 +1,216 @@
+{% comment %}
+The privilege screen, shared by every module. Ported from the wireframe's
+byky/partials/privilege_matrix.html, which owned the whole page -- its own
+scr-head, the roles list card, and one hidden matrix card per role -- and still
+does, so the module's template only includes this.
+
+byky-screen.js's [data-scr-privilege] handlers still drive the list <-> matrix
+swap, Back, and each row's Select All. Five things changed, each because the
+wireframe had no data behind it (PORTING.md):
+
+1. Everything is keyed by primary key, not by role name. Names are editable and
+   two companies may each have an "Operations".
+2. Checkboxes carry data-page and data-action. They had no name, value or id at
+   all and were aligned to the column list by position, which cannot be posted.
+3. A cell exists only where the screen offers that action. Page.actions varies
+   -- Attendance is read and print -- and has_permission() refuses an action a
+   page does not offer, so a box that could never mean anything is not drawn.
+4. Save, Add and Remove reach the server (byky-crud.js), where they were inert.
+5. No <template> clones. A wireframe <template> was consumed on first use, so
+   re-adding a removed role silently did nothing; every write reloads instead.
+
+Context comes from apps/portal/privileges.py.
+{% endcomment %}
+
+<div class="scr" data-scr-privilege
+     data-priv-module="{{ priv_module }}"
+     data-priv-add-url="{{ priv_add_url }}"
+     data-priv-remove-url="{{ priv_remove_url }}"
+     data-priv-save-url="{{ priv_save_url }}">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>{{ parent }}</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>{{ title }}</b>
+      </div>
+      <h1 class="scr-title">{{ title }}</h1>
+      <p class="scr-sub">{{ subtitle }}</p>
+    </div>
+  </div>
+
+  <div data-priv-view="list">
+    <div class="scr-card" data-scr-noun-singular="role" data-scr-noun-plural="roles">
+      <div class="scr-toolbar">
+        <div class="scr-search">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+          <input type="text" placeholder="Search role" />
+        </div>
+        <span class="scr-toolbar-count" data-priv-count>{{ mapped_roles|length }} role{{ mapped_roles|length|pluralize }}</span>
+
+        {% if can_update %}
+        <div class="scr-menu-wrap" style="margin-left:auto">
+          <button type="button" class="scr-btn-primary" data-scr-menu-toggle>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+            Add Role
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+          </button>
+          <div class="scr-menu" hidden>
+            {% for r in roles %}
+            <button type="button" class="scr-menu-item" data-priv-add-role="{{ r.pk }}">{{ r.name }}</button>
+            {% empty %}
+            <div class="scr-menu-item" style="cursor:default; color:#9490bb">Every role is already here</div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="scr-table-scroll scr-sb">
+        <table>
+          <thead>
+            <tr>
+              <th>Role</th>
+              <th>Scope</th>
+              <th>Access</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in mapped_roles %}
+            <tr class="scr-row" data-priv-row="{{ r.pk }}" data-search="{{ r.name|lower }}">
+              <td style="font-weight:600">{{ r.name }}</td>
+              <td>{% if r.is_system %}<span class="scr-badge scr-badge-pending"><i></i>System</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Company</span>{% endif %}</td>
+              <td>
+                {% if r.is_full %}<span class="scr-badge scr-badge-active"><i></i>Full Access</span>
+                {% else %}<span class="scr-badge scr-badge-pending"><i></i>Custom</span>{% endif %}
+              </td>
+              <td>
+                <div class="scr-row-actions">
+                  <div class="scr-menu-wrap">
+                    <button type="button" class="scr-icon-btn" title="More" data-scr-menu-toggle>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="12" cy="19" r="1.6"></circle></svg>
+                    </button>
+                    <div class="scr-menu" hidden>
+                      <button type="button" class="scr-menu-item" data-scr-priv-edit="{{ r.pk }}">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10a2.1 2.1 0 0 0-3-3L5 17z"></path><path d="M14.5 6.5 17.5 9.5"></path></svg>
+                        {% if can_update %}Edit{% else %}View{% endif %}
+                      </button>
+                      {% if can_update %}
+                      <button type="button" class="scr-menu-item scr-menu-item-danger" data-priv-remove-role="{{ r.pk }}" data-priv-role-name="{{ r.name }}">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0-1 13a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1L6 7h12ZM10 11v6M14 11v6"></path></svg>
+                        Remove from module
+                      </button>
+                      {% endif %}
+                    </div>
+                  </div>
+                </div>
+              </td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="4" style="padding:0">
+                <div class="scr-empty">
+                  <span class="scr-empty-ico">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 5 3.4 8.7 8 9 4.6-.3 8-4 8-9V6z"></path><path d="m9 12 2 2 4-4"></path></svg>
+                  </span>
+                  <div>
+                    <div class="scr-empty-title">No role can open these screens yet</div>
+                    <p class="scr-empty-sub">Add a role with the button above, then tick what it may do.</p>
+                  </div>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="scr-pager">
+        <span class="scr-pager-info">Showing {{ mapped_roles|length }} of {{ mapped_roles|length }}</span>
+        <div class="scr-pager-nav">
+          <button type="button" class="scr-pager-btn" disabled>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"></path></svg>
+          </button>
+          <span class="scr-pager-current">1</span>
+          <button type="button" class="scr-pager-btn" disabled>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 6 6 6-6 6"></path></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% for row in role_matrices %}
+  <div class="scr-card scr-priv-matrix" data-priv-role="{{ row.pk }}" data-priv-role-name="{{ row.name }}" hidden>
+    <div class="scr-form-head">
+      <div>
+        <div class="scr-form-title-row">
+          <h2 class="scr-form-title">{{ row.name }}</h2>
+          <span class="scr-form-badge">{{ screens|length }} screen{{ screens|length|pluralize }}</span>
+        </div>
+        <p class="scr-form-sub">{{ permissions|join:", " }}, per {{ module }} screen.</p>
+      </div>
+      <button type="button" class="scr-btn-secondary" data-scr-priv-back>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"></path></svg>
+        Back to Roles
+      </button>
+    </div>
+
+    <div class="scr-form-body">
+      <div class="scr-table-scroll scr-sb">
+        <table>
+          <thead>
+            <tr>
+              <th>Page / Screen</th>
+              {% for p in permissions %}<th style="text-align:center">{{ p }}</th>{% endfor %}
+              {% if can_update %}<th style="text-align:center">Select All</th>{% endif %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in row.screens %}
+            <tr class="scr-row">
+              <td style="font-weight:600">{{ s.name }}</td>
+              {% for cell in s.cells %}
+              <td>
+                {% if cell.offered %}
+                <div style="display:flex; justify-content:center">
+                  <input type="checkbox" class="scr-check" data-page="{{ s.page }}" data-action="{{ cell.action }}" {% if cell.granted %}checked{% endif %}{% if not can_update %} disabled{% endif %} />
+                </div>
+                {% else %}
+                {% comment %} This screen has no such action, so there is nothing to grant. {% endcomment %}
+                <div style="display:flex; justify-content:center; color:#c3c0da">—</div>
+                {% endif %}
+              </td>
+              {% endfor %}
+              {% if can_update %}
+              <td>
+                <div style="display:flex; justify-content:center">
+                  <input type="checkbox" class="scr-check privilege-select-all" />
+                </div>
+              </td>
+              {% endif %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% if can_update %}
+      <div class="scr-form-foot">
+        <button type="button" class="scr-btn-danger" data-scr-clear-privileges>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"></path></svg>
+          Remove All Privileges
+        </button>
+        <div class="scr-form-actions" style="margin-left:auto">
+          <button type="button" class="scr-btn-secondary" data-scr-priv-back>Cancel</button>
+          <button type="button" class="scr-btn-primary" data-priv-save="{{ row.pk }}">Save {{ row.name }} Privileges</button>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+
+</div>

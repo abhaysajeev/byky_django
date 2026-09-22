@@ -1,0 +1,289 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Country and State - Country &amp; State Management{% endblock title %}
+
+{% block vendor_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'vendor/libs/sweetalert2/sweetalert2.css' %}" />
+{% endblock vendor_css %}
+
+{% block vendor_js %}
+{{ block.super }}
+<script src="{% static 'vendor/libs/sweetalert2/sweetalert2.js' %}"></script>
+{% endblock vendor_js %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Country &amp; State Management</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Country and State</b>
+      </div>
+      <h1 class="scr-title">Country and State</h1>
+      <p class="scr-sub">International countries and the emirates registered under them.</p>
+    </div>
+    <div class="scr-head-actions">
+      {% if perm.print %}
+      <button type="button" class="scr-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="m7 11 5 5 5-5"></path><path d="M4 20h16"></path></svg>
+        Export
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="scr-tiles">
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-blue">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3c2.5 2.5 4 5.7 4 9s-1.5 6.5-4 9c-2.5-2.5-4-5.7-4-9s1.5-6.5 4-9z"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ countries|length }}</div><div class="scr-tile-lab">Countries</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-amber">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.5 7-12a7 7 0 0 0-14 0c0 5.5 7 12 7 12z"></path><circle cx="12" cy="9" r="2.5"></circle></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ states|length }}</div><div class="scr-tile-lab">States</div></div>
+    </div>
+    {% comment %}
+    The last three tiles count populations that live on other screens, so each
+    is a link to the screen that owns its list -- see a.scr-tile in
+    byky-screen.css. Countries and States are not links: their lists are the
+    two grids directly below.
+    {% endcomment %}
+    <a class="scr-tile" href="{% url 'company-branch-list' %}" title="Open Branch Management">
+      <span class="scr-tile-ico scr-tile-ico-red">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V4.2A1.2 1.2 0 0 1 5.2 3h8.6A1.2 1.2 0 0 1 15 4.2V21M15 9h4.8A1.2 1.2 0 0 1 21 10.2V21M3 21h18M8 7h3M8 11h3"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ total_branches }}</div><div class="scr-tile-lab">Total Branches</div></div>
+      <svg class="scr-tile-go" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+    </a>
+    <a class="scr-tile" title="Vehicle Management arrives with the fleet module">
+      <span class="scr-tile-ico scr-tile-ico-green">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5v10l-9 5-9-5V7l9-5M3.3 7 12 12l8.7-5M12 12v10"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ total_fleet }}</div><div class="scr-tile-lab">Total Vehicles</div></div>
+      <svg class="scr-tile-go" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+    </a>
+    <a class="scr-tile" title="Asset Management arrives with the fleet module">
+      <span class="scr-tile-ico scr-tile-ico-purple">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16v12H4zM4 7l2-3h12l2 3M9 19v2M15 19v2"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ total_assets }}</div><div class="scr-tile-lab">Total Assets</div></div>
+      <svg class="scr-tile-go" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+    </a>
+  </div>
+
+  <div class="scr-card">
+
+    <div class="scr-content-tabs" data-scr-tabgroup="geo">
+      <button type="button" class="scr-content-tab is-on" data-tab="country">
+        Countries <span class="scr-content-tab-count">{{ countries|length }}</span>
+      </button>
+      <button type="button" class="scr-content-tab" data-tab="state">
+        States <span class="scr-content-tab-count">{{ states|length }}</span>
+      </button>
+    </div>
+
+    <div class="scr-panel" data-tabgroup="geo" data-tab="country" data-scr-noun-singular="country" data-scr-noun-plural="countries" data-scr-delete-url="{{ delete_url_country }}" data-scr-noun="{{ noun_country }}">
+      <div class="scr-toolbar">
+        <div class="scr-search">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+          <input type="text" placeholder="Search country or code" />
+        </div>
+        <span class="scr-toolbar-count">{{ countries|length }} countr{{ countries|length|pluralize:"y,ies" }}</span>
+                {% comment %}        {% if perm.create %}
+        <button type="button" class="scr-btn-primary" data-scr-open="country:add">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+          Add Country
+        </button>
+        {% endif %}{% endcomment %}
+      </div>
+
+      <div class="scr-table-scroll scr-sb">
+        <table>
+          <thead>
+            <tr>
+              <th>Country</th>
+              <th>Code</th>
+              <th>States</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in countries %}
+            <tr class="scr-row" data-search="{{ c.name|lower }} {{ c.code|lower }}" data-record-id="{{ c.json_id }}" data-pk="{{ c.pk }}">
+              <td>
+                <div class="scr-co">
+                  <span class="scr-avatar {% cycle 'scr-avatar-0' 'scr-avatar-1' 'scr-avatar-2' 'scr-avatar-3' 'scr-avatar-4' as country_avatar_cls %}">{{ c.code|slice:":2" }}</span>
+                  <div style="min-width:0">
+                    <div class="scr-co-name">{{ c.name }}</div>
+                  </div>
+                </div>
+              </td>
+              <td><span class="scr-code">{{ c.code }}</span></td>
+              <td class="scr-state">{{ c.states }}</td>
+              <td>{% if c.active %}<span class="scr-badge scr-badge-active"><i></i>Active</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Inactive</span>{% endif %}</td>
+              <td>
+                <div class="scr-row-actions">
+                  {% include "byky/partials/row_actions.html" with edit_open="country:edit" %}
+                </div>
+              </td>
+            </tr>
+            {{ c.fields_json|json_script:c.json_id }}
+            {% empty %}
+            <tr>
+              <td colspan="5" style="padding:0">
+                <div class="scr-empty">
+                  <span class="scr-empty-ico">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3c2.5 2.5 4 5.7 4 9s-1.5 6.5-4 9c-2.5-2.5-4-5.7-4-9s1.5-6.5 4-9z"></path></svg>
+                  </span>
+                  <div>
+                    <div class="scr-empty-title">No countries yet</div>
+                    <p class="scr-empty-sub">Add the first country before registering states under it.</p>
+                  </div>
+                                    {% comment %}                  {% if perm.create %}
+                  <button type="button" class="scr-btn-primary" data-scr-open="country:add">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+                    Add Country
+                  </button>
+                  {% endif %}{% endcomment %}
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="scr-pager">
+        <span class="scr-pager-info">Showing {{ countries|length }} of {{ countries|length }}</span>
+        <div class="scr-pager-nav">
+          <button type="button" class="scr-pager-btn" disabled>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"></path></svg>
+          </button>
+          <span class="scr-pager-current">1</span>
+          <button type="button" class="scr-pager-btn" disabled>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 6 6 6-6 6"></path></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="scr-panel" data-tabgroup="geo" data-tab="state" data-scr-noun-singular="state" data-scr-noun-plural="states" data-scr-delete-url="{{ delete_url_state }}" data-scr-noun="{{ noun_state }}" hidden>
+      <div class="scr-toolbar">
+        <div class="scr-search">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+          <input type="text" placeholder="Search state or code" />
+        </div>
+
+        <span class="scr-toolbar-count">{{ states|length }} states</span>
+        {% if perm.create %}
+        <button type="button" class="scr-btn-primary" data-scr-open="state:add">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+          Add State
+        </button>
+        {% endif %}
+      </div>
+
+      <div class="scr-table-scroll scr-sb">
+        <table>
+          <thead>
+            <tr>
+              <th>State</th>
+              <th>Code</th>
+              <th>Country</th>
+              <th>Branches</th>
+              <th>Fleet</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in states %}
+            <tr class="scr-row" data-search="{{ s.name|lower }} {{ s.code|lower }}" data-record-id="{{ s.json_id }}" data-pk="{{ s.pk }}">
+              <td>
+                <div class="scr-co">
+                  <span class="scr-avatar {% cycle 'scr-avatar-0' 'scr-avatar-1' 'scr-avatar-2' 'scr-avatar-3' 'scr-avatar-4' as state_avatar_cls %}">{{ s.code|slice:":2" }}</span>
+                  <div style="min-width:0">
+                    <div class="scr-co-name">{{ s.name }}</div>
+                  </div>
+                </div>
+              </td>
+              <td><span class="scr-code">{{ s.code }}</span></td>
+              <td class="scr-state">{{ s.country }}</td>
+              <td class="scr-state">{{ s.branches }}</td>
+              <td class="scr-state">{{ s.fleet }}</td>
+              <td>{% if s.active %}<span class="scr-badge scr-badge-active"><i></i>Active</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Inactive</span>{% endif %}</td>
+              <td>
+                <div class="scr-row-actions">
+                  {% include "byky/partials/row_actions.html" with edit_open="state:edit" %}
+                </div>
+              </td>
+            </tr>
+            {{ s.fields_json|json_script:s.json_id }}
+            {% empty %}
+            <tr>
+              <td colspan="7" style="padding:0">
+                <div class="scr-empty">
+                  <span class="scr-empty-ico">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.5 7-12a7 7 0 0 0-14 0c0 5.5 7 12 7 12z"></path><circle cx="12" cy="9" r="2.5"></circle></svg>
+                  </span>
+                  <div>
+                    <div class="scr-empty-title">No states yet</div>
+                    <p class="scr-empty-sub">Add a state and assign it to one of the registered countries.</p>
+                  </div>
+                  {% if perm.create %}
+                  <button type="button" class="scr-btn-primary" data-scr-open="state:add">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+                    Add State
+                  </button>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="scr-pager">
+        <span class="scr-pager-info">Showing {{ states|length }} of {{ states|length }}</span>
+        <div class="scr-pager-nav">
+          <button type="button" class="scr-pager-btn" disabled>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"></path></svg>
+          </button>
+          <span class="scr-pager-current">1</span>
+          <button type="button" class="scr-pager-btn" disabled>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 6 6 6-6 6"></path></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+{% comment %} Add/Edit drawer -- Country. {% endcomment %}
+{% include "byky/partials/drawer.html" with save_url=save_url_country spec=drawer_country module_label="Company · Country & State" %}
+
+{% comment %} Add/Edit drawer -- State. {% endcomment %}
+{% include "byky/partials/drawer.html" with save_url=save_url_state spec=drawer_state module_label="Company · Country & State" %}
+{% include "byky/partials/confirm_modal.html" %}
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}

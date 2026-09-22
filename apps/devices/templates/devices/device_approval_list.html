@@ -1,0 +1,318 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Device Approval - Device Management{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+<script src="{% static 'js/byky-device-approval.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr" data-device-approval
+     data-url-approve="{{ action_urls.approve }}" data-url-reconnect="{{ action_urls.reconnect }}"
+     data-url-reject="{{ action_urls.reject }}" data-url-block="{{ action_urls.block }}"
+     data-url-unblock="{{ action_urls.unblock }}">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Device Management</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Device Approval</b>
+      </div>
+      <h1 class="scr-title">Device Approval</h1>
+      <p class="scr-sub">Tablets that have registered themselves. Approving one names it and gives it a station.</p>
+    </div>
+    <div class="scr-head-actions">
+      {% if perm.print %}
+      <button type="button" class="scr-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="m7 11 5 5 5-5"></path><path d="M4 20h16"></path></svg>
+        Export
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="scr-tiles">
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-amber">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3.5 2"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ queue_counts.pending }}</div><div class="scr-tile-lab">Pending approval</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-green">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ queue_counts.approved }}</div><div class="scr-tile-lab">Approved devices</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-red">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ queue_counts.blocked }}</div><div class="scr-tile-lab">Blocked devices</div></div>
+    </div>
+  </div>
+
+  <div class="scr-card">
+
+    <div class="scr-content-tabs" data-scr-tabgroup="device-approval">
+      <button type="button" class="scr-content-tab is-on" data-tab="pending">
+        Pending Approval <span class="scr-content-tab-count">{{ pending_devices|length }}</span>
+      </button>
+      <button type="button" class="scr-content-tab" data-tab="approved">
+        Approved Devices <span class="scr-content-tab-count">{{ approved_devices|length }}</span>
+      </button>
+      <button type="button" class="scr-content-tab" data-tab="blocked">
+        Blocked Devices <span class="scr-content-tab-count">{{ blocked_devices|length }}</span>
+      </button>
+    </div>
+
+    <div class="scr-panel" data-tabgroup="device-approval" data-tab="pending" data-scr-noun-singular="request" data-scr-noun-plural="requests">
+      <div class="scr-toolbar">
+        <div class="scr-search">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+          <input type="text" inputmode="numeric" autocomplete="off" placeholder="Registration number, e.g. 1003" aria-label="Registration number" data-dev-lookup />
+        </div>
+        <span class="scr-toolbar-count">{{ pending_devices|length }} requests</span>
+      </div>
+
+      {% comment %}
+      The number the operator reads out over the phone. An exact match shows
+      here with its actions, so the admin never pages through the list.
+      Filled by byky-device-approval.js from the rows' data-* attributes.
+      {% endcomment %}
+      <div class="scr-dev-match" data-dev-match{% if perm.approve %} data-can-approve{% endif %} hidden></div>
+
+      <div class="scr-table-scroll scr-sb">
+        <table>
+          <thead>
+            <tr>
+              <th>Device ID</th>
+              <th>Model</th>
+              <th>Platform</th>
+              <th>App</th>
+              <th>Registered</th>
+              <th data-status-cell>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for d in pending_devices %}
+            <tr class="scr-row" data-search="{{ d.registration_id }} {{ d.model|lower }}" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-state="pending" data-name="{{ d.name }}" data-model="{{ d.model }}" data-platform="{{ d.platform }}" data-channel="{{ d.channel_value }}" data-app="{{ d.channel }}" data-registered="{{ d.registered_on|date:'d M Y, H:i' }}"{% if d.reconnect_of %} data-match-name="{{ d.reconnect_of.name }}" data-match-number="{{ d.reconnect_of.registration_id }}"{% endif %}>
+              <td><span class="scr-code">{{ d.registration_id }}</span></td>
+              <td>
+                <span style="font-weight:600">{{ d.model|default:"—" }}</span>
+                {% if d.reconnect_of %}
+                <div class="scr-contact-sub">Looks like {{ d.reconnect_of.name|default:d.reconnect_of.registration_id }} reinstalling{% if d.reconnect_of.last_seen_at %}, last seen {{ d.reconnect_of.last_seen_at|date:"d M Y" }}{% endif %}</div>
+                {% endif %}
+              </td>
+              <td class="scr-contact">{{ d.platform }}</td>
+              <td class="scr-contact">{{ d.channel }}</td>
+              <td class="scr-contact">{{ d.registered_on|date:"d M Y H:i" }}</td>
+              <td data-status-cell><span class="scr-badge scr-badge-pending"><i></i>{{ d.status_label }}</span></td>
+              <td>
+                <div class="scr-row-actions">
+                  <div class="scr-menu-wrap">
+                    <button type="button" class="scr-icon-btn" title="More" data-scr-menu-toggle>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="12" cy="19" r="1.6"></circle></svg>
+                    </button>
+                    <div class="scr-menu" hidden>
+                      <a href="{{ d.detail_url }}" class="scr-menu-item">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                        View
+                      </a>
+                      {% if perm.approve %}
+                      <button type="button" class="scr-menu-item" data-device-action="{% if d.reconnect_of %}reconnect{% else %}approve{% endif %}" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-name="{{ d.name }}" data-channel="{{ d.channel_value }}" data-model="{{ d.model }}"{% if d.reconnect_of %} data-match-name="{{ d.reconnect_of.name }}" data-match-number="{{ d.reconnect_of.registration_id }}"{% endif %}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"></path></svg>
+                        {% if d.reconnect_of %}Reconnect{% else %}Approve{% endif %}
+                      </button>
+                      <button type="button" class="scr-menu-item scr-menu-item-danger" data-device-action="reject" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-name="{{ d.name }}" data-channel="{{ d.channel_value }}">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+                        Reject
+                      </button>
+                      {% endif %}
+                    </div>
+                  </div>
+                </div>
+              </td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="7" style="padding:0">
+                <div class="scr-empty">
+                  <span class="scr-empty-ico">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3.5 2"></path></svg>
+                  </span>
+                  <div>
+                    <div class="scr-empty-title">Nothing waiting for approval</div>
+                    <p class="scr-empty-sub">A tablet appears here the first time the app is opened on it.</p>
+                  </div>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="scr-panel" data-tabgroup="device-approval" data-tab="approved" data-scr-noun-singular="device" data-scr-noun-plural="devices" hidden>
+      <div class="scr-toolbar">
+        <div class="scr-search">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+          <input type="text" placeholder="Search device name, number or station" />
+        </div>
+        <span class="scr-toolbar-count">{{ approved_devices|length }} devices</span>
+      </div>
+
+      <div class="scr-table-scroll scr-sb">
+        <table>
+          <thead>
+            <tr>
+              <th>Device ID</th>
+              <th>Device Name</th>
+              <th>Model</th>
+              <th>Station</th>
+              <th>Last Seen</th>
+              <th data-status-cell>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for d in approved_devices %}
+            <tr class="scr-row" data-search="{{ d.registration_id }} {{ d.name|lower }} {{ d.branch|lower }}" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-state="approved" data-name="{{ d.name }}">
+              <td><span class="scr-code">{{ d.registration_id }}</span></td>
+              <td style="font-weight:600">{{ d.name|default:"—" }}</td>
+              <td class="scr-contact">{{ d.model|default:"—" }}</td>
+              <td class="scr-contact">{{ d.branch|default:"—" }}</td>
+              <td class="scr-contact">{{ d.last_seen_at|date:"d M Y H:i"|default:"—" }}</td>
+              <td data-status-cell><span class="scr-badge scr-badge-approved"><i></i>{{ d.status_label }}</span></td>
+              <td>
+                <div class="scr-row-actions">
+                  <div class="scr-menu-wrap">
+                    <button type="button" class="scr-icon-btn" title="More" data-scr-menu-toggle>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="12" cy="19" r="1.6"></circle></svg>
+                    </button>
+                    <div class="scr-menu" hidden>
+                      <a href="{{ d.detail_url }}" class="scr-menu-item">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                        View
+                      </a>
+                      {% if perm.update %}
+                      <button type="button" class="scr-menu-item scr-menu-item-danger" data-device-action="block" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-name="{{ d.name }}" data-channel="{{ d.channel_value }}">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+                        Block
+                      </button>
+                      {% endif %}
+                    </div>
+                  </div>
+                </div>
+              </td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="7" style="padding:0">
+                <div class="scr-empty">
+                  <span class="scr-empty-ico">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"></path></svg>
+                  </span>
+                  <div>
+                    <div class="scr-empty-title">No approved devices</div>
+                    <p class="scr-empty-sub">Approve a pending request and it moves here.</p>
+                  </div>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="scr-panel" data-tabgroup="device-approval" data-tab="blocked" data-scr-noun-singular="device" data-scr-noun-plural="devices" hidden>
+      <div class="scr-toolbar">
+        <div class="scr-search">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+          <input type="text" placeholder="Search device name or number" />
+        </div>
+        <span class="scr-toolbar-count">{{ blocked_devices|length }} devices</span>
+      </div>
+
+      <div class="scr-table-scroll scr-sb">
+        <table>
+          <thead>
+            <tr>
+              <th>Device ID</th>
+              <th>Device Name</th>
+              <th>Model</th>
+              <th>Station</th>
+              <th>Last Seen</th>
+              <th data-status-cell>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for d in blocked_devices %}
+            <tr class="scr-row" data-search="{{ d.registration_id }} {{ d.name|lower }}" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-state="blocked" data-name="{{ d.name }}">
+              <td><span class="scr-code">{{ d.registration_id }}</span></td>
+              <td style="font-weight:600">{{ d.name|default:"—" }}</td>
+              <td class="scr-contact">{{ d.model|default:"—" }}</td>
+              <td class="scr-contact">{{ d.branch|default:"—" }}</td>
+              <td class="scr-contact">{{ d.last_seen_at|date:"d M Y H:i"|default:"—" }}</td>
+              <td data-status-cell><span class="scr-badge scr-badge-rejected"><i></i>{{ d.status_label }}</span></td>
+              <td>
+                <div class="scr-row-actions">
+                  <div class="scr-menu-wrap">
+                    <button type="button" class="scr-icon-btn" title="More" data-scr-menu-toggle>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="12" cy="19" r="1.6"></circle></svg>
+                    </button>
+                    <div class="scr-menu" hidden>
+                      <a href="{{ d.detail_url }}" class="scr-menu-item">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                        View
+                      </a>
+                      {% if perm.update %}
+                      <button type="button" class="scr-menu-item" data-device-action="unblock" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-name="{{ d.name }}" data-channel="{{ d.channel_value }}">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 7.6-1.8"></path></svg>
+                        Unblock
+                      </button>
+                      {% endif %}
+                    </div>
+                  </div>
+                </div>
+              </td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="7" style="padding:0">
+                <div class="scr-empty">
+                  <span class="scr-empty-ico">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+                  </span>
+                  <div>
+                    <div class="scr-empty-title">No blocked devices</div>
+                    <p class="scr-empty-sub">Blocking a device stops anyone logging in on it.</p>
+                  </div>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% include "devices/partials/device_action_modals.html" %}
+{% include "byky/partials/confirm_modal.html" %}
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}

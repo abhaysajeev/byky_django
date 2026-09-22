@@ -1,0 +1,28 @@
+<!-- Footer -->
+{% comment %}
+Restyled onto the .scr-* design system's type scale (byky-screen-design-system
+section 9): Sora, 11.5px, the muted greys, a hairline rule instead of a card
+edge. It previously inherited Vuexy's defaults -- Public Sans at 15px, the
+same size as body copy -- which made a credit line read like content.
+
+The product name is a span of its own so it can carry a touch more weight
+than the sentence around it, which is the only emphasis a footer needs.
+
+The year comes from {% now %} rather than the document.write this used to
+carry: as a flex item that script's own source leaked into the line, and a
+footer date needs no JavaScript.
+{% endcomment %}
+<footer class="content-footer byky-footer">
+  <div class="{{container_class}}">
+    <div class="byky-footer-row">
+      <p class="byky-footer-credit">
+        <span class="byky-footer-mark">&copy; {% now "Y" %}</span>
+        <span class="byky-footer-name">{% get_theme_variables 'template_name' %}</span>
+        <span class="byky-footer-sep">&mdash;</span>
+        <span class="byky-footer-suffix">{% get_theme_variables 'template_suffix' %}</span>
+      </p>
+      <p class="byky-footer-note">Clickable prototype &middot; static data</p>
+    </div>
+  </div>
+</footer>
+<!-- / Footer -->

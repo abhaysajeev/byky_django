@@ -1,0 +1,15 @@
+{% comment %}
+Empty state for a list or panel that legitimately has no rows
+(e.g. Qidfa Beach station, which holds no vehicles).
+
+  {% include "byky/partials/empty_state.html" with icon="tabler-motorbike" title="No vehicles at this station" text="..." %}
+{% endcomment %}
+<div class="text-center py-12">
+  <div class="avatar avatar-xl mx-auto mb-4">
+    <span class="avatar-initial rounded-circle bg-label-secondary">
+      <i class="icon-base ti {{ icon|default:'tabler-database-off' }} icon-26px"></i>
+    </span>
+  </div>
+  <h6 class="mb-1">{{ title|default:"Nothing to show yet" }}</h6>
+  <p class="mb-0 text-body-secondary">{{ text }}</p>
+</div>

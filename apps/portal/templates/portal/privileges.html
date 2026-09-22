@@ -1,0 +1,25 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Privilege Management - {{ module }}{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+{% comment %}
+The partial owns the whole page -- its own scr-head, the roles list and one
+matrix card per role -- so there is one privilege screen, included by every
+module with its own module code.
+{% endcomment %}
+{% include "byky/partials/privilege_matrix.html" %}
+{% include "byky/partials/confirm_modal.html" %}
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}

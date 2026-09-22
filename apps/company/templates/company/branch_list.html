@@ -1,0 +1,214 @@
+{% extends layout_path %}
+{% load static %}
+{% load humanize %}
+
+{% block title %}Branch - Company Management{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Company Management</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Branch</b>
+      </div>
+      <h1 class="scr-title">Branch</h1>
+      <p class="scr-sub">Rental station hubs, their head-office and multi-user flags.</p>
+    </div>
+    <div class="scr-head-actions">
+      {% if perm.print %}
+      <button type="button" class="scr-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="m7 11 5 5 5-5"></path><path d="M4 20h16"></path></svg>
+        Export
+      </button>
+      {% endif %}
+      {% if perm.create %}
+      <button type="button" class="scr-btn-primary" data-scr-open="branch:add">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+        Add Branch
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="scr-tiles">
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-blue">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M4 21V10l8-6 8 6v11M9 21v-6h6v6"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ ho_count }}</div><div class="scr-tile-lab">Head Office</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-purple">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M4 21V10l8-6 8 6v11M9 21v-6h6v6"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ depot_count }}</div><div class="scr-tile-lab">Depot</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-amber">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M4 21V10l8-6 8 6v11M9 21v-6h6v6"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ station_count }}</div><div class="scr-tile-lab">Station</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-amber">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M12 7v5l3.5 2"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ inactive_count }}</div><div class="scr-tile-lab">Inactive Branches</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-green">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5v10l-9 5-9-5V7l9-5M3.3 7 12 12l8.7-5M12 12v10"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ assets_deployed|intcomma }}</div><div class="scr-tile-lab">Assets Deployed</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-blue">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5v10l-9 5-9-5V7l9-5M3.3 7 12 12l8.7-5M12 12v10"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ total_fleet|intcomma }}</div><div class="scr-tile-lab">Vehicles Deployed</div></div>
+    </div>
+  </div>
+
+  <div class="scr-card" data-scr-noun-singular="branch" data-scr-noun-plural="branches" data-scr-delete-url="{{ delete_url_branch }}" data-scr-noun="{{ noun_branch }}">
+    <div class="scr-toolbar">
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="text" placeholder="Search branch or code" />
+      </div>
+
+      <div class="scr-filter-wrap" data-filter-key="location">
+        <button type="button" class="scr-filter-btn">
+          <span class="scr-filter-label">All locations</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+        </button>
+        <div class="scr-filter-menu" hidden>
+          <button type="button" class="scr-filter-opt is-active" data-value="">All locations</button>
+          {% for s in states_list %}
+          <button type="button" class="scr-filter-opt" data-value="{{ s.name }}">{{ s.name }}</button>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="scr-filter-wrap" data-filter-key="status">
+        <button type="button" class="scr-filter-btn">
+          <span class="scr-filter-label">All statuses</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+        </button>
+        <div class="scr-filter-menu" hidden>
+          <button type="button" class="scr-filter-opt is-active" data-value="">All statuses</button>
+          <button type="button" class="scr-filter-opt" data-value="Active">Active</button>
+          <button type="button" class="scr-filter-opt" data-value="Inactive">Inactive</button>
+        </div>
+      </div>
+
+      <span class="scr-toolbar-count">{{ branches|length }} branches</span>
+    </div>
+
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Branch</th>
+            <th>Code</th>
+            <th>Company</th>
+            <th>Location</th>
+            <th>Is HO</th>
+            <th>Multi User</th>
+            <th>Vehicles</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for b in branches %}
+          <tr class="scr-row" data-search="{{ b.name|lower }} {{ b.code|lower }}" data-location="{{ b.location }}" data-status="{% if b.active %}Active{% else %}Inactive{% endif %}" data-record-id="{{ b.json_id }}" data-pk="{{ b.pk }}">
+            <td>
+              <div class="scr-co">
+                <span class="scr-avatar {% cycle 'scr-avatar-0' 'scr-avatar-1' 'scr-avatar-2' 'scr-avatar-3' 'scr-avatar-4' as branch_avatar_cls %}">{{ b.name|slice:":2"|upper }}</span>
+                <div style="min-width:0">
+                  <div class="scr-co-name">{{ b.name }}</div>
+                </div>
+              </div>
+            </td>
+            <td><span class="scr-code">{{ b.code }}</span></td>
+            <td class="scr-state">{{ b.company }}</td>
+            <td class="scr-state">{{ b.location }}</td>
+            <td><span class="scr-flag {% if b.is_ho %}scr-flag-yes{% else %}scr-flag-no{% endif %}">{% if b.is_ho %}Y{% else %}N{% endif %}</span></td>
+            <td><span class="scr-flag {% if b.multi_user %}scr-flag-yes{% else %}scr-flag-no{% endif %}">{% if b.multi_user %}Y{% else %}N{% endif %}</span></td>
+            <td>
+              <button type="button" class="scr-count-link" data-bs-toggle="modal" data-bs-target="#scr-records-modal"
+                      data-scr-view="{{ b.vehicles_json_id }}"
+                      data-scr-view-title="{{ b.name }} — Vehicles"
+                      data-scr-view-columns='["number","rfid_epc","nfc_id","category","vtype"]'
+                      data-scr-view-labels='["Vehicle ID","RFID Tag EPC","NFC ID","Category","Type"]'>{{ b.fleet }}</button>
+            </td>
+            <td>{% if b.active %}<span class="scr-badge scr-badge-active"><i></i>Active</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Inactive</span>{% endif %}</td>
+            <td>
+              <div class="scr-row-actions">
+                {% include "byky/partials/row_actions.html" with edit_open="branch:edit" %}
+              </div>
+            </td>
+          </tr>
+          {{ b.fields_json|json_script:b.json_id }}
+          {{ b.vehicles_json|json_script:b.vehicles_json_id }}
+          {% empty %}
+          <tr>
+            <td colspan="9" style="padding:0">
+              <div class="scr-empty">
+                <span class="scr-empty-ico">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V4.2A1.2 1.2 0 0 1 5.2 3h8.6A1.2 1.2 0 0 1 15 4.2V21M15 9h4.8A1.2 1.2 0 0 1 21 10.2V21M3 21h18M8 7h3M8 11h3M8 15h3"></path></svg>
+                </span>
+                <div>
+                  <div class="scr-empty-title">No branches yet</div>
+                  <p class="scr-empty-sub">Add the first rental station branch under the company.</p>
+                </div>
+                {% if perm.create %}
+                <button type="button" class="scr-btn-primary" data-scr-open="branch:add">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+                  Add Branch
+                </button>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="scr-pager">
+      <span class="scr-pager-info">Showing {{ branches|length }} of {{ branches|length }}</span>
+      <div class="scr-pager-nav">
+        <button type="button" class="scr-pager-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"></path></svg>
+        </button>
+        <span class="scr-pager-current">1</span>
+        <button type="button" class="scr-pager-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 6 6 6-6 6"></path></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% comment %} Vehicle count -> full vehicle list modal, shared across .scr-* screens. {% endcomment %}
+{% include "byky/partials/records_modal.html" %}
+
+{% comment %} Add/Edit drawer -- Branch. {% endcomment %}
+{% include "byky/partials/drawer.html" with save_url=save_url_branch spec=drawer_branch module_label="Company · Branch" %}
+{% include "byky/partials/confirm_modal.html" %}
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}

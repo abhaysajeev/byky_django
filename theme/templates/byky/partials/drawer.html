@@ -1,0 +1,294 @@
+{% comment %}
+BYKY drawer — the single source of truth for every create/edit drawer.
+
+Include it from any screen; it never renders anything on its own:
+
+    {% include "byky/partials/drawer.html" with spec=spec module_label=module_label %}
+
+Contract
+--------
+spec.add_label   drawer title, e.g. "Add Vehicle"           (required)
+spec.drawer_id   DOM id the trigger targets                 (required)
+spec.sections    [{title, note, fields:[...]}, ...]         (required;
+                 note is an optional grey line under the section header)
+spec.size        "compact" | "standard" | "wide" | omitted  (optional)
+module_label     overline text, e.g. "Inventory · Vehicles" (optional)
+
+field keys: id, label, kind, required, placeholder, options/resolved, width, help
+kind: text | select | date | textarea | number | file | checkbox | checkgroup |
+      password |
+      radio | multiselect | combo | datetime | time | custom
+kind "combo"     type-to-filter single-select over a richer record list than a
+                 plain <select> can label -- f.combo_source names a page-level
+                 json_script id (an array of objects), f.combo_key the field to
+                 match/display (default "name"), f.combo_sub an optional second
+                 field shown alongside it (e.g. an employee code).
+                 f.combo_filter_field/f.combo_filter_key narrow its records to
+                 those matching another field's current value (Duty Roster's
+                 Employee combo, filtered by the Role select above it)
+kind "datetime"  like "date" but with a time-of-day component
+kind "time"      a bare native time picker, value always "HH:MM" -- for a time
+                 that stands alone (Duty Roster's shift times), not paired
+                 with its own date field
+kind "custom"    reserves an empty slot (data-days-host) the page's own JS
+                 fills -- for a field whose row count/shape varies per record
+field.default    a select's pre-chosen option in Add mode (must match one of
+                 its resolved options exactly); ignored in Edit mode, where
+                 the record's own value always wins
+
+Size is normally left OUT — byky-drawer.js measures the rendered field count and
+applies is-compact / is-standard / is-wide. Set spec.size only to override.
+
+Bootstrap's offcanvas JS still owns open/close: the trigger stays
+data-bs-toggle="offcanvas" data-bs-target="#<drawer_id>".
+
+Also supported, for the screens on the .scr-* design system
+--------------------------------------------------------
+Those screens open their drawer with data-scr-open="<name>:add|edit" and rely
+on an edit record being prefilled from a json_script blob. Set spec.scr_name
+and the drawer additionally emits the hooks that makes work -- byky-drawer.js
+picks up the trigger, prefills every [data-field], and hands open/close to
+Bootstrap. Without spec.scr_name nothing extra is emitted and the drawer
+behaves exactly as documented above.
+
+spec.scr_name        name used by data-scr-open="<name>:add|edit"  (optional)
+spec.title_field     field id whose value titles the drawer in edit mode
+field.lock_on_edit   render read-only in edit mode (a code/PK field); text,
+                     number and select
+field.enables        field id this checkbox enables/disables
+field.checked        default state of a checkbox in add mode
+field.show_if        "<field id>:<value>[|<value>]" -- hide until it matches
+kind "checkgroup"    f.options = [{id, label, enables, checked}, ...]
+spec.hide_active     no footer Active switch -- for a record switched on and
+                     off by its own action (App Releases' Withdraw / Restore)
+sec.note_from        context key whose value becomes the section note
+field.readonly       always read-only -- a value this screen displays but
+                     does not own (fetched from an external system)
+{% endcomment %}
+
+{% if spec.add_label %}
+<div class="offcanvas offcanvas-end byky-drawer{% if spec.size %} is-{{ spec.size }}{% endif %}"
+     tabindex="-1" id="{{ spec.drawer_id }}" data-byky-drawer
+     {% if spec.scr_name %}data-scr-name="{{ spec.scr_name }}" data-add-title="{{ spec.add_label }}" data-title-field="{{ spec.title_field|default:'name' }}"{% if save_url %} data-save-url="{{ save_url }}"{% endif %}{% endif %}>
+
+  <div class="byky-drawer-accent"></div>
+
+  <div class="byky-drawer-head">
+    <div class="byky-drawer-heading">
+      {% if module_label %}<div class="byky-drawer-module">{{ module_label }}</div>{% endif %}
+      <h2 class="byky-drawer-title">{{ spec.add_label }}</h2>
+    </div>
+    <button type="button" class="byky-drawer-close" data-bs-dismiss="offcanvas" aria-label="Close">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+    </button>
+  </div>
+
+  {% comment %}Jump tabs render only when the drawer has 2+ named sections.{% endcomment %}
+  <div class="byky-drawer-jumps" data-byky-jumps hidden></div>
+
+  <form class="byky-drawer-form" data-scr-form novalidate>
+      {% csrf_token %}
+      <input type="hidden" data-field="pk" />
+    <div class="byky-drawer-body" data-byky-body>
+      {% for sec in spec.sections %}
+      <section class="byky-section" data-byky-section data-section-label="{{ sec.title }}">
+        {% if sec.title %}
+        <header class="byky-section-head">
+          <span class="byky-section-bar"></span>
+          <span class="byky-section-title">{{ sec.title }}</span>
+          <span class="byky-section-rule"></span>
+          <span class="byky-section-count">{{ sec.fields|length }}</span>
+        </header>
+        {% endif %}
+        {% comment %}
+        Optional grey line under a section header, for saying where the
+        section's values come from when this screen does not own them.
+        {% endcomment %}
+        {% if sec.note %}<p class="byky-section-note">{{ sec.note }}</p>{% endif %}
+
+        <div class="byky-fields">
+          {% for f in sec.fields %}
+          {% comment %}
+          data-show-if="<field id>:<value>[|<value>]" hides a field until the
+          named control holds one of those values -- Branch's flag group only
+          applies to a Branch Office. byky-drawer.js syncs it.
+          {% endcomment %}
+          <div class="byky-field byky-span-{{ f.width|default:6 }}"{% if f.show_if %} data-show-if="{{ f.show_if }}" hidden{% endif %}>
+            <label class="byky-label" for="{{ f.id }}">
+              <span>{{ f.label }}</span>{% if f.required %}<em class="byky-req">*</em>{% endif %}
+            </label>
+
+            {% if f.kind == "select" %}
+              <div class="byky-select-wrap">
+                <select id="{{ f.id }}" class="byky-input byky-select" data-field="{{ f.id }}"{% if f.lock_on_edit %} data-lock-on-edit="true"{% endif %}{% if f.default %} data-default="{{ f.default }}"{% endif %}{% if f.readonly %} disabled{% endif %}>
+                  <option value="">Select</option>
+                  {% for o in f.resolved %}<option{% if o.id %} value="{{ o.id }}"{% endif %}{% if f.default and o.name == f.default %} selected{% endif %}>{{ o.name|default:o }}</option>{% endfor %}
+                </select>
+                <svg class="byky-select-caret" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+              </div>
+
+            {% elif f.kind == "date" %}
+              <div class="byky-select-wrap">
+                <input type="text" id="{{ f.id }}" class="byky-input byky-date has-affix" data-field="{{ f.id }}"{% if f.readonly %} readonly{% endif %} placeholder="Select date" />
+                <svg class="byky-date-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 6h14a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1M8 3v4M16 3v4M4 11h16"></path></svg>
+              </div>
+
+            {% elif f.kind == "textarea" %}
+              <textarea id="{{ f.id }}" class="byky-input byky-textarea" rows="3" data-field="{{ f.id }}"{% if f.readonly %} readonly{% endif %} placeholder="Enter {{ f.label|lower }}"></textarea>
+
+            {% elif f.kind == "file" %}
+              <label class="byky-file" for="{{ f.id }}">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M8 8l4-4 4 4M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"></path></svg>
+                <span>Choose file</span>
+                <input type="file" id="{{ f.id }}" class="byky-file-input" />
+              </label>
+
+            {% elif f.kind == "checkbox" %}
+              <label class="byky-switch-row" for="{{ f.id }}">
+                <input type="checkbox" id="{{ f.id }}" class="byky-switch-input" data-field="{{ f.id }}"{% if f.enables %} data-enables="{{ f.enables }}"{% endif %}{% if f.checked %} data-default-checked="true"{% endif %} />
+                <span class="byky-switch"></span>
+                <span class="byky-switch-label">{{ f.placeholder|default:"Enabled" }}</span>
+              </label>
+
+            {% elif f.kind == "checkgroup" %}
+              {% comment %}
+              Several booleans that belong together read as one field, on a
+              two-column grid so the switches line up instead of stacking into
+              a ragged list -- Branch's Is Hotel / App Payment / Multiple
+              Devices / Test Vehicle.
+              {% endcomment %}
+              <div class="byky-checkgroup">
+                {% for o in f.options %}
+                <label class="byky-switch-row" for="{{ o.id }}">
+                  <input type="checkbox" id="{{ o.id }}" class="byky-switch-input" data-field="{{ o.id }}"{% if o.enables %} data-enables="{{ o.enables }}"{% endif %}{% if o.checked %} data-default-checked="true"{% endif %} />
+                  <span class="byky-switch"></span>
+                  <span class="byky-switch-label">{{ o.label }}</span>
+                </label>
+                {% endfor %}
+              </div>
+
+            {% comment %}
+            radio and multiselect exist because real screens carry them --
+            Promo Code's Discount Type, Push Dispatch's Platform, and Branch
+            Department Mapping's two authority pickers. Added as optional
+            kinds on the shared drawer rather than left behind on the old
+            markup, so there is still exactly one drawer template.
+            {% endcomment %}
+            {% elif f.kind == "radio" %}
+              <div class="byky-radio-row">
+                {% for o in f.options %}
+                <label class="byky-radio-label">
+                  <input type="radio" class="byky-radio" name="{{ f.id }}" value="{{ o }}"{% if o == f.checked_option %} checked{% endif %} />
+                  <span>{{ o.name|default:o }}</span>
+                </label>
+                {% endfor %}
+              </div>
+
+            {% elif f.kind == "multiselect" %}
+              {% comment %}
+              Picked values sit inside the control as removable pills rather
+              than as a count or a comma list: with several departments on a
+              branch, "3 selected" makes you open the menu again to find out
+              which three. byky-drawer.js keeps the pills and the checkboxes
+              in step -- the checkboxes stay the source of truth, so the value
+              survives prefill and reset like any other field.
+              {% endcomment %}
+              <div class="byky-multi" data-field="{{ f.id }}" data-placeholder="{{ f.placeholder|default:'Select one or more' }}">
+                <div class="byky-multi-control" tabindex="0" role="button" aria-haspopup="listbox">
+                  <span class="byky-multi-pills"></span>
+                  <span class="byky-multi-placeholder">{{ f.placeholder|default:"Select one or more" }}</span>
+                  <svg class="byky-multi-caret" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+                </div>
+                <div class="byky-multi-menu" hidden role="listbox">
+                  {% for o in f.resolved %}
+                  <label class="byky-multi-opt"><input type="checkbox" value="{{ o.id|default:o }}" /><span>{{ o.name|default:o }}</span></label>
+                  {% empty %}
+                  <p class="byky-multi-none">{{ f.empty_text|default:"Nothing to choose from yet." }}</p>
+                  {% endfor %}
+                </div>
+              </div>
+
+            {% comment %}
+            A password is the one field that must never render its value.
+            type="password" masks it, and the browser is told not to offer a
+            saved one -- this box sets somebody else's password, not the
+            signed-in person's.
+            {% endcomment %}
+            {% elif f.kind == "password" %}
+              <input type="password" id="{{ f.id }}" class="byky-input" data-field="{{ f.id }}" autocomplete="new-password" placeholder="{{ f.placeholder|default:'Leave empty to keep the current password' }}" />
+
+            {% elif f.kind == "number" %}
+              <input type="number" step="any" id="{{ f.id }}" class="byky-input" data-field="{{ f.id }}"{% if f.lock_on_edit %} data-lock-on-edit="true"{% endif %}{% if f.readonly %} readonly{% endif %} placeholder="Enter {{ f.label|lower }}" />
+
+            {% comment %}
+            combo/datetime/custom exist for the HRMS mockup screens (Duty
+            Roster, Incentive Branch Mapping, Target Branch Mapping) --
+            combo is a type-to-filter single-select over a page-level record
+            list too rich for a plain <select> (it needs a subtitle, e.g. an
+            employee's code next to their name); datetime is `date` plus a
+            time-of-day; custom is an escape hatch for a field whose row
+            count/shape genuinely varies (Duty Roster's day-by-day builder,
+            Incentive's per-user-type breakdown table) -- the page's own JS
+            owns everything inside it, the drawer only reserves the slot.
+            {% endcomment %}
+            {% elif f.kind == "combo" %}
+              {% comment %}
+              combo_filter_field/combo_filter_key: narrow the combo's record
+              list to those whose combo_filter_key matches another field's
+              current value -- Duty Roster's Employee combo, filtered to
+              whichever Role (Cashier/Labour) is chosen above it. Optional;
+              omitted, the combo lists every record, as before.
+              {% endcomment %}
+              <div class="scr-combo" data-scr-combo="{{ f.id }}" data-combo-source="{{ f.combo_source }}" data-combo-key="{{ f.combo_key|default:'name' }}" data-combo-sub="{{ f.combo_sub|default:'' }}"{% if f.combo_filter_field %} data-combo-filter-field="{{ f.combo_filter_field }}" data-combo-filter-key="{{ f.combo_filter_key|default:'role' }}"{% endif %}>
+                <input type="text" class="byky-input scr-combo-input" placeholder="{{ f.placeholder|default:'Search...' }}" autocomplete="off" />
+                <div class="scr-combo-list" hidden></div>
+                <input type="hidden" id="{{ f.id }}" data-field="{{ f.id }}" />
+              </div>
+
+            {% elif f.kind == "datetime" %}
+              <div class="byky-select-wrap">
+                <input type="text" id="{{ f.id }}" class="byky-input byky-date byky-datetime has-affix" data-field="{{ f.id }}"{% if f.readonly %} readonly{% endif %} placeholder="Select date &amp; time" />
+                <svg class="byky-date-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 6h14a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1M8 3v4M16 3v4M4 11h16"></path></svg>
+              </div>
+
+            {% comment %}
+            A bare HH:MM box with no picker (Duty Roster's shift times, which
+            are combined with a day that lives elsewhere on the form, not a
+            full date -- see drawer.html's "combo/datetime/custom" note).
+            The native control gives a real time picker with no vendor JS,
+            and its value is always "HH:MM" -- exactly the string the roster
+            endpoints expect, with no format translation either way.
+            {% endcomment %}
+            {% elif f.kind == "time" %}
+              <input type="time" id="{{ f.id }}" class="byky-input" data-field="{{ f.id }}"{% if f.readonly %} readonly{% endif %} />
+
+            {% elif f.kind == "custom" %}
+              <div class="byky-days-host" data-days-host="{{ f.id }}"></div>
+
+            {% else %}
+              <input type="text" id="{{ f.id }}" class="byky-input" data-field="{{ f.id }}"{% if f.lock_on_edit %} data-lock-on-edit="true"{% endif %}{% if f.readonly %} readonly{% endif %} placeholder="{{ f.placeholder|default_if_none:'' }}{% if not f.placeholder %}Enter {{ f.label|lower }}{% endif %}" />
+            {% endif %}
+
+            {% if f.help %}<div class="byky-help">{{ f.help }}</div>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </section>
+      {% endfor %}
+    </div>
+
+    <div class="byky-drawer-foot">
+      {% if not spec.hide_active %}
+      <label class="byky-switch-row byky-foot-active" for="{{ spec.drawer_id }}-active">
+        <input type="checkbox" id="{{ spec.drawer_id }}-active" class="byky-switch-input" data-field="is_active" checked />
+        <span class="byky-switch"></span>
+        <span class="byky-switch-label">Active</span>
+      </label>
+      {% endif %}
+      <button type="button" class="byky-btn-text" data-bs-dismiss="offcanvas">Cancel</button>
+      <button type="submit" class="byky-btn-outline" data-scr-save="new">Save &amp; New</button>
+      <button type="submit" class="byky-btn-primary" data-scr-save="close">Save</button>
+    </div>
+  </form>
+</div>
+{% endif %}

@@ -1,0 +1,216 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Device Mapping - Device Management{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+<script src="{% static 'js/byky-device-mapping.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr" data-device-mapping data-url-remap="{{ mapping_urls.remap }}" data-url-close="{{ mapping_urls.close }}">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Device Management</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Device Mapping</b>
+      </div>
+      <h1 class="scr-title">Device Mapping</h1>
+      <p class="scr-sub">Which station each approved device trades at, and who is on it now.</p>
+    </div>
+    <div class="scr-head-actions">
+      {% if perm.print %}
+      <button type="button" class="scr-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="m7 11 5 5 5-5"></path><path d="M4 20h16"></path></svg>
+        Export
+      </button>
+      {% endif %}
+      {% if perm.create %}
+      <button type="button" class="scr-btn-primary" data-scr-open="device_mapping:add">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+        Add Device Mapping
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="scr-tiles">
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-red">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"></rect><path d="M9 7h6M9 11h6M9 15h3"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ counts.total }}</div><div class="scr-tile-lab">Registered devices</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-green">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ counts.online }}</div><div class="scr-tile-lab">In use now</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-amber">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3.5 2"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ counts.offline }}</div><div class="scr-tile-lab">Idle</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-blue">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V4a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v17M15 9h4a1 1 0 0 1 1 1v11M3 21h18M8 7h3M8 11h3M8 15h3"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ counts.stations }}</div><div class="scr-tile-lab">Stations covered</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-red">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ counts.blocked }}</div><div class="scr-tile-lab">Blocked devices</div></div>
+    </div>
+  </div>
+
+  <div class="scr-card" data-scr-noun-singular="device mapping" data-scr-noun-plural="device mappings">
+    <div class="scr-toolbar">
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="text" placeholder="Search device, number or station" />
+      </div>
+
+      <div class="scr-filter-wrap" data-filter-key="station">
+        <button type="button" class="scr-filter-btn">
+          <span class="scr-filter-label">All stations</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+        </button>
+        <div class="scr-filter-menu" hidden>
+          <button type="button" class="scr-filter-opt is-active" data-value="">All stations</button>
+          {% for b in branches_list %}<button type="button" class="scr-filter-opt" data-value="{{ b.name }}">{{ b.name }}</button>{% endfor %}
+        </div>
+      </div>
+
+      <div class="scr-filter-wrap" data-filter-key="online">
+        <button type="button" class="scr-filter-btn">
+          <span class="scr-filter-label">All status</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+        </button>
+        <div class="scr-filter-menu" hidden>
+          <button type="button" class="scr-filter-opt is-active" data-value="">All status</button>
+          <button type="button" class="scr-filter-opt" data-value="yes">In use</button>
+          <button type="button" class="scr-filter-opt" data-value="no">Idle</button>
+        </div>
+      </div>
+
+      <span class="scr-toolbar-count">{{ devices|length }} devices</span>
+    </div>
+
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Device ID</th>
+            <th>Device Name</th>
+            <th>Model</th>
+            <th>Station</th>
+            <th>App Version</th>
+            <th>Mapped Since</th>
+            <th>Last Login</th>
+            <th>Employee</th>
+            <th style="text-align:center">Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in devices %}
+          <tr class="scr-row" data-search="{{ d.name|lower }} {{ d.registration_id }} {{ d.station|lower }}" data-station="{{ d.station }}" data-online="{% if d.online %}yes{% else %}no{% endif %}" data-pk="{{ d.pk }}">
+            <td><span class="scr-code">{{ d.registration_id }}</span></td>
+            <td style="font-weight:600">{{ d.name|default:"—" }}</td>
+            <td class="scr-contact">{{ d.model|default:"—" }}</td>
+            <td class="scr-contact">{{ d.station|default:"—" }}</td>
+            <td class="scr-contact">{{ d.app_version|default:"—" }}</td>
+            <td class="scr-contact">{{ d.from_date|date:"d M Y, H:i"|default:"—" }}</td>
+            <td class="scr-contact">{{ d.last_login|date:"d M Y H:i"|default:"—" }}</td>
+            <td class="scr-contact">{{ d.employee|default:"—" }}</td>
+            <td style="text-align:center">
+              {% if d.blocked %}<span class="scr-badge scr-badge-pending"><i></i>Blocked</span>
+              {% elif d.online %}<span class="scr-badge scr-badge-approved"><i></i>In use</span>
+              {% else %}<span class="scr-badge scr-badge-inactive"><i></i>Idle</span>{% endif %}
+            </td>
+            <td>
+              <div class="scr-row-actions">
+                <div class="scr-menu-wrap">
+                  <button type="button" class="scr-icon-btn" title="More" data-scr-menu-toggle>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="12" cy="19" r="1.6"></circle></svg>
+                  </button>
+                  <div class="scr-menu" hidden>
+                    <a href="{{ d.detail_url }}" class="scr-menu-item">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                      View station history
+                    </a>
+                    {% if perm.update %}
+                    {% comment %}
+                    Re-mapping is refused while someone is logged in on the
+                    device, which is what the legacy screen did too: it would
+                    not edit or delete a mapping in "Active Status".
+                    {% endcomment %}
+                    <button type="button" class="scr-menu-item" data-mapping-action="remap" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-name="{{ d.name }}" data-station="{{ d.station }}" data-station-id="{{ d.station_id }}" data-from="{{ d.from_date|date:'d M Y, H:i' }}"{% if not d.mapped %} disabled title="No station yet — use Add Device Mapping"{% elif d.online %} disabled title="In use — log the operator out first"{% endif %}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10a2.1 2.1 0 0 0-3-3L5 17z"></path><path d="M14.5 6.5 17.5 9.5"></path></svg>
+                      Re-map to another station
+                    </button>
+                    {% endif %}
+                    {% if perm.delete %}
+                    <button type="button" class="scr-menu-item scr-menu-item-danger" data-mapping-action="close" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-name="{{ d.name }}" data-station="{{ d.station }}" data-station-id="{{ d.station_id }}" data-from="{{ d.from_date|date:'d M Y, H:i' }}"{% if not d.mapped %} disabled title="No station to close"{% elif d.online %} disabled title="In use — log the operator out first"{% endif %}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+                      Close mapping
+                    </button>
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="10" style="padding:0">
+              <div class="scr-empty">
+                <span class="scr-empty-ico">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"></rect><path d="M11 18h2"></path></svg>
+                </span>
+                <div>
+                  <div class="scr-empty-title">No approved devices yet</div>
+                  <p class="scr-empty-sub">A tablet appears here once it has been approved in Device Approval.</p>
+                </div>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="scr-pager">
+      <span class="scr-pager-info">Showing {{ devices|length }} of {{ devices|length }}</span>
+      <div class="scr-pager-nav">
+        <button type="button" class="scr-pager-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"></path></svg>
+        </button>
+        <span class="scr-pager-current">1</span>
+        <button type="button" class="scr-pager-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 6 6 6-6 6"></path></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{{ branch_flags|json_script:"branch-flags-data" }}
+{% include "byky/partials/drawer.html" with spec=drawer_device_mapping module_label="Device Management · Device Mapping" save_url=mapping_urls.save %}
+{% include "devices/partials/mapping_modals.html" %}
+{% include "byky/partials/confirm_modal.html" %}
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}

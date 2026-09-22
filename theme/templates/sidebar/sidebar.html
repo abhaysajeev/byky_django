@@ -1,0 +1,33 @@
+{% load i18n static %}
+{% comment %}
+  Byky RMS sidebar. Renders the same UI as the "Byky Sidebar v2" design.
+  Include inside your base layout:  {% include 'sidebar/sidebar.html' %}
+  Requires sidebar.css in <head> and sidebar.js before </body>.
+{% endcomment %}
+
+<div class="byky-spacer"></div>
+
+<aside class="byky-sidebar" id="byky-sidebar">
+  <div class="byky-brand">
+    <img src="{% static 'img/branding/byky-mark.png' %}" alt="Byky" />
+    <div class="byky-brand-text animate">
+      <div class="byky-wordmark"><span class="w1">Byky</span><span class="w2">RMS</span></div>
+      <div class="byky-tagline">{% trans "Rental Management" %}</div>
+    </div>
+    <button type="button" class="byky-toggle" aria-label="{% trans 'Toggle menu' %}" title="{% trans 'Toggle menu' %}">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"></path></svg>
+    </button>
+  </div>
+
+  <ul class="byky-nav">
+    {% for item in menu_data.menu %}
+      {% if item.menu_header %}
+        {% include 'sidebar/menu_header_template.html' with header_text=item.menu_header %}
+      {% else %}
+        {% include 'sidebar/menu_item_template.html' with item=item top_level=True %}
+      {% endif %}
+    {% endfor %}
+  </ul>
+
+  <div class="byky-handle" title="{% trans 'Drag to resize' %}"><i></i></div>
+</aside>

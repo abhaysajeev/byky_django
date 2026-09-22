@@ -1,0 +1,365 @@
+/* BYKY dashboard — matches the "Byky Dashboard" design exactly.
+   Standalone: no Bootstrap grid, no Vuexy card classes, no Apex/Swiper/Leaflet.
+   Load AFTER sidebar.css (it already imports Sora). */
+
+/* ── page shell ───────────────────────────────────────────────────── */
+.bd {
+  font-family: 'Sora', sans-serif;
+  color: #1a1640;
+  max-width: 1400px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.bd *,
+.bd *::before,
+.bd *::after { box-sizing: border-box; }
+.bd p, .bd h1, .bd h2, .bd h3, .bd ul { margin: 0; padding: 0; }
+.bd a { text-decoration: none; }
+.bd table { border-collapse: collapse; width: 100%; }
+
+@keyframes bdFadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ── page header ──────────────────────────────────────────────────── */
+.bd-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+.bd-title { font-size: 24px; font-weight: 700; letter-spacing: -0.6px; line-height: 1.15; }
+.bd-sub { font-size: 13px; color: #9490bb; margin-top: 5px !important; font-weight: 450; }
+.bd-head-actions { display: flex; align-items: center; gap: 10px; }
+
+.bd-segment { display: flex; align-items: center; gap: 2px; background: #fff; border: 1px solid #eeedf5; border-radius: 10px; padding: 3px; }
+.bd-segment button {
+  border: none; cursor: pointer; font-family: inherit; font-size: 12.5px; font-weight: 600;
+  padding: 7px 13px; border-radius: 8px; background: transparent; color: #8b87b0;
+  transition: background 0.16s, color 0.16s;
+}
+.bd-segment button.is-on { background: #fdeced; color: #c2141a; }
+
+.bd-btn {
+  display: flex; align-items: center; gap: 8px; border: 1px solid #eeedf5; background: #fff;
+  cursor: pointer; font-family: inherit; font-size: 12.5px; font-weight: 600; color: #4b4770;
+  padding: 9px 14px; border-radius: 10px; transition: border-color 0.16s, color 0.16s;
+}
+.bd-btn:hover { border-color: #d3d0e6; color: #1a1640; }
+
+/* ── generic row + card ───────────────────────────────────────────── */
+.bd-row { display: flex; flex-wrap: wrap; gap: 20px; }
+.bd-card {
+  background: #fff; border: 1px solid #eeedf5; border-radius: 16px;
+  box-shadow: 0 1px 2px rgba(26, 22, 64, 0.03); min-width: 0;
+}
+.bd-card-h3 { font-size: 15px; font-weight: 600; letter-spacing: -0.1px; }
+.bd-card-sub { font-size: 12px; color: #9490bb; margin-top: 4px !important; }
+.bd-chip { font-size: 10.5px; font-weight: 600; letter-spacing: 0.5px; color: #7d7aa0; background: #f4f3f9; padding: 5px 9px; border-radius: 6px; flex: 0 0 auto; }
+.bd-num { font-variant-numeric: tabular-nums; }
+
+/* ── hero (business overview carousel) ────────────────────────────── */
+.bd-hero {
+  flex: 1 1 460px; min-width: 0; border-radius: 16px; padding: 24px 26px; color: #fff;
+  background: linear-gradient(122deg, #a80f14 0%, #c40007 40%, #d81f26 100%);
+  box-shadow: 0 18px 40px -24px rgba(194, 20, 26, 0.65);
+  position: relative; overflow: hidden; display: flex; flex-direction: column;
+  animation: bdFadeUp 0.34s ease-out both;
+}
+.bd-hero-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; position: relative; }
+.bd-hero-title { font-size: 17px; font-weight: 600; letter-spacing: -0.2px; }
+.bd-hero-sub { font-size: 12px; font-weight: 400; color: rgba(255, 255, 255, 0.82); margin-top: 4px !important; }
+.bd-dots { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; padding-top: 4px; }
+.bd-dots button { border: none; cursor: pointer; padding: 0; width: 7px; height: 7px; border-radius: 99px; background: rgba(255, 255, 255, 0.45); transition: width 0.2s, background 0.2s; }
+.bd-dots button.is-on { width: 20px; background: #fff; }
+.bd-hero-body { display: flex; align-items: flex-end; gap: 22px; margin-top: 26px; position: relative; flex-wrap: wrap; }
+.bd-hero-stats { display: grid; grid-template-columns: repeat(2, minmax(120px, 1fr)); gap: 20px 26px; flex: 1 1 260px; }
+.bd-hero-val { display: inline-block; font-size: 19px; font-weight: 600; letter-spacing: -0.4px; font-variant-numeric: tabular-nums; background: rgba(0, 0, 0, 0.14); border-radius: 8px; padding: 5px 10px; line-height: 1.15; }
+.bd-hero-lab { font-size: 11.5px; font-weight: 400; color: rgba(255, 255, 255, 0.86); margin-top: 7px; letter-spacing: 0.2px; }
+.bd-hero-icon { flex: 0 0 auto; opacity: 0.9; padding: 0 10px 6px; }
+.bd-hero-slide { display: none; }
+.bd-hero-slide.is-on { display: block; }
+
+/* ── monthly sales ────────────────────────────────────────────────── */
+.bd-sales { flex: 1 1 250px; display: flex; flex-direction: column; overflow: hidden; position: relative; animation: bdFadeUp 0.34s ease-out 0.05s both; transition: box-shadow 0.22s, transform 0.22s; }
+.bd-sales:hover, .bd-invoices:hover { box-shadow: 0 16px 34px -22px rgba(26, 22, 64, 0.28); transform: translateY(-2px); }
+.bd-sales-head { padding: 20px 20px 0; }
+.bd-flexrow { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.bd-big { font-size: 26px; font-weight: 700; letter-spacing: -1px; font-variant-numeric: tabular-nums; }
+.bd-delta { font-size: 11.5px; font-weight: 600; color: #14764a; background: #e9f8f0; padding: 3px 7px; border-radius: 6px; }
+.bd-note { font-size: 11.5px; color: #9490bb; margin-top: 6px !important; }
+.bd-spark { width: 100%; height: 104px; display: block; margin-top: 10px; }
+.bd-spark-marker { opacity: 0; transition: opacity 0.2s; }
+.bd-sales:hover .bd-spark-marker { opacity: 1; }
+.bd-spark-labels { position: absolute; left: 20px; right: 20px; bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 10px; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
+.bd-sales:hover .bd-spark-labels { opacity: 1; }
+.bd-spark-labels span { font-size: 10.5px; font-weight: 600; background: rgba(255, 255, 255, 0.94); padding: 4px 8px; border-radius: 7px; white-space: nowrap; }
+.bd-spark-labels .peak { color: #c2141a; border: 1px solid #fbdcde; }
+.bd-spark-labels .aux { color: #8b87b0; font-weight: 500; }
+
+/* ── invoices ─────────────────────────────────────────────────────── */
+.bd-invoices { flex: 1 1 250px; padding: 20px; display: flex; flex-direction: column; animation: bdFadeUp 0.34s ease-out 0.1s both; transition: box-shadow 0.22s, transform 0.22s; }
+.bd-split { display: flex; align-items: flex-start; gap: 12px; margin-top: 20px; }
+.bd-split-div { width: 1px; align-self: stretch; background: #f0eff7; }
+.bd-ico { width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; flex: 0 0 auto; }
+.bd-ico-green { background: #e9f8f0; }
+.bd-ico-amber { background: #fdf3e3; }
+.bd-mini-lab { font-size: 12px; font-weight: 500; color: #4b4770; }
+.bd-pct { font-size: 17px; font-weight: 700; margin-top: 9px; font-variant-numeric: tabular-nums; }
+.bd-pct-sub { font-size: 11px; color: #9490bb; margin-top: 2px !important; font-variant-numeric: tabular-nums; }
+.bd-progress-wrap { margin-top: auto; padding-top: 20px; }
+.bd-progress-cap { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 16px; opacity: 0; transition: opacity 0.2s; }
+.bd-invoices:hover .bd-progress-cap { opacity: 1; }
+.bd-progress-cap .ok { font-size: 10.5px; font-weight: 600; color: #14764a; white-space: nowrap; }
+.bd-progress-cap .warn { font-size: 10.5px; font-weight: 600; color: #8a5300; white-space: nowrap; }
+.bd-progress { display: flex; gap: 3px; height: 9px; margin-top: 6px; }
+.bd-progress i { display: block; height: 100%; }
+.bd-progress .paid { background: #1f9d63; border-radius: 99px 3px 3px 99px; }
+.bd-progress .pending { background: #e08700; border-radius: 3px 99px 99px 3px; }
+
+/* ── revenue reports ──────────────────────────────────────────────── */
+.bd-reports { flex: 1 1 520px; padding: 22px; display: flex; flex-direction: column; transition: box-shadow 0.22s; }
+.bd-reports:hover, .bd-fleet:hover { box-shadow: 0 16px 34px -24px rgba(26, 22, 64, 0.26); }
+.bd-reports-body { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 20px; align-items: center; }
+.bd-reports-left { flex: 0 1 200px; min-width: 160px; }
+.bd-reports-total { font-size: 30px; font-weight: 700; letter-spacing: -1.2px; font-variant-numeric: tabular-nums; line-height: 1; }
+.bd-reports-copy { font-size: 12px; color: #6b6790; line-height: 1.55; margin-top: 14px !important; text-wrap: pretty; }
+.bd-reports-copy strong { font-weight: 600; color: #1a1640; }
+.bd-reports-right { flex: 1 1 280px; min-width: 240px; }
+.bd-callout { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 18px; opacity: 0; transition: opacity 0.2s; margin-bottom: 2px; }
+.bd-reports:hover .bd-callout { opacity: 1; }
+.bd-callout .peak { font-size: 10.5px; font-weight: 600; color: #c2141a; background: #fdeced; padding: 3px 8px; border-radius: 6px; white-space: nowrap; }
+.bd-callout .trough { font-size: 10.5px; font-weight: 600; color: #8b87b0; background: #f4f3f9; padding: 3px 8px; border-radius: 6px; white-space: nowrap; }
+.bd-bars { display: flex; align-items: flex-end; gap: 6px; height: 132px; }
+.bd-bar { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.bd-bar i { display: block; width: 100%; max-width: 22px; border-radius: 5px; transition: opacity 0.16s; }
+.bd-bar:hover i { opacity: 0.72; }
+.bd-bar span { font-size: 10px; font-weight: 500; color: #a9a6c4; }
+.bd-statstrip { display: flex; flex-wrap: wrap; gap: 18px; border: 1px solid #f0eff7; background: #fbfaff; border-radius: 12px; padding: 16px 18px; margin-top: 22px; }
+.bd-stat { flex: 1 1 130px; }
+.bd-stat-head { display: flex; align-items: center; gap: 8px; }
+.bd-stat-ico { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; }
+.bd-stat-val { font-size: 18px; font-weight: 700; margin: 10px 0 9px; font-variant-numeric: tabular-nums; letter-spacing: -0.5px; }
+.bd-track { height: 4px; border-radius: 99px; background: #f0eff7; overflow: hidden; }
+.bd-track i { display: block; height: 100%; border-radius: 99px; }
+
+/* ── fleet deployment ─────────────────────────────────────────────── */
+.bd-fleet { flex: 1 1 380px; padding: 22px; display: flex; flex-direction: column; transition: box-shadow 0.22s; }
+.bd-fleet-body { display: flex; flex-wrap: wrap; gap: 20px; align-items: center; margin-top: 18px; flex: 1; }
+.bd-fleet-left { flex: 1 1 150px; min-width: 140px; }
+.bd-fleet-total { font-size: 34px; font-weight: 700; letter-spacing: -1.4px; line-height: 1; }
+.bd-legend { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; }
+.bd-legend-row { display: flex; align-items: center; gap: 11px; }
+.bd-legend-ico { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; flex: 0 0 auto; }
+.bd-legend-t { font-size: 12.5px; font-weight: 600; }
+.bd-legend-s { font-size: 11px; color: #9490bb; font-variant-numeric: tabular-nums; }
+.bd-gauge-wrap { flex: 1 1 180px; min-width: 170px; display: grid; place-items: center; }
+.bd-gauge { position: relative; width: 196px; height: 196px; display: grid; place-items: center; }
+.bd-gauge svg { position: absolute; inset: 0; }
+.bd-gauge-centre { text-align: center; position: relative; }
+.bd-gauge-lab { font-size: 11.5px; color: #9490bb; font-weight: 500; }
+.bd-gauge-pct { font-size: 34px; font-weight: 700; letter-spacing: -1.4px; margin-top: 2px; }
+.bd-gauge-hint { font-size: 10.5px; font-weight: 600; color: #8b87b0; margin-top: 6px; height: 14px; opacity: 0; transition: opacity 0.2s; white-space: nowrap; }
+.bd-fleet:hover .bd-gauge-hint { opacity: 1; }
+
+/* ── station network map ──────────────────────────────────────────── */
+.bd-map-card { flex: 1 1 560px; padding: 22px; }
+/* Full width now that nothing sits beside it. The map is also taller here:
+   across the whole row a 340px frame reads as a letterbox, and the extra
+   height is what lets the emirates separate instead of overlapping. */
+.bd-map-card-wide { flex: 1 1 100%; }
+.bd-map-card-wide 
+
+}
+/* Leaflet needs a real height on its container -- it cannot size itself from
+   content the way an svg does. */
+/* The fleet legend sits over the map, so it must clear Leaflet's own panes
+   (z-index 400) and controls (z-index 800). */
+.bd-link {
+  display: flex; align-items: center; gap: 7px; flex: 0 0 auto; font-size: 12px; font-weight: 600;
+  color: #4b4770; border: 1px solid #eeedf5; padding: 8px 13px; border-radius: 9px;
+  transition: border-color 0.16s, color 0.16s;
+}
+.bd-link:hover { border-color: #d3d0e6; color: #1a1640; }
+
+/* ── ranked lists (emirate / category) ────────────────────────────── */
+.bd-list-card { flex: 1 1 300px; padding: 22px; display: flex; flex-direction: column; }
+.bd-ranked { display: flex; flex-direction: column; gap: 14px; margin-top: 20px; }
+.bd-ranked-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.bd-ranked-name { font-size: 12.5px; font-weight: 500; color: #4b4770; }
+.bd-ranked-val { font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.bd-ranked-track { height: 6px; border-radius: 99px; background: #f4f3f9; margin-top: 7px; overflow: hidden; }
+.bd-ranked-track i { display: block; height: 100%; border-radius: 99px; }
+
+.bd-catrows { display: flex; flex-direction: column; gap: 11px; margin-top: 20px; }
+.bd-catrow { display: flex; align-items: center; gap: 10px; }
+.bd-catrow .name { width: 100px; flex: 0 0 auto; font-size: 11.5px; color: #6b6790; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bd-catrow .bar { flex: 1; min-width: 0; height: 14px; display: flex; align-items: center; }
+.bd-catrow .bar i { display: block; height: 100%; border-radius: 4px; min-width: 3px; }
+.bd-catrow .val { width: 62px; flex: 0 0 auto; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; color: #4b4770; }
+
+/* ── top stations + workforce ─────────────────────────────────────── */
+.bd-stations { display: flex; flex-direction: column; gap: 2px; margin-top: 16px; }
+.bd-station { display: flex; align-items: center; gap: 12px; padding: 9px 8px; border-radius: 10px; transition: background 0.16s; }
+.bd-station:hover { background: #faf9fd; }
+.bd-rank { width: 30px; height: 30px; border-radius: 9px; background: #f4f3f9; color: #7d7aa0; display: grid; place-items: center; flex: 0 0 auto; font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.bd-station-name { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bd-station-sub { font-size: 11px; color: #9490bb; margin-top: 2px; }
+.bd-station-val { font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+
+.bd-people { display: flex; flex-direction: column; gap: 13px; margin-top: 20px; }
+.bd-person { display: flex; align-items: center; gap: 11px; }
+.bd-person-ico { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; flex: 0 0 auto; }
+.bd-person-name { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 500; color: #4b4770; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bd-person-count { font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+
+/* ── agreements table ─────────────────────────────────────────────── */
+.bd-table-card { overflow: hidden; }
+.bd-table-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 22px 22px 18px; flex-wrap: wrap; }
+.bd-table-scroll { overflow-x: auto; scrollbar-width: thin; scrollbar-color: #e4e3ee transparent; }
+.bd-table-scroll::-webkit-scrollbar { height: 6px; }
+.bd-table-scroll::-webkit-scrollbar-thumb { background: #e4e3ee; border-radius: 99px; }
+.bd thead tr { background: #fbfaff; border-top: 1px solid #f0eff7; border-bottom: 1px solid #f0eff7; }
+.bd th { text-align: left; font-size: 10.5px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: #a9a6c4; padding: 12px 16px; white-space: nowrap; }
+.bd th:first-child, .bd th:last-child { padding-inline: 22px; }
+.bd tbody tr { border-bottom: 1px solid #f6f5fb; transition: background 0.14s; }
+.bd tbody tr:hover { background: #fbfaff; }
+.bd td { padding: 14px 16px; font-size: 12.5px; color: #4b4770; white-space: nowrap; }
+.bd td:first-child { padding-inline-start: 22px; font-weight: 600; color: #1a1640; }
+.bd td:last-child { padding-inline-end: 22px; text-align: center; }
+.bd .num-cell { font-variant-numeric: tabular-nums; }
+.bd .amount-cell { text-align: right; font-weight: 600; color: #1a1640; font-variant-numeric: tabular-nums; }
+.bd .hours-cell { text-align: center; font-variant-numeric: tabular-nums; }
+.bd .date-cell { color: #9490bb; }
+.bd-vehicle { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11.5px; color: #c2141a; background: #fdeced; padding: 3px 7px; border-radius: 5px; }
+.bd-cat { font-size: 11px; font-weight: 500; color: #6b6790; background: #f4f3f9; padding: 4px 9px; border-radius: 6px; white-space: nowrap; }
+.bd-status { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; padding: 5px 10px; border-radius: 99px; white-space: nowrap; }
+.bd-status i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; display: block; }
+.bd-status.paid { background: #e9f8f0; color: #14764a; }
+.bd-status.pending { background: #fdf3e3; color: #8a5300; }
+.bd-status.refunded { background: #f4f3f9; color: #6b6790; }
+.bd-table-foot { padding: 16px 22px; border-top: 1px solid #f0eff7; background: #fbfaff; }
+.bd-table-foot p { font-size: 11.5px; color: #9490bb; line-height: 1.55; text-wrap: pretty; }
+
+/* ── page footer ──────────────────────────────────────────────────── */
+.bd-foot { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding-top: 4px; }
+.bd-foot span { font-size: 11.5px; color: #a9a6c4; }
+.bd-foot span + span { color: #c9c6dd; }
+
+/* The 64px navbar this design introduced now ships on every screen, so its
+   rules moved to src/assets/css/byky-navbar.css (loaded globally) and the
+   classes were renamed .bd-* -> .byky-nav-*. Nothing navbar-related belongs
+   in this file any more. */
+
+/* ── Vuexy leak fix ──────────────────────────────────────────────────
+   core.css sets `h1, .h1, h2, .h2 { color: var(--bs-heading-color) }` (dark ink).
+   .bd-hero-title is an <h2> and never declares its own `color`, relying on
+   inheriting #fff from .bd-hero -- but an explicit rule on the element always
+   beats an inherited one, however low its specificity, so the heading rendered
+   in dark ink instead of white on the red gradient. .bd-hero-sub (a <p>) already
+   sets its own color explicitly and was never affected. */
+.bd-hero-title { color: #fff; }
+
+/* ── Station Network widget ───────────────────────────────────────────
+   Ported from "Byky Station Network.html" -- every value below is the
+   reference's, only scoped under .bsn so its generic names (.row, .list,
+   .stn) cannot collide with the rest of the app. The tiles and the layer
+   switcher stay the site's own (byky-leaflet-map.js's Esri set); everything
+   drawn on top of them is this design.
+
+   Deliberate departures from the reference, both asked for:
+   revenue is off the right-hand list and lives on the station pin instead,
+   and hovering a row only highlights -- the map moves on click. */
+.bsn { display: flex; flex-direction: column; }
+.bsn-chips { display: flex; gap: 6px; flex-wrap: wrap; padding: 16px 0 0; }
+.bsn-chip {
+  border: 1px solid #eeedf5; background: #fff; color: #6b6790; font-family: inherit;
+  font-size: 11.5px; font-weight: 500; padding: 6px 12px; border-radius: 99px;
+  cursor: pointer; white-space: nowrap;
+  transition: border-color .16s, background .16s, color .16s;
+}
+.bsn-chip:hover { border-color: #d3d0e6; }
+.bsn-chip.on { border-color: #f3c3c5; background: #fdeced; color: #c2141a; font-weight: 600; }
+.bsn-chip b { font-weight: 600; font-variant-numeric: tabular-nums; color: #a9a6c4; margin-left: 5px; }
+.bsn-chip.on b { color: #c2141a; }
+
+.bsn-split { display: flex; flex-wrap: wrap; padding: 16px 0 0; align-items: stretch; }
+.bsn-mapwrap {
+  flex: 1 1 520px; min-width: 0; position: relative;
+  border: 1px solid #f0eff7; border-radius: 12px; overflow: hidden; background: #eef0f6;
+}
+.bsn-map { height: 452px; width: 100%; background: #eef0f6; z-index: 1; }
+.bsn-map.leaflet-container { font-family: 'Sora', sans-serif; background: #eef0f6; }
+.bsn-mapwrap .leaflet-control-attribution { font-size: 9.5px; background: rgba(255,255,255,.82); color: #9490bb; }
+.bsn-mapwrap .leaflet-control-attribution a { color: #8b87b0; }
+.bsn-mapwrap .leaflet-bar { border: none; box-shadow: 0 6px 18px -12px rgba(26,22,64,.4); border-radius: 9px; overflow: hidden; }
+.bsn-mapwrap .leaflet-bar a { width: 28px; height: 28px; line-height: 28px; color: #4b4770; border-bottom-color: #f0eff7; font-size: 15px; }
+.bsn-mapwrap .leaflet-bar a:hover { color: #d81f26; }
+
+/* station pin */
+.bsn .stn { position: relative; display: grid; place-items: center; }
+.bsn .stn i {
+  display: block; border-radius: 50%; background: #d81f26; border: 2px solid #fff;
+  box-shadow: 0 2px 6px -1px rgba(26,22,64,.45); transition: transform .16s, background .16s;
+}
+.bsn .stn:hover i, .bsn .stn.lit i { transform: scale(1.24); }
+.bsn .stn.lit i { background: #1a1640; }
+.bsn .stn.dim { opacity: .26; }
+
+/* cluster bubble */
+.bsn .cl-wrap { position: relative; display: grid; place-items: center; isolation: isolate; }
+.bsn .cl {
+  display: grid; place-items: center; border-radius: 50%; background: #d81f26; color: #fff;
+  border: 2.5px solid #fff; box-shadow: 0 4px 14px -4px rgba(194,20,26,.6);
+  font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; transition: transform .16s;
+}
+.bsn .cl:hover { transform: scale(1.08); }
+.bsn .cl::after { content: ''; position: absolute; inset: -7px; border-radius: 50%; background: rgba(216,31,38,.14); z-index: -1; }
+
+/* tooltip -- rendered into leaflet's own pane, so it cannot be scoped under .bsn */
+.leaflet-tooltip.bsn-tip {
+  background: #fff; border: 1px solid #eeedf5; border-radius: 11px;
+  box-shadow: 0 18px 38px -20px rgba(26,22,64,.45); padding: 11px 13px;
+  font-family: 'Sora', sans-serif; white-space: nowrap; color: #1a1640;
+}
+.leaflet-tooltip.bsn-tip::before { display: none; }
+.bsn-tip .t { font-size: 12.5px; font-weight: 600; }
+.bsn-tip .l { font-size: 11px; color: #9490bb; margin-top: 3px; }
+.bsn-tip .stats { display: flex; gap: 18px; margin-top: 9px; padding-top: 9px; border-top: 1px solid #f4f3f9; }
+.bsn-tip .stat { display: flex; flex-direction: column; gap: 2px; }
+.bsn-tip .stat u { text-decoration: none; font-size: 9.5px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase; color: #a9a6c4; }
+.bsn-tip .stat b { font-size: 14px; font-weight: 700; letter-spacing: -.3px; font-variant-numeric: tabular-nums; }
+.bsn-tip .stat b s { text-decoration: none; font-size: 10px; font-weight: 500; color: #a9a6c4; margin-left: 3px; }
+.bsn-tip .note { font-size: 10px; color: #c9c6dd; margin-top: 8px; }
+
+/* size legend */
+.bsn-scale {
+  position: absolute; left: 12px; bottom: 12px; z-index: 400; display: flex; align-items: center;
+  gap: 12px; background: rgba(255,255,255,.93); border: 1px solid #f0eff7; border-radius: 9px; padding: 7px 12px;
+}
+.bsn-scale[hidden] { display: none; }
+.bsn-scale span { font-size: 10px; font-weight: 600; letter-spacing: .7px; text-transform: uppercase; color: #a9a6c4; }
+.bsn-scale i { display: flex; align-items: center; gap: 6px; font-style: normal; font-size: 11px; color: #6b6790; font-variant-numeric: tabular-nums; }
+.bsn-scale i em { display: block; border-radius: 50%; background: #d81f26; border: 1.5px solid #fff; box-shadow: 0 0 0 1px rgba(26,22,64,.1); }
+
+/* station list */
+.bsn-list { flex: 0 0 328px; min-width: 0; display: flex; flex-direction: column; padding-left: 20px; }
+.bsn-list-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid #f0eff7; }
+.bsn-list-head b { font-size: 11px; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase; color: #a9a6c4; }
+.bsn-list-head span { font-size: 11px; color: #c9c6dd; font-weight: 500; font-variant-numeric: tabular-nums; }
+.bsn-rows { flex: 1; overflow-y: auto; max-height: 410px; scrollbar-width: thin; scrollbar-color: #e4e3ee transparent; }
+.bsn-rows::-webkit-scrollbar { width: 6px; }
+.bsn-rows::-webkit-scrollbar-thumb { background: #e4e3ee; border-radius: 99px; }
+.bsn-row {
+  display: flex; align-items: center; gap: 11px; padding: 10px 8px; border-radius: 10px;
+  cursor: pointer; border: none; background: none; width: 100%; text-align: left;
+  font-family: inherit; transition: background .14s;
+}
+.bsn-row:hover, .bsn-row.lit { background: #faf9fd; }
+.bsn-row .rank { width: 22px; flex: 0 0 auto; font-size: 10.5px; font-weight: 600; color: #c9c6dd; font-variant-numeric: tabular-nums; }
+.bsn-row .body { flex: 1; min-width: 0; }
+.bsn-row .n { display: block; font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bsn-row .p { display: block; font-size: 11px; color: #9490bb; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bsn-row .fig { flex: 0 0 auto; text-align: right; }
+.bsn-row .fig b { display: block; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.bsn-row .fig s { display: block; text-decoration: none; font-size: 10.5px; color: #a9a6c4; font-weight: 500; margin-top: 2px; font-variant-numeric: tabular-nums; }
+
+@media (max-width: 900px) {
+  .bsn-list { flex: 1 1 100%; padding-left: 0; padding-top: 18px; }
+  .bsn-rows { max-height: 280px; }
+}

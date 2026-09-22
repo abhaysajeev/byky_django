@@ -1,0 +1,172 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Attendance - Crew{% endblock title %}
+
+{% block vendor_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'vendor/libs/flatpickr/flatpickr.css' %}" />
+{% endblock vendor_css %}
+
+{% block vendor_js %}
+{{ block.super }}
+<script src="{% static 'vendor/libs/flatpickr/flatpickr.js' %}"></script>
+{% endblock vendor_js %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+<script src="{% static 'js/byky-datepicker.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Crew</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Attendance</b>
+      </div>
+      <h1 class="scr-title">Attendance</h1>
+      <p class="scr-sub">Punches as they arrive from the stations and the staff app. Read-only here.</p>
+    </div>
+    <div class="scr-head-actions">
+      {% if perm.print %}
+      <button type="button" class="scr-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="m7 11 5 5 5-5"></path><path d="M4 20h16"></path></svg>
+        Export
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="scr-tiles">
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-blue">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M12 7v5l3.5 2"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ today_count }}</div><div class="scr-tile-lab">Punches today</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-green">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.4"></circle><path d="M5.5 20a6.5 6.5 0 0 1 13 0"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ present_count }}</div><div class="scr-tile-lab">Staff present</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-red">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V4.2A1.2 1.2 0 0 1 5.2 3h8.6A1.2 1.2 0 0 1 15 4.2V21M15 9h4.8A1.2 1.2 0 0 1 21 10.2V21M3 21h18M8 7h3M8 11h3M8 15h3"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ station_count }}</div><div class="scr-tile-lab">Stations reporting</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-amber">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"></rect><path d="M9 9h2v2H9zM13 13h2v2h-2z"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ self_count }}</div><div class="scr-tile-lab">Self check-ins</div></div>
+    </div>
+  </div>
+
+  <div class="scr-card" data-scr-noun-singular="punch" data-scr-noun-plural="punches">
+    <div class="scr-toolbar">
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="text" placeholder="Search staff or code" />
+      </div>
+
+      <div class="scr-filter-wrap" data-filter-key="branch">
+        <button type="button" class="scr-filter-btn">
+          <span class="scr-filter-label">All stations</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+        </button>
+        <div class="scr-filter-menu" hidden>
+          <button type="button" class="scr-filter-opt is-active" data-value="">All stations</button>
+          {% for b in branches_list %}<button type="button" class="scr-filter-opt" data-value="{{ b.name }}">{{ b.name }}</button>{% endfor %}
+        </div>
+      </div>
+
+      <div class="scr-filter-wrap" data-filter-key="source">
+        <button type="button" class="scr-filter-btn">
+          <span class="scr-filter-label">All sources</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+        </button>
+        <div class="scr-filter-menu" hidden>
+          <button type="button" class="scr-filter-opt is-active" data-value="">All sources</button>
+          {% for s in sources_list %}<button type="button" class="scr-filter-opt" data-value="{{ s.name }}">{{ s.name }}</button>{% endfor %}
+        </div>
+      </div>
+
+      <span class="scr-toolbar-count">{{ punches|length }} punches</span>
+    </div>
+
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Employee</th>
+            <th>Source</th>
+            <th>Punched at</th>
+            <th>Day</th>
+            <th>Station</th>
+            <th>Scanned by</th>
+            <th>Device</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in punches %}
+          <tr class="scr-row" data-search="{{ p.employee|lower }} {{ p.emp_no|lower }}" data-branch="{{ p.branch }}" data-source="{{ p.source }}">
+            <td>
+              <div class="scr-co">
+                <span class="scr-avatar {% cycle 'scr-avatar-0' 'scr-avatar-1' 'scr-avatar-2' 'scr-avatar-3' 'scr-avatar-4' as scr_avatar_cls %}">{{ p.employee|slice:":1" }}</span>
+                <div style="min-width:0"><div class="scr-co-name" title="{{ p.employee }}">{{ p.employee }}</div><div class="scr-co-sub">{{ p.emp_no }}</div></div>
+              </div>
+            </td>
+            <td><span class="scr-badge scr-badge-pending"><i></i>{{ p.source }}</span></td>
+            <td>{{ p.punched_at }}</td>
+            <td>{{ p.business_date }}</td>
+            <td>{{ p.branch }}</td>
+            <td>{{ p.scanned_by }}</td>
+            <td><span class="scr-code">{{ p.device }}</span></td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="7" style="padding:0">
+              <div class="scr-empty">
+                <span class="scr-empty-ico">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M12 7v5l3.5 2"></path></svg>
+                </span>
+                <div>
+                  <div class="scr-empty-title">No attendance recorded yet</div>
+                  <p class="scr-empty-sub">Punches arrive from the station scanner and the staff app.</p>
+                </div>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="scr-pager">
+      <span class="scr-pager-info">Showing {{ punches|length }} of {{ punches|length }}</span>
+      <div class="scr-pager-nav">
+        <button type="button" class="scr-pager-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"></path></svg>
+        </button>
+        <span class="scr-pager-current">1</span>
+        <button type="button" class="scr-pager-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 6 6 6-6 6"></path></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

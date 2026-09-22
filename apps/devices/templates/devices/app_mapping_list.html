@@ -1,0 +1,312 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}App Mapping - Device Management{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+<script src="{% static 'js/byky-app-mapping.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr" data-app-mapping data-multi-company="{% if multi_company %}1{% endif %}"
+     data-url-preview="{{ mapping_urls.preview }}" data-url-save="{{ mapping_urls.save }}" data-url-remove="{{ mapping_urls.remove }}">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Device Management</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>App Mapping</b>
+      </div>
+      <h1 class="scr-title">App Mapping</h1>
+      <p class="scr-sub">Which build each branch's tablets are offered. A branch's own mapping wins; every other branch follows the All-branches release.</p>
+    </div>
+    <div class="scr-head-actions">
+      {% if perm.create %}
+      <button type="button" class="scr-btn-primary" data-map-open data-scope="branch">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+        Map Release
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="scr-card">
+    <div class="scr-content-tabs" data-scr-tabgroup="app-mapping">
+      {% for a in apps %}
+      <button type="button" class="scr-content-tab{% if forloop.first %} is-on{% endif %}" data-tab="{{ a.value }}" data-map-app-tab="{{ a.value }}">
+        {{ a.label }} <span class="scr-content-tab-count">{{ a.own_count }}</span>
+      </button>
+      {% endfor %}
+      <button type="button" class="scr-content-tab" data-tab="history">
+        History <span class="scr-content-tab-count">{{ history|length }}</span>
+      </button>
+    </div>
+
+    {% for a in apps %}
+    <div class="scr-panel" data-tabgroup="app-mapping" data-tab="{{ a.value }}" data-map-app="{{ a.value }}" data-map-app-label="{{ a.label }}" data-scr-noun-singular="branch" data-scr-noun-plural="branches"{% if not forloop.first %} hidden{% endif %}>
+
+      {% for blk in a.blocks %}
+      <div class="scr-rel-default{% if not blk.all %} is-empty{% elif not blk.all.release.is_active %} is-withdrawn{% endif %}">
+        <div class="scr-rel-default-info">
+          <div class="scr-rel-default-kicker">All branches (default){% if multi_company %} · {{ blk.company.name }}{% endif %}</div>
+          {% if blk.all %}
+          <div class="scr-rel-default-title">
+            {{ blk.all.release.version_name }} <span class="scr-code">{{ blk.all.release.version_code }}</span>
+            {% if blk.all.release.is_mandatory %}<span class="scr-badge scr-badge-mandatory"><i></i>Mandatory</span>{% else %}<span class="scr-badge scr-badge-anytime"><i></i>Any time</span>{% endif %}
+            {% if not blk.all.release.is_active %}<span class="scr-badge scr-badge-inactive"><i></i>Withdrawn</span>{% endif %}
+          </div>
+          <div class="scr-rel-default-line">
+            {% if blk.all.release.is_active %}Every branch without its own mapping is offered this build.{% else %}This build is withdrawn, so branches without their own mapping are offered no update.{% endif %}
+            Mapped {{ blk.all.created_on|date:"d M Y, H:i" }}{% if blk.all_by %} by {{ blk.all_by }}{% endif %}.
+          </div>
+          {% else %}
+          <div class="scr-rel-default-title">No default release</div>
+          <div class="scr-rel-default-line">Branches without their own mapping are offered no update ({{ blk.none_count }} now).</div>
+          {% endif %}
+        </div>
+        <div class="scr-rel-default-actions">
+          {% if perm.create %}
+          <button type="button" class="scr-btn" data-map-open data-scope="all" data-company="{{ blk.company.pk }}" data-company-name="{{ blk.company.name }}">{% if blk.all %}Change{% else %}Set default release{% endif %}</button>
+          {% endif %}
+          {% if perm.update and blk.all %}
+          <button type="button" class="scr-btn-danger" data-map-remove data-pk="{{ blk.all.pk }}"
+                  data-title="Remove the All-branches release{% if multi_company %} for {{ blk.company.name }}{% endif %}?"
+                  data-note="{{ blk.all_remove_note }}" data-kind="all">Remove</button>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+
+      <div class="scr-toolbar">
+        <div class="scr-search">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+          <input type="text" placeholder="Search branch or code" />
+        </div>
+
+        <div class="scr-filter-wrap" data-filter-key="source">
+          <button type="button" class="scr-filter-btn">
+            <span class="scr-filter-label">All sources</span>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+          </button>
+          <div class="scr-filter-menu" hidden>
+            <button type="button" class="scr-filter-opt is-active" data-value="">All sources</button>
+            <button type="button" class="scr-filter-opt" data-value="own">Own mapping</button>
+            <button type="button" class="scr-filter-opt" data-value="all">All branches</button>
+            <button type="button" class="scr-filter-opt" data-value="none">No update</button>
+          </div>
+        </div>
+
+        {% if multi_company %}
+        <div class="scr-filter-wrap" data-filter-key="company">
+          <button type="button" class="scr-filter-btn">
+            <span class="scr-filter-label">All companies</span>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+          </button>
+          <div class="scr-filter-menu" hidden>
+            <button type="button" class="scr-filter-opt is-active" data-value="">All companies</button>
+            {% for c in companies %}<button type="button" class="scr-filter-opt" data-value="{{ c.short_code }}">{{ c.name }}</button>{% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+        <div class="scr-filter-wrap" data-filter-key="hours">
+          <button type="button" class="scr-filter-btn">
+            <span class="scr-filter-label">Any working time</span>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+          </button>
+          <div class="scr-filter-menu" hidden>
+            <button type="button" class="scr-filter-opt is-active" data-value="">Any working time</button>
+            <button type="button" class="scr-filter-opt" data-value="set">Working time set</button>
+            <button type="button" class="scr-filter-opt" data-value="unset">Working time not set</button>
+          </div>
+        </div>
+
+        {% if perm.create %}
+        <button type="button" class="scr-btn" data-map-selected disabled>Map selected</button>
+        {% endif %}
+        <span class="scr-toolbar-count">{{ a.rows_count }} branches</span>
+      </div>
+
+      <div class="scr-table-scroll scr-sb">
+        <table>
+          <thead>
+            <tr>
+              {% if perm.create %}<th class="scr-rel-check"><input type="checkbox" class="scr-check" data-map-check-all aria-label="Select every branch shown" /></th>{% endif %}
+              <th>Branch</th>
+              {% if multi_company %}<th>Company</th>{% endif %}
+              <th>Code</th>
+              <th>Offered Build</th>
+              <th>Source</th>
+              <th>Update Type</th>
+              <th>Working Time</th>
+              <th>Mapped</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for blk in a.blocks %}{% for r in blk.rows %}
+            <tr class="scr-row" data-search="{{ r.branch.name|lower }} {{ r.branch.short_code|lower }} {{ blk.company.name|lower }}" data-source="{{ r.source }}" data-hours="{% if r.has_working_time %}set{% else %}unset{% endif %}" data-branch="{{ r.branch.pk }}" data-company="{{ blk.company.short_code }}" data-company-id="{{ blk.company.pk }}" data-company-name="{{ blk.company.name }}">
+              {% if perm.create %}<td class="scr-rel-check"><input type="checkbox" class="scr-check" data-map-check value="{{ r.branch.pk }}" aria-label="{{ r.branch.name }}" /></td>{% endif %}
+              <td style="font-weight:600">{{ r.branch.name }}</td>
+              {% if multi_company %}<td class="scr-contact">{{ blk.company.short_code }}</td>{% endif %}
+              <td><span class="scr-code">{{ r.branch.short_code }}</span></td>
+              <td>
+                {% if r.release %}{{ r.release.version_name }} <span class="scr-rel-muted">({{ r.release.version_code }})</span>
+                {% else %}<span class="scr-rel-muted">No update</span>{% endif %}
+                {% if r.own_withdrawn %}<div class="scr-contact-sub">Own build {{ r.own_withdrawn.version_name }} is withdrawn</div>{% endif %}
+              </td>
+              <td>
+                {% if r.source == "own" %}<span class="scr-badge scr-badge-approved"><i></i>Own mapping</span>
+                {% elif r.source == "all" %}<span class="scr-badge scr-badge-inactive"><i></i>All branches</span>
+                {% else %}<span class="scr-badge scr-badge-pending"><i></i>None</span>{% endif %}
+              </td>
+              <td>
+                {% if r.release %}{% if r.release.is_mandatory %}<span class="scr-badge scr-badge-mandatory"><i></i>Mandatory</span>{% else %}<span class="scr-badge scr-badge-anytime"><i></i>Any time</span>{% endif %}{% else %}—{% endif %}
+              </td>
+              <td>
+                {% if r.has_working_time %}<span class="scr-badge scr-badge-active"><i></i>Set</span>
+                {% else %}<span class="scr-badge scr-badge-inactive" title="An Any time build is not offered here until working time is set"><i></i>Not set</span>{% endif %}
+              </td>
+              <td>
+                {% if r.own_mapping %}
+                <div class="scr-contact">{{ r.own_mapping.created_on|date:"d M Y, H:i" }}</div>
+                <div class="scr-contact-sub">{{ r.own_by|default:"—" }}</div>
+                {% else %}<span class="scr-rel-muted">—</span>{% endif %}
+              </td>
+              <td>
+                <div class="scr-row-actions">
+                  {% if perm.create or perm.update and r.own_mapping %}
+                  <div class="scr-menu-wrap">
+                    <button type="button" class="scr-icon-btn" title="More" data-scr-menu-toggle>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="12" cy="19" r="1.6"></circle></svg>
+                    </button>
+                    <div class="scr-menu" hidden>
+                      {% if perm.create %}
+                      <button type="button" class="scr-menu-item" data-map-open data-scope="branch" data-app="{{ a.value }}" data-branch="{{ r.branch.pk }}" data-company="{{ blk.company.pk }}" data-company-name="{{ blk.company.name }}">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10a2.1 2.1 0 0 0-3-3L5 17z"></path><path d="M14.5 6.5 17.5 9.5"></path></svg>
+                        Map a release
+                      </button>
+                      {% endif %}
+                      {% if perm.update and r.own_mapping %}
+                      <button type="button" class="scr-menu-item scr-menu-item-danger" data-map-remove data-pk="{{ r.own_mapping.pk }}" data-kind="branch"
+                              data-title="Remove {{ r.branch.name }}'s own build?"
+                              data-note="{% if blk.all and blk.all.release.is_active %}{{ r.branch.name }} falls back to {{ blk.all.release.version_name }} ({{ blk.all.release.version_code }}), the All-branches release.{% else %}There is no All-branches release, so {{ r.branch.name }} will be offered no update.{% endif %}">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+                        Remove own mapping
+                      </button>
+                      {% endif %}
+                    </div>
+                  </div>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+            {% endfor %}{% empty %}
+            <tr>
+              <td colspan="10" style="padding:0">
+                <div class="scr-empty">
+                  <div>
+                    <div class="scr-empty-title">No active branches</div>
+                    <p class="scr-empty-sub">Branches appear here once they are added in Company Management.</p>
+                  </div>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="scr-pager">
+        <span class="scr-pager-info">Showing {{ a.rows_count }} of {{ a.rows_count }}</span>
+        <div class="scr-pager-nav">
+          <button type="button" class="scr-pager-btn" disabled>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"></path></svg>
+          </button>
+          <span class="scr-pager-current">1</span>
+          <button type="button" class="scr-pager-btn" disabled>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 6 6 6-6 6"></path></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+
+    <div class="scr-panel" data-tabgroup="app-mapping" data-tab="history" data-scr-noun-singular="change" data-scr-noun-plural="changes" hidden>
+      <div class="scr-toolbar">
+        <div class="scr-search">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+          <input type="text" placeholder="Search branch or version" />
+        </div>
+        <span class="scr-toolbar-count">{{ history|length }} changes</span>
+      </div>
+      <div class="scr-table-scroll scr-sb">
+        <table>
+          <thead>
+            <tr>
+              <th>App</th>
+              <th>Build</th>
+              <th>Branch</th>
+              <th>Mapped</th>
+              <th>Removed or replaced</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for h in history %}
+            <tr class="scr-row" data-search="{{ h.target|lower }} {{ h.release }} {{ h.app|lower }}">
+              <td class="scr-contact">{{ h.app }}</td>
+              <td style="font-weight:600">{{ h.release }}</td>
+              <td>{{ h.target }}</td>
+              <td>
+                <div class="scr-contact">{{ h.mapped_on|date:"d M Y, H:i" }}</div>
+                <div class="scr-contact-sub">{{ h.mapped_by|default:"—" }}</div>
+              </td>
+              <td>
+                <div class="scr-contact">{{ h.removed_on|date:"d M Y, H:i" }}</div>
+                <div class="scr-contact-sub">{{ h.removed_by|default:"—" }}</div>
+              </td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="5" style="padding:0">
+                <div class="scr-empty">
+                  <div>
+                    <div class="scr-empty-title">No history yet</div>
+                    <p class="scr-empty-sub">A mapping that is removed or replaced is kept here.</p>
+                  </div>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="scr-pager">
+        <span class="scr-pager-info">Showing {{ history|length }} of {{ history|length }}</span>
+        <div class="scr-pager-nav">
+          <button type="button" class="scr-pager-btn" disabled>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"></path></svg>
+          </button>
+          <span class="scr-pager-current">1</span>
+          <button type="button" class="scr-pager-btn" disabled>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 6 6 6-6 6"></path></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{{ map_releases|json_script:"map-releases-data" }}
+{{ map_state|json_script:"map-state-data" }}
+{% include "devices/partials/release_mapping_modals.html" %}
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}

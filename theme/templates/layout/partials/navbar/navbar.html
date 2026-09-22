@@ -1,0 +1,198 @@
+{% load i18n %}
+{% load static %}
+
+{% comment %}
+BYKY navbar -- the 64px header, on every screen.
+
+It began as the landing dashboard's own header and was gated to that route,
+because its styles lived in byky-dashboard.css and no other page loaded them.
+Those rules now sit in src/assets/css/byky-navbar.css, loaded globally from
+partials/styles.html, so the markup is ungated and the same header ships site
+wide. Classes are .byky-nav-*, not .bd-* -- the .bd- namespace belongs to the
+dashboard design alone.
+
+Removed from the Vuexy original: language switcher, quick-link shortcuts, the
+notifications dropdown, and the My Profile / Settings / Billing / Pricing / FAQ
+items, which pointed at demo pages that no longer exist.
+
+The search pill is a span, not an input: an approved part of the header design,
+inert for the wireframe. Log out is likewise UI only -- there is no
+authentication in this phase (CLAUDE.md section 1), so it signs nothing out.
+{% endcomment %}
+
+{% if navbar_detached %}
+<nav class="layout-navbar {{container_class}} navbar navbar-expand-xl {{navbar_detached_class}} align-items-center bg-navbar-theme" id="layout-navbar">
+{% endif %}
+
+{% if not navbar_detached %}
+<nav class="layout-navbar navbar navbar-expand-xl align-items-center" id="layout-navbar">
+  <div class="{{container_class}}">
+{% endif %}
+
+    {# Brand, shown only for the navbar-full layout #}
+    {% if navbar_full %}
+    <div class="navbar-brand app-brand demo d-none d-xl-flex py-0 me-4 ms-0">
+      <a href="{% url 'dashboard' %}" class="app-brand-link">
+        <span class="app-brand-logo demo">{% include 'partials/logo.html' %}</span>
+        <span class="app-brand-text demo menu-text fw-bold">
+          <span class="text-primary">Byky</span><span class="text-heading"> RMS</span>
+        </span>
+      </a>
+      {% if menu_horizontal %}
+      <a href="javascript:void(0);" class="layout-menu-toggle menu-link text-large ms-auto d-xl-none">
+        <i class="icon-base ti tabler-x icon-sm d-flex align-items-center justify-content-center"></i>
+      </a>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {# Sidebar toggle #}
+    {% if not navbar_hide_toggle %}
+    <div class="layout-menu-toggle navbar-nav align-items-xl-center me-3 me-xl-0 {{ menu_horizontal|yesno:'d-xl-none,' }} {{ content_navbar|yesno:'d-xl-none,' }}">
+      <a class="nav-item nav-link px-0 me-xl-6" href="javascript:void(0)" data-byky-open>
+        <i class="icon-base ti tabler-menu-2 icon-md"></i>
+      </a>
+    </div>
+    {% endif %}
+
+    <div class="navbar-nav-right d-flex align-items-center justify-content-end w-100" id="navbar-collapse">
+
+      <div class="byky-nav-search">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <span>Search vehicles, riders, stations&hellip;</span>
+      </div>
+      <div style="flex:1"></div>
+
+      {% comment %}
+      Live alert strip and bell. The strip shows the newest alert's title and a
+      line of detail; the full list sits inside the bell. The feed is empty
+      until an alerts source exists (theme/context_processors.py).
+      {% endcomment %}
+      {{ alert_feed|json_script:"byky-alert-feed" }}
+
+      <a class="byky-alert-strip" id="byky-alert-strip" href="#" hidden>
+        <span class="byky-alert-dot"></span>
+        <span class="byky-alert-text">
+          <span class="byky-alert-title"></span>
+          <span class="byky-alert-detail"></span>
+        </span>
+        <button type="button" class="byky-alert-x" aria-label="Dismiss">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+        </button>
+      </a>
+
+      <ul class="navbar-nav flex-row align-items-center ms-auto">
+
+        <!-- Alerts -->
+        <li class="nav-item navbar-dropdown dropdown me-2">
+          <a class="nav-link byky-bell p-0" href="javascript:void(0);" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-label="Alerts">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.7 21a2 2 0 0 1-3.4 0"></path></svg>
+            <span class="byky-bell-badge" id="byky-bell-badge" hidden>0</span>
+          </a>
+          <div class="dropdown-menu dropdown-menu-end byky-alert-menu">
+            <div class="byky-alert-menu-head">
+              <span>Alerts</span>
+              <div class="byky-alert-menu-tools">
+                <button type="button" class="byky-alert-clear" id="byky-alert-clear">Mark all read</button>
+                {% comment %}
+                Mute is remembered per browser (localStorage), so it survives a
+                reload rather than resetting on every screen change.
+                {% endcomment %}
+                <button type="button" class="byky-alert-mute" id="byky-alert-mute" aria-pressed="false" title="Mute alert sound">
+                  <svg class="byky-icon-unmuted" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"></path><path d="M15.5 8.5a5 5 0 0 1 0 7"></path><path d="M18.5 5.5a9 9 0 0 1 0 13"></path></svg>
+                  <svg class="byky-icon-muted" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"></path><path d="m16 9 5 6M21 9l-5 6"></path></svg>
+                </button>
+              </div>
+            </div>
+            <div class="byky-alert-list" id="byky-alert-list">
+              <div class="byky-alert-empty" id="byky-alert-empty">No alerts yet.</div>
+            </div>
+          </div>
+        </li>
+        <!--/ Alerts -->
+
+        <!-- User -->
+        <li class="nav-item navbar-dropdown dropdown-user dropdown">
+          <a class="nav-link dropdown-toggle hide-arrow p-0" href="javascript:void(0);" data-bs-toggle="dropdown">
+            <div class="byky-nav-user">
+              <div class="byky-nav-avatar">{{ request.user.display_name|initials }}</div>
+              <div>
+                <div class="byky-nav-username">{{ request.user.display_name }}</div>
+                <div class="byky-nav-userrole">{{ request.user.role.name|default:"No role" }}</div>
+              </div>
+            </div>
+          </a>
+
+          <ul class="dropdown-menu dropdown-menu-end byky-nav-menu">
+            {% comment %}
+            Name only -- the avatar and role already sit in the navbar itself,
+            and repeating them inside the menu they opened is redundant.
+            {% endcomment %}
+            <li><div class="byky-nav-menu-name">{{ request.user.display_name }}</div></li>
+            <li><div class="dropdown-divider my-1 mx-n2"></div></li>
+            {% comment %}
+            Configuration goes to the real FSD 16.3 screen rather than being an
+            inert label -- every affordance navigates somewhere (CLAUDE.md 11).
+            {% endcomment %}
+            <li>
+              <a class="dropdown-item" href="javascript:void(0);" data-bs-toggle="modal" data-bs-target="#byky-change-password">
+                <i class="icon-base ti tabler-key me-2 icon-md"></i>
+                <span class="align-middle">Change Password</span>
+              </a>
+            </li>
+            <li><div class="dropdown-divider my-1 mx-n2"></div></li>
+            <li>
+              <a class="dropdown-item" href="{% url 'logout' %}">
+                <i class="icon-base ti tabler-logout me-2 icon-md"></i>
+                <span class="align-middle">Log Out</span>
+              </a>
+            </li>
+          </ul>
+        </li>
+        <!--/ User -->
+
+      </ul>
+    </div>
+
+{% if not navbar_detached %}
+  </div>
+</nav>
+{% endif %}
+{% if navbar_detached %}
+</nav>
+{% endif %}
+
+{% comment %}
+Change Password dialog. Lives here so it is available from the header on every
+screen without a route of its own. Wireframe phase: it validates nothing and
+saves nothing.
+{% endcomment %}
+<div class="modal fade" id="byky-change-password" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Change Password</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-4">
+          <label class="form-label" for="byky-pwd-current">Current Password</label>
+          <input type="password" class="form-control" id="byky-pwd-current" placeholder="&#183;&#183;&#183;&#183;&#183;&#183;&#183;&#183;" autocomplete="off" />
+        </div>
+        <div class="mb-4">
+          <label class="form-label" for="byky-pwd-new">New Password</label>
+          <input type="password" class="form-control" id="byky-pwd-new" placeholder="&#183;&#183;&#183;&#183;&#183;&#183;&#183;&#183;" autocomplete="off" />
+          <div class="form-text">At least 8 characters, with a number and a symbol.</div>
+        </div>
+        <div class="mb-4">
+          <label class="form-label" for="byky-pwd-confirm">Confirm New Password</label>
+          <input type="password" class="form-control" id="byky-pwd-confirm" placeholder="&#183;&#183;&#183;&#183;&#183;&#183;&#183;&#183;" autocomplete="off" />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-label-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Update Password</button>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,39 @@
+{% comment %}
+Shared row-actions kebab menu (Edit + Delete) for .scr-* list tables --
+the "More" menu first built on Country & State Management. No JS to wire per
+screen: byky-screen.js already handles [data-scr-menu-toggle] (open/close)
+and [data-scr-delete] (SweetAlert2 confirm, falls back to a native confirm).
+
+Usage -- inside a <td>, wrap it in the row's own .scr-row-actions div so it
+can sit next to a screen-specific icon button (e.g. Approve):
+
+  <div class="scr-row-actions">
+    {% include "byky/partials/row_actions.html" with edit_open="branch:edit" %}
+  </div>
+
+`edit_open` must match the drawer's data-scr-open key (its scr_name:edit).
+
+Edit and Delete are hidden unless the screen's `perm` dict allows them; the
+server refuses the action either way -- hiding a control is a courtesy, the
+refusal is the control.
+Frontend-only, per CLAUDE.md 1: Delete has no backend write behind it.
+{% endcomment %}
+<div class="scr-menu-wrap">
+  <button type="button" class="scr-icon-btn" title="More" data-scr-menu-toggle>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="12" cy="19" r="1.6"></circle></svg>
+  </button>
+  <div class="scr-menu" hidden>
+    {% if perm.update|default_if_none:True %}
+    <button type="button" class="scr-menu-item" data-scr-open="{{ edit_open }}">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10a2.1 2.1 0 0 0-3-3L5 17z"></path><path d="M14.5 6.5 17.5 9.5"></path></svg>
+      Edit
+    </button>
+    {% endif %}
+    {% if perm.delete|default_if_none:True %}
+    <button type="button" class="scr-menu-item scr-menu-item-danger" data-scr-delete>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0-1 13a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1L6 7h12ZM10 11v6M14 11v6"></path></svg>
+      Delete
+    </button>
+    {% endif %}
+  </div>
+</div>

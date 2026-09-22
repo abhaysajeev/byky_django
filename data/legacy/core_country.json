@@ -1,0 +1,26 @@
+[
+  {
+    "CountryID": 1,
+    "ShortCode": 971,
+    "Name": "UAE",
+    "IsApproved": 1,
+    "IsActive": 1,
+    "CreatedBy": 1,
+    "CreatedOn": "2017-01-25 14:51:33.743",
+    "ModifiedBy": 1,
+    "ModifiedOn": "2017-01-25 14:51:33.757",
+    "ParentCountryId": null
+  },
+  {
+    "CountryID": 2,
+    "ShortCode": 965,
+    "Name": "KUWAIT",
+    "IsApproved": 1,
+    "IsActive": 1,
+    "CreatedBy": 1,
+    "CreatedOn": "2017-03-07 13:46:29.757",
+    "ModifiedBy": 1,
+    "ModifiedOn": "2017-03-07 13:46:29.770",
+    "ParentCountryId": null
+  }
+]

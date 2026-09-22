@@ -1,0 +1,210 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Duty Roster - Human Resources{% endblock title %}
+
+{% comment %}
+design/duty roster/duty-roster.md. Built on the client's own partially
+designed wireframe (byky-main/.../apps/byky_hrms/templates/hrms_duty_roster.html,
+.../drawers.py, .../src/assets/js/byky-hrms-duty-roster.js), re-wired to real
+data -- the markup below is that screen's structure with our own context
+variables; State Wise / Branch Roster / Employee View are its own 3 tabs
+(byky-screen.js's [data-scr-tabgroup]).
+
+Everywhere that project filled every cell from a deterministic hash, this
+reads real DutyRoster rows through one consolidated roster_json payload
+(services.roster_payload) and leaves an unset day blank. No "State" filter --
+employees carry no state of their own (duty-roster.md), so By Branch lists
+every branch with any roster-eligible staff scheduled this month, unfiltered.
+Employees also carry no fixed branch (the wireframe's did): which branch
+someone is working is read from the matrix per day, in the JS, never from a
+static employee field.
+
+"Add Weekly Branch Roster" is not a separate drawer here, unlike the
+wireframe: the Branch Roster tab already is that flow (pick a branch, click
++Cashier/+Labour per day), so a second drawer drawing the identical grid
+would add nothing.
+{% endcomment %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block vendor_js %}
+{{ block.super }}
+<script src="{% static 'vendor/libs/xlsx/xlsx.full.min.js' %}"></script>
+{% endblock vendor_js %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+<script src="{% static 'js/byky-duty-roster.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr" data-duty-roster
+     data-url-branch-shifts="{{ roster_urls.branch_shifts }}" data-url-save-week="{{ roster_urls.save_week }}"
+     data-url-assign-day="{{ roster_urls.assign_day }}" data-url-remove-day="{{ roster_urls.remove_day }}"
+     data-url-import="{{ roster_urls.import }}">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Human Resources</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Duty Roster</b>
+      </div>
+      <h1 class="scr-title">Duty Roster</h1>
+      <p class="scr-sub">Which branch and shift each Cashier or Labour employee has, and how it compares to who actually showed up.</p>
+    </div>
+    <div class="scr-head-actions">
+      {% if perm.create %}
+      <button type="button" class="scr-btn-primary" data-scr-open="duty-roster-employee:add">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+        Add Employee Roster
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="scr-tiles">
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-blue">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17 20v-1.6a3.4 3.4 0 0 0-3.4-3.4H9.4A3.4 3.4 0 0 0 6 18.4V20M11.5 12a3.6 3.6 0 1 0 0-7.2 3.6 3.6 0 0 0 0 7.2M21 20v-1.4a3 3 0 0 0-2.3-2.9M16.6 5a3 3 0 0 1 0 5.8"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ roster_counts.total }}</div><div class="scr-tile-lab">Roster-eligible staff</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-green">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ roster_counts.on_duty }}</div><div class="scr-tile-lab">On duty today</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-amber">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3.5 2"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ roster_counts.week_off }}</div><div class="scr-tile-lab">Week-off today</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-red">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M19 20.4C19 22 17.9 22 16.5 22h-9C6 22 5 22 5 20.4V4.6C5 3 6 3 7.5 3h9c1.4 0 2.5 0 2.5 1.6ZM9 8h6M9 12h6M9 16h3"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ roster_counts.sick_leave }}</div><div class="scr-tile-lab">On sick leave today</div></div>
+    </div>
+  </div>
+
+  <div class="scr-card">
+
+    <div class="scr-content-tabs" data-scr-tabgroup="roster">
+      <button type="button" class="scr-content-tab is-on" data-tab="state">By Branch</button>
+      <button type="button" class="scr-content-tab" data-tab="branch">Branch Roster</button>
+      <button type="button" class="scr-content-tab" data-tab="employee">Employee View</button>
+    </div>
+
+    <div class="scr-panel" data-tabgroup="roster" data-tab="state">
+      <div class="scr-toolbar">
+        <span class="scr-help">Showing the current week ({{ roster_json.current_week_index|add:"1" }} of {{ roster_weeks|length }}). <span style="color:#2b52a0">●</span> Cashiers on duty &nbsp; <span style="color:#14764a">●</span> Labour on duty</span>
+      </div>
+      <div class="scr-table-scroll scr-sb">
+        <table id="roster-state-table">
+          <thead><tr><th>Branch</th><th colspan="7">This week</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="scr-help" id="roster-state-empty" style="padding:0 20px 16px" hidden>No branch has a Cashier or Labour rostered this week yet.</p>
+    </div>
+
+    <div class="scr-panel" data-tabgroup="roster" data-tab="branch" hidden>
+      <div class="scr-toolbar">
+        <div class="scr-field" style="min-width:220px">
+          <select class="scr-input" id="roster-branch-select">
+            {% for b in branches_list %}<option value="{{ b.name }}">{{ b.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <span class="scr-help">Click +Cashier or +Labour on a day to assign someone. Remove a chip to unassign them for that day only.</span>
+      </div>
+      <div class="scr-wk-grid" id="roster-branch-grid"></div>
+    </div>
+
+    <div class="scr-panel" data-tabgroup="roster" data-tab="employee" hidden>
+      <div class="scr-toolbar">
+        <div class="scr-combo" data-scr-combo="roster-employee-view" data-combo-source="roster-employees-data" data-combo-key="name" data-combo-sub="emp_no" style="min-width:280px">
+          <input type="text" class="scr-input scr-combo-input" placeholder="Search employee by name or code..." autocomplete="off" />
+          <div class="scr-combo-list" hidden></div>
+          <input type="hidden" id="roster-employee-selected" />
+        </div>
+      </div>
+      <div id="roster-employee-profile" class="scr-help" style="padding:0 20px 12px"></div>
+      <div class="scr-cal-grid" id="roster-employee-calendar"></div>
+      <p class="scr-help" id="roster-employee-empty" style="padding:0 20px 16px" hidden>No Cashier or Labour employees yet. Give a Designation the Cashier or Labour roster category, and its employees appear here.</p>
+    </div>
+
+  </div>
+
+  <div class="scr-card" id="roster-bulk-import" style="margin-top:24px">
+    <div class="scr-form-head">
+      <div>
+        <div class="scr-form-title-row"><h2 class="scr-form-title">Bulk Import (Excel)</h2></div>
+        <p class="scr-form-sub">Download a template, fill it offline, then import it back to preview and apply a month's roster at once.</p>
+      </div>
+    </div>
+    <div class="scr-form-body">
+      <div class="scr-upload-row">
+        <button type="button" class="scr-btn" id="roster-download-template">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="m7 11 5 5 5-5"></path><path d="M4 20h16"></path></svg>
+          Download Sample Template
+        </button>
+        <button type="button" class="scr-btn" id="roster-download-current">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="m7 11 5 5 5-5"></path><path d="M4 20h16"></path></svg>
+          Download This Month's Data
+        </button>
+        <label class="scr-upload" style="flex:1 1 220px">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M8 8l4-4 4 4M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"></path></svg>
+          <span id="roster-import-filename">Import from Excel</span>
+          <input type="file" id="roster-import-input" accept=".xlsx,.xls" style="display:none" />
+        </label>
+      </div>
+
+      <div id="roster-import-preview" hidden>
+        <div class="scr-table-scroll scr-sb" style="margin-top:16px">
+          <table>
+            <thead><tr><th>Row</th><th>Employee</th><th>Date</th><th>Day Type</th><th>Branch</th><th>Result</th></tr></thead>
+            <tbody id="roster-import-preview-body"></tbody>
+          </table>
+        </div>
+        <div class="scr-form-foot">
+          <div class="scr-form-actions" style="margin-left:auto">
+            <button type="button" class="scr-btn-secondary" id="roster-import-cancel">Cancel</button>
+            <button type="button" class="scr-btn-primary" id="roster-import-apply">Apply to Roster</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{{ roster_json|json_script:"roster-json-data" }}
+{{ roster_employees|json_script:"roster-employees-data" }}
+{{ import_columns|json_script:"roster-import-columns-data" }}
+{% comment %}
+branches_list already reaches the Branch Roster <select> server-side; also
+exposed as JSON so the JS can resolve a branch name back to its id for the
+Edit Day / Add to Day drawers, whose Branch field is id-valued.
+{% endcomment %}
+{{ branches_list|json_script:"roster-branches-data" }}
+{% comment %}
+None of these three carry save_url: byky-crud.js's generic Save handler needs
+a plain field->value POST, but every one of these drawers needs translation
+first (employee_key resolves to a name, not the pk save_week/assign_day
+expect; Add to Day's branch and date come from whichever day-card was
+clicked, not a field the admin fills). static/js/byky-duty-roster.js binds
+its own Save handlers instead -- see its docstring.
+{% endcomment %}
+{% include "byky/partials/drawer.html" with spec=drawer_duty_roster_employee module_label="Human Resources · Duty Roster" %}
+{% include "byky/partials/drawer.html" with spec=drawer_duty_roster_day module_label="Human Resources · Duty Roster" %}
+{% include "byky/partials/drawer.html" with spec=drawer_duty_roster_add_to_day module_label="Human Resources · Duty Roster" %}
+{% include "byky/partials/records_modal.html" %}
+{% include "byky/partials/detail_modal.html" %}
+{% endblock %}

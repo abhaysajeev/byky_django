@@ -1,0 +1,921 @@
+/* BYKY screen design system — the shared base every redesigned screen extends,
+   generalised from the approved "Byky Company Details" design (kept, unchanged,
+   as apps/byky_cms/templates/cms_company_details.html -- the reference to match
+   pixel-for-pixel when building a new screen on this system).
+   Standalone: no Bootstrap card/table/form classes, no vendor libs. Load AFTER
+   sidebar.css (it already imports Sora + IBM Plex Mono). */
+
+.scr { font-family: 'Sora', sans-serif; color: #1a1640; max-width: 1320px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+.scr *, .scr *::before, .scr *::after { box-sizing: border-box; }
+.scr p, .scr h1, .scr h2, .scr h3 { margin: 0; padding: 0; }
+.scr h1, .scr h2, .scr h3 { color: inherit; } /* core.css sets h1..h3 { color: var(--bs-heading-color) }; keep this component's own ink */
+/* Link ink -- but not for anchors that are really buttons. .scr a is more
+   specific than .scr-btn-primary, so an <a class="scr-btn-primary"> was
+   getting brand-red text on its brand-red fill, and since the icons draw with
+   stroke="currentColor" the whole control read as one red blob. Excluding
+   anything button-shaped fixes every such anchor at once rather than one
+   screen at a time. */
+.scr a:not([class*="btn"]) { color: #d81f26; text-decoration: none; }
+.scr a:not([class*="btn"]):hover { color: #a8161c; }
+.scr a[class*="btn"] { text-decoration: none; }
+.scr table { border-collapse: collapse; width: 100%; }
+.scr input, .scr select, .scr textarea, .scr button { font-family: inherit; }
+.scr-sb { scrollbar-width: thin; scrollbar-color: #e4e3ee transparent; }
+.scr-sb::-webkit-scrollbar { width: 6px; height: 6px; }
+.scr-sb::-webkit-scrollbar-thumb { background: #e4e3ee; border-radius: 99px; }
+.scr-sb::-webkit-scrollbar-track { background: transparent; }
+
+@keyframes cdDrawerIn { from { transform: translateX(24px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes cdVeilIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes cdFadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes cdModalIn { from { opacity: 0; transform: translate(-50%, -50%) scale(0.96); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+
+/* ── page header ──────────────────────────────────────────────────── */
+/* The page header's action (Add Branch, Add Employee...) must land in the same
+   place on all 56 screens, whatever the length of the description under the
+   title. Two things used to move it: flex-wrap dropped it onto its own row,
+   left-aligned, as soon as a long description made the text column too wide;
+   and align-items:flex-end pinned it to the bottom of that column, so a
+   three-line description pushed it down a page at a time. So the row no longer
+   wraps, the text column is the only part allowed to shrink, and the action is
+   aligned to the top of the header instead of its bottom. */
+.scr-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; flex-wrap: nowrap; }
+/* min-width:0 is what actually lets the text column shrink -- a flex item's
+   default min-width:auto refuses to go below its content, which is how the
+   actions got squeezed out of the row in the first place. */
+.scr-head > :first-child { flex: 1 1 auto; min-width: 0; }
+.scr-head-actions { flex: 0 0 auto; }
+/* Sit the action level with the title rather than the breadcrumb above it.
+   :has() keeps this conditional, so a header without a breadcrumb still lines
+   its action up with the top of the block instead of dropping it 19px. */
+.scr-head:has(.scr-crumb) .scr-head-actions { margin-top: 19px; }
+/* Below the desktop breakpoint there is no room for both, so the action drops
+   under the title -- deliberately, and full width, not squeezed. */
+@media (max-width: 767px) {
+  .scr-head { flex-wrap: wrap; }
+  .scr-head-actions { width: 100%; margin-top: 0; }
+  .scr-head:has(.scr-crumb) .scr-head-actions { margin-top: 0; }
+}
+.scr-crumb { display: flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 500; color: #a9a6c4; margin-bottom: 8px; }
+.scr-crumb b { color: #6b6790; font-weight: 600; }
+.scr-title { font-size: 24px; font-weight: 700; letter-spacing: -0.6px; line-height: 1.15; }
+/* Cap the measure so a long purpose statement breaks into two or three tidy
+   lines instead of running the full width of the header. 110ch covers the
+   longest description in the app (324 chars) in three lines, and leaves the
+   shortest at one -- the column is ~1150px, so this never competes with the
+   action button for room. */
+.scr-sub { font-size: 13px; color: #9490bb; margin-top: 5px !important; font-weight: 450; max-width: 110ch; }
+/* Wraps internally, right-aligned: a few screens carry two buttons (Export +
+   Add, catalogue + Add), and with the row itself set to nowrap they need
+   somewhere to go on a narrow desktop rather than overflowing the page. */
+.scr-head-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
+
+.scr-btn {
+  display: flex; align-items: center; gap: 8px; border: 1px solid #eeedf5; background: #fff;
+  cursor: pointer; font-size: 12.5px; font-weight: 600; color: #4b4770;
+  padding: 10px 14px; border-radius: 10px; transition: border-color 0.16s, color 0.16s;
+}
+.scr-btn:hover { border-color: #d3d0e6; color: #1a1640; }
+.scr-btn-primary {
+  display: flex; align-items: center; gap: 8px; border: none; cursor: pointer;
+  font-size: 12.5px; font-weight: 600; color: #fff; padding: 11px 16px; border-radius: 10px;
+  background: linear-gradient(100deg, #c2141a, #e8272e); box-shadow: 0 6px 16px -8px rgba(216, 31, 38, 0.55);
+  transition: transform 0.18s, box-shadow 0.2s;
+}
+.scr-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 10px 22px -9px rgba(216, 31, 38, 0.6); }
+.scr-btn-secondary {
+  border: 1px solid #eeedf5; background: #fff; cursor: pointer; font-size: 12.5px; font-weight: 600;
+  color: #8b87b0; padding: 10px 16px; border-radius: 10px; transition: border-color 0.16s, color 0.16s;
+}
+.scr-btn-secondary:hover { border-color: #d3d0e6; color: #1a1640; }
+.scr-btn-save-new {
+  border: 1px solid #f3c3c5; background: #fdeced; cursor: pointer; font-size: 12.5px; font-weight: 600;
+  color: #c2141a; padding: 10px 16px; border-radius: 10px; transition: background 0.16s;
+}
+.scr-btn-save-new:hover { background: #fbdcde; }
+/* Soft-red destructive action, distinct from scr-btn-primary's solid gradient
+   (that's for the main affirmative action, e.g. Save) -- used for things like
+   "Remove All Privileges" that clear state rather than commit it. Same tint
+   as scr-btn-save-new by design (both are red-on-tint), given its own class
+   since the two are semantically unrelated. */
+.scr-btn-danger {
+  display: flex; align-items: center; gap: 8px; border: 1px solid #f3c3c5; background: #fdeced;
+  cursor: pointer; font-size: 12.5px; font-weight: 600; color: #c2141a; padding: 10px 16px;
+  border-radius: 10px; transition: background 0.16s, border-color 0.16s;
+}
+.scr-btn-danger:hover { background: #fbdcde; border-color: #eba7a9; }
+/* Soft-green counterpart to scr-btn-danger -- a restorative/positive action
+   distinct from scr-btn-primary's brand red, e.g. "Confirm Unblock" (FSD 2.5's
+   block/unblock accent switch). */
+.scr-btn-success {
+  display: flex; align-items: center; gap: 8px; border: 1px solid #c4e9d5; background: #e9f8f0;
+  cursor: pointer; font-size: 12.5px; font-weight: 600; color: #14764a; padding: 10px 16px;
+  border-radius: 10px; transition: background 0.16s, border-color 0.16s;
+}
+.scr-btn-success:hover { background: #d7f1e2; border-color: #a3ddc0; }
+
+/* ── KPI tiles ────────────────────────────────────────────────────── */
+.scr-tiles { display: flex; flex-wrap: wrap; gap: 14px; }
+.scr-tile {
+  flex: 1 1 190px; min-width: 0; background: #fff; border: 1px solid #eeedf5; border-radius: 14px;
+  padding: 16px 18px; display: flex; align-items: center; gap: 13px; box-shadow: 0 1px 2px rgba(26, 22, 64, 0.03);
+  animation: cdFadeUp 0.3s ease-out both;
+}
+.scr-tile-ico { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; flex: 0 0 auto; }
+.scr-tile-ico-red { background: #fdeced; color: #d81f26; }
+.scr-tile-ico-green { background: #e9f8f0; color: #1f9d63; }
+.scr-tile-ico-amber { background: #fdf3e3; color: #e08700; }
+.scr-tile-ico-blue { background: #eaf1fd; color: #3b6fd4; }
+.scr-tile-ico-purple { background: #f1ecfd; color: #6d3fd6; }
+/* A tile that stands for a population held on another screen is a link to it,
+   so the count and the list it counts are one click apart. Only tiles that
+   genuinely lead somewhere get this -- a link that returns to the page it is
+   on teaches the user the tiles are not clickable. */
+/* .scr a:not([class*="btn"]) below is (0,2,1) and would otherwise paint a
+   linked tile's number brand red -- a KPI value is a figure, not a link. So
+   this rule matches its specificity and, sitting later in the file, wins. */
+.scr a.scr-tile { text-decoration: none; color: inherit; transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease; }
+a.scr-tile:hover { border-color: #d9d5ea; box-shadow: 0 4px 14px rgba(26, 22, 64, 0.07); transform: translateY(-1px); }
+a.scr-tile:focus-visible { outline: 2px solid #cc0000; outline-offset: 2px; }
+a.scr-tile .scr-tile-go { margin-inline-start: auto; color: #c3bfd8; flex: 0 0 auto; transition: color 0.15s ease, transform 0.15s ease; }
+a.scr-tile:hover .scr-tile-go { color: #9490bb; transform: translateX(2px); }
+/* A tile that triggers a same-page filter (data-scr-kpi-filter) instead of
+   navigating -- same hover/focus affordance as a.scr-tile above, plus the
+   button-element resets a link doesn't need. */
+button.scr-tile { border: none; font: inherit; text-align: left; cursor: pointer; transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease; }
+button.scr-tile:hover { border-color: #d9d5ea; box-shadow: 0 4px 14px rgba(26, 22, 64, 0.07); transform: translateY(-1px); }
+button.scr-tile:focus-visible { outline: 2px solid #cc0000; outline-offset: 2px; }
+button.scr-tile.is-active { border-color: #cc0000; box-shadow: 0 0 0 3px rgba(204, 0, 0, 0.12); }
+.scr-tile-val { font-size: 20px; font-weight: 700; letter-spacing: -0.6px; font-variant-numeric: tabular-nums; line-height: 1; }
+.scr-tile-lab { font-size: 11.5px; color: #9490bb; font-weight: 500; margin-top: 4px; line-height: 1.35; }
+
+/* ── document expiry status card (Employee Personal Data) ──────────── */
+.scr-doc-expiry-head { padding: 18px 20px 4px; }
+.scr-doc-expiry-title { font-size: 13.5px; font-weight: 600; }
+.scr-doc-expiry-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; padding: 14px 20px 20px; }
+.scr-doc-item { display: block; width: 100%; border: none; background: transparent; font: inherit; text-align: left; cursor: pointer; border-radius: 12px; padding: 10px 12px; transition: background 0.15s ease, color 0.15s ease; }
+.scr-doc-item:hover { background: #faf9fd; }
+.scr-doc-item:focus-visible { outline: 2px solid #cc0000; outline-offset: 2px; }
+.scr-doc-item.is-active { background: #faf9fd; }
+.scr-doc-item.is-active .scr-doc-item-label { color: #d81f26; }
+.scr-doc-item-label { font-size: 12.5px; font-weight: 600; color: #4b4770; display: flex; align-items: baseline; gap: 8px; transition: color 0.15s ease; }
+.scr-doc-item-label small { font-size: 11px; font-weight: 500; color: #9490bb; }
+
+/* ── generic card ─────────────────────────────────────────────────── */
+/* No overflow:hidden here -- the emirate/status filter dropdowns are absolutely
+   positioned inside .scr-toolbar, a descendant of this card, and clipping would
+   mask them at the card's edge instead of letting them float over the table.
+   .scr-pager carries its own bottom radius below so the card's rounded corners
+   still read correctly without relying on this element to clip them. */
+.scr-card { background: #fff; border: 1px solid #eeedf5; border-radius: 16px; box-shadow: 0 1px 2px rgba(26, 22, 64, 0.03); }
+
+/* ── list toolbar ─────────────────────────────────────────────────── */
+/* ── content tabs (screens with more than one grid, e.g. Country & State) ── */
+.scr-content-tabs { display: flex; align-items: center; gap: 4px; padding: 14px 20px 0; }
+.scr-content-tab {
+  display: flex; align-items: center; gap: 8px; border: none; background: transparent; cursor: pointer;
+  font-size: 12.5px; font-weight: 500; color: #8b87b0; padding: 9px 14px; border-radius: 10px 10px 0 0;
+  transition: color 0.16s, background 0.16s;
+}
+.scr-content-tab:hover { color: #1a1640; }
+.scr-content-tab.is-on { color: #1a1640; font-weight: 600; background: #fbfaff; }
+.scr-content-tab .scr-content-tab-count { font-size: 11px; font-weight: 600; color: #7d7aa0; background: #f4f3f9; padding: 2px 7px; border-radius: 99px; }
+.scr-content-tab.is-on .scr-content-tab-count { background: #fdeced; color: #c2141a; }
+.scr-panel[hidden] { display: none; }
+
+.scr-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 18px 20px; border-bottom: 1px solid #f0eff7; }
+.scr-search {
+  display: flex; align-items: center; gap: 9px; flex: 1 1 240px; min-width: 0; max-width: 320px;
+  height: 38px; background: #f6f5fc; border: 1px solid #eeedf5; border-radius: 10px; padding: 0 12px;
+  transition: border-color 0.16s, background 0.16s;
+}
+.scr-search:hover { border-color: #e0deee; }
+.scr-search input { flex: 1; min-width: 0; border: none; background: transparent; outline: none; font-size: 12.5px; color: #1a1640; }
+.scr-filter-wrap { position: relative; flex: 0 0 auto; }
+.scr-filter-btn {
+  display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 13px; border-radius: 10px;
+  border: 1px solid #eeedf5; background: #fff; color: #6b6790; font-size: 12.5px; font-weight: 500;
+  cursor: pointer; transition: border-color 0.16s, background 0.16s, color 0.16s;
+}
+.scr-filter-btn.is-active { border-color: #f3c3c5; background: #fdeced; color: #c2141a; font-weight: 600; }
+/* General rule: any custom dropdown menu that can hold more than ~10 options
+   scrolls internally rather than growing past the viewport (a filter with 36
+   branches or 99 employees would otherwise run off the bottom of the page). */
+.scr-filter-menu {
+  position: absolute; top: 44px; left: 0; z-index: 12; min-width: 190px; background: #fff;
+  border: 1px solid #eeedf5; border-radius: 12px; box-shadow: 0 18px 40px -22px rgba(26, 22, 64, 0.4);
+  padding: 6px; display: flex; flex-direction: column; gap: 1px;
+  max-height: 280px; overflow-y: auto;
+}
+.scr-filter-menu[hidden] { display: none; }
+
+/* Multi-select drawer field -- a checkbox menu, not a native <select multiple>
+   (cramped listbox, and a native option list near the bottom of a scrolling
+   drawer body can pop ABOVE the field with no way for CSS to control it).
+   The menu is position:fixed and placed by byky-screen.js from the button's
+   own bounding rect, so it opens below the field and flips above only if
+   there is genuinely more room there. */
+.scr-multiselect { position: relative; }
+.scr-multiselect-btn {
+  width: 100%; height: 42px; border: 1px solid #e8e7f2; background: #fff; border-radius: 11px; padding: 0 13px;
+  font-size: 13px; color: #1a1640; text-align: left; cursor: pointer; display: flex; align-items: center;
+  justify-content: space-between; gap: 8px; transition: border-color 0.16s, box-shadow 0.16s;
+}
+.scr-multiselect-btn:hover { border-color: #d3d0e6; }
+.scr-multiselect-btn.is-open { border-color: #d81f26; box-shadow: 0 0 0 3px rgba(216, 31, 38, 0.11); }
+.scr-multiselect-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scr-multiselect-label.is-placeholder { color: #a9a6c4; }
+.scr-multiselect-btn svg { flex: 0 0 auto; color: #9490bb; transition: transform 0.16s; }
+.scr-multiselect-btn.is-open svg { transform: rotate(180deg); }
+.scr-multiselect-menu {
+  position: fixed; z-index: 1090; background: #fff; border: 1px solid #eeedf5; border-radius: 12px;
+  box-shadow: 0 18px 40px -18px rgba(26, 22, 64, 0.45); padding: 6px; max-height: 260px; overflow-y: auto;
+}
+.scr-multiselect-menu[hidden] { display: none; }
+.scr-multiselect-opt { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 12.5px; color: #4b4770; }
+.scr-multiselect-opt:hover { background: #faf9fd; }
+.scr-multiselect-opt input { flex: 0 0 auto; accent-color: #d81f26; width: 15px; height: 15px; }
+.scr-filter-opt {
+  text-align: left; border: none; cursor: pointer; font-size: 12.5px; font-weight: 500; padding: 9px 11px;
+  border-radius: 8px; background: transparent; color: #4b4770; transition: background 0.14s; width: 100%;
+}
+.scr-filter-opt:hover { background: #faf9fd; }
+.scr-filter-opt.is-active { background: #fdf3f3; color: #c2141a; }
+.scr-toolbar-count { font-size: 11.5px; color: #9490bb; font-weight: 500; margin-left: auto; white-space: nowrap; }
+
+/* ── table ────────────────────────────────────────────────────────── */
+.scr-table-scroll { overflow-x: auto; }
+.scr thead tr { background: #fbfaff; border-bottom: 1px solid #f0eff7; }
+.scr th { text-align: left; font-size: 10.5px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: #a9a6c4; padding: 12px 16px; white-space: nowrap; }
+.scr th:first-child, .scr th:last-child { padding-inline: 20px; }
+.scr th:last-child { text-align: right; }
+.scr tbody tr { border-bottom: 1px solid #f6f5fb; transition: background 0.14s; }
+.scr tbody tr:hover { background: #fbfaff; }
+.scr td { padding: 13px 16px; }
+.scr td:first-child { padding-inline-start: 20px; }
+.scr td:last-child { padding-inline-end: 20px; text-align: right; }
+
+.scr-co { display: flex; align-items: center; gap: 12px; }
+.scr-avatar { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; font-size: 11.5px; font-weight: 700; letter-spacing: 0.3px; flex: 0 0 auto; }
+.scr-avatar-0 { background: #fdeced; color: #c2141a; }
+.scr-avatar-1 { background: #eaf1fd; color: #2b52a0; }
+.scr-avatar-2 { background: #e9f8f0; color: #14764a; }
+.scr-avatar-3 { background: #f4f3f9; color: #6b6790; }
+.scr-avatar-4 { background: #fdf3e3; color: #8a5300; }
+.scr-co-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.scr-co-city { font-size: 11px; color: #9490bb; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.scr-code { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11.5px; color: #4b4770; background: #f4f3f9; padding: 4px 8px; border-radius: 6px; white-space: nowrap; }
+.scr-state { font-size: 12.5px; color: #4b4770; white-space: nowrap; }
+
+/* A grid cell that opens the shared "view records" modal (#scr-records-modal,
+   wired in byky-screen.js) -- e.g. a branch's vehicle count opening its full
+   vehicle list. Generic: any count naming a related record set can reuse this
+   with a new data-scr-view target rather than a one-off per screen. */
+.scr-count-link { border: 0; background: transparent; padding: 0; font: inherit; font-size: 12.5px; font-weight: 600; color: #c2141a; cursor: pointer; text-decoration: underline; text-decoration-color: rgba(194, 20, 26, 0.35); text-underline-offset: 2px; }
+.scr-count-link:hover { text-decoration-color: #c2141a; }
+
+/* Records modal body -- a plain table, no card chrome (it's already inside a
+   Bootstrap modal). */
+.scr-records-modal .modal-dialog { max-width: 720px; }
+.scr-records-table-wrap { max-height: 50vh; overflow-y: auto; border: 1px solid #f0eff7; border-radius: 10px; }
+.scr-records-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.scr-records-table thead th { position: sticky; top: 0; background: #fbfaff; text-align: left; font-size: 10.5px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: #a9a6c4; padding: 10px 14px; border-bottom: 1px solid #f0eff7; }
+.scr-records-table td { padding: 10px 14px; border-bottom: 1px solid #f6f5fc; color: #4b4770; white-space: nowrap; }
+.scr-records-table tr:last-child td { border-bottom: none; }
+.scr-records-empty { padding: 26px 14px; text-align: center; font-size: 12px; color: #a9a6c4; }
+.scr-contact { font-size: 12.5px; color: #4b4770; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.scr-contact-sub { font-size: 11px; color: #9490bb; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.scr-fill { display: flex; align-items: center; gap: 9px; }
+.scr-fill-track { width: 62px; height: 6px; border-radius: 99px; background: #f0eff7; overflow: hidden; flex: 0 0 auto; }
+.scr-fill-bar { display: block; height: 100%; border-radius: 99px; }
+.scr-fill-pct { font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.scr-fill-good { --scr-fill-c: #1f9d63; }
+.scr-fill-mid { --scr-fill-c: #e08700; }
+.scr-fill-low { --scr-fill-c: #d81f26; }
+.scr-fill-bar.scr-fill-good, .scr-fill-bar.scr-fill-mid, .scr-fill-bar.scr-fill-low { background: var(--scr-fill-c); }
+.scr-fill-pct.scr-fill-good, .scr-fill-pct.scr-fill-mid, .scr-fill-pct.scr-fill-low { color: var(--scr-fill-c); }
+
+.scr-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; padding: 5px 10px; border-radius: 99px; white-space: nowrap; }
+.scr-badge i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; display: block; }
+.scr-badge-approved { background: #e9f8f0; color: #14764a; }
+.scr-badge-pending { background: #fdf3e3; color: #8a5300; }
+.scr-badge-rejected { background: #f4f3f9; color: #6b6790; }
+/* Active/Inactive record state -- distinct from the Approved/Pending/Rejected
+   approval-workflow badges above: some screens (e.g. Company Management,
+   Country & State Management) have no approval step at all, just a record
+   that's on or off. */
+.scr-badge-active { background: #e9f8f0; color: #14764a; }
+.scr-badge-inactive { background: #f4f3f9; color: #6b6790; }
+
+/* ── boolean flag pill (Y/N columns) ──────────────────────────────── */
+.scr-flag { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+.scr-flag-yes { background: #e9f8f0; color: #14764a; }
+.scr-flag-no { background: #f4f3f9; color: #a9a6c4; }
+
+/* ── checkbox rows (drawer flag lists) ────────────────────────────── */
+.scr-check-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
+.scr-check { width: 17px; height: 17px; border-radius: 5px; accent-color: #d81f26; cursor: pointer; flex: 0 0 auto; }
+.scr-check-label { font-size: 12.5px; font-weight: 500; color: #4b4770; cursor: pointer; }
+.scr-check-hint { font-size: 10.5px; color: #a9a6c4; }
+
+/* Radio row -- same shape as .scr-check-row, for a group of mutually
+   exclusive options (e.g. Promotion Type, Usage Type). */
+.scr-radio-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; }
+.scr-radio { width: 17px; height: 17px; accent-color: #d81f26; cursor: pointer; flex: 0 0 auto; }
+.scr-radio-label { font-size: 12.5px; font-weight: 500; color: #4b4770; cursor: pointer; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.scr-radio-label .scr-drawer-input { height: 34px; width: 84px; padding: 0 10px; font-size: 12.5px; }
+.scr-radio-label .scr-drawer-input:disabled { background: #f8f7fb; color: #c9c6dd; cursor: not-allowed; }
+
+/* Bordered panel with a title -- the boxed "Promotion Type" / "Usage Type"
+   groups in the Card Discount screen. Reuses .scr-section-title's type scale. */
+.scr-fieldset { border: 1px solid #eeedf5; border-radius: 12px; padding: 14px 16px; }
+.scr-fieldset-legend { font-size: 11px; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase; color: #a9a6c4; margin-bottom: 10px; }
+
+/* Day-wise discount rows -- a checkbox, a fixed-width day label, and a
+   discount input that only unlocks once its day is checked. */
+.scr-day-table { display: flex; flex-direction: column; gap: 2px; }
+.scr-day-row { display: flex; align-items: center; gap: 12px; padding: 6px 0; border-bottom: 1px solid #f6f5fc; }
+.scr-day-row:last-child { border-bottom: none; }
+.scr-day-row.scr-day-all { border-bottom: 1px solid #eeedf5; margin-bottom: 4px; padding-bottom: 10px; font-weight: 600; }
+.scr-day-check { display: flex; align-items: center; gap: 9px; width: 128px; flex: 0 0 auto; font-size: 12.5px; font-weight: 500; color: #4b4770; cursor: pointer; }
+.scr-day-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: #d81f26; cursor: pointer; flex: 0 0 auto; }
+.scr-day-row .scr-drawer-input { height: 38px; }
+.scr-day-row .scr-drawer-input:disabled { background: #f8f7fb; color: #c9c6dd; cursor: not-allowed; }
+
+/* Two-column layout for the Card Discount screen: day-wise table on the
+   left, the two radio panels stacked on the right. Collapses to one column
+   on narrow viewports, matching every other .scr-* screen's responsive rule. */
+.scr-discount-grid { display: grid; grid-template-columns: 1fr 300px; gap: 20px; align-items: start; }
+@media (max-width: 860px) {
+  .scr-discount-grid { grid-template-columns: 1fr; }
+}
+
+.scr-row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; opacity: 0.35; transition: opacity 0.16s; }
+.scr tbody tr:hover .scr-row-actions { opacity: 1; }
+.scr-icon-btn { width: 30px; height: 30px; border-radius: 9px; border: 1px solid #eeedf5; background: #fff; color: #6b6790; display: grid; place-items: center; cursor: pointer; transition: border-color 0.16s, color 0.16s; }
+.scr-icon-btn:hover { border-color: #d3d0e6; color: #1a1640; }
+.scr-icon-btn-edit:hover { border-color: #f3c3c5; color: #d81f26; }
+.scr-icon-btn-approve:hover { border-color: #c4e9d5; color: #1f9d63; }
+.scr-icon-btn-danger:hover { border-color: #f3c3c5; color: #d81f26; }
+
+.scr-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 64px 24px; }
+.scr-empty-ico { width: 52px; height: 52px; border-radius: 16px; background: #f6f5fc; display: grid; place-items: center; }
+.scr-empty-title { font-size: 14px; font-weight: 600; text-align: center; }
+.scr-empty-sub { font-size: 12.5px; color: #9490bb; margin-top: 5px !important; max-width: 44ch; text-align: center; }
+
+.scr-pager { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; padding: 14px 20px; border-top: 1px solid #f0eff7; background: #fbfaff; border-radius: 0 0 16px 16px; }
+.scr-pager-info { font-size: 11.5px; color: #9490bb; }
+.scr-pager-nav { display: flex; align-items: center; gap: 6px; }
+.scr-pager-btn { width: 30px; height: 30px; border-radius: 9px; border: 1px solid #eeedf5; background: #fff; color: #6b6790; display: grid; place-items: center; cursor: pointer; transition: border-color 0.14s, color 0.14s, background 0.14s; }
+.scr-pager-btn:hover:not(:disabled) { border-color: #d3d0e6; background: #fbfaff; color: #1a1640; }
+.scr-pager-btn:disabled { color: #c9c6dd; cursor: not-allowed; }
+.scr-pager-pages { display: flex; align-items: center; gap: 6px; }
+.scr-pager-page { min-width: 30px; height: 30px; padding: 0 8px; border-radius: 9px; border: 1px solid transparent; background: transparent; color: #6b6790; display: grid; place-items: center; font-size: 12px; font-weight: 500; cursor: pointer; transition: background 0.14s, color 0.14s; }
+.scr-pager-page:hover { background: #f4f3fa; color: #1a1640; }
+.scr-pager-gap { min-width: 18px; text-align: center; font-size: 12px; color: #c9c6dd; }
+.scr-pager-current { min-width: 30px; height: 30px; padding: 0 8px; border-radius: 9px; border: 1px solid transparent; background: #fdeced; color: #c2141a; display: grid; place-items: center; font-size: 12px; font-weight: 600; cursor: default; }
+
+/* ── company record (full-page form) ─────────────────────────────── */
+.scr-form-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; padding: 20px 22px; border-bottom: 1px solid #f0eff7; }
+.scr-form-title-row { display: flex; align-items: center; gap: 10px; }
+.scr-form-title { font-size: 15px; font-weight: 600; letter-spacing: -0.1px; }
+.scr-form-badge { font-size: 10.5px; font-weight: 600; letter-spacing: 0.5px; color: #7d7aa0; background: #f4f3f9; padding: 4px 9px; border-radius: 6px; }
+.scr-form-sub { font-size: 12px; color: #9490bb; margin-top: 5px !important; }
+.scr-form-body { padding: 22px; }
+
+.scr-section { margin-bottom: 26px; }
+.scr-section-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+.scr-section-title { font-size: 11px; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase; color: #a9a6c4; }
+.scr-section-rule { flex: 1; height: 1px; background: #f4f3f9; }
+/* Logo upload -- a preview tile + label-as-button triggering a hidden file
+   input (native click-through, no JS needed for that part), plus one small
+   generic behaviour in byky-screen.js: any input[type=file][data-scr-logo-preview]
+   renders its chosen image into the target element by id. Reusable for any
+   future branding/asset upload, not just Company. */
+.scr-logo-row { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 22px; padding-bottom: 22px; border-bottom: 1px solid #f4f3f9; }
+.scr-logo-preview { width: 72px; height: 72px; border-radius: 14px; background: #f8f7fb; border: 1px dashed #d3d0e6; display: grid; place-items: center; overflow: hidden; flex: 0 0 auto; }
+.scr-logo-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.scr-logo-actions { flex: 1; min-width: 0; padding-top: 5px; }
+.scr-logo-buttons { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.scr-logo-upload-btn { cursor: pointer; }
+.scr-logo-remove { border: 0; background: transparent; color: #a9a6c4; font-size: 11.5px; font-weight: 600; cursor: pointer; }
+.scr-logo-remove:hover { color: #d81f26; }
+
+.scr-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px; }
+.scr-field { min-width: 0; }
+.scr-label { display: flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 500; color: #6b6790; margin-bottom: 7px; }
+.scr-required { color: #d81f26; }
+.scr-awaiting { font-size: 10px; font-weight: 600; color: #8a5300; background: #fdf3e3; padding: 2px 6px; border-radius: 5px; }
+.scr-input {
+  width: 100%; height: 40px; border: 1px solid #e8e7f2; background: #fff; border-radius: 10px; padding: 0 12px;
+  font-size: 12.5px; color: #1a1640; outline: none; transition: border-color 0.16s, box-shadow 0.16s;
+}
+.scr-input:hover { border-color: #d3d0e6; }
+.scr-input:focus { border-color: #d81f26; box-shadow: 0 0 0 3px rgba(216, 31, 38, 0.11); }
+.scr-input.is-awaiting { background: #fdfcff; }
+.scr-input[readonly] { background: #f8f7fb; color: #8b87b0; cursor: not-allowed; }
+.scr-help { font-size: 10.5px; color: #a9a6c4; margin-top: 6px; }
+
+/* Integration rows -- a credential set behind a Configure button, rather than
+   a dozen inline inputs per provider (the list + drawer rule). */
+.scr-integrations { display: grid; gap: 10px; }
+.scr-integration { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 14px 16px; border: 1px solid #f0eff7; border-radius: 12px; background: #fbfaff; }
+.scr-integration-main { flex: 1; min-width: 190px; }
+.scr-integration-name { font-size: 13px; font-weight: 600; color: #1a1640; }
+.scr-integration-desc { font-size: 11.5px; color: #9490bb; margin-top: 3px !important; }
+
+.scr-form-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding-top: 18px; border-top: 1px solid #f4f3f9; }
+.scr-toggle-row { display: flex; align-items: center; gap: 10px; flex: 1; }
+.scr-toggle { width: 38px; height: 22px; border-radius: 99px; border: none; cursor: pointer; position: relative; transition: background 0.18s; flex: 0 0 auto; background: #dcd9ea; }
+.scr-toggle.is-on { background: #1f9d63; }
+.scr-toggle i { position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(26, 22, 64, 0.3); transition: left 0.18s; display: block; }
+.scr-toggle.is-on i { left: 19px; }
+.scr-toggle-label { font-size: 12.5px; font-weight: 500; color: #4b4770; }
+.scr-form-actions { display: flex; align-items: center; gap: 10px; }
+
+/* flatpickr's own calendar popup is z-index:1074 -- below the drawer's 1086,
+   which would render any date picker opened from a drawer field invisible
+   behind the drawer panel. Bumped above it here rather than in vendor CSS.
+   This rule was lost once already (a date field silently stopped opening its
+   calendar visibly, no console error) -- if editing this file, confirm it's
+   still present afterward. */
+.flatpickr-calendar { z-index: 1095 !important; }
+
+/* ── drawer ───────────────────────────────────────────────────────── */
+.scr-veil { position: fixed; inset: 0; background: rgba(26, 22, 64, 0.34); backdrop-filter: blur(2px); z-index: 1085; animation: cdVeilIn 0.2s ease-out; }
+.scr-veil[hidden] { display: none; }
+.scr-drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 100%); background: #fff; z-index: 1086;
+  display: flex; flex-direction: column; box-shadow: -24px 0 60px -30px rgba(26, 22, 64, 0.5);
+  animation: cdDrawerIn 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.scr-drawer[hidden] { display: none; }
+.scr-drawer-head { flex: 0 0 auto; padding: 20px 24px 16px; border-bottom: 1px solid #f0eff7; }
+.scr-drawer-head-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.scr-drawer-id { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.scr-drawer-ico { width: 38px; height: 38px; border-radius: 11px; background: linear-gradient(140deg, #c2141a, #e8272e); color: #fff; display: grid; place-items: center; flex: 0 0 auto; }
+.scr-drawer-title { font-size: 16px; font-weight: 600; letter-spacing: -0.2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.scr-drawer-close { width: 32px; height: 32px; border-radius: 10px; border: 1px solid #eeedf5; background: #fff; color: #8b87b0; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; transition: border-color 0.16s, color 0.16s; }
+.scr-drawer-close:hover { border-color: #f3c3c5; color: #d81f26; }
+.scr-drawer-tabs { display: flex; gap: 22px; margin-top: 16px; margin-bottom: -17px; overflow-x: auto; border-bottom: 1px solid #f0eff7; }
+.scr-drawer-tab { flex: 0 0 auto; border: none; background: none; padding: 0 0 11px; font-size: 12.5px; font-weight: 500; color: #8b87b0; cursor: pointer; border-bottom: 2px solid transparent; transition: color 0.16s, border-color 0.16s; }
+.scr-drawer-tab:hover { color: #1a1640; }
+.scr-drawer-tab.is-on { font-weight: 600; color: #1a1640; border-bottom-color: #d81f26; }
+.scr-drawer-body { flex: 1; overflow-y: auto; padding: 22px 24px 26px; }
+.scr-drawer-field { margin-bottom: 16px; }
+.scr-drawer-field[hidden] { display: none; }
+.scr-drawer-input {
+  width: 100%; height: 42px; border: 1px solid #e8e7f2; background: #fff; border-radius: 11px; padding: 0 13px;
+  font-size: 13px; color: #1a1640; outline: none; transition: border-color 0.16s, box-shadow 0.16s;
+}
+.scr-drawer-input:hover { border-color: #d3d0e6; }
+.scr-drawer-input:focus { border-color: #d81f26; box-shadow: 0 0 0 3px rgba(216, 31, 38, 0.11); }
+.scr-drawer-input.is-awaiting { background: #fdfcff; }
+textarea.scr-drawer-input { height: auto; min-height: 72px; padding: 10px 13px; resize: vertical; font-family: inherit; }
+.scr-drawer-input[type="file"] { padding: 8px 13px; line-height: 1.6; }
+.scr-drawer-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.scr-drawer-hint { display: flex; align-items: flex-start; gap: 10px; background: #fbfaff; border: 1px solid #f0eff7; border-radius: 12px; padding: 13px 14px; margin-top: 6px; }
+.scr-drawer-hint svg { flex: 0 0 auto; margin-top: 1px; }
+.scr-drawer-hint p { font-size: 11.5px; color: #6b6790; line-height: 1.55; }
+.scr-drawer-foot { flex: 0 0 auto; padding: 16px 24px; border-top: 1px solid #f0eff7; background: #fbfaff; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.scr-drawer-active { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; }
+.scr-drawer-active-label { font-size: 12px; font-weight: 500; color: #4b4770; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── centered modal (distinct from the side scr-drawer) -- for a short,
+   single-purpose action that doesn't belong in the page flow or a side
+   panel, e.g. Device Approval / Upload APK on Device Settings. Same visual
+   language as scr-drawer (radius, shadow, header/body/foot), just centered
+   and not full-height. Wired in byky-screen.js via data-scr-modal-open /
+   data-scr-modal / data-scr-modal-close. ────────────────────────────── */
+.scr-modal-veil {
+  position: fixed; inset: 0; background: rgba(26, 22, 64, 0.34); backdrop-filter: blur(2px);
+  z-index: 1090; display: flex; align-items: center; justify-content: center; padding: 20px;
+  animation: cdVeilIn 0.2s ease-out;
+}
+.scr-modal-veil[hidden] { display: none; }
+.scr-modal {
+  /* Independently fixed + centered -- .scr-modal-veil is only the backdrop,
+     a sibling in the markup (same pattern as scr-veil/scr-drawer), so its
+     own flex centering never reached this element. Missing this was the
+     "stuck on a blurred screen" bug: the veil showed, but the modal itself
+     (bill + Print button) rendered wherever it fell in normal flow instead
+     of on top of it. */
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1091;
+  width: min(480px, 100%); max-height: 88vh; background: #fff; border-radius: 16px;
+  box-shadow: 0 30px 70px -30px rgba(26, 22, 64, 0.5); display: flex; flex-direction: column;
+  /* cdFadeUp's translateY would replace this element's own centering
+     transform for the length of the animation (transform is a single
+     property -- the keyframe's value wins outright, not additively),
+     which is what made the modal appear to rise from the bottom instead
+     of opening centered. cdModalIn keeps the translate(-50%,-50%) centering
+     baked into every keyframe and animates scale instead. */
+  animation: cdModalIn 0.22s ease-out;
+}
+.scr-modal[hidden] { display: none; }
+.scr-modal-head { padding: 20px 22px 16px; border-bottom: 1px solid #f0eff7; display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.scr-modal-title { font-size: 15px; font-weight: 600; letter-spacing: -0.1px; }
+.scr-modal-sub { font-size: 12px; color: #9490bb; margin-top: 4px !important; }
+.scr-modal-body { padding: 20px 22px; overflow-y: auto; }
+.scr-modal-foot { padding: 16px 22px; border-top: 1px solid #f0eff7; background: #fbfaff; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* ── small action dropdown menu (e.g. a header "More" button) -- same
+   visual language as scr-filter-* but not tied to filtering, so a click
+   just opens/closes the menu (wired generically in byky-screen.js) rather
+   than re-applying a list filter. ────────────────────────────────────── */
+.scr-menu-wrap { position: relative; flex: 0 0 auto; }
+.scr-menu-btn {
+  display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 14px; border-radius: 10px;
+  border: 1px solid #eeedf5; background: #fff; color: #4b4770; font-size: 12.5px; font-weight: 600;
+  cursor: pointer; transition: border-color 0.16s, background 0.16s, color 0.16s;
+}
+.scr-menu-btn:hover { border-color: #d3d0e6; color: #1a1640; }
+.scr-menu {
+  position: absolute; top: 44px; right: 0; z-index: 12; min-width: 200px; background: #fff;
+  border: 1px solid #eeedf5; border-radius: 12px; box-shadow: 0 18px 40px -22px rgba(26, 22, 64, 0.4);
+  padding: 6px; display: flex; flex-direction: column; gap: 1px;
+}
+.scr-menu[hidden] { display: none; }
+.scr-menu-item {
+  display: flex; align-items: center; gap: 9px; text-align: left; border: none; cursor: pointer;
+  font-size: 12.5px; font-weight: 500; padding: 9px 11px; border-radius: 8px; background: transparent;
+  color: #4b4770; transition: background 0.14s; width: 100%;
+}
+.scr-menu-item:hover { background: #faf9fd; color: #1a1640; }
+/* Menu items are anchors in the Map Item / Move Item menus and buttons in
+   Device Settings' -- without this the anchors take the link ink and the two
+   menus disagree. Matches .scr a's specificity and sits later, so it wins. */
+.scr a.scr-menu-item { color: #4b4770; }
+.scr a.scr-menu-item:hover { color: #1a1640; }
+.scr-menu-item-danger:hover { background: #fbebec; color: #d81f26; }
+
+/* Row-level "..." action menu (Country & State etc.): the toggle is the
+   30px .scr-icon-btn, not the 38px labelled .scr-menu-btn above, so it needs
+   a narrower minimum width than the header "More" menu. byky-screen.js adds
+   this class (rather than relying on a nested .scr-row-actions .scr-menu
+   selector) because the menu is detached to a body-level layer on open --
+   see the data-scr-menu-toggle handler's comment for why. */
+.scr-menu-compact { min-width: 150px; }
+
+/* .scr-menu is moved here (out of .scr-table-scroll's clipping ancestry) the
+   moment it opens, with real position:fixed coordinates computed from its
+   toggle button. The layer itself is unstyled -- a position:fixed child
+   positions relative to the viewport regardless of its parent, so this is
+   just a plain anchor point at the end of <body>. */
+
+/* ── network map card (real coordinates, hand-drawn SVG -- no Leaflet) ──
+   Generalised from byky-dashboard.css's .bd-map-* rules for any screen that
+   needs the same station-network visual (bubble = fleet, dot-grid backdrop,
+   emirate labels). Pair with a small page-specific JS that draws into the
+   #scr-map svg, the way byky-dashboard.js does for #bd-map. */
+.scr-map-frame { margin-top: 18px; background: #fbfaff; border: 1px solid #f0eff7; border-radius: 12px; padding: 8px; position: relative; }
+/* Leaflet needs a real height on its container -- it cannot size itself from
+   content the way an svg does. */
+.byky-map { height: 320px; border-radius: 8px; overflow: hidden; }
+.byky-map.leaflet-container { background: #fbfaff; font: inherit; }
+/* The fleet legend sits over the map, so it must clear Leaflet's own panes
+   (z-index 400) and controls (z-index 800). */
+.scr-map-legend { position: absolute; left: 20px; bottom: 18px; z-index: 900; display: flex; align-items: center; gap: 14px; background: rgba(255, 255, 255, 0.9); border: 1px solid #f0eff7; border-radius: 9px; padding: 8px 12px; }
+.scr-map-legend b { font-size: 10.5px; font-weight: 600; letter-spacing: 0.6px; text-transform: uppercase; color: #a9a6c4; }
+.scr-map-legend span { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #6b6790; }
+.scr-map-legend span i { display: block; border-radius: 50%; background: rgba(216, 31, 38, 0.25); border: 1px solid #d81f26; }
+
+@media (max-width: 768px) {
+  .scr-drawer { width: 100%; }
+}
+
+/* ── inline success banner ────────────────────────────────────────────
+   Used by the Map and Transfer flows to confirm what just happened without
+   a modal. The markup already existed on Map Vehicle but had no CSS at all,
+   so it was rendering as loose inline text above the form. */
+.scr-banner {
+  display: flex; align-items: center; gap: 11px; padding: 13px 16px;
+  border: 1px solid #eeedf5; border-radius: 12px; background: #fff;
+  font-size: 12.5px; font-weight: 500; color: #4b4770;
+  animation: cdFadeUp 0.3s ease-out both;
+}
+.scr-banner[hidden] { display: none; }
+.scr-banner-success { background: #e9f8f0; border-color: #c4e9d5; color: #14764a; }
+.scr-banner-icon { display: grid; place-items: center; flex: 0 0 auto; color: #1f9d63; }
+.scr-banner-text { flex: 1 1 auto; min-width: 0; }
+.scr-banner-close {
+  flex: 0 0 auto; border: none; background: transparent; cursor: pointer;
+  color: inherit; opacity: 0.6; padding: 2px; border-radius: 6px; display: grid; place-items: center;
+}
+.scr-banner-close:hover { opacity: 1; }
+
+/* ── file upload wells ────────────────────────────────────────────────
+   A row of dashed drop targets, e.g. the three condition photos a transfer
+   records. The label doubles as the control, so the real <input type="file">
+   stays hidden and the well shows the chosen filename once picked. */
+.scr-upload-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.scr-upload {
+  flex: 1 1 160px; min-width: 0; display: flex; align-items: center; justify-content: center;
+  gap: 8px; padding: 14px 12px; border: 1px dashed #d9d5ea; border-radius: 11px;
+  background: #fbfaff; color: #8b87b0; font-size: 12px; font-weight: 500; cursor: pointer;
+  transition: border-color 0.16s, color 0.16s, background 0.16s;
+}
+.scr-upload:hover { border-color: #c2141a; color: #c2141a; background: #fff; }
+.scr-upload span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── search-combo (type-to-filter single-select) ──────────────────────
+   Added for the HRMS Duty Roster/Incentive Branch Mapping/Target Branch
+   Mapping screens -- a plain <select> can't show a second line (an employee
+   code, a plan's % pill) next to each option, so this filters a richer
+   record list as you type. Works both as a drawer field (byky/partials/
+   drawer.html's "combo" kind) and a bare toolbar filter. */
+.scr-combo { position: relative; }
+.scr-combo-input { width: 100%; }
+.scr-combo-list {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 1091;
+  background: #fff; border: 1px solid #eeedf5; border-radius: 12px;
+  box-shadow: 0 18px 40px -18px rgba(26, 22, 64, 0.45); padding: 6px;
+  max-height: 240px; overflow-y: auto;
+}
+.scr-combo-list[hidden] { display: none; }
+.scr-combo-item { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+.scr-combo-item:hover, .scr-combo-item.is-active { background: #faf9fd; }
+.scr-combo-item-main { font-size: 12.5px; font-weight: 600; color: #1a1640; }
+.scr-combo-item-sub { font-size: 11px; color: #9490bb; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.scr-combo-empty { padding: 10px; font-size: 12px; color: #a9a6c4; text-align: center; }
+
+/* ── priority pill (P1 - P10) ─────────────────────────────────────────
+   Incentive/Target Branch Mapping: 1 = highest priority, 10 = lowest. */
+.scr-prio { display: inline-flex; align-items: center; font-size: 11px; font-weight: 700; padding: 4px 9px; border-radius: 99px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.scr-prio-high { background: #fdeced; color: #c2141a; }
+.scr-prio-medium { background: #fdf3e3; color: #8a5300; }
+.scr-prio-low { background: #f4f3f9; color: #6b6790; }
+
+/* ── "expiring soon" tag ──────────────────────────────────────────────
+   Sits next to a validity date range when valid_to is within 30 days of
+   this screen's fixed reference "today". */
+.scr-expiring { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 600; padding: 3px 8px; border-radius: 99px; background: #fdf3e3; color: #8a5300; border: 1px solid #f3dcae; margin-inline-start: 6px; white-space: nowrap; }
+
+/* ── allocation-total badge ───────────────────────────────────────────
+   Incentive's running "total % of collection" -- neutral until a plan's
+   rows sum past 100%, then it warns instead of silently being wrong. */
+.scr-alloc-badge { display: inline-flex; align-items: center; font-size: 12px; font-weight: 700; padding: 5px 11px; border-radius: 99px; background: #eaf1fd; color: #2b52a0; font-variant-numeric: tabular-nums; }
+.scr-alloc-badge.is-warn { background: #fdeced; color: #c2141a; }
+
+/* ── duty-count badge pair (Duty Roster State Wise grid) ──────────────
+   "2C" cashiers on duty / "3L" labour on duty, clickable to open the
+   Branch-Day records modal for that cell. */
+.scr-duty-badges { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.scr-duty-badge { border: none; cursor: pointer; font-size: 10.5px; font-weight: 700; padding: 3px 7px; border-radius: 7px; font-variant-numeric: tabular-nums; transition: filter 0.14s; }
+.scr-duty-badge:hover { filter: brightness(0.96); }
+.scr-duty-badge-c { background: #eaf1fd; color: #2b52a0; }
+.scr-duty-badge-l { background: #e9f8f0; color: #14764a; }
+.scr-duty-badge-empty { font-size: 11px; color: #c3bfd8; }
+
+/* ── month calendar grid (Duty Roster Employee View) ──────────────────
+   7-column CSS grid; each cell shows a status pill, shift time, branch and
+   a hover-reveal edit pencil. */
+.scr-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; padding: 18px 20px; }
+.scr-cal-dow { font-size: 10px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: #a9a6c4; text-align: center; padding-bottom: 4px; }
+.scr-cal-cell {
+  position: relative; min-height: 84px; border: 1px solid #f0eff7; border-radius: 11px; padding: 8px;
+  display: flex; flex-direction: column; gap: 4px; background: #fff; cursor: pointer; transition: border-color 0.14s;
+}
+.scr-cal-cell:hover { border-color: #d9d5ea; }
+.scr-cal-cell.is-today { border-color: #f3c3c5; background: #fdf5f5; }
+.scr-cal-date { font-size: 11.5px; font-weight: 700; color: #4b4770; }
+.scr-cal-cell .scr-badge { font-size: 9.5px; padding: 3px 7px; align-self: flex-start; }
+.scr-cal-shift { font-size: 10px; color: #9490bb; font-variant-numeric: tabular-nums; }
+.scr-cal-branch { font-size: 10px; color: #9490bb; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scr-cal-edit {
+  position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; border-radius: 7px; border: none;
+  background: #fff; color: #6b6790; display: grid; place-items: center; opacity: 0; transition: opacity 0.14s;
+  box-shadow: 0 2px 8px -2px rgba(26, 22, 64, 0.25); cursor: pointer;
+}
+.scr-cal-cell:hover .scr-cal-edit { opacity: 1; }
+
+/* ── week-block / day-column grid (Duty Roster Branch Roster + Add
+   Weekly Branch Roster drawer) ───────────────────────────────────────
+   7 day-cards in a row; each lists assigned staff as small removable
+   chips. Horizontally scrollable under 1024px per CLAUDE.md 4.6. */
+.scr-wk-grid { display: flex; gap: 10px; padding: 18px 20px; overflow-x: auto; }
+.scr-wk-day-card { flex: 1 1 150px; min-width: 150px; border: 1px solid #f0eff7; border-radius: 12px; background: #fbfaff; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+.scr-wk-day-head { font-size: 11px; font-weight: 700; color: #4b4770; }
+.scr-wk-day-date { font-size: 10px; color: #9490bb; margin-bottom: 4px; }
+.scr-wk-chip { display: flex; align-items: center; justify-content: space-between; gap: 6px; background: #fff; border: 1px solid #eeedf5; border-radius: 8px; padding: 6px 8px; font-size: 11px; }
+.scr-wk-chip-name { font-weight: 600; color: #1a1640; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scr-wk-chip-time { font-size: 10px; color: #9490bb; font-variant-numeric: tabular-nums; }
+.scr-wk-chip-x { border: none; background: transparent; color: #c3bfd8; cursor: pointer; flex: 0 0 auto; display: grid; place-items: center; }
+.scr-wk-chip-x:hover { color: #c2141a; }
+.scr-wk-add { border: 1px dashed #d9d5ea; border-radius: 8px; background: transparent; color: #6b6790; font-size: 10.5px; font-weight: 600; padding: 6px 8px; cursor: pointer; text-align: center; }
+.scr-wk-add:hover { border-color: #c2141a; color: #c2141a; }
+
+/* ── header action menu (reuses .scr-menu-wrap/.scr-menu, repurposed
+   for a page-level split-button rather than a row's kebab) ──────────── */
+.scr-head-actions .scr-menu-wrap { position: relative; }
+.scr-head-actions .scr-menu { position: absolute; top: calc(100% + 6px); right: 0; left: auto; }
+
+/* ── generic key/value detail modal (byky/partials/detail_modal.html) ── */
+.scr-detail-rows { display: flex; flex-direction: column; gap: 0; }
+.scr-detail-row { display: flex; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid #f6f5fc; }
+.scr-detail-row:last-child { border-bottom: none; }
+.scr-detail-label { font-size: 11.5px; color: #9490bb; font-weight: 500; }
+.scr-detail-value { font-size: 12.5px; color: #1a1640; font-weight: 600; text-align: right; }
+
+/* ── a modal stands on its own typography.
+   .scr sets the family, the ink and the margin resets for everything inside a
+   screen, but a modal is fixed to the viewport and is included after that
+   wrapper closes -- so it inherited the page font instead and read as a
+   different product. Buttons need the family named too: the reboot makes them
+   inherit, and what they were inheriting was body. ──────────────────────── */
+.scr-modal {
+  font-family: 'Sora', sans-serif; color: #1a1640;
+  font-size: 13px; line-height: 1.5;
+}
+.scr-modal *, .scr-modal *::before, .scr-modal *::after { box-sizing: border-box; }
+.scr-modal p, .scr-modal h1, .scr-modal h2, .scr-modal h3, .scr-modal ul { margin: 0; padding: 0; }
+.scr-modal button, .scr-modal input, .scr-modal select, .scr-modal textarea { font-family: inherit; }
+
+/* ── message list: validation errors, and the "still linked here" list a
+   blocked delete reports. A point per item, because one save should show a
+   person everything they have to fix rather than the first thing only. The
+   tone comes from the item, so the same list serves both jobs. ─────────── */
+.scr-modal-line { font-size: 13px; color: #4b4770; margin: 0 !important; line-height: 1.55; }
+.scr-msg-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.scr-msg-item { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; color: #4b4770; line-height: 1.5; }
+.scr-msg-item::before {
+  content: ""; flex: 0 0 auto; width: 6px; height: 6px; margin-top: 6px;
+  border-radius: 50%; background: #d81f26;
+}
+.scr-msg-item-neutral::before { background: #9490bb; }
+.scr-msg-field { font-weight: 600; color: #1a1640; }
+.scr-msg-count { margin-left: auto; padding-left: 12px; font-size: 12px; color: #9490bb; white-space: nowrap; }
+.scr-msg-note {
+  margin: 14px 0 0 !important; padding: 10px 12px; border-radius: 10px;
+  background: #fbfaff; border: 1px solid #eeedf5; font-size: 12.5px; color: #4b4770;
+}
+
+/* ── Branch Working Time (byky-working-time.js) ───────────────────────
+   The branch picker sits inline in the card head, so that card is one row.
+   The rows tighten so the whole week fits without scrolling. While the
+   server answers, only the rows blur and a spinner sits over them -- the
+   header stays sharp, so the grid keeps its bearings. ───────────────── */
+.scr-wt-picker { display: flex; align-items: center; gap: 12px; flex: 0 1 340px; margin-left: auto; }
+.scr-wt-picker .scr-label { margin: 0; white-space: nowrap; }
+.scr-wt-picker .scr-input { min-width: 0; }
+
+.scr-wt-grid { position: relative; }
+.scr-wt-grid th.scr-wt-day-col { min-width: 120px; }
+.scr-wt-grid th.scr-wt-shift-col { min-width: 200px; text-align: center; }
+.scr-wt-grid td { padding-block: 8px; }
+.scr-wt-grid td:last-child { text-align: left; }
+.scr-wt-day { font-weight: 600; }
+.scr-wt-cell { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 3px; border-radius: 12px; transition: background 0.16s, box-shadow 0.16s; }
+.scr-wt-cell .scr-input { min-width: 0; height: 36px; text-align: center; font-variant-numeric: tabular-nums; }
+.scr-wt-cell .scr-input:disabled { background: #fbfaff; color: #a9a6c4; cursor: not-allowed; }
+.scr-wt-cell.is-invalid { background: #fdeced; box-shadow: inset 0 0 0 1px #eba7a9; }
+.scr-wt-cell.is-invalid .scr-input { border-color: #d81f26; }
+.scr-wt-dash { color: #a9a6c4; }
+
+.scr-wt-grid tbody { transition: filter 0.2s ease, opacity 0.2s ease; }
+.scr-wt-grid tbody.is-loading { filter: blur(2px); opacity: 0.55; pointer-events: none; user-select: none; }
+.scr-wt-overlay {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  animation: cdVeilIn 0.2s ease-out;
+}
+.scr-wt-overlay[hidden] { display: none; }
+.scr-wt-spinner {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 3px solid #f4d3d4; border-top-color: #d81f26;
+  animation: scrWtSpin 0.75s linear infinite;
+}
+.scr-wt-overlay-text { font-size: 12.5px; font-weight: 600; color: #4b4770; background: rgba(255, 255, 255, 0.85); padding: 4px 10px; border-radius: 99px; }
+@keyframes scrWtSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .scr-wt-spinner { animation-duration: 2.5s; } }
+
+.scr-wt-actions { margin-left: auto; }
+
+/* The assign modal: search, an "All" bar, then a list that scrolls on its
+   own with the column header pinned, so the search box and the Assign
+   button never scroll out of reach. */
+.scr-wt-assign { width: min(720px, calc(100% - 32px)); }
+.scr-wt-assign-body { display: flex; flex-direction: column; gap: 12px; overflow: hidden; }
+/* Sized like the list screens' .scr-search: one compact field on the same
+   row as "All branches" and the count, not a full-width bar of its own. */
+.scr-wt-assign-search {
+  display: flex; align-items: center; gap: 8px; flex: 0 1 240px; min-width: 160px; height: 34px;
+  background: #f6f5fc; border: 1px solid #eeedf5; border-radius: 9px; padding: 0 10px;
+  color: #9490bb; cursor: text; transition: border-color 0.16s, background 0.16s, box-shadow 0.16s;
+}
+.scr-wt-assign-search:hover { border-color: #e0deee; }
+.scr-wt-assign-search:focus-within { background: #fff; border-color: #d81f26; box-shadow: 0 0 0 3px rgba(216, 31, 38, 0.11); }
+.scr-wt-assign-search svg { flex: 0 0 auto; }
+.scr-wt-assign-search input { flex: 1; min-width: 0; height: 100%; border: none; background: transparent; outline: none; font-size: 12.5px; color: #1a1640; }
+.scr-wt-assign-search input::placeholder { color: #a9a6c4; }
+.scr-wt-assign-bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.scr-wt-assign-bar .scr-check-row { padding: 0; }
+.scr-wt-assign-list { max-height: min(46vh, 420px); overflow-y: auto; border: 1px solid #f0eff7; border-radius: 12px; }
+.scr-wt-assign-list table { width: 100%; border-collapse: collapse; }
+.scr-wt-assign-list thead th { position: sticky; top: 0; z-index: 1; background: #fbfaff; }
+.scr-wt-assign-list td { padding-block: 9px; font-size: 12.5px; }
+.scr-wt-assign-list tbody tr { cursor: pointer; border-bottom: 1px solid #f6f5fb; }
+.scr-wt-assign-list tbody tr:hover { background: #fbfaff; }
+.scr-wt-assign-list tbody tr[hidden] { display: none; }
+.scr-wt-assign-list tbody tr:has(input:checked) { background: #fdf6f6; }
+.scr-wt-assign-list th.scr-wt-assign-check, .scr-wt-assign-list td.scr-wt-assign-check { width: 44px; padding-inline: 16px 4px; }
+.scr-wt-assign-name { font-weight: 600; color: #1a1640; }
+.scr-wt-assign-empty { padding: 28px 16px; text-align: center; font-size: 12.5px; color: #9490bb; }
+.scr-wt-assign-empty[hidden] { display: none; }
+.scr-wt-assign-note { flex: 1 1 220px; font-size: 12px; color: #9490bb; }
+
+/* ── Device Approval modals (byky-device-approval.js) ───────────────── */
+.scr-dev-modal { width: min(480px, calc(100% - 32px)); }
+.scr-dev-fields { display: flex; flex-direction: column; gap: 16px; }
+.scr-dev-fields .scr-field[hidden] { display: none; }
+.scr-dev-hint { font-size: 11.5px; color: #9490bb; margin: 6px 0 0 !important; line-height: 1.45; }
+.scr-dev-foot { justify-content: flex-end; }
+.scr-dev-optional { font-weight: 400; color: #a9a6c4; font-size: 11px; }
+.scr-dev-foot [hidden] { display: none; }
+
+/* The Pending tab's registration-number result, between the search and the
+   list. Green-edged for a request that can be acted on, muted otherwise. */
+.scr-dev-match {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  margin: 0 20px 16px; padding: 14px 16px; border-radius: 12px;
+  border: 1px solid #c4e9d5; background: #f3fbf7; animation: cdFadeUp 0.2s ease-out both;
+}
+.scr-dev-match[hidden] { display: none; }
+.scr-dev-match.is-none, .scr-dev-match.is-done { border-color: #eeedf5; background: #fbfaff; flex-direction: column; align-items: flex-start; gap: 4px; }
+.scr-dev-match-info { flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.scr-dev-match-title { font-size: 13.5px; font-weight: 600; color: #1a1640; }
+.scr-dev-match-line { font-size: 12px; color: #6b6790; }
+.scr-dev-match-line.is-hint { color: #8a5300; }
+.scr-dev-match-actions { display: flex; gap: 10px; flex: 0 0 auto; }
+
+/* ── App Releases / App Mapping (.scr-rel-*) ─────────────────────────
+   Update type is the one fact the tablet acts on first, so it gets its own
+   badge pair: Mandatory in the danger tint (it stops a tablet), Any time in a
+   calm blue -- never primary red, which means "main action" here. */
+.scr-badge-mandatory { background: #fdeced; color: #c2141a; }
+.scr-badge-anytime { background: #e8f1fd; color: #1d5fb8; }
+.scr-rel-muted { color: #a9a6c4; }
+.scr-rel-all { font-weight: 600; color: #1a1640; }
+.scr-rel-note { display: inline-block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+.scr-rel-link { display: inline-block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; color: #4b4770; text-decoration: underline; text-decoration-color: #d9d7e8; }
+.scr-rel-link:hover { color: #d81f26; }
+.scr-rel-check { width: 44px; padding-inline: 16px 4px !important; }
+
+.scr-rel-default {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin: 16px 18px 4px;
+  padding: 14px 16px; border: 1px solid #e3eefc; background: #f6f9fe; border-radius: 12px;
+}
+.scr-rel-default.is-empty, .scr-rel-default.is-withdrawn { border-color: #f3e1bf; background: #fdf8ef; }
+.scr-rel-default-info { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.scr-rel-default-kicker { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #9490bb; }
+.scr-rel-default-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; font-weight: 600; color: #1a1640; }
+.scr-rel-default-line { font-size: 12px; color: #6b6790; line-height: 1.45; }
+.scr-rel-default-actions { display: flex; gap: 10px; flex: 0 0 auto; }
+
+.scr-rel-map-body { gap: 16px; overflow-y: auto; }
+.scr-rel-targets { display: flex; gap: 20px; flex-wrap: wrap; }
+.scr-rel-picker { display: flex; flex-direction: column; gap: 12px; }
+.scr-rel-picker[hidden] { display: none; }
+.scr-rel-picker .scr-wt-assign-list { max-height: min(34vh, 320px); }
+.scr-rel-preview { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 12px; background: #fbfaff; border: 1px solid #eeedf5; }
+.scr-rel-preview[hidden] { display: none; }
+.scr-rel-preview-summary { font-size: 12.5px; font-weight: 600; color: #1a1640; }
+.scr-rel-preview-warnings { display: flex; flex-direction: column; gap: 8px; }
+.scr-rel-preview-warnings:empty { display: none; }
+.scr-rel-warning { display: flex; align-items: flex-start; gap: 10px; padding: 9px 11px; border-radius: 10px; background: #fdf3e3; color: #8a5300; font-size: 12px; line-height: 1.45; cursor: pointer; }
+.scr-rel-warning.is-mandatory { background: #fdeced; color: #a3171c; }
+.scr-rel-warning .scr-check { margin-top: 1px; }
+@media (max-width: 640px) {
+  .scr-rel-default { margin-inline: 12px; }
+  .scr-rel-default-actions { width: 100%; }
+}
+
+/* ── Device Settings (.scr-set-*) ────────────────────────────────────── */
+.scr-set-text { display: inline-block; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+.scr-set-none { color: #9490bb; }
+.scr-set-none .scr-badge { margin-right: 10px; }
+/* The stored bitmap is 1-bit and as wide as the print head, so it is shown on a
+   white tile at its own aspect ratio rather than cropped to a square. */
+.scr-set-logo { display: inline-flex; align-items: center; justify-content: center; width: 86px; height: 34px; padding: 3px 6px; border: 1px solid #eeedf5; border-radius: 8px; background: #fff; }
+.scr-set-logo img { max-width: 100%; max-height: 100%; object-fit: contain; image-rendering: pixelated; }
+.scr-btn-small { border: 1px solid #e6e4f0; background: #fff; cursor: pointer; font-size: 11.5px; font-weight: 600; color: #4b4770; padding: 7px 12px; border-radius: 9px; }
+.scr-btn-small:hover { border-color: #d81f26; color: #d81f26; }
+
+.scr-set-logo-modal { width: min(520px, calc(100% - 32px)); }
+.scr-set-logo-current { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px; border: 1px solid #eeedf5; border-radius: 12px; background: #fbfaff; }
+.scr-set-logo-current img { max-width: 100%; max-height: 120px; object-fit: contain; image-rendering: pixelated; background: #fff; padding: 6px; border-radius: 8px; }
+.scr-set-logo-current p { margin: 0; }
+.scr-set-warnings { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.scr-set-warnings[hidden] { display: none; }
+.scr-set-warning { margin: 0; padding: 9px 11px; border-radius: 10px; background: #fdf3e3; color: #8a5300; font-size: 12px; line-height: 1.45; }
+
+.scr-set-fields { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px solid #eeedf5; border-radius: 12px; background: #fbfaff; }
+.scr-set-fields-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.scr-set-fields-head .scr-label { margin: 0; }
+.scr-set-fields-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 2px 14px; }
+.scr-set-fields-grid .scr-check-row { padding: 4px 0; }
+.scr-set-pick-row { cursor: pointer; border-bottom: 1px solid #f6f5fb; }
+.scr-set-pick-row:hover { background: #fbfaff; }
+.scr-set-pick-row[hidden] { display: none; }
+.scr-set-pick-row:has(input:checked) { background: #fdf6f6; }
+.scr-set-pick-row:has(input:disabled) { color: #a9a6c4; cursor: not-allowed; }

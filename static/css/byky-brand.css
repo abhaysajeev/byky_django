@@ -1,0 +1,155 @@
+/*!
+ * BYKY brand theme override
+ * ---------------------------------------------------------------------------
+ * Repoints Vuexy's primary from #7367F0 (purple) to the BYKY brand red.
+ *
+ * Primary  #CC0000 — logo hue (0deg) and saturation (100%) preserved,
+ *                    brightness 93% -> 80% for all-day interface use.
+ *                    Contrast on white 5.89:1 (WCAG AA both directions).
+ *                    dE 25.6 from Vuexy's danger #FF4C51, so status colours
+ *                    stay distinguishable from brand colours.
+ *
+ * Derived steps use the same ratios Vuexy applies to its own purple scale,
+ * so hover/active/subtle/emphasis behave identically to stock.
+ *
+ * Load AFTER vendor/css/core.css.
+ * ---------------------------------------------------------------------------
+ */
+
+:root,
+[data-bs-theme='light'] {
+  --bs-primary: #cc0000;
+  --bs-primary-rgb: 204, 0, 0;
+  --bs-primary-text-emphasis: #520000;
+  --bs-primary-bg-subtle: #f7d6d6;
+  --bs-primary-border-subtle: #eb9b9b;
+
+  --bs-link-color: #cc0000;
+  --bs-link-color-rgb: 204, 0, 0;
+  --bs-link-hover-color: #b80000;
+  --bs-link-hover-color-rgb: 184, 0, 0;
+}
+
+/* .btn-primary and .btn-outline-primary hardcode their own scoped vars in
+   core.css, so overriding :root alone is not enough. */
+
+.btn-primary {
+  --bs-btn-bg: #cc0000;
+  --bs-btn-border-color: #cc0000;
+  --bs-btn-hover-bg: #b80000;
+  --bs-btn-hover-border-color: #a30000;
+  --bs-btn-focus-shadow-rgb: 212, 38, 38;
+  --bs-btn-active-bg: #b80000;
+  --bs-btn-active-border-color: #990000;
+  --bs-btn-disabled-bg: #cc0000;
+  --bs-btn-disabled-border-color: #cc0000;
+}
+
+.btn-outline-primary {
+  --bs-btn-color: #cc0000;
+  --bs-btn-border-color: #cc0000;
+  --bs-btn-hover-color: #fff;
+  --bs-btn-hover-bg: #cc0000;
+  --bs-btn-hover-border-color: #cc0000;
+  --bs-btn-focus-shadow-rgb: 204, 0, 0;
+  --bs-btn-active-color: #fff;
+  --bs-btn-active-bg: #cc0000;
+  --bs-btn-active-border-color: #cc0000;
+  --bs-btn-disabled-color: #cc0000;
+  --bs-btn-disabled-border-color: #cc0000;
+}
+
+.progress,
+.progress-stacked {
+  --bs-progress-bar-bg: #cc0000;
+}
+
+/* .bg-label-primary / .text-primary / .bg-primary derive from --bs-primary
+   via color-mix() and rgba(), so they follow the :root override above. */
+
+/* Wide form drawer.
+   Use for forms with many fields (e.g. FSD 2.1 Employee, 22 inputs) so two-column
+   rows fit without cramping. min() keeps it inside the viewport on small screens.
+
+   NOTE: do NOT use Bootstrap's responsive `.offcanvas-lg` for this -- that class
+   makes the panel render inline with no backdrop at lg and above, which looks
+   like a broken transparent panel on desktop. */
+.offcanvas-wide {
+  --bs-offcanvas-width: min(46rem, 100vw);
+}
+
+/* Dashboard overview carousel.
+
+   Vuexy sets `white-space: nowrap` on the slide via
+   `.swiper-container .swiper-wrapper .swiper-slide` (specificity 0,3,0). That suits
+   its short demo strings, but our longer stat rows then overflow the slide and the
+   neighbouring slide's text shows through during the transition -- it reads as
+   overlapping text.
+
+   Match that selector and add our own class so we win on specificity (0,4,0)
+   rather than resorting to !important. */
+.swiper-container.swiper-card-advance-bg .swiper-wrapper .swiper-slide {
+  white-space: normal;
+}
+
+/* Clip anything that runs past the card edge during a transition. */
+.swiper-container.swiper-card-advance-bg {
+  overflow: hidden;
+}
+
+/* Stat rows inside the carousel: a value chip beside its label.
+
+   The chip must not shrink (long values like "1,885,684" outgrow Vuexy's 48px
+   min-inline-size and would otherwise collide with the label), and the label needs
+   min-inline-size: 0 for text-truncate to work at all inside a flex row. */
+.swiper-card-advance-bg .website-analytics-text-bg {
+  white-space: nowrap;
+}
+
+/* Labels sit UNDER their chip rather than beside it. Side by side, a ~100px
+   column cannot hold an ~85px chip plus a word, and the label spills into the
+   next column -- the overlap this card kept showing at narrower widths. */
+.swiper-card-advance-bg .swiper-slide li > span {
+  max-inline-size: 100%;
+}
+
+/* Vuexy puts the red on the CONTAINER, leaving each slide transparent. Any
+   transition then shows both slides' text through one another. Giving the slide
+   its own opaque background makes the incoming slide cover the outgoing one. */
+.swiper-container.swiper-card-advance-bg .swiper-wrapper .swiper-slide {
+  background-color: var(--bs-primary);
+}
+
+/* Brand lockup shared by the auth pages, navbar_full and footer_front -- the
+   sidebar owns its own brand markup/CSS now (static/css/sidebar.css) and no
+   longer uses these classes. */
+.app-brand .app-brand-link {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.app-brand .app-brand-logo.demo img {
+  transition: transform 0.28s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+.app-brand .app-brand-link:hover .app-brand-logo.demo img {
+  transform: translateX(1px) scale(1.06);
+}
+
+.app-brand .app-brand-text.demo {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3em;
+  font-size: 1.3125rem;
+  line-height: 1;
+  letter-spacing: -0.015em;
+  padding-inline-start: 0;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-brand .app-brand-logo.demo img {
+    transition: none;
+  }
+}

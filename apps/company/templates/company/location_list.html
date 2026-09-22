@@ -1,0 +1,139 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Location Management - Company Management{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Company Management</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Location Management</b>
+      </div>
+      <h1 class="scr-title">Location Management</h1>
+      <p class="scr-sub">Sub-city zones and landmarks a branch or station can sit under.</p>
+    </div>
+    <div class="scr-head-actions">
+      {% if perm.print %}
+      <button type="button" class="scr-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="m7 11 5 5 5-5"></path><path d="M4 20h16"></path></svg>
+        Export
+      </button>
+      {% endif %}
+      {% if perm.create %}
+      <button type="button" class="scr-btn-primary" data-scr-open="location:add">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+        Add Location
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="scr-card" data-scr-noun-singular="location" data-scr-noun-plural="locations" data-scr-delete-url="{{ delete_url_location }}" data-scr-noun="{{ noun_location }}">
+    <div class="scr-toolbar">
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="text" placeholder="Search location or code" />
+      </div>
+
+      <div class="scr-filter-wrap" data-filter-key="state">
+        <button type="button" class="scr-filter-btn">
+          <span class="scr-filter-label">All states</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+        </button>
+        <div class="scr-filter-menu" hidden>
+          <button type="button" class="scr-filter-opt is-active" data-value="">All states</button>
+          {% for s in states_list %}
+          <button type="button" class="scr-filter-opt" data-value="{{ s.name }}">{{ s.name }}</button>
+          {% endfor %}
+        </div>
+      </div>
+
+      <span class="scr-toolbar-count">{{ locations|length }} location{{ locations|length|pluralize }}</span>
+    </div>
+
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Location</th>
+            <th>Code</th>
+            <th>State</th>
+            <th>Landmark</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for l in locations %}
+          <tr class="scr-row" data-search="{{ l.name|lower }} {{ l.code|lower }} {{ l.landmark|lower }}" data-state="{{ l.state }}" data-record-id="{{ l.json_id }}" data-pk="{{ l.pk }}">
+            <td style="font-weight:600">{{ l.name }}</td>
+            <td><span class="scr-code">{{ l.code }}</span></td>
+            <td class="scr-state">{{ l.state }}</td>
+            <td>{{ l.landmark }}</td>
+            <td>{% if l.active %}<span class="scr-badge scr-badge-active"><i></i>Active</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Inactive</span>{% endif %}</td>
+            <td>
+              <div class="scr-row-actions">
+                {% include "byky/partials/row_actions.html" with edit_open="location:edit" %}
+              </div>
+            </td>
+          </tr>
+          {{ l.fields_json|json_script:l.json_id }}
+          {% empty %}
+          <tr>
+            <td colspan="6" style="padding:0">
+              <div class="scr-empty">
+                <span class="scr-empty-ico">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.5 7-12a7 7 0 0 0-14 0c0 5.5 7 12 7 12z"></path><circle cx="12" cy="9" r="2.5"></circle></svg>
+                </span>
+                <div>
+                  <div class="scr-empty-title">No locations yet</div>
+                  <p class="scr-empty-sub">Add the first sub-city zone or landmark.</p>
+                </div>
+                {% if perm.create %}
+                <button type="button" class="scr-btn-primary" data-scr-open="location:add">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+                  Add Location
+                </button>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="scr-pager">
+      <span class="scr-pager-info">Showing {{ locations|length }} of {{ locations|length }}</span>
+      <div class="scr-pager-nav">
+        <button type="button" class="scr-pager-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"></path></svg>
+        </button>
+        <span class="scr-pager-current">1</span>
+        <button type="button" class="scr-pager-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 6 6 6-6 6"></path></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% comment %} Add/Edit drawer -- no rows exist yet, so this always opens in Add mode. {% endcomment %}
+{% include "byky/partials/drawer.html" with save_url=save_url_location spec=drawer_location module_label="Company · Location" %}
+{% include "byky/partials/confirm_modal.html" %}
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}

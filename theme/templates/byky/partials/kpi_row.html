@@ -1,0 +1,33 @@
+{% comment %}
+KPI tile row. Pass `kpis` as a list of dicts:
+  {"label": "Total Vehicles", "value": "1,060", "sub": "across 36 stations",
+   "icon": "tabler-motorbike", "tone": "primary"}
+
+tone maps to Vuexy's bg-label-* soft tints. Markup copied from
+apps/users/templates/app_user_list.html so spacing matches the rest of the app.
+{% endcomment %}
+<div class="row g-6 mb-6">
+  {% for k in kpis %}
+    <div class="col-sm-6 col-xl-3">
+      <div class="card">
+        <div class="card-body">
+          <div class="d-flex align-items-start justify-content-between">
+            <div class="content-left">
+              <span class="text-heading">{{ k.label }}</span>
+              <div class="d-flex align-items-center my-1">
+                <h4 class="mb-0 me-2">{{ k.value }}</h4>
+                {% if k.delta %}<p class="mb-0 text-{{ k.delta_tone|default:'success' }}">{{ k.delta }}</p>{% endif %}
+              </div>
+              <small class="mb-0">{{ k.sub }}</small>
+            </div>
+            <div class="avatar">
+              <span class="avatar-initial rounded bg-label-{{ k.tone|default:'primary' }}">
+                <i class="icon-base ti {{ k.icon|default:'tabler-chart-bar' }} icon-26px"></i>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  {% endfor %}
+</div>

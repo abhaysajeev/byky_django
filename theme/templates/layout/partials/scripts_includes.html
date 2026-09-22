@@ -1,0 +1,16 @@
+{% load static %} {% load i18n %}
+<!-- Helpers -->
+<!--! Template customizer & Theme config files MUST be included after core stylesheets and helpers.js in the <head> section -->
+<script src="{% static 'vendor/js/helpers.js' %}"></script>
+{% comment %}
+The Vuexy template customizer is not part of this product: light theme only, no
+theme switcher (design/03-login.md's companion brand rules). Its three assets --
+template-customizer.js and pickr -- were never copied across, so these blocks
+referenced files that do not exist. They were dormant behind has_customizer,
+which theme/template_config.py pins to False, and are now removed rather than
+left as broken references. apps/portal/tests/test_static_references.py is what
+found them.
+{% endcomment %}
+<!--? Config:  Mandatory theme config file contain global vars & default theme options, Set your preferred theme option in this file.  -->
+<script src="{% static 'js/config.js' %}"></script>
+

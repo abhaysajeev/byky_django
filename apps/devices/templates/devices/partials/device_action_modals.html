@@ -1,0 +1,66 @@
+{% comment %}
+The Device Approval actions' two modals, driven by byky-device-approval.js.
+
+  approve   a name, and optionally a station -- stations can also be set
+            later in Device Mapping.
+  action    reconnect / reject / block / unblock: one line saying exactly what
+            happens, an optional reason where the status log keeps one, and for
+            a reinstall a second way out, "Register as new".
+
+Needs approve_stations in the context.
+{% endcomment %}
+<div class="scr-modal-veil" data-scr-modal-veil="device-approve" hidden></div>
+<div class="scr-modal scr-dev-modal" data-scr-modal="device-approve" hidden>
+  <div class="scr-modal-head">
+    <div>
+      <div class="scr-modal-title" data-approve-title>Approve device</div>
+      <p class="scr-modal-sub" data-approve-sub>Give it a name staff will recognise.</p>
+    </div>
+    <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+    </button>
+  </div>
+  <div class="scr-modal-body scr-dev-fields">
+    <div class="scr-field">
+      <label class="scr-label" for="dev-name">Device name<span class="scr-required">*</span></label>
+      <input id="dev-name" type="text" class="scr-input" maxlength="120" placeholder="e.g. AlMamzar-POS1" autocomplete="off" data-approve-name />
+    </div>
+    <div class="scr-field">
+      <label class="scr-label" for="dev-station">Station <span class="scr-dev-optional">optional</span></label>
+      <select id="dev-station" class="scr-input" data-approve-station>
+        <option value="">No station yet</option>
+        {% for b in approve_stations %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}
+      </select>
+      <p class="scr-dev-hint">Leave empty to set it later in Device Mapping. Staff cannot log in on an operator tablet until it has a station.</p>
+    </div>
+  </div>
+  <div class="scr-modal-foot scr-dev-foot">
+    <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+    <button type="button" class="scr-btn-primary" data-approve-go>Approve</button>
+  </div>
+</div>
+
+<div class="scr-modal-veil" data-scr-modal-veil="device-action" hidden></div>
+<div class="scr-modal scr-dev-modal" data-scr-modal="device-action" hidden>
+  <div class="scr-modal-head">
+    <div>
+      <div class="scr-modal-title" data-action-title></div>
+      <p class="scr-modal-sub" data-action-sub></p>
+    </div>
+    <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+    </button>
+  </div>
+  <div class="scr-modal-body scr-dev-fields">
+    <p class="scr-modal-line" data-action-line></p>
+    <div class="scr-field" data-action-reason-field hidden>
+      <label class="scr-label" for="dev-reason">Reason</label>
+      <input id="dev-reason" type="text" class="scr-input" maxlength="100" placeholder="Optional — kept in the device's history" autocomplete="off" data-action-reason />
+    </div>
+  </div>
+  <div class="scr-modal-foot scr-dev-foot">
+    <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+    <button type="button" class="scr-btn-secondary" data-action-alt hidden>Register as new</button>
+    <button type="button" class="scr-btn-primary" data-action-go></button>
+  </div>
+</div>

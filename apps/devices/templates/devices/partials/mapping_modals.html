@@ -1,0 +1,53 @@
+{% comment %}
+Device Mapping's Re-map and Close modals, driven by byky-device-mapping.js.
+
+Re-map closes the device's open mapping now and opens one at the new station
+(design/03-login.md section 8.6: never an update in place). Close ends it now.
+No date is typed: mapping is stamped when it is saved, as the legacy did. Needs remap_stations in the context.
+{% endcomment %}
+<div class="scr-modal-veil" data-scr-modal-veil="device-remap" hidden></div>
+<div class="scr-modal scr-dev-modal" data-scr-modal="device-remap" hidden>
+  <div class="scr-modal-head">
+    <div>
+      <div class="scr-modal-title" data-remap-title>Re-map device</div>
+      <p class="scr-modal-sub" data-remap-sub></p>
+    </div>
+    <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+    </button>
+  </div>
+  <div class="scr-modal-body scr-dev-fields">
+    <div class="scr-field">
+      <label class="scr-label" for="remap-station">New station<span class="scr-required">*</span></label>
+      <select id="remap-station" class="scr-input" data-remap-station>
+        <option value="">Select a station</option>
+        {% for b in remap_stations %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <p class="scr-dev-hint" data-remap-hint>The move takes effect now: the current mapping ends and the new one starts at this moment.</p>
+  </div>
+  <div class="scr-modal-foot scr-dev-foot">
+    <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+    <button type="button" class="scr-btn-primary" data-remap-go>Re-map</button>
+  </div>
+</div>
+
+<div class="scr-modal-veil" data-scr-modal-veil="device-unmap" hidden></div>
+<div class="scr-modal scr-dev-modal" data-scr-modal="device-unmap" hidden>
+  <div class="scr-modal-head">
+    <div>
+      <div class="scr-modal-title" data-unmap-title>Close mapping?</div>
+      <p class="scr-modal-sub" data-unmap-sub></p>
+    </div>
+    <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+    </button>
+  </div>
+  <div class="scr-modal-body">
+    <p class="scr-modal-line">The mapping ends now and stays in the station history. Until the device is mapped again, nobody can log in on it at a station.</p>
+  </div>
+  <div class="scr-modal-foot scr-dev-foot">
+    <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+    <button type="button" class="scr-btn-danger" data-unmap-go>Close mapping</button>
+  </div>
+</div>

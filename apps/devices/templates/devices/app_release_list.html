@@ -1,0 +1,255 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}App Releases - Device Management{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+<script src="{% static 'js/byky-app-release.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr" data-app-release data-url-withdraw="{{ release_urls.withdraw }}" data-url-restore="{{ release_urls.restore }}">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Device Management</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>App Releases</b>
+      </div>
+      <h1 class="scr-title">App Releases</h1>
+      <p class="scr-sub">Every build of the tablet apps. A new release reaches no tablet until it is mapped on App Mapping.</p>
+    </div>
+    <div class="scr-head-actions">
+      {% if perm.create %}
+      <button type="button" class="scr-btn-primary" data-scr-open="app_release:add">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+        Add Release
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="scr-tiles">
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-blue">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"></rect><path d="M11 18h2"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ release_counts.total }}</div><div class="scr-tile-lab">Releases</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-green">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ release_counts.mapped }}</div><div class="scr-tile-lab">Live on branches</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-red">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"></path><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ release_counts.mandatory }}</div><div class="scr-tile-lab">Mandatory</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-amber">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M8 12h8"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ release_counts.withdrawn }}</div><div class="scr-tile-lab">Withdrawn</div></div>
+    </div>
+  </div>
+
+  <div class="scr-card" data-scr-noun-singular="release" data-scr-noun-plural="releases">
+    <div class="scr-toolbar">
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="text" placeholder="Search version, code or note" />
+      </div>
+
+      <div class="scr-filter-wrap" data-filter-key="app">
+        <button type="button" class="scr-filter-btn">
+          <span class="scr-filter-label">All apps</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+        </button>
+        <div class="scr-filter-menu" hidden>
+          <button type="button" class="scr-filter-opt is-active" data-value="">All apps</button>
+          {% for a in release_apps %}<button type="button" class="scr-filter-opt" data-value="{{ a.id }}">{{ a.name }}</button>{% endfor %}
+        </div>
+      </div>
+
+      {% if multi_company %}
+      <div class="scr-filter-wrap" data-filter-key="company">
+        <button type="button" class="scr-filter-btn">
+          <span class="scr-filter-label">All companies</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+        </button>
+        <div class="scr-filter-menu" hidden>
+          <button type="button" class="scr-filter-opt is-active" data-value="">All companies</button>
+          {% for c in companies %}<button type="button" class="scr-filter-opt" data-value="{{ c.short_code }}">{{ c.name }}</button>{% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="scr-filter-wrap" data-filter-key="type">
+        <button type="button" class="scr-filter-btn">
+          <span class="scr-filter-label">All update types</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+        </button>
+        <div class="scr-filter-menu" hidden>
+          <button type="button" class="scr-filter-opt is-active" data-value="">All update types</button>
+          {% for t in release_update_types %}<button type="button" class="scr-filter-opt" data-value="{{ t.id }}">{{ t.name }}</button>{% endfor %}
+        </div>
+      </div>
+
+      <div class="scr-filter-wrap" data-filter-key="status">
+        <button type="button" class="scr-filter-btn">
+          <span class="scr-filter-label">All status</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+        </button>
+        <div class="scr-filter-menu" hidden>
+          <button type="button" class="scr-filter-opt is-active" data-value="">All status</button>
+          <button type="button" class="scr-filter-opt" data-value="active">Active</button>
+          <button type="button" class="scr-filter-opt" data-value="withdrawn">Withdrawn</button>
+        </div>
+      </div>
+
+      <span class="scr-toolbar-count">{{ releases|length }} releases</span>
+    </div>
+
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>App</th>
+            {% if multi_company %}<th>Company</th>{% endif %}
+            <th>Version</th>
+            <th>Version Code</th>
+            <th>Update Type</th>
+            <th>What's New</th>
+            <th>Download Link</th>
+            <th>On Branches</th>
+            <th>Status</th>
+            <th>Added</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in releases %}
+          <tr class="scr-row" data-search="{{ r.version_name }} {{ r.version_code }} {{ r.note|lower }} {{ r.app|lower }}" data-app="{{ r.channel }}" data-company="{{ r.company_code }}" data-type="{{ r.update_type }}" data-status="{% if r.active %}active{% else %}withdrawn{% endif %}" data-record-id="{{ r.json_id }}" data-pk="{{ r.pk }}">
+            <td class="scr-contact">{{ r.app }}</td>
+            {% if multi_company %}<td class="scr-contact">{{ r.company_code }}</td>{% endif %}
+            <td style="font-weight:600">{{ r.version_name }}</td>
+            <td><span class="scr-code">{{ r.version_code }}</span></td>
+            <td>
+              {% if r.mandatory %}<span class="scr-badge scr-badge-mandatory"><i></i>Mandatory</span>
+              {% else %}<span class="scr-badge scr-badge-anytime"><i></i>Any time</span>{% endif %}
+            </td>
+            <td class="scr-contact"><span class="scr-rel-note" title="{{ r.note }}">{{ r.note|default:"—" }}</span></td>
+            <td class="scr-contact"><a class="scr-rel-link" href="{{ r.url }}" target="_blank" rel="noopener noreferrer" title="{{ r.url }}">{{ r.url }}</a></td>
+            <td class="scr-contact">
+              {% if r.is_all %}<span class="scr-rel-all">All branches</span>{% if r.branch_count %} + {{ r.branch_count }}{% endif %}
+              {% elif r.branch_count %}{{ r.branch_count }} branch{{ r.branch_count|pluralize:"es" }}
+              {% else %}<span class="scr-rel-muted">Not mapped</span>{% endif %}
+            </td>
+            <td>
+              {% if r.active %}<span class="scr-badge scr-badge-active"><i></i>Active</span>
+              {% else %}<span class="scr-badge scr-badge-inactive"><i></i>Withdrawn</span>{% endif %}
+            </td>
+            <td>
+              <div class="scr-contact">{{ r.added_on|date:"d M Y, H:i" }}</div>
+              <div class="scr-contact-sub">{{ r.added_by|default:"—" }}</div>
+            </td>
+            <td>
+              <div class="scr-row-actions">
+                {% if perm.update %}
+                <div class="scr-menu-wrap">
+                  <button type="button" class="scr-icon-btn" title="More" data-scr-menu-toggle>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="12" cy="19" r="1.6"></circle></svg>
+                  </button>
+                  <div class="scr-menu" hidden>
+                    <button type="button" class="scr-menu-item" data-scr-open="app_release:edit">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10a2.1 2.1 0 0 0-3-3L5 17z"></path><path d="M14.5 6.5 17.5 9.5"></path></svg>
+                      Edit
+                    </button>
+                    {% if r.active %}
+                    <button type="button" class="scr-menu-item scr-menu-item-danger" data-release-action="withdraw" data-pk="{{ r.pk }}" data-label="{{ r.app }} {{ r.version_name }}" data-note="{{ r.withdraw_note }}">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M5.6 5.6l12.8 12.8"></path></svg>
+                      Withdraw
+                    </button>
+                    {% else %}
+                    <button type="button" class="scr-menu-item" data-release-action="restore" data-pk="{{ r.pk }}" data-label="{{ r.app }} {{ r.version_name }}" data-note="Branches mapped to it are offered it again.">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path></svg>
+                      Restore
+                    </button>
+                    {% endif %}
+                  </div>
+                </div>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {{ r.fields_json|json_script:r.json_id }}
+          {% empty %}
+          <tr>
+            <td colspan="11" style="padding:0">
+              <div class="scr-empty">
+                <span class="scr-empty-ico">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"></rect><path d="M11 18h2"></path></svg>
+                </span>
+                <div>
+                  <div class="scr-empty-title">No releases yet</div>
+                  <p class="scr-empty-sub">Add a build here, then map it to branches on App Mapping. Until then every tablet is told it is up to date.</p>
+                </div>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="scr-pager">
+      <span class="scr-pager-info">Showing {{ releases|length }} of {{ releases|length }}</span>
+      <div class="scr-pager-nav">
+        <button type="button" class="scr-pager-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"></path></svg>
+        </button>
+        <span class="scr-pager-current">1</span>
+        <button type="button" class="scr-pager-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 6 6 6-6 6"></path></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if perm.update %}
+<div class="scr-modal-veil" data-scr-modal-veil="release-state" hidden></div>
+<div class="scr-modal scr-dev-modal" data-scr-modal="release-state" hidden>
+  <div class="scr-modal-head">
+    <div>
+      <div class="scr-modal-title" data-release-title></div>
+      <p class="scr-modal-sub" data-release-sub></p>
+    </div>
+    <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+    </button>
+  </div>
+  <div class="scr-modal-body">
+    <p class="scr-modal-line" data-release-note></p>
+  </div>
+  <div class="scr-modal-foot scr-dev-foot">
+    <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+    <button type="button" class="scr-btn-danger" data-release-go></button>
+  </div>
+</div>
+{% endif %}
+
+{% include "byky/partials/drawer.html" with spec=drawer_app_release module_label="Device Management · App Releases" save_url=release_urls.save %}
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}

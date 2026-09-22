@@ -1,0 +1,28 @@
+{% comment %}
+One modal for the two things a save can come back with:
+
+  * every validation error at once, each as a red point -- so a person fixes
+    them in one pass instead of discovering them one save at a time;
+  * a delete that could not happen, listing where the record is still linked,
+    and saying it was deactivated instead.
+
+Include once per screen; byky-crud.js fills it.
+{% endcomment %}
+<div class="scr-modal-veil" data-scr-modal-veil="message" hidden></div>
+<div class="scr-modal" data-scr-modal="message" hidden style="width:min(460px, 100%)">
+  <div class="scr-modal-head">
+    <div>
+      <div class="scr-modal-title" data-message-title>Please fix the following</div>
+      <p class="scr-modal-sub" data-message-sub></p>
+    </div>
+    <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+    </button>
+  </div>
+  <div class="scr-modal-body">
+    <ul class="scr-msg-list" data-message-list></ul>
+  </div>
+  <div class="scr-modal-foot" style="justify-content:flex-end">
+    <button type="button" class="scr-btn-primary" data-scr-modal-close>Close</button>
+  </div>
+</div>

@@ -1,0 +1,68 @@
+{% load static %}<!DOCTYPE html>
+{% comment %}
+The sign-in page. Markup from design/login.html (Claude Design), unchanged except
+where that file marked a "Django:" spot. Its styles and script live in
+static/css/byky-login.css and static/js/byky-login.js, also unchanged.
+
+Standalone on purpose: a signed-out visitor has no sidebar, navbar or menu, so
+it does not extend the application layout.
+{% endcomment %}
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in · BYKY</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'css/byky-login.css' %}">
+</head>
+<body>
+
+  <div class="brand">
+    <img src="{% static 'img/branding/byky-logo.png' %}" alt="BYKY">
+    <div class="eyebrow">Operations back office</div>
+  </div>
+
+  <div class="card">
+    <h1>Sign in</h1>
+    <p class="sub">Enter your details to continue.</p>
+
+    {% if error %}<div class="msg-error" role="alert">{{ error }}</div>{% endif %}
+    {% for m in messages %}<div class="msg-notice" role="status">{{ m }}</div>{% endfor %}
+
+    {% comment %}
+    The query string is carried through the post: PagePermissionMixin sends a
+    signed-out visitor here with ?next=<the page they wanted>, and the view
+    only sends them back if it is on this site.
+    {% endcomment %}
+    <form method="post" action="{% url 'login' %}{% if request.GET.next %}?next={{ request.GET.next|urlencode }}{% endif %}">
+      {% csrf_token %}
+
+      <div class="field">
+        <label for="username">Username</label>
+        <input id="username" name="username" type="text" autocomplete="username" autofocus
+               spellcheck="false" autocapitalize="none" placeholder="Enter your username" value="{{ username|default:'' }}">
+        <span class="hint">Your employee code or back-office name.</span>
+      </div>
+
+      <div class="field">
+        <label for="password">Password</label>
+        <div class="pw">
+          <input id="password" name="password" type="password" autocomplete="current-password"
+                 placeholder="Enter your password">
+          <button type="button" id="pw-toggle" aria-label="Show or hide password" hidden>Show</button>
+        </div>
+      </div>
+
+      <button type="submit" class="submit">Sign in</button>
+    </form>
+
+    <p class="help">Forgotten your password? An administrator can reset it.</p>
+  </div>
+
+  <div class="foot">BYKY · Vehicle rental operations · UAE</div>
+
+<script src="{% static 'js/byky-login.js' %}" defer></script>
+</body>
+</html>

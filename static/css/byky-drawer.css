@@ -1,0 +1,385 @@
+/* BYKY drawer — matches the "Byky Drawer" design exactly.
+   Self-contained: overrides Bootstrap's .offcanvas chrome, no Vuexy form classes.
+   Load AFTER sidebar.css (which imports Sora) and after Bootstrap's CSS. */
+
+/* ── shell ────────────────────────────────────────────────────────── */
+.byky-drawer.offcanvas {
+  font-family: 'Sora', sans-serif;
+  color: #1a1640;
+  background: #fff;
+  border: none;
+  box-shadow: -26px 0 64px -32px rgba(26, 22, 64, 0.55);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  /* width comes from the size class; standard is the fallback */
+  width: 560px;
+  max-width: 100%;
+}
+.byky-drawer.is-compact  { width: 440px; }
+.byky-drawer.is-standard { width: 560px; }
+.byky-drawer.is-wide     { width: 720px; }
+
+.byky-drawer *,
+.byky-drawer *::before,
+.byky-drawer *::after { box-sizing: border-box; }
+.byky-drawer h2, .byky-drawer p { margin: 0; }
+
+/* Bootstrap's backdrop, softened to the design's veil */
+.offcanvas-backdrop.show { background: #1a1640; opacity: 0.36; }
+
+.byky-drawer-accent {
+  flex: 0 0 auto;
+  height: 3px;
+  background: linear-gradient(90deg, #a80f14, #d81f26 55%, #f04a50);
+}
+
+/* ── header ───────────────────────────────────────────────────────── */
+.byky-drawer-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 19px 24px 17px;
+  background: #fff;
+}
+.byky-drawer-heading { min-width: 0; }
+.byky-drawer-module {
+  font-size: 10.5px; font-weight: 600; letter-spacing: 1.2px; text-transform: uppercase;
+  color: #a9a6c4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.byky-drawer-title {
+  font-size: 17px; font-weight: 600; letter-spacing: -0.3px; margin-top: 5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.byky-drawer-close {
+  width: 32px; height: 32px; border-radius: 10px; border: 1px solid #eeedf5;
+  background: #fff; color: #8b87b0; display: grid; place-items: center; cursor: pointer;
+  flex: 0 0 auto; padding: 0;
+  transition: border-color 0.16s, color 0.16s, transform 0.18s;
+}
+.byky-drawer-close:hover { border-color: #f3c3c5; color: #d81f26; transform: rotate(90deg); }
+
+/* ── section jump tabs (2+ named sections only) ───────────────────── */
+.byky-drawer-jumps {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 20px;
+  padding: 0 24px;
+  overflow-x: auto;
+  border-bottom: 1px solid #f0eff7;
+  scrollbar-width: none;
+}
+.byky-drawer-jumps::-webkit-scrollbar { display: none; }
+.byky-drawer-jumps[hidden] { display: none; }
+.byky-jump {
+  flex: 0 0 auto; border: none; background: none; padding: 0 0 12px;
+  font-family: inherit; font-size: 12.5px; font-weight: 500; color: #8b87b0;
+  cursor: pointer; white-space: nowrap; border-bottom: 2px solid transparent;
+  transition: color 0.16s, border-color 0.16s;
+}
+.byky-jump:hover { color: #1a1640; }
+.byky-jump.is-on { font-weight: 600; color: #1a1640; border-bottom-color: #d81f26; }
+
+/* drawers with no jump tabs still need the header rule */
+.byky-drawer-jumps[hidden] + .byky-drawer-form .byky-drawer-body { border-top: 1px solid #f0eff7; }
+
+/* ── body + sections ──────────────────────────────────────────────── */
+.byky-drawer-form { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.byky-drawer-body {
+  flex: 1; overflow-y: auto; padding: 0 24px 28px;
+  scrollbar-width: thin; scrollbar-color: #e4e3ee transparent;
+}
+.byky-drawer-body::-webkit-scrollbar { width: 6px; }
+.byky-drawer-body::-webkit-scrollbar-thumb { background: #e4e3ee; border-radius: 99px; }
+
+.byky-section { margin-top: 22px; }
+.byky-section:first-child { margin-top: 0; }
+
+/* sticky section header — pins while its own fields scroll under it */
+.byky-section-head {
+  display: flex; align-items: center; gap: 10px;
+  position: sticky; top: 0; z-index: 3;
+  background: #fff; padding: 9px 0 8px; margin-bottom: 15px;
+}
+.byky-section-bar {
+  width: 3px; height: 0; border-radius: 99px; background: transparent; flex: 0 0 auto;
+  transition: height 0.2s, background 0.2s;
+}
+.byky-section-title {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase;
+  color: #a9a6c4; white-space: nowrap; transition: color 0.2s;
+}
+.byky-section-rule { flex: 1; height: 1px; background: #f4f3f9; transition: background 0.2s; }
+.byky-section-count {
+  font-size: 10.5px; font-weight: 600; color: #c9c6dd;
+  font-variant-numeric: tabular-nums; transition: color 0.2s;
+}
+.byky-section.is-current .byky-section-bar   { height: 13px; background: #d81f26; }
+.byky-section.is-current .byky-section-title { color: #1a1640; }
+.byky-section.is-current .byky-section-rule  { background: #f7dede; }
+.byky-section.is-current .byky-section-count { color: #c2141a; }
+
+/* ── field grid: 1 column compact, 2 columns standard/wide ────────── */
+/* A section with no title (sec.title == "") skips .byky-section-head
+   entirely (drawer.html's own {% if sec.title %}), so .byky-fields would
+   otherwise sit flush against the divider above the first section with
+   zero gap -- margin-top here gives it one, cancelled back to 0 whenever a
+   header or note already provides that spacing itself. */
+.byky-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px 16px; margin-top: 20px; }
+.byky-section-head ~ .byky-fields,
+.byky-section-note ~ .byky-fields { margin-top: 0; }
+/* .byky-section-note's own -6px pull-up assumes a header sits above it;
+   without one (untitled section with a note) that would tuck it under the
+   divider instead of the header, so neutralize it in that case. */
+.byky-section-note:first-child { margin-top: 0; }
+.byky-drawer.is-compact .byky-fields { grid-template-columns: minmax(0, 1fr); }
+.byky-field { min-width: 0; }
+/* Bootstrap col widths (screens.py `width`) map onto the 2-col grid */
+.byky-span-12, .byky-span-9, .byky-span-8 { grid-column: span 2; }
+.byky-drawer.is-compact .byky-span-12,
+.byky-drawer.is-compact .byky-span-9,
+.byky-drawer.is-compact .byky-span-8 { grid-column: span 1; }
+
+.byky-label {
+  display: flex; align-items: baseline; gap: 5px;
+  font-size: 11.5px; font-weight: 500; color: #6b6790; margin-bottom: 7px;
+}
+.byky-label > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.byky-req { color: #d81f26; font-style: normal; }
+.byky-help { font-size: 10.5px; color: #a9a6c4; margin-top: 6px; line-height: 1.5; }
+/* A .byky-help warning about something rather than describing the field --
+   e.g. Device Mapping's "this branch doesn't allow a second device" note. */
+.byky-help-danger { color: #d81f26; }
+
+/* ── inputs ───────────────────────────────────────────────────────── */
+.byky-input {
+  width: 100%; height: 42px; border: 1px solid #e8e7f2; background: #fff;
+  border-radius: 11px; padding: 0 13px; font-family: inherit; font-size: 13px;
+  color: #1a1640; outline: none;
+  transition: border-color 0.16s, box-shadow 0.16s;
+}
+.byky-input::placeholder { color: #a9a6c4; }
+.byky-input:hover { border-color: #d3d0e6; }
+.byky-input:focus { border-color: #d81f26; box-shadow: 0 0 0 3px rgba(216, 31, 38, 0.1); }
+.byky-textarea { height: auto; padding: 11px 13px; line-height: 1.55; resize: vertical; }
+
+.byky-select-wrap { position: relative; }
+.byky-select { appearance: none; cursor: pointer; padding-right: 36px; color: #8b87b0; }
+.byky-select:valid, .byky-select.has-value { color: #1a1640; }
+.byky-select-caret,
+.byky-date-icon { position: absolute; right: 13px; pointer-events: none; color: #a9a6c4; }
+.byky-select-caret { top: 14px; }
+.byky-date-icon { top: 13px; }
+.byky-input.has-affix { padding-right: 40px; }
+
+.byky-file {
+  display: flex; align-items: center; gap: 11px; height: 42px;
+  border: 1.5px dashed #e0deee; background: #fbfaff; border-radius: 11px;
+  padding: 0 13px; cursor: pointer; color: #a9a6c4;
+  transition: border-color 0.16s, background 0.16s;
+}
+.byky-file:hover { border-color: #f3c3c5; background: #fdf9f9; }
+.byky-file span { font-size: 12.5px; color: #9490bb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.byky-file-input { display: none; }
+
+/* switch (checkbox fields + the footer Active toggle) */
+.byky-switch-row {
+  display: flex; align-items: center; gap: 11px; height: 42px;
+  border: 1px solid #eeedf5; background: #fbfaff; border-radius: 11px;
+  padding: 0 13px; cursor: pointer; margin: 0;
+  transition: border-color 0.16s;
+}
+.byky-switch-row:hover { border-color: #d3d0e6; }
+.byky-switch-input { position: absolute; opacity: 0; width: 0; height: 0; }
+.byky-switch {
+  width: 36px; height: 21px; border-radius: 99px; background: #dcd9ea;
+  position: relative; flex: 0 0 auto; transition: background 0.18s;
+}
+.byky-switch::after {
+  content: ''; position: absolute; top: 3px; left: 3px; width: 15px; height: 15px;
+  border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(26, 22, 64, 0.32);
+  transition: left 0.18s;
+}
+.byky-switch-input:checked + .byky-switch { background: #1f9d63; }
+.byky-switch-input:checked + .byky-switch::after { left: 18px; }
+.byky-switch-input:focus-visible + .byky-switch { box-shadow: 0 0 0 3px rgba(216, 31, 38, 0.14); }
+.byky-switch-label { font-size: 12.5px; font-weight: 500; color: #4b4770; }
+
+/* ── footer rail ──────────────────────────────────────────────────── */
+.byky-drawer-foot {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 14px 24px; border-top: 1px solid #f0eff7; background: #fbfaff;
+}
+.byky-foot-active {
+  flex: 1 1 100px; min-width: 0; height: auto;
+  border: none; background: none; padding: 0; gap: 9px;
+}
+.byky-foot-active:hover { border: none; }
+.byky-drawer-foot button { font-family: inherit; cursor: pointer; }
+.byky-btn-text {
+  border: none; background: none; font-size: 12.5px; font-weight: 500;
+  color: #8b87b0; padding: 10px 6px; transition: color 0.16s;
+}
+.byky-btn-text:hover { color: #1a1640; }
+.byky-btn-outline {
+  border: 1px solid #e8e7f2; background: #fff; font-size: 12.5px; font-weight: 500;
+  color: #4b4770; padding: 9px 15px; border-radius: 9px; transition: border-color 0.16s;
+}
+.byky-btn-outline:hover { border-color: #d3d0e6; }
+.byky-btn-primary {
+  border: none; background: #d81f26; font-size: 12.5px; font-weight: 600;
+  color: #fff; padding: 10px 20px; border-radius: 9px; transition: background 0.16s;
+}
+.byky-btn-primary:hover { background: #c2141a; }
+
+/* ── narrow viewports ─────────────────────────────────────────────── */
+@media (max-width: 767.98px) {
+  .byky-drawer.offcanvas,
+  .byky-drawer.is-compact,
+  .byky-drawer.is-standard,
+  .byky-drawer.is-wide { width: 100%; }
+  .byky-drawer .byky-fields { grid-template-columns: minmax(0, 1fr); }
+  .byky-drawer .byky-span-12,
+  .byky-drawer .byky-span-9,
+  .byky-drawer .byky-span-8 { grid-column: span 1; }
+}
+
+/* ── radio rows and multiselects ──────────────────────────────────────
+   Two control kinds the original design did not cover but real screens
+   carry: Promo Code's Discount Type / Push Dispatch's Platform (radio),
+   and Branch Department Mapping's authority pickers (multiselect). Built
+   from the same tokens as the rest of the drawer -- 42px controls, 11px
+   radius, brand #d81f26 -- so they read as part of the same design. */
+.byky-radio-row { display: flex; flex-wrap: wrap; gap: 8px; min-height: 42px; align-items: center; }
+.byky-radio-label {
+  display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+  padding: 9px 13px; border: 1px solid #e8e7f2; border-radius: 11px;
+  font-size: 12.5px; font-weight: 500; color: #4b4770; background: #fff;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.byky-radio-label:hover { border-color: #c9c6dd; }
+.byky-radio { accent-color: #d81f26; width: 14px; height: 14px; margin: 0; }
+.byky-radio-label:has(.byky-radio:checked) { border-color: #f3c3c5; background: #fdeced; color: #a80f14; }
+
+.byky-multi { position: relative; }
+/* The control is a field box that grows with its pills rather than a button:
+   a branch can carry several departments, and a fixed-height control would
+   either clip them or hide them behind a count. */
+.byky-multi-control {
+  min-height: 42px; width: 100%; display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  padding: 7px 34px 7px 11px; border: 1px solid #e8e7f2; border-radius: 11px; background: #fff;
+  cursor: pointer; position: relative; transition: border-color 0.16s, box-shadow 0.16s;
+}
+.byky-multi-control:hover { border-color: #d9d5ea; }
+.byky-multi.is-open .byky-multi-control,
+.byky-multi-control:focus-visible { outline: none; border-color: #d81f26; box-shadow: 0 0 0 3px rgba(216, 31, 38, 0.1); }
+.byky-multi-pills { display: contents; }
+.byky-multi-placeholder { font-size: 12.5px; color: #a9a6c4; }
+.byky-multi-caret { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: #a9a6c4; pointer-events: none; }
+
+/* Neutral, not brand red: a picked department is a value the user entered,
+   not a status or an alert, and a row of red chips reads as several warnings.
+   Tinted surface + hairline from the design system's own ramp, and a 6px
+   radius -- square-ish, the same corner the small badges use, rather than the
+   fully-rounded pill this was. */
+.byky-pill {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+  background: #f4f3f9; border: 1px solid #e8e7f2; color: #4b4770;
+  font-size: 11.5px; font-weight: 500; padding: 4px 5px 4px 9px; border-radius: 6px;
+}
+.byky-pill > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.byky-pill-x {
+  display: grid; place-items: center; flex: 0 0 auto; width: 16px; height: 16px;
+  border: none; border-radius: 4px; background: transparent; color: #9490bb;
+  cursor: pointer; padding: 0; transition: background 0.14s, color 0.14s;
+}
+/* the remove control only colours up on hover, so a full field of chips
+   stays calm until you reach for one */
+.byky-pill-x:hover { background: #e8e7f2; color: #4b4770; }
+
+.byky-multi-menu {
+  position: absolute; z-index: 5; inset-inline: 0; top: calc(100% + 4px);
+  background: #fff; border: 1px solid #e8e7f2; border-radius: 11px;
+  box-shadow: 0 14px 34px -18px rgba(26, 22, 64, 0.4);
+  max-height: 210px; overflow-y: auto; padding: 5px;
+}
+.byky-multi-opt {
+  display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 8px;
+  font-size: 12.5px; font-weight: 500; color: #4b4770; cursor: pointer;
+}
+.byky-multi-opt:hover { background: #f6f5fc; }
+.byky-multi-opt input { accent-color: #d81f26; width: 14px; height: 14px; margin: 0; }
+.byky-multi-none { font-size: 12px; color: #9490bb; padding: 10px 11px; }
+
+/* ── read-only fields ─────────────────────────────────────────────────
+   A field whose value this screen displays but does not own -- Add
+   Vehicle's stock and pricing figures arrive from an external system.
+   Tinted and dimmed so it reads as "not yours to type in" before anyone
+   clicks it, rather than only refusing input once they try. Selects use
+   :disabled because readonly does nothing on a <select>. */
+.byky-drawer .byky-input[readonly],
+.byky-drawer .byky-input:disabled {
+  background: #f6f5fc;
+  border-color: #eeedf5;
+  color: #6b6790;
+  cursor: not-allowed;
+}
+.byky-drawer .byky-input[readonly]:focus,
+.byky-drawer .byky-input:disabled:focus { border-color: #eeedf5; box-shadow: none; }
+.byky-drawer .byky-select:disabled + .byky-select-caret { opacity: 0.45; }
+
+/* Grey provenance line under a section header -- says where the section's
+   values come from when the screen only displays them (see sec.note). */
+.byky-section-note {
+  font-size: 11.5px; font-weight: 450; color: #9490bb;
+  margin: -6px 0 14px; line-height: 1.45;
+}
+
+/* ── grouped booleans ─────────────────────────────────────────────────
+   Several switches that belong to one decision, laid out on a two-column
+   grid so their labels line up rather than stacking ragged. Collapses to one
+   column with the rest of the drawer on a narrow viewport. */
+.byky-checkgroup {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 18px; padding: 4px 0 2px;
+}
+.byky-checkgroup .byky-switch-row { margin: 0; }
+.byky-drawer.is-compact .byky-checkgroup { grid-template-columns: 1fr; }
+@media (max-width: 767px) { .byky-checkgroup { grid-template-columns: 1fr; } }
+
+/* ── standalone drawer (no Bootstrap offcanvas) ──────────────────────
+   Fare Entry's Time Slab and Offer Creation's Free Item Slab editors
+   build their rows in JS at runtime (byky-fare.js) rather than editing a
+   server record -- there's no data-bs-toggle trigger or Bootstrap JS
+   lifecycle involved, byky-fare.js only ever flips the plain `hidden`
+   attribute on the veil/drawer pair (the same way the old .scr-veil/
+   .scr-drawer markup always worked). .byky-drawer's own shell styling
+   only applies compounded with .offcanvas (Bootstrap's own show/hide
+   mechanics, which nothing here drives), so this duplicates that shell's
+   declarations under a class with no such dependency. Every *inner*
+   class (.byky-drawer-head, .byky-section, .byky-field, .byky-input,
+   .byky-drawer-foot, .byky-btn-*, ...) is unscoped and works here as-is --
+   only the outer shell needed its own rule. Keep this in sync if
+   .byky-drawer.offcanvas's shell declarations change. */
+.byky-standalone-veil {
+  position: fixed; inset: 0; background: rgba(26, 22, 64, 0.36); z-index: 1085;
+}
+.byky-standalone-veil[hidden] { display: none; }
+.byky-standalone-drawer {
+  font-family: 'Sora', sans-serif;
+  color: #1a1640;
+  background: #fff;
+  box-shadow: -26px 0 64px -32px rgba(26, 22, 64, 0.55);
+  display: flex;
+  flex-direction: column;
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 1086;
+  width: 560px; max-width: 100%;
+}
+.byky-standalone-drawer[hidden] { display: none; }
+.byky-standalone-drawer *,
+.byky-standalone-drawer *::before,
+.byky-standalone-drawer *::after { box-sizing: border-box; }
+.byky-standalone-drawer h2, .byky-standalone-drawer p { margin: 0; }
+@media (max-width: 767.98px) { .byky-standalone-drawer { width: 100%; } }

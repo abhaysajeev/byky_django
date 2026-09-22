@@ -1,0 +1,131 @@
+/* Byky RMS sidebar — matches "Byky Sidebar v2" exactly. No Bootstrap dependency. */
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap');
+
+.byky-shell{display:flex;height:100vh;min-height:600px;overflow:hidden;position:relative;background:#f4f5fa;font-family:'Sora',sans-serif;color:#1a1640}
+.byky-spacer{width:0;flex:0 0 auto}
+.byky-shell.is-peek .byky-spacer{width:76px}
+
+/* ── rail ── */
+.byky-sidebar{--sb-w:276px;width:var(--sb-w);flex:0 0 auto;background:#fff;border-right:1px solid #e8e8f0;display:flex;flex-direction:column;position:relative;top:0;left:0;height:100%;overflow-x:hidden;z-index:6;transition:width .24s cubic-bezier(.4,0,.2,1)}
+.byky-sidebar.is-collapsed{width:76px}
+.byky-sidebar.is-peek{position:absolute;width:var(--sb-w);box-shadow:0 20px 50px -18px rgba(26,22,64,.34)}
+.byky-sidebar.is-dragging{transition:none}
+
+/* ── brand ── */
+.byky-brand{display:flex;flex-direction:row;align-items:center;justify-content:center;gap:10px;padding:18px 14px 14px 18px}
+.byky-sidebar.is-collapsed:not(.is-peek) .byky-brand{flex-direction:column;padding:16px 8px 12px}
+.byky-brand img{width:32px;height:auto;flex:0 0 auto}
+.byky-brand-text{flex:1;min-width:0;overflow:hidden}
+.byky-sidebar.is-collapsed:not(.is-peek) .byky-brand-text{display:none}
+.byky-wordmark{font-size:19px;font-weight:800;letter-spacing:-.4px;white-space:nowrap;line-height:1.1}
+.byky-wordmark span{display:inline-block}
+.byky-wordmark .w1{color:#1a1640}
+.byky-wordmark .w2{color:#d81f26}
+.byky-tagline{font-size:10.5px;font-weight:500;color:#9490bb;letter-spacing:.6px;text-transform:uppercase;white-space:nowrap;margin-top:2px}
+.byky-brand-text.animate .w1{animation:bykyBrandSlide .34s cubic-bezier(.2,.8,.2,1) both}
+.byky-brand-text.animate .w2{animation:bykyBrandSlide .34s cubic-bezier(.2,.8,.2,1) .07s both}
+.byky-brand-text.animate .byky-tagline{animation:bykyBrandRise .3s ease-out .15s both}
+@keyframes bykyBrandSlide{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:translateX(0)}}
+@keyframes bykyBrandRise{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+
+.byky-toggle{flex:0 0 auto;width:28px;height:28px;border:1.5px solid #e8e7f2;background:#fff;border-radius:50%;display:grid;place-items:center;cursor:pointer;color:#9490bb;padding:0;transition:border-color .16s,color .16s,transform .18s}
+.byky-toggle:hover{border-color:#d81f26;color:#d81f26;transform:scale(1.08)}
+.byky-toggle svg{transition:transform .22s}
+.byky-sidebar.is-collapsed .byky-toggle svg{transform:rotate(180deg)}
+
+/* ── scroll area ── */
+.byky-nav{flex:1;overflow-y:auto;overflow-x:hidden;padding:6px 10px 24px;list-style:none;margin:0}
+.byky-nav{scrollbar-width:thin;scrollbar-color:#e4e3ee transparent}
+.byky-nav::-webkit-scrollbar{width:6px}
+.byky-nav::-webkit-scrollbar-thumb{background:#e4e3ee;border-radius:99px}
+.byky-nav::-webkit-scrollbar-track{background:transparent}
+
+/* ── section header ── */
+.byky-menu-header{padding:10px 13px 6px;font-size:10.5px;font-weight:600;letter-spacing:1.1px;color:#a9a6c4;text-transform:uppercase;white-space:nowrap;overflow:hidden;list-style:none;transition:opacity .16s}
+.byky-menu-header::after{content:"";display:block;height:0;margin:6px 3px 0;background:#eeedf5;overflow:hidden}
+.byky-sidebar.is-collapsed:not(.is-peek) .byky-menu-header{opacity:0;height:0;padding:0 13px;color:transparent}
+.byky-sidebar.is-collapsed:not(.is-peek) .byky-menu-header::after{opacity:1;height:1px;margin:6px 3px}
+
+/* ── rows ── */
+.byky-menu-item{list-style:none}
+.byky-menu-link{display:flex;align-items:center;gap:11px;padding:10px 13px;border-radius:10px;font-size:14px;font-weight:500;color:#4b4770;background:transparent;text-decoration:none;transition:background .16s,color .16s,box-shadow .2s,transform .2s}
+.byky-menu-link:hover{background:#f7f6fc;color:#1a1640}
+.byky-menu-link .byky-menu-icon{flex:0 0 auto;width:19px;height:19px;color:#6b6790;transition:transform .2s cubic-bezier(.4,0,.2,1),color .16s}
+.byky-menu-link:hover .byky-menu-icon{color:#1a1640;transform:translateX(2px)}
+.byky-sidebar.is-collapsed:not(.is-peek) .byky-menu-link:hover .byky-menu-icon{transform:none}
+.menu-label{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:opacity .16s}
+
+/* badge + chevron share one slot */
+.menu-slot{flex:0 0 auto;position:relative;width:26px;height:20px;transition:opacity .16s}
+.menu-badge{position:absolute;inset:0;border-radius:99px;background:#eeedf5;color:#7d7aa0;font-size:11px;font-weight:600;display:grid;place-items:center;transition:opacity .16s,transform .16s}
+.menu-caret{position:absolute;inset:0;display:grid;place-items:center;color:#d81f26;opacity:0;transition:opacity .16s}
+.menu-caret svg{transition:transform .2s}
+.byky-menu-link:hover .menu-badge{opacity:0;transform:scale(.85)}
+.byky-menu-link:hover .menu-caret{opacity:1}
+
+/* open collapsible group */
+.byky-menu-item.open > .byky-menu-link{background:#fdf3f3;color:#1a1640}
+.byky-menu-item.open > .byky-menu-link .byky-menu-icon{color:#d81f26}
+.byky-menu-item.open > .byky-menu-link .menu-badge{opacity:0;transform:scale(.85);background:#fbe3e4;color:#c2141a}
+.byky-menu-item.open > .byky-menu-link .menu-caret{opacity:1}
+.byky-menu-item.open > .byky-menu-link .menu-caret svg{transform:rotate(90deg)}
+
+/* active page */
+.byky-menu-item.active > .byky-menu-link:not(.byky-menu-toggle){background:linear-gradient(100deg,#c2141a 0%,#e8272e 55%,#f04a50 100%);color:#fff;font-weight:600;font-size:14.5px;padding:12px 13px;border-radius:11px;box-shadow:0 6px 16px -7px rgba(216,31,38,.5)}
+.byky-menu-item.active > .byky-menu-link:not(.byky-menu-toggle):hover{box-shadow:0 10px 22px -8px rgba(216,31,38,.6);transform:translateY(-1px)}
+.byky-menu-item.active > .byky-menu-link:not(.byky-menu-toggle) .byky-menu-icon{color:#fff}
+.byky-menu-item.active > .byky-menu-link:not(.byky-menu-toggle) .menu-badge{background:rgba(255,255,255,.22);color:#fff}
+/* A not-yet-built leaf (e.g. Test Vehicle Details) renders as a plain span, not a link -- dimmed and inert rather than a dead href="#". */
+.byky-menu-link-disabled{opacity:.45;cursor:not-allowed}
+.byky-menu-link-disabled:hover{background:transparent;color:#4b4770}
+.byky-menu-link-disabled .menu-badge{opacity:1;background:#f4f3f9;color:#a9a6c4}
+.byky-menu-item.active > .byky-menu-link:not(.byky-menu-toggle) .menu-caret{color:#fff}
+
+/* A standalone top-level leaf with no submenu (e.g. Print Invoice) uses the
+   plain "submodule selected" tint instead of the loud Dashboard-style pill --
+   that gradient is reserved for the app's actual home page, not a utility
+   page. Selector specificity matches the generic active rule above via an
+   extra class, so it wins regardless of source order. */
+.byky-menu-item.active > .byky-menu-link.byky-menu-link-flat:not(.byky-menu-toggle){background:#fdf3f3;color:#d81f26;font-weight:600;font-size:14px;padding:10px 13px;border-radius:10px;box-shadow:none}
+.byky-menu-item.active > .byky-menu-link.byky-menu-link-flat:not(.byky-menu-toggle):hover{box-shadow:none;transform:none;background:#fdf3f3}
+.byky-menu-item.active > .byky-menu-link.byky-menu-link-flat:not(.byky-menu-toggle) .byky-menu-icon{color:#d81f26}
+.byky-menu-item.active > .byky-menu-link.byky-menu-link-flat:not(.byky-menu-toggle) .menu-badge{background:#fbe3e4;color:#c2141a}
+.byky-menu-item.active > .byky-menu-link.byky-menu-link-flat:not(.byky-menu-toggle) .menu-caret{color:#d81f26}
+.byky-sidebar.is-collapsed:not(.is-peek) .byky-menu-item.active > .byky-menu-link.byky-menu-link-flat:not(.byky-menu-toggle){padding:10px 0}
+
+/* ── submenu ── */
+.byky-menu-sub{list-style:none;margin:0 0 0 22px;padding-left:14px;border-left:1.5px solid #eeedf5;display:flex;flex-direction:column;gap:1px;height:0;overflow:hidden;opacity:0;transition:height .24s cubic-bezier(.4,0,.2,1),opacity .18s,margin .24s}
+.byky-menu-item.open > .byky-menu-sub{height:auto;opacity:1;margin:2px 0 6px 22px}
+.byky-sidebar.is-collapsed:not(.is-peek) .byky-menu-sub{height:0;opacity:0;margin-bottom:0}
+/* scroll anchoring keeps the clicked row still when a group above changes height */
+.byky-nav{overflow-anchor:auto}
+.byky-menu-sub .byky-menu-link{padding:7px 11px;border-radius:8px;font-size:13.5px;font-weight:450;color:#6b6790;transition:background .14s,color .14s,padding-left .18s}
+.byky-menu-sub .byky-menu-link:hover{background:#faf9fd;color:#d81f26;padding-left:15px}
+.byky-menu-sub .menu-label{display:block}
+.byky-menu-sub .byky-menu-item.active > .byky-menu-link{background:#fdf3f3;color:#d81f26;font-weight:600}
+
+/* ── collapsed rail: text out of flow, icon centred (symmetrical pill) ── */
+.byky-sidebar.is-collapsed:not(.is-peek) .byky-nav{scrollbar-width:none}
+.byky-sidebar.is-collapsed:not(.is-peek) .byky-nav::-webkit-scrollbar{display:none}
+.byky-sidebar.is-collapsed:not(.is-peek) .menu-label,
+.byky-sidebar.is-collapsed:not(.is-peek) .menu-slot{display:none}
+.byky-sidebar.is-collapsed:not(.is-peek) .byky-menu-link{justify-content:center;gap:0;padding:10px 0}
+.byky-sidebar.is-collapsed:not(.is-peek) .byky-menu-item.active > .byky-menu-link:not(.byky-menu-toggle){padding:12px 0}
+
+/* ── drag handle ── */
+.byky-handle{position:absolute;top:0;right:0;width:6px;height:100%;cursor:col-resize;z-index:5}
+.byky-sidebar.is-collapsed .byky-handle{display:none}
+.byky-handle i{position:absolute;top:0;right:0;width:2px;height:100%;background:transparent;transition:background .16s}
+.byky-handle:hover i,.byky-sidebar.is-dragging .byky-handle i{background:#d81f26}
+
+/* ── truncation tooltip ── */
+.byky-tip{position:fixed;transform:translateY(-50%);background:#1a1640;color:#fff;font-family:'Sora',sans-serif;font-size:12.5px;font-weight:500;padding:6px 10px;border-radius:7px;white-space:nowrap;pointer-events:none;z-index:50;box-shadow:0 8px 20px -8px rgba(26,22,64,.5);animation:bykyTipIn .14s ease-out}
+.byky-tip::before{content:"";position:absolute;left:-3px;top:50%;width:7px;height:7px;background:#1a1640;transform:translateY(-50%) rotate(45deg);border-radius:1px}
+@keyframes bykyTipIn{from{opacity:0;transform:translateY(-50%) translateX(-4px)}to{opacity:1;transform:translateY(-50%) translateX(0)}}
+
+/* ── mobile: rail becomes an off-canvas overlay ── */
+@media (max-width:768px){
+  .byky-sidebar{position:absolute;transform:translateX(-100%);transition:transform .24s cubic-bezier(.4,0,.2,1)}
+  .byky-sidebar.is-open{transform:translateX(0);box-shadow:0 20px 50px -18px rgba(26,22,64,.34)}
+  .byky-handle{display:none}
+}

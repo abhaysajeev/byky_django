@@ -1,0 +1,190 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Branch Working Time - Company Management{% endblock title %}
+
+{% block vendor_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'vendor/libs/flatpickr/flatpickr.css' %}" />
+{% endblock vendor_css %}
+
+{% block vendor_js %}
+{{ block.super }}
+<script src="{% static 'vendor/libs/flatpickr/flatpickr.js' %}"></script>
+{% endblock vendor_js %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+<script src="{% static 'js/byky-working-time.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr" data-wt
+     data-schedule-url="{{ schedule_url }}" data-save-url="{{ save_url }}" data-assign-url="{{ assign_url }}"
+     data-selected="{{ selected_branch }}" data-can-update="{% if perm.update %}1{% endif %}">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Company Management</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Branch Working Time</b>
+      </div>
+      <h1 class="scr-title">Branch Working Time</h1>
+      <p class="scr-sub">Weekly operating windows and up to four daily shifts per branch.</p>
+    </div>
+  </div>
+
+  <div class="scr-card">
+    <div class="scr-form-head">
+      <div class="scr-form-title-row">
+        <h2 class="scr-form-title">Load a Schedule</h2>
+        <span class="scr-form-badge">By branch</span>
+      </div>
+      <div class="scr-wt-picker">
+        <label class="scr-label" for="wt-branch">Branch<span class="scr-required">*</span></label>
+        <select id="wt-branch" class="scr-input" data-wt-branch>
+          <option value="">Select a branch</option>
+          {% for b in wt_branches %}<option value="{{ b.id }}"{% if selected_branch == b.id|stringformat:"d" %} selected{% endif %}>{{ b.name }}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="scr-card">
+    <div class="scr-form-head">
+      <div>
+        <div class="scr-form-title-row">
+          <h2 class="scr-form-title">Weekly Shift Configuration</h2>
+          <span class="scr-form-badge">7 days &middot; 4 shifts</span>
+        </div>
+        <p class="scr-form-sub" data-wt-caption>Choose a branch to see its shifts. 24-hour clock; a full day is 00:00 to 23:59.</p>
+      </div>
+      {% if perm.update %}
+      <button type="button" class="scr-btn" data-wt-assign-open disabled>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5M21 3l-7 7M8 21H3v-5M3 21l7-7"></path></svg>
+        Assign to multiple branches
+      </button>
+      {% endif %}
+    </div>
+
+    <div class="scr-form-body">
+      <div class="scr-wt-grid" data-wt-grid>
+        <div class="scr-table-scroll scr-sb">
+          <table>
+            <thead>
+              <tr>
+                <th class="scr-wt-day-col">Day</th>
+                {% for n in shifts %}<th class="scr-wt-shift-col">Shift {{ n }} Start / End</th>{% endfor %}
+              </tr>
+            </thead>
+            <tbody data-wt-body>
+              {% for day in days %}
+              <tr>
+                <td class="scr-wt-day">{{ day.label }}</td>
+                {% for n in shifts %}
+                <td>
+                  <div class="scr-wt-cell" data-wt-cell data-day="{{ day.value }}" data-shift="{{ n }}" data-label="{{ day.label }} shift {{ n }}">
+                    <input type="text" class="scr-input scr-shift-time" data-edge="start" placeholder="HH:MM" maxlength="5" autocomplete="off" disabled aria-label="{{ day.label }} shift {{ n }} start" />
+                    <span class="scr-wt-dash">&ndash;</span>
+                    <input type="text" class="scr-input scr-shift-time" data-edge="end" placeholder="HH:MM" maxlength="5" autocomplete="off" disabled aria-label="{{ day.label }} shift {{ n }} end" />
+                  </div>
+                </td>
+                {% endfor %}
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div class="scr-wt-overlay" data-wt-overlay hidden>
+          <span class="scr-wt-spinner" aria-hidden="true"></span>
+          <span class="scr-wt-overlay-text" data-wt-overlay-text>Loading schedule…</span>
+        </div>
+      </div>
+
+      {% if perm.update %}
+      <div class="scr-form-foot">
+        <div class="scr-form-actions scr-wt-actions">
+          <button type="button" class="scr-btn-secondary" data-wt-reset disabled>Reset</button>
+          <button type="button" class="scr-btn-primary" data-wt-save disabled>Save Weekly Schedule</button>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if perm.update %}
+  {% comment %}
+  The modal's search and rows deliberately avoid .scr-search / .scr-row:
+  byky-screen.js filters and pages every .scr-row under the nearest card or,
+  failing that, the whole screen -- so searching here would hide the week
+  table's days. byky-working-time.js runs this list on its own.
+  {% endcomment %}
+  <div class="scr-modal-veil" data-scr-modal-veil="wt-assign" hidden></div>
+  <div class="scr-modal scr-wt-assign" data-scr-modal="wt-assign" hidden>
+    <div class="scr-modal-head">
+      <div>
+        <div class="scr-modal-title">Assign this schedule</div>
+        <p class="scr-modal-sub" data-wt-assign-sub>Copies the weekly shifts to the branches you pick.</p>
+      </div>
+      <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+      </button>
+    </div>
+    <div class="scr-modal-body scr-wt-assign-body">
+      <div class="scr-wt-assign-bar">
+        <label class="scr-wt-assign-search">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+          <input type="search" placeholder="Search branches" aria-label="Search branch, code or location" data-wt-assign-search autocomplete="off" />
+        </label>
+        <label class="scr-check-row">
+          <input type="checkbox" class="scr-check" data-wt-assign-all />
+          <span class="scr-check-label" data-wt-assign-all-label>All branches</span>
+        </label>
+        <span class="scr-toolbar-count" data-wt-assign-count>0 selected</span>
+      </div>
+
+      <div class="scr-wt-assign-list scr-sb">
+        <table>
+          <thead>
+            <tr>
+              <th class="scr-wt-assign-check"></th>
+              <th>Branch</th>
+              <th>Code</th>
+              <th>Location</th>
+              <th>Schedule</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for b in wt_branches %}
+            <tr class="scr-wt-assign-row" data-wt-assign-row data-id="{{ b.id }}" data-search="{{ b.name|lower }} {{ b.code|lower }} {{ b.location|lower }}">
+              <td class="scr-wt-assign-check"><input type="checkbox" class="scr-check" value="{{ b.id }}" aria-label="{{ b.name }}" /></td>
+              <td class="scr-wt-assign-name">{{ b.name }}</td>
+              <td>{{ b.code }}</td>
+              <td>{{ b.location|default:"—" }}</td>
+              <td>{% if b.has_schedule %}<span class="scr-badge scr-badge-active"><i></i>Set</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Not set</span>{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <p class="scr-wt-assign-empty" data-wt-assign-empty hidden>No branch matches your search.</p>
+      </div>
+    </div>
+    <div class="scr-modal-foot">
+      <p class="scr-modal-line scr-wt-assign-note">Existing schedules on the selected branches are replaced.</p>
+      <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+      <button type="button" class="scr-btn-primary" data-wt-assign-go disabled>Assign</button>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}

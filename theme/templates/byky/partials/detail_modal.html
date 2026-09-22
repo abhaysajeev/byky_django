@@ -1,0 +1,32 @@
+{% comment %}
+Shared "view one record" modal for any .scr-* screen -- records_modal.html's
+sibling for a single record's fields (key/value rows) rather than a table of
+several records. First use: Duty Roster's Day Details popup. Include once per
+page:
+
+  {% include "byky/partials/detail_modal.html" %}
+
+Populated directly by a page's own JS, not a declarative data-scr-* trigger:
+its content is computed per click (which day, which employee) rather than a
+static per-row json_script blob, so the page calls the Bootstrap Modal API
+itself. See static/js/byky-duty-roster.js's openDetailModal(title, fields) for
+the pattern -- fields is [[label, value], ...], and a value that is empty or
+null is skipped rather than shown as a blank row.
+{% endcomment %}
+<div class="modal fade scr-records-modal" id="scr-detail-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="scr-detail-modal-title">Details</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="scr-detail-rows" id="scr-detail-rows"></div>
+        <div class="scr-records-empty" id="scr-detail-empty" hidden>No details.</div>
+      </div>
+      <div class="modal-footer" id="scr-detail-footer">
+        <button type="button" class="scr-btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>

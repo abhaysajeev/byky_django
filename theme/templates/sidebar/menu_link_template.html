@@ -1,0 +1,23 @@
+{% load i18n %}
+
+{% if item %}
+  {% if not item.permission or request.user|has_permission:item.permission %}
+  <li class="byky-menu-item {% if item.url == request.resolver_match.url_name or item.url == request.path %}active{% endif %}">
+    {% if item.disabled %}
+    <span class="byky-menu-link byky-menu-link-disabled" aria-disabled="true" title="Not available yet">
+      {% if top_level %}{% include './menu_icon_template.html' with item=item %}{% endif %}
+      <span class="menu-label">{% trans item.name %}</span>
+      <span class="menu-slot"><span class="menu-badge">Soon</span></span>
+    </span>
+    {% else %}
+    <a href="{% if item.external == True %}{{ item.url }}{% else %}{% url item.url %}{% endif %}" class="byky-menu-link{% if item.flat %} byky-menu-link-flat{% endif %}" {% if item.target == "_blank" %}target="_blank" {% endif %}>
+      {% if top_level %}{% include './menu_icon_template.html' with item=item %}{% endif %}
+      <span class="menu-label">{% trans item.name %}</span>
+      {% if item.badge %}
+      <span class="menu-slot"><span class="menu-badge">{{ item.badge.1 }}</span></span>
+      {% endif %}
+    </a>
+    {% endif %}
+  </li>
+  {% endif %}
+{% endif %}

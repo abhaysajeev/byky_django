@@ -1,0 +1,29 @@
+{% comment %}
+BYKY page header. Compact single-line title row with the primary action inline
+beside it; the description sits under it at small size so the header stays one
+tight block rather than three stacked lines.
+
+  {% include "byky/partials/page_header.html" with title="Branch Management" parent="Company Management" subtitle=purpose action_label="Add Branch" action_url="#offcanvasAddBranch" %}
+{% endcomment %}
+<div class="mb-6">
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+    <div class="d-flex align-items-center flex-wrap gap-2 min-w-0">
+      {% if parent %}
+        <span class="text-body-secondary small">{{ parent }}</span>
+        <i class="icon-base ti tabler-chevron-right icon-12px text-body-secondary"></i>
+      {% endif %}
+      <h5 class="mb-0 me-2">{{ title }}</h5>
+      {% if badge %}<span class="badge bg-label-secondary">{{ badge }}</span>{% endif %}
+    </div>
+    {% if action_label %}
+      <a href="{{ action_url|default:'javascript:void(0);' }}"
+         {% if action_url|slice:":1" == "#" %}data-bs-toggle="offcanvas" data-bs-target="{{ action_url }}"{% endif %}
+         class="btn btn-primary btn-sm flex-shrink-0 byky-page-action">
+        <i class="icon-base ti tabler-plus icon-14px me-1_5"></i><span class="byky-action-label">{{ action_label }}</span>
+      </a>
+    {% endif %}
+  </div>
+  {% if subtitle %}
+    <p class="mb-0 mt-1 text-body-secondary small">{{ subtitle }}</p>
+  {% endif %}
+</div>

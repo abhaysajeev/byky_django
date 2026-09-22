@@ -1,0 +1,236 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Device Settings - Device Management{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+<script src="{% static 'js/byky-device-settings.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr" data-device-settings
+     data-url-logo-save="{{ settings_urls.logo_save }}"
+     data-url-logo-clear="{{ settings_urls.logo_clear }}" data-url-apply="{{ settings_urls.apply }}"
+     data-url-deactivate="{{ settings_urls.deactivate }}">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Device Management</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Device Settings</b>
+      </div>
+      <h1 class="scr-title">Device Settings</h1>
+      <p class="scr-sub">What each station's tablets print and how they round. A tablet downloads this after login, logo and all, so it can keep printing with no network.</p>
+    </div>
+    <div class="scr-head-actions">
+      {% if perm.create %}
+      <button type="button" class="scr-btn-primary" data-settings-add>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+        Add Device Settings
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="scr-tiles">
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-blue">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V4a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v17M15 9h4a1 1 0 0 1 1 1v11M3 21h18M8 7h3M8 11h3M8 15h3"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ counts.stations }}</div><div class="scr-tile-lab">Stations</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-green">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ counts.set }}</div><div class="scr-tile-lab">Settings in place</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-amber">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"></path><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ counts.missing }}</div><div class="scr-tile-lab">Stations with none</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-purple">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="m6 15 4-4 3 3 2-2 3 3"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ counts.logos }}</div><div class="scr-tile-lab">Logos uploaded</div></div>
+    </div>
+  </div>
+
+  <div class="scr-card" data-scr-noun-singular="station" data-scr-noun-plural="stations">
+    <div class="scr-toolbar">
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="text" placeholder="Search station, code or prefix" />
+      </div>
+
+      <div class="scr-filter-wrap" data-filter-key="state">
+        <button type="button" class="scr-filter-btn">
+          <span class="scr-filter-label">All stations</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+        </button>
+        <div class="scr-filter-menu" hidden>
+          <button type="button" class="scr-filter-opt is-active" data-value="">All stations</button>
+          <button type="button" class="scr-filter-opt" data-value="set">Settings in place</button>
+          <button type="button" class="scr-filter-opt" data-value="unset">No settings</button>
+        </div>
+      </div>
+
+      {% if multi_company %}
+      <div class="scr-filter-wrap" data-filter-key="company">
+        <button type="button" class="scr-filter-btn">
+          <span class="scr-filter-label">All companies</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+        </button>
+        <div class="scr-filter-menu" hidden>
+          <button type="button" class="scr-filter-opt is-active" data-value="">All companies</button>
+          {% for c in companies %}<button type="button" class="scr-filter-opt" data-value="{{ c.short_code }}">{{ c.name }}</button>{% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="scr-filter-wrap" data-filter-key="logo">
+        <button type="button" class="scr-filter-btn">
+          <span class="scr-filter-label">Any logo</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+        </button>
+        <div class="scr-filter-menu" hidden>
+          <button type="button" class="scr-filter-opt is-active" data-value="">Any logo</button>
+          <button type="button" class="scr-filter-opt" data-value="yes">Logo uploaded</button>
+          <button type="button" class="scr-filter-opt" data-value="no">No logo</button>
+        </div>
+      </div>
+
+      <span class="scr-toolbar-count">{{ rows|length }} stations</span>
+    </div>
+
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Station</th>
+            {% if multi_company %}<th>Company</th>{% endif %}
+            <th>Settings Code</th>
+            <th>Order Prefix</th>
+            <th>Header 1</th>
+            <th>Logo</th>
+            <th>Paper Feed</th>
+            <th>Copies</th>
+            <th>Round Off</th>
+            <th>Status</th>
+            <th>Updated</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr class="scr-row" data-search="{{ r.branch.name|lower }} {{ r.branch.short_code|lower }} {% if r.row %}{{ r.row.settings_code|lower }} {{ r.row.order_no_prefix|lower }}{% endif %}" data-state="{% if r.row %}set{% else %}unset{% endif %}" data-company="{{ r.branch.company.short_code }}" data-logo="{% if r.logo_bytes %}yes{% else %}no{% endif %}" data-branch="{{ r.branch.pk }}"{% if r.row %} data-record-id="{{ r.json_id }}" data-pk="{{ r.row.pk }}"{% endif %}>
+            <td style="font-weight:600">{{ r.branch.name }}</td>
+            {% if multi_company %}<td class="scr-contact">{{ r.branch.company.short_code }}</td>{% endif %}
+            {% if r.row %}
+            <td><span class="scr-code">{{ r.row.settings_code }}</span></td>
+            <td><span class="scr-code">{{ r.row.order_no_prefix }}</span></td>
+            <td class="scr-contact"><span class="scr-set-text" title="{{ r.row.header_1 }} · {{ r.row.header_2 }}">{{ r.row.header_1 }}</span></td>
+            <td>
+              {% if r.logo_bytes %}
+              <span class="scr-set-logo"><img src="{{ r.logo_url }}" alt="{{ r.branch.name }} logo" loading="lazy" /></span>
+              {% else %}<span class="scr-rel-muted">No logo</span>{% endif %}
+            </td>
+            <td class="scr-contact">{{ r.row.paper_feed }}</td>
+            <td class="scr-contact">{{ r.row.receipt_copies }}</td>
+            <td class="scr-contact">{{ r.row.get_round_off_mode_display }} · {{ r.row.round_off_step }}</td>
+            <td><span class="scr-badge scr-badge-active"><i></i>Set</span></td>
+            <td>
+              <div class="scr-contact">{{ r.row.modified_on|default:r.row.created_on|date:"d M Y, H:i" }}</div>
+              <div class="scr-contact-sub">{{ r.updated_by|default:"—" }}</div>
+            </td>
+            <td>
+              <div class="scr-row-actions">
+                <div class="scr-menu-wrap">
+                  <button type="button" class="scr-icon-btn" title="More" data-scr-menu-toggle>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="12" cy="19" r="1.6"></circle></svg>
+                  </button>
+                  <div class="scr-menu" hidden>
+                    {% if perm.update %}
+                    <button type="button" class="scr-menu-item" data-scr-open="device_settings:edit">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10a2.1 2.1 0 0 0-3-3L5 17z"></path><path d="M14.5 6.5 17.5 9.5"></path></svg>
+                      Edit settings
+                    </button>
+                    <button type="button" class="scr-menu-item" data-settings-logo data-pk="{{ r.row.pk }}" data-station="{{ r.branch.name }}" data-logo-url="{% if r.logo_bytes %}{{ r.logo_url }}{% endif %}" data-logo-name="{{ r.row.logo_name }}" data-logo-size="{{ r.logo_bytes }}">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="m6 15 4-4 3 3 2-2 3 3"></path></svg>
+                      Receipt logo
+                    </button>
+                    <button type="button" class="scr-menu-item" data-settings-apply data-pk="{{ r.row.pk }}" data-station="{{ r.branch.name }}">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5M21 3l-7 7M8 21H3v-5M3 21l7-7"></path></svg>
+                      Copy to other stations
+                    </button>
+                    <button type="button" class="scr-menu-item scr-menu-item-danger" data-settings-deactivate data-pk="{{ r.row.pk }}" data-station="{{ r.branch.name }}">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+                      Deactivate
+                    </button>
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+            </td>
+            {% else %}
+            <td colspan="8" class="scr-set-none">
+              <span class="scr-badge scr-badge-pending"><i></i>No settings</span>
+              <span class="scr-rel-muted">Tablets here cannot print a receipt or number an order.</span>
+            </td>
+            <td>
+              <div class="scr-row-actions">
+                {% if perm.create %}
+                <button type="button" class="scr-btn-small" data-settings-add data-branch="{{ r.branch.pk }}">Add settings</button>
+                {% endif %}
+              </div>
+            </td>
+            {% endif %}
+          </tr>
+          {% if r.fields_json %}{{ r.fields_json|json_script:r.json_id }}{% endif %}
+          {% empty %}
+          <tr>
+            <td colspan="11" style="padding:0">
+              <div class="scr-empty">
+                <div>
+                  <div class="scr-empty-title">No active stations</div>
+                  <p class="scr-empty-sub">Stations appear here once they are added in Company Management.</p>
+                </div>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="scr-pager">
+      <span class="scr-pager-info">Showing {{ rows|length }} of {{ rows|length }}</span>
+      <div class="scr-pager-nav">
+        <button type="button" class="scr-pager-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"></path></svg>
+        </button>
+        <span class="scr-pager-current">1</span>
+        <button type="button" class="scr-pager-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 6 6 6-6 6"></path></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{{ settings_source_values|json_script:"settings-source-data" }}
+{% include "devices/partials/settings_modals.html" %}
+{% include "byky/partials/drawer.html" with spec=drawer_device_settings module_label="Device Management · Device Settings" save_url=settings_urls.save %}
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}

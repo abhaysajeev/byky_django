@@ -1,0 +1,230 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Device {{ registration_id }} - Device Approval{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+<script src="{% static 'js/byky-device-approval.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr" data-device-approval
+     data-url-approve="{{ action_urls.approve }}" data-url-reconnect="{{ action_urls.reconnect }}"
+     data-url-reject="{{ action_urls.reject }}" data-url-block="{{ action_urls.block }}"
+     data-url-unblock="{{ action_urls.unblock }}">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Device Management</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <a href="{% url 'devices-device-approval' %}">Device Approval</a>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Device {{ registration_id }}</b>
+      </div>
+      <h1 class="scr-title">{% if device %}{{ device.name|default:"Unnamed device" }}{% else %}Device {{ registration_id }}{% endif %}</h1>
+      <p class="scr-sub">Everything this tablet told us when it registered, and everything done to it since.</p>
+    </div>
+    <div class="scr-head-actions">
+      {% if device %}
+        {% if device.status == "pending" and perm.approve %}
+          {% if device.reconnect_of_id %}
+          <button type="button" class="scr-btn-primary" data-device-action="reconnect" data-pk="{{ device.pk }}" data-number="{{ device.device_registration_id }}" data-name="{{ device.name }}" data-channel="{{ device.channel }}" data-match-name="{{ device.reconnect_of.name }}" data-match-number="{{ device.reconnect_of.device_registration_id }}">Reconnect</button>
+          {% else %}
+          <button type="button" class="scr-btn-primary" data-device-action="approve" data-pk="{{ device.pk }}" data-number="{{ device.device_registration_id }}" data-name="{{ device.name }}" data-channel="{{ device.channel }}">Approve</button>
+          {% endif %}
+          <button type="button" class="scr-btn-danger" data-device-action="reject" data-pk="{{ device.pk }}" data-number="{{ device.device_registration_id }}" data-name="{{ device.name }}" data-channel="{{ device.channel }}">Reject</button>
+        {% elif device.status == "approved" and perm.update %}
+          <button type="button" class="scr-btn-danger" data-device-action="block" data-pk="{{ device.pk }}" data-number="{{ device.device_registration_id }}" data-name="{{ device.name }}" data-channel="{{ device.channel }}">Block</button>
+        {% elif device.status == "blocked" and perm.update %}
+          <button type="button" class="scr-btn-primary" data-device-action="unblock" data-pk="{{ device.pk }}" data-number="{{ device.device_registration_id }}" data-name="{{ device.name }}" data-channel="{{ device.channel }}">Unblock</button>
+        {% endif %}
+      {% endif %}
+      <a href="{% url 'devices-device-approval' %}" class="scr-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"></path></svg>
+        Back
+      </a>
+    </div>
+  </div>
+
+  {% if device %}
+  <div class="scr-card">
+    <div class="scr-form-head">
+      <div><div class="scr-form-title-row"><h2 class="scr-form-title">Identity</h2></div></div>
+    </div>
+    <div class="scr-form-body" style="padding-top:0">
+      <div class="scr-detail-rows">
+        <div class="scr-detail-row">
+          <span class="scr-detail-label">Device ID</span>
+          <span class="scr-detail-value"><span class="scr-code">{{ device.device_registration_id }}</span></span>
+        </div>
+        <div class="scr-detail-row">
+          <span class="scr-detail-label">Device name</span>
+          <span class="scr-detail-value">{{ device.name|default:"—" }}</span>
+        </div>
+        <div class="scr-detail-row">
+          <span class="scr-detail-label">Status</span>
+          <span class="scr-detail-value">{{ device.get_status_display }}</span>
+        </div>
+        <div class="scr-detail-row">
+          <span class="scr-detail-label">App</span>
+          <span class="scr-detail-value">{{ device.get_channel_display }}</span>
+        </div>
+        <div class="scr-detail-row">
+          <span class="scr-detail-label">Model</span>
+          <span class="scr-detail-value">{{ device.device_model|default:"—" }}</span>
+        </div>
+        <div class="scr-detail-row">
+          <span class="scr-detail-label">Platform</span>
+          <span class="scr-detail-value">{{ device.get_platform_display }}</span>
+        </div>
+        <div class="scr-detail-row">
+          <span class="scr-detail-label">Installation ID</span>
+          <span class="scr-detail-value"><span class="scr-code">{{ device.installation_id }}</span></span>
+        </div>
+        <div class="scr-detail-row">
+          <span class="scr-detail-label">Platform ID</span>
+          <span class="scr-detail-value"><span class="scr-code">{{ device.platform_id|default:"—" }}</span></span>
+        </div>
+        <div class="scr-detail-row">
+          <span class="scr-detail-label">Registered</span>
+          <span class="scr-detail-value">{{ device.created_on|date:"d M Y H:i" }}</span>
+        </div>
+        <div class="scr-detail-row">
+          <span class="scr-detail-label">Last seen</span>
+          <span class="scr-detail-value">{{ device.last_seen_at|date:"d M Y H:i"|default:"—" }}</span>
+        </div>
+        <div class="scr-detail-row">
+          <span class="scr-detail-label">Station</span>
+          <span class="scr-detail-value">{% if device.current_branch %}{{ device.current_branch.name }}{% else %}—{% endif %}</span>
+        </div>
+        <div class="scr-detail-row">
+          <span class="scr-detail-label">Last known position</span>
+          <span class="scr-detail-value">{% if device.last_location_at %}{{ device.last_latitude }}, {{ device.last_longitude }} · {{ device.last_location_at|date:"d M Y H:i" }}{% else %}—{% endif %}</span>
+        </div>
+        <div class="scr-detail-row">
+          <span class="scr-detail-label">Approved by</span>
+          <span class="scr-detail-value">{% if device.approved_by_id %}{{ device.approved_by.display_name|default:device.approved_by.username }} · {{ device.approved_at|date:"d M Y H:i" }}{% else %}—{% endif %}</span>
+        </div>
+        {% if device.reconnect_of_id %}
+        <div class="scr-detail-row">
+          <span class="scr-detail-label">Reinstall of</span>
+          <span class="scr-detail-value">{{ device.reconnect_of.name|default:device.reconnect_of.device_registration_id }}</span>
+        </div>
+        {% endif %}
+        {% if device.replaced_device_id %}
+        <div class="scr-detail-row">
+          <span class="scr-detail-label">Replaces</span>
+          <span class="scr-detail-value">{{ device.replaced_device.name|default:device.replaced_device.device_registration_id }}</span>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="scr-card">
+    <div class="scr-form-head">
+      <div><div class="scr-form-title-row"><h2 class="scr-form-title">Station history</h2></div></div>
+    </div>
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Station</th>
+            <th>From</th>
+            <th>To</th>
+            <th>Mapped by</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in mapping_history %}
+          <tr class="scr-row">
+            <td style="font-weight:600">{{ m.branch.name }}</td>
+            <td class="scr-contact">{{ m.from_date|date:"d M Y, H:i" }}</td>
+            <td class="scr-contact">{% if m.to_date %}{{ m.to_date|date:"d M Y, H:i" }}{% else %}<span class="scr-badge scr-badge-active"><i></i>Current</span>{% endif %}</td>
+            <td class="scr-contact">{% if m.created_by_id %}{{ m.created_by.display_name|default:m.created_by.username }}{% else %}—{% endif %}</td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="4" style="padding:0">
+              <div class="scr-empty">
+                <div>
+                  <div class="scr-empty-title">Not mapped to a station yet</div>
+                  <p class="scr-empty-sub">A station is set when the device is approved.</p>
+                </div>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="scr-card">
+    <div class="scr-form-head">
+      <div><div class="scr-form-title-row"><h2 class="scr-form-title">Status history</h2></div></div>
+    </div>
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Action</th>
+            <th>From</th>
+            <th>To</th>
+            <th>Reason</th>
+            <th>By</th>
+            <th>When</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in status_log %}
+          <tr class="scr-row">
+            <td style="font-weight:600">{{ row.get_action_display }}</td>
+            <td class="scr-contact">{{ row.get_from_status_display|default:"—" }}</td>
+            <td class="scr-contact">{{ row.get_to_status_display }}</td>
+            <td class="scr-contact">{{ row.reason|default:"—" }}</td>
+            <td class="scr-contact">{% if row.created_by_id %}{{ row.created_by.display_name|default:row.created_by.username }}{% else %}—{% endif %}</td>
+            <td class="scr-contact">{{ row.created_on|date:"d M Y H:i" }}</td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="6" style="padding:0">
+              <div class="scr-empty">
+                <div>
+                  <div class="scr-empty-title">Nothing has happened to this device yet</div>
+                  <p class="scr-empty-sub">Approving, blocking or replacing it will be recorded here.</p>
+                </div>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="scr-card">
+    <div class="scr-empty">
+      <span class="scr-empty-ico">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v5M12 16h.01"></path></svg>
+      </span>
+      <div>
+        <div class="scr-empty-title">No device {{ registration_id }}</div>
+        <p class="scr-empty-sub">Check the number the tablet is showing on its waiting screen.</p>
+      </div>
+      <a href="{% url 'devices-device-approval' %}" class="scr-btn-primary">Back to Device Approval</a>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% include "devices/partials/device_action_modals.html" %}
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}

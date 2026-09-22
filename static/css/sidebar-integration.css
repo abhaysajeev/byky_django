@@ -1,0 +1,71 @@
+/* Pins the new Byky sidebar in place of Vuexy's old fixed #layout-menu, and keeps
+   .layout-page's padding-inline-start in sync with the sidebar's actual reserved
+   width via --byky-sb-w (set by sidebar-layout-sync.js). See CLAUDE.md for why:
+   the new component's native model assumes an app-shell with internal content
+   scrolling, which this app doesn't use anywhere -- so the sidebar is pinned
+   fixed instead, matching every other screen's existing scroll behavior. */
+
+.layout-container {
+  position: relative;
+}
+
+.byky-sidebar {
+  position: fixed;
+  inset-block: 0;
+  inset-inline-start: 0;
+  height: 100vh;
+  z-index: 1080;
+  /* sidebar.css only sets Sora on .byky-shell, a wrapper this integration doesn't
+     use (kept Vuexy's own .layout-container flex row instead, see file header) --
+     without this, every sidebar element silently inherits the page's Public Sans. */
+  font-family: 'Sora', sans-serif;
+  color: #1a1640;
+}
+
+.byky-sidebar.is-peek {
+  position: fixed;
+  inset-block: 0;
+  inset-inline-start: 0;
+}
+
+@media (max-width: 768px) {
+  .byky-sidebar {
+    position: fixed;
+    inset-block: 0;
+    inset-inline-start: 0;
+  }
+  .layout-page {
+    padding-inline-start: 0 !important;
+  }
+}
+
+.layout-page {
+  padding-inline-start: var(--byky-sb-w, 276px);
+  transition: padding-inline-start 0.24s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.byky-sidebar.is-dragging ~ .layout-page {
+  transition: none;
+}
+
+/* The current-page leaf item reuses the existing hover treatment (light grey
+   background, red text) as its base, rather than the top-level nav's larger
+   hero-pill styling -- kept subtle and simple, matching the surrounding rows.
+   This also fixes a specificity tie in sidebar.css: the top-level "active page"
+   rule (.byky-menu-item.active > .byky-menu-link:not(.byky-menu-toggle)) sets a
+   bigger pill -- font-size 14.5px, padding 12px 13px, border-radius 11px, a red
+   box-shadow, and a stronger shadow again on hover -- and matches ANY active
+   link, not just top-level ones. The kit's own nested-submenu override has equal
+   specificity and only resets background/color/font-weight, so an active leaf
+   still inherited the larger pill's size and glow (including on hover). Reset
+   every such property explicitly, for both the resting and hovered state. */
+.byky-menu-sub .byky-menu-item.active > .byky-menu-link,
+.byky-menu-sub .byky-menu-item.active > .byky-menu-link:hover {
+  background: #faf9fd;
+  color: #d81f26;
+  font-weight: 600;
+  font-size: 13.5px;
+  padding: 7px 11px;
+  border-radius: 8px;
+  box-shadow: none;
+}

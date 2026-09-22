@@ -1,0 +1,136 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Employee Temporary Address - Human Resources{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Human Resources</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Employee Temporary Address</b>
+      </div>
+      <h1 class="scr-title">Employee Temporary Address</h1>
+      <p class="scr-sub">Where staff live: their UAE address, home country address, or a temporary one.</p>
+    </div>
+    <div class="scr-head-actions">
+      <button type="button" class="scr-btn-primary" data-scr-open="address:add">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+        Add Address
+      </button>
+    </div>
+  </div>
+
+  <div class="scr-card" data-scr-noun-singular="address" data-scr-noun-plural="addresses" data-scr-delete-url="{{ delete_url_address }}" data-scr-noun="{{ noun_address }}">
+    <div class="scr-toolbar">
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="text" placeholder="Search employee or city" />
+      </div>
+
+      <div class="scr-filter-wrap" data-filter-key="state">
+        <button type="button" class="scr-filter-btn">
+          <span class="scr-filter-label">All states</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+        </button>
+        <div class="scr-filter-menu" hidden>
+          <button type="button" class="scr-filter-opt is-active" data-value="">All states</button>
+          {% for s in states_list %}
+          <button type="button" class="scr-filter-opt" data-value="{{ s.name }}">{{ s.name }}</button>
+          {% endfor %}
+        </div>
+      </div>
+
+      <span class="scr-toolbar-count">0 addresses</span>
+    </div>
+
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Employee</th>
+            <th>Type</th>
+            <th>Address</th>
+            <th>City</th>
+            <th>State</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in addresses %}
+          <tr class="scr-row" data-search="{{ a.employee|lower }} {{ a.emp_no|lower }} {{ a.line1|lower }}" data-state="{{ a.state }}" data-type="{{ a.type }}" data-record-id="{{ a.json_id }}" data-pk="{{ a.pk }}">
+            <td>
+              <div class="scr-co">
+                <span class="scr-avatar {% cycle 'scr-avatar-0' 'scr-avatar-1' 'scr-avatar-2' 'scr-avatar-3' 'scr-avatar-4' as scr_avatar_cls %}">{{ a.employee|slice:":1" }}</span>
+                <div style="min-width:0"><div class="scr-co-name" title="{{ a.employee }}">{{ a.employee }}</div><div class="scr-co-sub">{{ a.emp_no }}</div></div>
+              </div>
+            </td>
+            <td><span class="scr-badge scr-badge-pending"><i></i>{{ a.type }}</span></td>
+            <td class="scr-contact">{{ a.line1 }}</td>
+            <td>{{ a.city }}</td>
+            <td>{{ a.state }}</td>
+            <td>
+              <div class="scr-row-actions">
+                {% include "byky/partials/row_actions.html" with edit_open="address:edit" %}
+              </div>
+            </td>
+          </tr>
+          {{ a.fields_json|json_script:a.json_id }}
+          {% empty %}
+          <tr>
+            <td colspan="6" style="padding:0">
+              <div class="scr-empty">
+                <span class="scr-empty-ico">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11M12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5"></path></svg>
+                </span>
+                <div>
+                  <div class="scr-empty-title">No addresses yet</div>
+                  <p class="scr-empty-sub">Add an address for a member of staff.</p>
+                </div>
+                {% if perm.create %}
+                <button type="button" class="scr-btn-primary" data-scr-open="address:add">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+                  Add Address
+                </button>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="scr-pager">
+      <span class="scr-pager-info">Showing {{ addresses|length }} of {{ addresses|length }}</span>
+      <div class="scr-pager-nav">
+        <button type="button" class="scr-pager-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"></path></svg>
+        </button>
+        <span class="scr-pager-current">1</span>
+        <button type="button" class="scr-pager-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 6 6 6-6 6"></path></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% comment %} Add/Edit drawer -- no rows exist yet, so this always opens in Add mode. {% endcomment %}
+{% include "byky/partials/drawer.html" with save_url=save_url_address spec=drawer_address module_label="Crew · Address" %}
+{% include "byky/partials/confirm_modal.html" %}
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}

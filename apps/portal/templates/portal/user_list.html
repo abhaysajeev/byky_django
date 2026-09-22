@@ -1,0 +1,182 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Users - System{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr" data-user-reset-url="{{ reset_url_user }}" data-user-unlock-url="{{ unlock_url_user }}">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>System</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Users</b>
+      </div>
+      <h1 class="scr-title">Users</h1>
+      <p class="scr-sub">Who can sign in, which apps they may use, and the role that decides what they see.</p>
+    </div>
+    <div class="scr-head-actions">
+      {% if perm.create %}
+      <button type="button" class="scr-btn-primary" data-scr-open="user:add">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+        Add User
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="scr-tiles">
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-blue">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17 20v-1.6a3.4 3.4 0 0 0-3.4-3.4H9.4A3.4 3.4 0 0 0 6 18.4V20M11.5 12a3.6 3.6 0 1 0 0-7.2 3.6 3.6 0 0 0 0 7.2"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ users|length }}</div><div class="scr-tile-lab">Accounts</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-green">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ active_count }}</div><div class="scr-tile-lab">Active</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-amber">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ locked_count }}</div><div class="scr-tile-lab">Locked out</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-red">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 5 3.4 8.7 8 9 4.6-.3 8-4 8-9V6z"></path><path d="M12 8v4M12 15v.01"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ roleless_count }}</div><div class="scr-tile-lab">Without a role</div></div>
+    </div>
+  </div>
+
+  <div class="scr-card" data-scr-noun-singular="user" data-scr-noun-plural="users" data-scr-delete-url="{{ delete_url_user }}" data-scr-noun="{{ noun_user }}">
+    <div class="scr-toolbar">
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="text" placeholder="Search username or name" />
+      </div>
+      <span class="scr-toolbar-count">{{ users|length }} user{{ users|length|pluralize }}</span>
+    </div>
+
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Role</th>
+            <th>Employee</th>
+            <th>Apps</th>
+            <th>Sees</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+          <tr class="scr-row" data-search="{{ u.username|lower }} {{ u.display_name|lower }}" data-record-id="{{ u.json_id }}" data-pk="{{ u.pk }}">
+            <td>
+              <div class="scr-co">
+                <span class="scr-avatar {% cycle 'scr-avatar-0' 'scr-avatar-1' 'scr-avatar-2' 'scr-avatar-3' 'scr-avatar-4' as scr_avatar_cls %}">{{ u.display_name|slice:":1" }}</span>
+                <div style="min-width:0">
+                  <div class="scr-co-name" title="{{ u.display_name }}">{{ u.display_name }}</div>
+                  <div class="scr-co-sub">{{ u.username }}</div>
+                </div>
+              </div>
+            </td>
+            <td>{% if u.role %}{{ u.role }}{% else %}<span class="scr-badge scr-badge-inactive"><i></i>No role</span>{% endif %}</td>
+            <td class="scr-contact">{{ u.employee }}</td>
+            <td class="scr-contact">{{ u.channels }}</td>
+            <td>{{ u.company }}</td>
+            <td>
+              {% if u.locked %}<span class="scr-badge scr-badge-rejected"><i></i>Locked</span>
+              {% elif u.active %}<span class="scr-badge scr-badge-active"><i></i>Active</span>
+              {% else %}<span class="scr-badge scr-badge-inactive"><i></i>Inactive</span>{% endif %}
+            </td>
+            <td>
+              <div class="scr-row-actions">
+                <div class="scr-menu-wrap">
+                  <button type="button" class="scr-icon-btn" title="More" data-scr-menu-toggle>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="12" cy="19" r="1.6"></circle></svg>
+                  </button>
+                  <div class="scr-menu" hidden>
+                    {% if perm.update %}
+                    <button type="button" class="scr-menu-item" data-scr-open="user:edit">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10a2.1 2.1 0 0 0-3-3L5 17z"></path><path d="M14.5 6.5 17.5 9.5"></path></svg>
+                      Edit
+                    </button>
+                    <button type="button" class="scr-menu-item" data-user-reset>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path></svg>
+                      Reset password
+                    </button>
+                    {% if u.locked %}
+                    <button type="button" class="scr-menu-item" data-user-unlock>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 7.5-1.8"></path></svg>
+                      Unlock
+                    </button>
+                    {% endif %}
+                    {% endif %}
+                    {% if perm.delete %}
+                    <button type="button" class="scr-menu-item scr-menu-item-danger" data-scr-delete>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0-1 13a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1L6 7h12ZM10 11v6M14 11v6"></path></svg>
+                      Delete
+                    </button>
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+            </td>
+          </tr>
+          {{ u.fields_json|json_script:u.json_id }}
+          {% empty %}
+          <tr>
+            <td colspan="7" style="padding:0">
+              <div class="scr-empty">
+                <span class="scr-empty-ico">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.6"></circle><path d="M5.5 20a6.5 6.5 0 0 1 13 0"></path></svg>
+                </span>
+                <div>
+                  <div class="scr-empty-title">No accounts yet</div>
+                  <p class="scr-empty-sub">Add one, give it a role, and choose which apps it may sign in to.</p>
+                </div>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="scr-pager">
+      <span class="scr-pager-info">Showing {{ users|length }} of {{ users|length }}</span>
+      <div class="scr-pager-nav">
+        <button type="button" class="scr-pager-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"></path></svg>
+        </button>
+        <span class="scr-pager-current">1</span>
+        <button type="button" class="scr-pager-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 6 6 6-6 6"></path></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% include "byky/partials/drawer.html" with save_url=save_url_user spec=drawer_user module_label="System · Users" %}
+{% include "byky/partials/confirm_modal.html" %}
+{% include "byky/partials/message_modal.html" %}
+{% include "byky/partials/password_modal.html" %}
+{% endblock %}

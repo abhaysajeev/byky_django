@@ -1,0 +1,167 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Employee Block / Unblock - Human Resources{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+<link rel="stylesheet" href="{% static 'vendor/libs/flatpickr/flatpickr.css' %}" />
+{% endblock page_css %}
+
+{% block vendor_js %}
+{{ block.super }}
+<script src="{% static 'vendor/libs/flatpickr/flatpickr.js' %}"></script>
+{% endblock vendor_js %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+<script src="{% static 'js/byky-datepicker.js' %}"></script>
+<script src="{% static 'js/byky-hrms.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Human Resources</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Employee Block / Unblock</b>
+      </div>
+      <h1 class="scr-title">Employee Block / Unblock</h1>
+      <p class="scr-sub">Stop someone signing in, with the reason on record.</p>
+    </div>
+  </div>
+
+  <div style="display:flex; gap:20px; flex-wrap:wrap; align-items:stretch">
+    <div class="scr-card" style="flex:1 1 380px">
+      <div class="scr-form-head">
+        <div><div class="scr-form-title-row"><h2 class="scr-form-title">Staff Lookup</h2></div></div>
+      </div>
+      <div class="scr-form-body">
+        <div class="scr-field" style="margin-bottom:20px">
+          <label class="scr-label" for="staff-lookup">Employee<span class="scr-required">*</span></label>
+          <select id="staff-lookup" class="scr-input" data-block-employee>
+            <option value="">Select employee</option>
+            {% for e in employees_list %}<option value="{{ e.id }}">{{ e.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <button type="button" class="scr-btn" style="width:100%; justify-content:center; margin-bottom:20px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+          Look Up Employee
+        </button>
+
+        <div style="display:flex; align-items:center; justify-content:space-between; border:1px solid #eeedf5; border-radius:12px; padding:14px 16px">
+          <div>
+            <small style="display:block; color:#9490bb; font-size:11px">Current status</small>
+            <span class="scr-badge scr-badge-approved" style="margin-top:4px" data-block-status><i></i>Active</span>
+          </div>
+          <div class="scr-tile-ico scr-tile-ico-green">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"></path></svg>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="scr-card" id="block-action-panel" style="flex:1 1 460px">
+      <div class="scr-form-head">
+        <div><div class="scr-form-title-row"><h2 class="scr-form-title">Block / Unblock Action</h2></div></div>
+      </div>
+      <div class="scr-form-body">
+        <div class="scr-grid" style="margin-bottom:20px">
+          <div class="scr-field">
+            <label class="scr-label" for="block-action-type">Action Type<span class="scr-required">*</span></label>
+            <select id="block-action-type" class="scr-input" data-block-action>
+              <option value="BLOCK" selected>Block</option>
+              <option value="UNBLOCK">Unblock</option>
+            </select>
+          </div>
+          <div class="scr-field">
+            <label class="scr-label" for="block-reason">Reason Category<span class="scr-required">*</span></label>
+            <select id="block-reason" class="scr-input" data-block-reason>
+              <option value="">Select</option>
+              {% for r in reasons %}<option>{{ r }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="scr-field">
+            <label class="scr-label" for="block-date">Action Date</label>
+            <input type="text" class="scr-input byky-date" id="block-date" data-block-date />
+          </div>
+          <div class="scr-field" style="grid-column:1 / -1">
+            <label class="scr-label" for="block-remarks">Remarks</label>
+            <textarea class="scr-input" id="block-remarks" rows="3" style="height:auto; padding:10px 12px" data-block-remarks></textarea>
+          </div>
+        </div>
+        <div class="scr-form-foot" style="border-top:none; padding-top:0">
+          <div class="scr-form-actions" style="margin-left:auto">
+            <button type="button" class="scr-btn-secondary">Reset</button>
+            <button type="button" class="scr-btn-danger" id="block-confirm" data-block-confirm data-block-url="{{ block_url }}">Confirm Block</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="scr-card">
+    <div class="scr-form-head">
+      <div><div class="scr-form-title-row"><h2 class="scr-form-title">Historical Block Log</h2></div></div>
+    </div>
+    <div class="scr-form-body" style="padding-top:0">
+      <div class="scr-grid" style="margin-bottom:20px">
+        <div class="scr-field">
+          <select class="scr-input">
+            <option value="">All Actions</option>
+            <option>Block</option>
+            <option>Unblock</option>
+          </select>
+        </div>
+        <div class="scr-field">
+          <input type="text" class="scr-input byky-date" placeholder="Action date from" />
+        </div>
+        <div class="scr-field">
+          <input type="text" class="scr-input byky-date" placeholder="Action date to" />
+        </div>
+      </div>
+      {% if block_log %}
+      <div class="scr-table-scroll scr-sb">
+        <table>
+          <thead>
+            <tr><th>Employee</th><th>Action</th><th>Reason</th><th>Effective</th><th>Remarks</th></tr>
+          </thead>
+          <tbody>
+            {% for row in block_log %}
+            <tr class="scr-row">
+              <td>
+                <div class="scr-co">
+                  <div style="min-width:0"><div class="scr-co-name">{{ row.employee }}</div><div class="scr-co-sub">{{ row.emp_no }}</div></div>
+                </div>
+              </td>
+              <td>{% if row.is_block %}<span class="scr-badge scr-badge-inactive"><i></i>Blocked</span>{% else %}<span class="scr-badge scr-badge-active"><i></i>Unblocked</span>{% endif %}</td>
+              <td>{{ row.reason }}</td>
+              <td>{{ row.effective_date }}</td>
+              <td class="scr-contact">{{ row.remarks }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="scr-empty" style="padding:48px 24px">
+        <span class="scr-empty-ico">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M12 7v5l3.5 2"></path></svg>
+        </span>
+        <div>
+          <div class="scr-empty-title">No history yet</div>
+          <p class="scr-empty-sub">Blocks and unblocks appear here as they are recorded.</p>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}

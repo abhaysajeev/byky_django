@@ -1,0 +1,44 @@
+{% comment %}
+Shared "view records" modal for any .scr-* screen (see byky-screen.css/js).
+Include once per page:
+
+  {% include "byky/partials/records_modal.html" %}
+
+Then any trigger button opens it populated with a related record set:
+
+  {{ vehicles|json_script:"veh-123" }}
+  <button type="button" class="scr-count-link" data-bs-toggle="modal" data-bs-target="#scr-records-modal"
+          data-scr-view="veh-123"
+          data-scr-view-title="Creek Park Gate 1 — Vehicles"
+          data-scr-view-columns='["number","rfid_epc"]'
+          data-scr-view-labels='["Vehicle ID","RFID Tag EPC"]'>48</button>
+
+byky-screen.js populates the table on show.bs.modal and wires the Export
+button to a CSV download of exactly the rows shown -- no route, no backend.
+{% endcomment %}
+<div class="modal fade scr-records-modal" id="scr-records-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="scr-records-modal-title">Records</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="scr-records-table-wrap">
+          <table class="scr-records-table">
+            <thead><tr id="scr-records-thead"></tr></thead>
+            <tbody id="scr-records-tbody"></tbody>
+          </table>
+        </div>
+        <div class="scr-records-empty" id="scr-records-empty" hidden>No records.</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="scr-btn-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="scr-btn-primary" id="scr-records-export">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="m7 11 5 5 5-5"></path><path d="M4 20h16"></path></svg>
+          Export CSV
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

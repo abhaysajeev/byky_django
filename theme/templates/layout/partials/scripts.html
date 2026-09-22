@@ -1,0 +1,32 @@
+{% load static %}
+
+{% comment %}
+Core JavaScript loaded on every page.
+
+Deliberately NOT loaded here:
+  @algolia/autocomplete-js (287 KB) -- powered the navbar search, which the BYKY
+    navbar no longer has. main.js guards on #autocomplete, so nothing breaks.
+  hammer.js (78 KB) -- touch gestures for the demo swipe-out menu, unused here.
+
+Per-page libraries (datatables, apex-charts, leaflet, select2, flatpickr, swiper)
+belong in each template's vendor_css / vendor_js blocks, never here.
+{% endcomment %}
+
+<!--Core Javascript-->
+
+<script src="{% static 'vendor/libs/jquery/jquery.js' %}"></script>
+<script src="{% static 'vendor/libs/popper/popper.js' %}"></script>
+<script src="{% static 'vendor/js/bootstrap.js' %}"></script>
+<script src="{% static 'vendor/libs/node-waves/node-waves.js' %}"></script>
+<script src="{% static 'js/sidebar.js' %}"></script>
+<script src="{% static 'js/sidebar-layout-sync.js' %}"></script>
+<script src="{% static 'js/main.js' %}"></script>
+
+<!--Navbar alert feed: the bell, its dropdown and the live strip beside it-->
+<script src="{% static 'js/byky-alerts.js' %}"></script>
+
+<!--Byky drawer: sizing, jump tabs, scroll tracking, and the bridge that keeps
+    data-scr-open edit prefill working. Must load after Bootstrap, which still
+    owns the drawer's open/close.-->
+<script src="{% static 'js/byky-drawer.js' %}"></script>
+<script src="{% static 'js/byky-crud.js' %}"></script>

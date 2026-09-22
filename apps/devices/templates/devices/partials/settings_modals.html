@@ -1,0 +1,142 @@
+{% comment %}
+Device Settings' Receipt logo, Copy to other stations, and Deactivate modals,
+driven by byky-device-settings.js.
+
+The logo has its own modal and endpoint because the drawer posts JSON and a file
+cannot ride inside it. The bytes are stored exactly as uploaded -- the live
+logos are 1-bit BMPs as wide as the print head -- and travel to the tablet with
+its settings, so a station prints with no network.
+
+The station picker copies the Branch Working Time Assign list (.scr-wt-assign-*)
+and, like it, avoids .scr-row / .scr-search so a search here cannot filter the
+grid behind. Needs settings_branches and shareable_fields in the context.
+{% endcomment %}
+<div class="scr-modal-veil" data-scr-modal-veil="settings-logo" hidden></div>
+<div class="scr-modal scr-dev-modal scr-set-logo-modal" data-scr-modal="settings-logo" hidden>
+  <div class="scr-modal-head">
+    <div>
+      <div class="scr-modal-title">Receipt logo</div>
+      <p class="scr-modal-sub" data-logo-station></p>
+    </div>
+    <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+    </button>
+  </div>
+  <div class="scr-modal-body scr-dev-fields">
+    <div class="scr-set-logo-current" data-logo-current>
+      <img alt="Current logo" data-logo-image hidden />
+      <p class="scr-rel-muted" data-logo-empty>No logo yet. The receipt prints without one.</p>
+      <p class="scr-contact-sub" data-logo-meta></p>
+    </div>
+
+    <div class="scr-field">
+      <label class="scr-label" for="settings-logo-file">Bitmap file</label>
+      <input type="file" id="settings-logo-file" class="scr-input" accept=".bmp,image/bmp,image/png,image/jpeg" data-logo-file />
+      <p class="scr-dev-hint">
+        The printers take a black-and-white bitmap 832 dots wide — the width of the print head.
+        The file is stored exactly as uploaded and sent to the station's tablets at their next
+        login, so they can print it offline. Up to 1 MB.
+      </p>
+    </div>
+
+    <div class="scr-set-warnings" data-logo-warnings hidden></div>
+  </div>
+  <div class="scr-modal-foot scr-dev-foot">
+    <button type="button" class="scr-btn-danger" data-logo-remove hidden>Remove logo</button>
+    <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+    <button type="button" class="scr-btn-primary" data-logo-go disabled>Upload</button>
+  </div>
+</div>
+
+<div class="scr-modal-veil" data-scr-modal-veil="settings-apply" hidden></div>
+<div class="scr-modal scr-wt-assign" data-scr-modal="settings-apply" hidden>
+  <div class="scr-modal-head">
+    <div>
+      <div class="scr-modal-title">Copy to other stations</div>
+      <p class="scr-modal-sub" data-apply-sub></p>
+    </div>
+    <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+    </button>
+  </div>
+  <div class="scr-modal-body scr-wt-assign-body">
+    <div class="scr-set-fields">
+      <div class="scr-set-fields-head">
+        <span class="scr-label">What to copy</span>
+        <span class="scr-toolbar-count" data-apply-field-count>0 fields</span>
+      </div>
+      <div class="scr-set-fields-grid">
+        {% for f in shareable_fields %}
+        <label class="scr-check-row">
+          <input type="checkbox" class="scr-check" value="{{ f.id }}" data-apply-field />
+          <span class="scr-check-label">{{ f.name }}</span>
+        </label>
+        {% endfor %}
+      </div>
+      <p class="scr-dev-hint">The station, its code, its prefix, Header 1, Header 2 and the logo are never copied — they are what make a station's receipt its own.</p>
+    </div>
+
+    <div class="scr-wt-assign-bar">
+      <label class="scr-wt-assign-search">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+        <input type="search" placeholder="Search stations" aria-label="Search station, code or location" data-apply-search autocomplete="off" />
+      </label>
+      <label class="scr-check-row">
+        <input type="checkbox" class="scr-check" data-apply-all />
+        <span class="scr-check-label">All shown</span>
+      </label>
+      <span class="scr-toolbar-count" data-apply-count>0 selected</span>
+    </div>
+
+    <div class="scr-wt-assign-list scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th class="scr-wt-assign-check"></th>
+            <th>Station</th>
+            <th>Code</th>
+            <th>{% if multi_company %}Company{% else %}Location{% endif %}</th>
+            <th>Settings</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for b in settings_branches %}
+          <tr class="scr-set-pick-row" data-apply-row data-id="{{ b.id }}" data-has="{% if b.has_settings %}yes{% else %}no{% endif %}" data-search="{{ b.name|lower }} {{ b.code|lower }} {{ b.location|lower }}">
+            <td class="scr-wt-assign-check"><input type="checkbox" class="scr-check" value="{{ b.id }}" aria-label="{{ b.name }}"{% if not b.has_settings %} disabled{% endif %} /></td>
+            <td class="scr-wt-assign-name">{{ b.name }}</td>
+            <td>{{ b.code }}</td>
+            <td>{% if multi_company %}{{ b.company }}{% else %}{{ b.location|default:"—" }}{% endif %}</td>
+            <td>{% if b.has_settings %}<span class="scr-badge scr-badge-active"><i></i>Set</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>None</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="scr-wt-assign-empty" data-apply-empty hidden>No station matches your search.</p>
+    </div>
+  </div>
+  <div class="scr-modal-foot">
+    <p class="scr-modal-line scr-wt-assign-note">A station with no settings of its own is skipped — its code and prefix are nobody's to guess.</p>
+    <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+    <button type="button" class="scr-btn-primary" data-apply-go disabled>Copy</button>
+  </div>
+</div>
+
+<div class="scr-modal-veil" data-scr-modal-veil="settings-off" hidden></div>
+<div class="scr-modal scr-dev-modal" data-scr-modal="settings-off" hidden>
+  <div class="scr-modal-head">
+    <div>
+      <div class="scr-modal-title" data-off-title></div>
+    </div>
+    <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+    </button>
+  </div>
+  <div class="scr-modal-body">
+    <p class="scr-modal-line">New rentals at this station get no receipt header and no order prefix until settings are added again. Tablets already there keep the copy they downloaded.</p>
+    <p class="scr-modal-line scr-rel-muted">The row is kept: receipts printed under its prefix are still out there.</p>
+  </div>
+  <div class="scr-modal-foot scr-dev-foot">
+    <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+    <button type="button" class="scr-btn-danger" data-off-go>Deactivate</button>
+  </div>
+</div>

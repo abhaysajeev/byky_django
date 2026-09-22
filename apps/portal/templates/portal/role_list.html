@@ -1,0 +1,135 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Roles - System{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>System</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Roles</b>
+      </div>
+      <h1 class="scr-title">Roles</h1>
+      <p class="scr-sub">What a job may do. A new role starts with no access at all — give it screens on each module's Privileges screen.</p>
+    </div>
+    <div class="scr-head-actions">
+      {% if perm.create %}
+      <button type="button" class="scr-btn-primary" data-scr-open="role:add">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+        Add Role
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="scr-tiles">
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-red">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 5 3.4 8.7 8 9 4.6-.3 8-4 8-9V6z"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ roles|length }}</div><div class="scr-tile-lab">Roles</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-green">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ active_count }}</div><div class="scr-tile-lab">Active roles</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-blue">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17 20v-1.6a3.4 3.4 0 0 0-3.4-3.4H9.4A3.4 3.4 0 0 0 6 18.4V20M11.5 12a3.6 3.6 0 1 0 0-7.2 3.6 3.6 0 0 0 0 7.2"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ user_count }}</div><div class="scr-tile-lab">Active users</div></div>
+    </div>
+  </div>
+
+  <div class="scr-card" data-scr-noun-singular="role" data-scr-noun-plural="roles" data-scr-delete-url="{{ delete_url_role }}" data-scr-noun="{{ noun_role }}">
+    <div class="scr-toolbar">
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="text" placeholder="Search role name" />
+      </div>
+      <span class="scr-toolbar-count">{{ roles|length }} role{{ roles|length|pluralize }}</span>
+    </div>
+
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Role</th>
+            <th>Description</th>
+            <th>Company</th>
+            <th>Users</th>
+            <th>Modules</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in roles %}
+          <tr class="scr-row" data-search="{{ r.name|lower }} {{ r.description|lower }}" data-record-id="{{ r.json_id }}" data-pk="{{ r.pk }}">
+            <td style="font-weight:600">{{ r.name }}</td>
+            <td class="scr-contact">{{ r.description }}</td>
+            <td>{% if r.is_system %}<span class="scr-badge scr-badge-pending"><i></i>Every company</span>{% else %}{{ r.company }}{% endif %}</td>
+            <td>{{ r.users }}</td>
+            <td title="{{ r.module_names }}">{% if r.modules %}<span class="scr-badge scr-badge-approved"><i></i>{{ r.modules }}</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>None yet</span>{% endif %}</td>
+            <td>{% if r.active %}<span class="scr-badge scr-badge-active"><i></i>Active</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Inactive</span>{% endif %}</td>
+            <td>
+              <div class="scr-row-actions">
+                {% include "byky/partials/row_actions.html" with edit_open="role:edit" %}
+              </div>
+            </td>
+          </tr>
+          {{ r.fields_json|json_script:r.json_id }}
+          {% empty %}
+          <tr>
+            <td colspan="7" style="padding:0">
+              <div class="scr-empty">
+                <span class="scr-empty-ico">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 5 3.4 8.7 8 9 4.6-.3 8-4 8-9V6z"></path></svg>
+                </span>
+                <div>
+                  <div class="scr-empty-title">No roles yet</div>
+                  <p class="scr-empty-sub">A role is what a person's account may do. Add one, then give it screens on each module's Privileges screen.</p>
+                </div>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="scr-pager">
+      <span class="scr-pager-info">Showing {{ roles|length }} of {{ roles|length }}</span>
+      <div class="scr-pager-nav">
+        <button type="button" class="scr-pager-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"></path></svg>
+        </button>
+        <span class="scr-pager-current">1</span>
+        <button type="button" class="scr-pager-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 6 6 6-6 6"></path></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% include "byky/partials/drawer.html" with save_url=save_url_role spec=drawer_role module_label="System · Roles" %}
+{% include "byky/partials/confirm_modal.html" %}
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}

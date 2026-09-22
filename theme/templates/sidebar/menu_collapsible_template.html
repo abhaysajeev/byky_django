@@ -1,0 +1,23 @@
+{% load i18n %}
+
+{% with is_group=item.submenu|filter_by_url:request %}
+  {% if not item.permission or request.user|has_permission:item.permission %}
+  <li class="byky-menu-item byky-menu-item-group {% if is_group %}active open{% endif %}">
+    <a href="javascript:void(0);" class="byky-menu-link byky-menu-toggle" aria-expanded="{% if is_group %}true{% else %}false{% endif %}">
+      {% include './menu_icon_template.html' with item=item %}
+      <span class="menu-label">{% trans item.name %}</span>
+      <span class="menu-slot">
+        {% if item.badge %}<span class="menu-badge">{{ item.badge.1 }}</span>{% else %}<span class="menu-badge">{{ item.submenu|length }}</span>{% endif %}
+        <span class="menu-caret">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        </span>
+      </span>
+    </a>
+    <ul class="byky-menu-sub">
+      {% for sub_item in item.submenu %}
+        {% include './menu_item_template.html' with item=sub_item top_level=False %}
+      {% endfor %}
+    </ul>
+  </li>
+  {% endif %}
+{% endwith %}

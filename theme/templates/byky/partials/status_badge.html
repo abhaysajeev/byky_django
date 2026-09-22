@@ -1,0 +1,18 @@
+{% comment %}
+Approval / active status chip, shared by every master screen that carries the
+FSD's IsApproved (0 Pending / 1 Approved / 2 Rejected) or IsActive flag.
+
+  {% include "byky/partials/status_badge.html" with status="Approved" %}
+
+primary is the brand colour, so it is never used here -- status is danger/success/
+warning/secondary only, keeping brand and state visually separate.
+{% endcomment %}
+{% if status == "Approved" or status == "Active" %}
+  <span class="badge rounded-pill bg-label-success">{{ status }}</span>
+{% elif status == "Pending" %}
+  <span class="badge rounded-pill bg-label-warning">{{ status }}</span>
+{% elif status == "Rejected" or status == "Blocked" or status == "Inactive" %}
+  <span class="badge rounded-pill bg-label-danger">{{ status }}</span>
+{% else %}
+  <span class="badge rounded-pill bg-label-secondary">{{ status }}</span>
+{% endif %}

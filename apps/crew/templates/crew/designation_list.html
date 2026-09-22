@@ -1,0 +1,119 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Designation - Human Resources{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Human Resources</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Designation</b>
+      </div>
+      <h1 class="scr-title">Designation</h1>
+      <p class="scr-sub">Job titles, their seniority and how their attendance is taken.</p>
+    </div>
+    <div class="scr-head-actions">
+      <button type="button" class="scr-btn-primary" data-scr-open="designation:add">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+        Add Designation
+      </button>
+    </div>
+  </div>
+
+  <div class="scr-tiles">
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-red">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 12 12 3.4 4.4 12 12 20.6zM12 8v.01M12 12v4"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ designations|length }}</div><div class="scr-tile-lab">Designations</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-green">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ active_count }}</div><div class="scr-tile-lab">Active designations</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-blue">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17 20v-1.6a3.4 3.4 0 0 0-3.4-3.4H9.4A3.4 3.4 0 0 0 6 18.4V20M11.5 12a3.6 3.6 0 1 0 0-7.2 3.6 3.6 0 0 0 0 7.2"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ staff_count }}</div><div class="scr-tile-lab">Total Active Employees</div></div>
+    </div>
+  </div>
+
+  <div class="scr-card" data-scr-noun-singular="designation" data-scr-noun-plural="designations" data-scr-delete-url="{{ delete_url_designation }}" data-scr-noun="{{ noun_designation }}">
+    <div class="scr-toolbar">
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="text" placeholder="Search designation code or title" />
+      </div>
+      <span class="scr-toolbar-count">{{ designations|length }} designations</span>
+    </div>
+
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Designation Title</th>
+            <th>Description</th>
+            <th>Rank Order</th>
+            <th>Headcount</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in designations %}
+          <tr class="scr-row" data-search="{{ d.code|lower }} {{ d.title|lower }}" data-record-id="{{ d.json_id }}" data-pk="{{ d.pk }}">
+            <td><span class="scr-code">{{ d.code }}</span></td>
+            <td style="font-weight:600">{{ d.title }}</td>
+            <td class="scr-contact">{{ d.description }}</td>
+            <td>{{ d.rank }}</td>
+            <td><span class="scr-badge scr-badge-approved"><i></i>{{ d.headcount }}</span></td>
+            <td>{% if d.active %}<span class="scr-badge scr-badge-active"><i></i>Active</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Inactive</span>{% endif %}</td>
+            <td>
+              <div class="scr-row-actions">
+                {% include "byky/partials/row_actions.html" with edit_open="designation:edit" %}
+              </div>
+            </td>
+          </tr>
+          {{ d.fields_json|json_script:d.json_id }}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="scr-pager">
+      <span class="scr-pager-info">Showing {{ designations|length }} of {{ designations|length }}</span>
+      <div class="scr-pager-nav">
+        <button type="button" class="scr-pager-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"></path></svg>
+        </button>
+        <span class="scr-pager-current">1</span>
+        <button type="button" class="scr-pager-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 6 6 6-6 6"></path></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% include "byky/partials/drawer.html" with save_url=save_url_designation spec=drawer_designation module_label="Human Resources · Designation" %}
+{% include "byky/partials/confirm_modal.html" %}
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}

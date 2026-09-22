@@ -1,0 +1,112 @@
+{% comment %}
+App Mapping's Map Release and Remove modals, driven by byky-app-mapping.js.
+
+The branch picker reuses the Branch Working Time Assign modal's list styles
+(.scr-wt-assign-*) and, like it, avoids .scr-row / .scr-search: byky-screen.js
+filters every .scr-row under the nearest card or screen, so a search here would
+otherwise hide the grid behind the modal.
+
+Nothing saves until the server's preview has been shown, and every warning it
+returns has been ticked (services.mapping_plan). Needs map_branches in context.
+{% endcomment %}
+<div class="scr-modal-veil" data-scr-modal-veil="release-map" hidden></div>
+<div class="scr-modal scr-wt-assign scr-rel-map" data-scr-modal="release-map" hidden>
+  <div class="scr-modal-head">
+    <div>
+      <div class="scr-modal-title">Map a release</div>
+      <p class="scr-modal-sub" data-map-sub></p>
+    </div>
+    <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+    </button>
+  </div>
+
+  <div class="scr-modal-body scr-wt-assign-body scr-rel-map-body">
+    <div class="scr-field">
+      <label class="scr-label" for="map-release">Release<span class="scr-required">*</span></label>
+      <select id="map-release" class="scr-input" data-map-release>
+        <option value="">Select a release</option>
+      </select>
+      <p class="scr-dev-hint" data-map-release-empty hidden>This app has no active release. Add one on App Releases first.</p>
+      <p class="scr-dev-hint" data-map-pick-company hidden>Several companies are on this server. Start from a company's own default card, or from a station's row, so the build and the stations belong together.</p>
+    </div>
+
+    <div class="scr-field">
+      <span class="scr-label">Send it to<span class="scr-required">*</span></span>
+      <div class="scr-rel-targets">
+        <label class="scr-radio-row"><input type="radio" class="scr-radio" name="map-scope" value="all" data-map-scope /> <span class="scr-check-label">All branches (the default)</span></label>
+        <label class="scr-radio-row"><input type="radio" class="scr-radio" name="map-scope" value="branch" data-map-scope /> <span class="scr-check-label">Selected branches only</span></label>
+      </div>
+    </div>
+
+    <div class="scr-rel-picker" data-map-picker hidden>
+      <div class="scr-wt-assign-bar">
+        <label class="scr-wt-assign-search">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+          <input type="search" placeholder="Search branches" aria-label="Search branch, code or location" data-map-search autocomplete="off" />
+        </label>
+        <label class="scr-check-row">
+          <input type="checkbox" class="scr-check" data-map-pick-all />
+          <span class="scr-check-label">All shown</span>
+        </label>
+        <span class="scr-toolbar-count" data-map-count>0 selected</span>
+      </div>
+      <div class="scr-wt-assign-list scr-sb">
+        <table>
+          <thead>
+            <tr>
+              <th class="scr-wt-assign-check"></th>
+              <th>Branch</th>
+              <th>Code</th>
+              <th>Now on</th>
+              <th>Working time</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for b in map_branches %}
+            <tr class="scr-rel-pick-row" data-map-pick-row data-id="{{ b.id }}" data-company="{{ b.company_id }}" data-search="{{ b.name|lower }} {{ b.code|lower }} {{ b.location|lower }}">
+              <td class="scr-wt-assign-check"><input type="checkbox" class="scr-check" value="{{ b.id }}" aria-label="{{ b.name }}" /></td>
+              <td class="scr-wt-assign-name">{{ b.name }}</td>
+              <td>{{ b.code }}</td>
+              <td data-map-now>—</td>
+              <td>{% if b.has_working_time %}<span class="scr-badge scr-badge-active"><i></i>Set</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Not set</span>{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <p class="scr-wt-assign-empty" data-map-empty hidden>No branch matches your search.</p>
+      </div>
+    </div>
+
+    <div class="scr-rel-preview" data-map-preview hidden>
+      <div class="scr-rel-preview-summary" data-map-summary></div>
+      <div class="scr-rel-preview-warnings" data-map-warnings></div>
+    </div>
+  </div>
+
+  <div class="scr-modal-foot">
+    <p class="scr-modal-line scr-wt-assign-note" data-map-foot-note>Each branch's current mapping is kept in History. A release belongs to one company, so only that company's branches are listed.</p>
+    <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+    <button type="button" class="scr-btn-primary" data-map-go disabled>Save mapping</button>
+  </div>
+</div>
+
+<div class="scr-modal-veil" data-scr-modal-veil="release-unmap" hidden></div>
+<div class="scr-modal scr-dev-modal" data-scr-modal="release-unmap" hidden>
+  <div class="scr-modal-head">
+    <div>
+      <div class="scr-modal-title" data-unmap-title></div>
+    </div>
+    <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+    </button>
+  </div>
+  <div class="scr-modal-body">
+    <p class="scr-modal-line" data-unmap-note></p>
+    <p class="scr-modal-line scr-rel-muted">The mapping is kept in History.</p>
+  </div>
+  <div class="scr-modal-foot scr-dev-foot">
+    <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+    <button type="button" class="scr-btn-danger" data-unmap-go>Remove</button>
+  </div>
+</div>

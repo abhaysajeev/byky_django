@@ -1,0 +1,31 @@
+{% comment %}
+Confirm before something irreversible -- today, Delete.
+
+Built from the design system's own .scr-modal (veil + modal + head/body/foot,
+data-scr-modal / data-scr-modal-veil / data-scr-modal-close), so it looks like
+the rest of the screen rather than a stock dialog box.
+
+Include once per screen. byky-crud.js fills the title, the line and the button
+label, and resolves a promise on confirm:
+
+  {% include "byky/partials/confirm_modal.html" %}
+{% endcomment %}
+<div class="scr-modal-veil" data-scr-modal-veil="confirm" hidden></div>
+<div class="scr-modal" data-scr-modal="confirm" hidden style="width:min(420px, 100%)">
+  <div class="scr-modal-head">
+    <div>
+      <div class="scr-modal-title" data-confirm-title>Delete this record?</div>
+      <p class="scr-modal-sub" data-confirm-sub></p>
+    </div>
+    <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+    </button>
+  </div>
+  <div class="scr-modal-body">
+    <p class="scr-modal-line" data-confirm-body></p>
+  </div>
+  <div class="scr-modal-foot" style="justify-content:flex-end">
+    <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+    <button type="button" class="scr-btn-danger" data-confirm-ok>Delete</button>
+  </div>
+</div>

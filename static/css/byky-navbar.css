@@ -1,0 +1,222 @@
+/* BYKY navbar -- the 64px white header, site-wide.
+ *
+ * These rules started life inside byky-dashboard.css, scoped to the landing
+ * page. They are now global: the same header ships on all 110 screens, so the
+ * styles must load with every page rather than with one page's stylesheet.
+ * Class prefix moved .bd-* -> .byky-nav-* at the same time, since .bd- is the
+ * dashboard design's own namespace and these are no longer part of it.
+ *
+ * Loaded from templates/layout/partials/styles.html, after core.css so it wins.
+ * "Sora" comes from sidebar.css, which is also global.
+ */
+
+.layout-navbar#layout-navbar {
+  min-height: 64px;
+  height: 64px;
+  background: #fff;
+  border-bottom: 1px solid #e8e8f0;
+  box-shadow: none;
+  padding-block: 0;
+  font-family: 'Sora', sans-serif;
+}
+.layout-navbar#layout-navbar .navbar-nav-right { gap: 10px; }
+
+/* Inert search affordance -- part of the approved header design. It is a
+   span, not an input: nothing is wired to it during the wireframe phase. */
+.byky-nav-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 160px;
+  min-width: 0;
+  max-width: 340px;
+  height: 38px;
+  background: #f6f5fc;
+  border: 1px solid #eeedf5;
+  border-radius: 9px;
+  padding: 0 12px;
+}
+.byky-nav-search span {
+  font-size: 13px;
+  color: #a9a6c4;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+
+.byky-nav-user { display: flex; align-items: center; gap: 9px; }
+.byky-nav-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: linear-gradient(140deg, #1a1640, #3a3372);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  flex: 0 0 auto;
+}
+.byky-nav-username { font-size: 13px; font-weight: 600; color: #1a1640; line-height: 1.25; }
+.byky-nav-userrole { font-size: 10.5px; color: #9490bb; font-weight: 500; line-height: 1.25; }
+
+/* Name and role are the only things that need to disappear on a narrow
+   viewport; the avatar stays as the dropdown's handle. */
+@media (max-width: 575.98px) {
+  .byky-nav-search { display: none; }
+  .byky-nav-user > div:not(.byky-nav-avatar) { display: none; }
+}
+
+/* ── profile dropdown ─────────────────────────────────────────────── */
+.byky-nav-menu { min-width: 220px; font-family: 'Sora', sans-serif; }
+.byky-nav-menu-name { font-size: 13px; font-weight: 600; color: #1a1640; padding: 10px 16px 8px; }
+
+/* ── alerts: the bell, its dropdown, and the strip beside it ────────
+   Severity colours: critical = brand-adjacent red, warning = amber,
+   info = slate. Deliberately not the brand primary -- an alert is never
+   "the main action", and CLAUDE.md keeps primary and danger separate. */
+.byky-bell {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 9px;
+  color: #6b6790;
+  transition: background 0.15s, color 0.15s;
+}
+.byky-bell:hover { background: #f6f5fc; color: #1a1640; }
+.byky-bell.has-unread { color: #1a1640; }
+/* Sits in the icon's top-right corner, clipping only its corner. Sized with
+   border-box and a 1px ring: with content-box, min-width + padding + border
+   added up to 28x20 and swallowed 70% of the 20px bell. */
+.byky-bell-badge {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  box-sizing: border-box;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 8px;
+  background: #d81f26;
+  color: #fff;
+  font-size: 8.5px;
+  font-weight: 700;
+  line-height: 13px;
+  text-align: center;
+  border: 1px solid #fff;
+}
+
+/* The strip: newest alert only, title plus its subject. Sits left of the
+   bell and collapses to nothing on small screens, where the bell alone
+   carries the signal. */
+.byky-alert-strip {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  max-width: 340px;
+  min-width: 0;
+  height: 38px;
+  padding: 0 8px 0 11px;
+  margin-right: 4px;
+  border-radius: 9px;
+  border: 1px solid;
+  text-decoration: none;
+  opacity: 0;
+  transform: translateX(6px);
+}
+.byky-alert-strip.is-in { opacity: 1; transform: none; transition: opacity 0.22s ease, transform 0.22s ease; }
+.byky-alert-strip.is-critical { background: #fdecec; border-color: #f6c9ca; }
+.byky-alert-strip.is-warning { background: #fff5e6; border-color: #ffdfae; }
+.byky-alert-strip.is-info { background: #f2f4fb; border-color: #dcdff0; }
+
+.byky-alert-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+.byky-alert-strip.is-critical .byky-alert-dot { background: #d81f26; }
+.byky-alert-strip.is-warning .byky-alert-dot { background: #d98800; }
+.byky-alert-strip.is-info .byky-alert-dot { background: #6b7fb3; }
+
+.byky-alert-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.byky-alert-title { font-size: 11.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.byky-alert-detail { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.byky-alert-strip.is-critical .byky-alert-title { color: #a11217; }
+.byky-alert-strip.is-critical .byky-alert-detail { color: #c2565a; }
+.byky-alert-strip.is-warning .byky-alert-title { color: #8a5600; }
+.byky-alert-strip.is-warning .byky-alert-detail { color: #b08236; }
+.byky-alert-strip.is-info .byky-alert-title { color: #35406b; }
+.byky-alert-strip.is-info .byky-alert-detail { color: #6b7fb3; }
+
+.byky-alert-x {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.55;
+  cursor: pointer;
+}
+.byky-alert-x:hover { opacity: 1; background: rgba(255, 255, 255, 0.7); }
+
+/* Dropdown */
+.byky-alert-menu { width: 380px; max-width: calc(100vw - 24px); padding: 0; font-family: 'Sora', sans-serif; overflow: hidden; }
+.byky-alert-menu-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 14px; border-bottom: 1px solid #f0eff7;
+  font-size: 12.5px; font-weight: 600; color: #1a1640;
+}
+.byky-alert-clear { border: 0; background: transparent; color: #9490bb; font-size: 11px; font-weight: 500; cursor: pointer; }
+.byky-alert-clear:hover { color: #d81f26; }
+.byky-alert-list { max-height: 340px; overflow-y: auto; }
+.byky-alert-empty { padding: 26px 14px; text-align: center; font-size: 12px; color: #a9a6c4; }
+
+.byky-alert-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 11px 14px; border-bottom: 1px solid #f6f5fc;
+  text-decoration: none; transition: background 0.14s;
+}
+.byky-alert-row:hover { background: #fbfaff; }
+.byky-alert-row.is-read { opacity: 0.62; }
+.byky-alert-row-dot { width: 7px; height: 7px; border-radius: 50%; margin-top: 5px; flex: 0 0 auto; }
+.byky-alert-row.is-critical .byky-alert-row-dot { background: #d81f26; }
+.byky-alert-row.is-warning .byky-alert-row-dot { background: #d98800; }
+.byky-alert-row.is-info .byky-alert-row-dot { background: #6b7fb3; }
+.byky-alert-row-body { min-width: 0; flex: 1; }
+.byky-alert-row-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.byky-alert-row-head b { font-size: 12px; font-weight: 600; color: #1a1640; }
+.byky-alert-row-head time { font-size: 10px; color: #a9a6c4; flex: 0 0 auto; }
+.byky-alert-row-detail { display: block; font-size: 11px; color: #6b6790; line-height: 1.45; margin-top: 2px; }
+
+.byky-alert-menu-foot {
+  display: block; padding: 11px 14px; text-align: center;
+  font-size: 11.5px; font-weight: 500; color: #6b6790;
+  background: #fbfaff; border-top: 1px solid #f0eff7; text-decoration: none;
+}
+.byky-alert-menu-foot:hover { color: #d81f26; }
+
+@media (max-width: 991.98px) {
+  .byky-alert-strip { display: none; }
+}
+
+/* Mute toggle in the alert dropdown header. Only one of the two glyphs shows
+   at a time -- muted state is driven by aria-pressed, so the control stays
+   accessible rather than relying on a class alone. */
+.byky-alert-menu-tools { display: flex; align-items: center; gap: 10px; }
+.byky-alert-mute {
+  display: grid; place-items: center;
+  width: 26px; height: 26px; padding: 0;
+  border: 0; border-radius: 7px; background: transparent;
+  color: #9490bb; cursor: pointer; transition: background 0.14s, color 0.14s;
+}
+.byky-alert-mute:hover { background: #f4f3fa; color: #1a1640; }
+.byky-alert-mute[aria-pressed="true"] { color: #d81f26; }
+.byky-alert-mute .byky-icon-muted { display: none; }
+.byky-alert-mute[aria-pressed="true"] .byky-icon-unmuted { display: none; }
+.byky-alert-mute[aria-pressed="true"] .byky-icon-muted { display: block; }
