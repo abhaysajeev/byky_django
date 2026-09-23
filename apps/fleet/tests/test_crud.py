@@ -407,6 +407,30 @@ def test_vehicle_type_code_is_optional(client_in, world, taxonomy):
     assert vehicle_type.vehicle_type_code == ""
 
 
+def test_tax_percentage_and_other_tax_are_optional(client_in, world, taxonomy):
+    response = post(client_in, "/fleet/vehicle-type/save/", {
+        "category": taxonomy["category"].pk, "brand": taxonomy["brand"].pk,
+        "vehicle_type_name": "Monaco",
+    })
+
+    assert response.status_code == 200
+    vehicle_type = VehicleType.objects.get(pk=response.json()["pk"])
+    assert vehicle_type.tax_percentage is None
+    assert vehicle_type.other_tax is None
+
+
+def test_tax_percentage_and_other_tax_save_when_given(client_in, world, taxonomy):
+    response = post(client_in, "/fleet/vehicle-type/save/", {
+        "category": taxonomy["category"].pk, "brand": taxonomy["brand"].pk,
+        "vehicle_type_name": "Monaco", "tax_percentage": "5.00", "other_tax": "1.50",
+    })
+
+    assert response.status_code == 200
+    vehicle_type = VehicleType.objects.get(pk=response.json()["pk"])
+    assert str(vehicle_type.tax_percentage) == "5.00"
+    assert str(vehicle_type.other_tax) == "1.50"
+
+
 def test_update_a_vehicle_type(client_in, world, taxonomy):
     vehicle_type = VehicleType.objects.create(
         company=world["company"], category=taxonomy["category"], brand=taxonomy["brand"],

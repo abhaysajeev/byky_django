@@ -105,6 +105,14 @@ class VehicleType(ApprovalMixin, TimeStampedModel):
     vehicle_type_code = models.CharField("Vehicle Type Code", max_length=20, blank=True)
     vehicle_type_name = models.CharField("Vehicle Type Name", max_length=100)
     description = models.TextField(blank=True)
+    # Both optional -- a vehicle type can be priced before its tax rates are
+    # decided. Decimal, not float, per CLAUDE.md's money/rate rule.
+    tax_percentage = models.DecimalField(
+        "Tax Percentage", max_digits=5, decimal_places=2, null=True, blank=True
+    )
+    other_tax = models.DecimalField(
+        "Other Tax", max_digits=5, decimal_places=2, null=True, blank=True
+    )
 
     class Meta:
         db_table = "vehicle_type"

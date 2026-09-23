@@ -178,6 +178,12 @@ class VehicleTypeListView(FleetScreenView):
                     "vehicle_type_code": vehicle_type.vehicle_type_code,
                     "vehicle_type_name": vehicle_type.vehicle_type_name,
                     "description": vehicle_type.description,
+                    "tax_percentage": (
+                        str(vehicle_type.tax_percentage) if vehicle_type.tax_percentage is not None else ""
+                    ),
+                    "other_tax": (
+                        str(vehicle_type.other_tax) if vehicle_type.other_tax is not None else ""
+                    ),
                     "is_active": vehicle_type.is_active,
                 },
             })

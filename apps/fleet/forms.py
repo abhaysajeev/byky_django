@@ -24,7 +24,7 @@ class VehicleTypeForm(ScopedModelForm):
         model = VehicleType
         fields = [
             "company", "category", "brand", "vehicle_type_code",
-            "vehicle_type_name", "description", "is_active",
+            "vehicle_type_name", "description", "tax_percentage", "other_tax", "is_active",
         ]
         labels = {
             "vehicle_type_code": "Vehicle Type Code", "vehicle_type_name": "Vehicle Type Name",

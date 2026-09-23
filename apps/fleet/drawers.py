@@ -150,6 +150,18 @@ VEHICLE_TYPE = {
                     "kind": "textarea",
                     "required": False,
                 },
+                {
+                    "id": "tax_percentage",
+                    "label": "Tax Percentage",
+                    "kind": "number",
+                    "required": False,
+                },
+                {
+                    "id": "other_tax",
+                    "label": "Other Tax",
+                    "kind": "number",
+                    "required": False,
+                },
             ],
         }
     ],
