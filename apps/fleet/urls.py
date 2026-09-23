@@ -18,5 +18,11 @@ urlpatterns = [
     path("uom/list/", views.UOMListView.as_view(), name="fleet-uom-list"),
     path("uom/save/", views.UOMSave.as_view(), name="fleet-uom-save"),
     path("uom/<int:pk>/delete/", views.UOMDelete.as_view(), name="fleet-uom-delete"),
+    path("asset-type/list/", views.AssetTypeListView.as_view(), name="fleet-asset-type-list"),
+    path("asset-type/save/", views.AssetTypeSave.as_view(), name="fleet-asset-type-save"),
+    path(
+        "asset-type/<int:pk>/delete/", views.AssetTypeDelete.as_view(),
+        name="fleet-asset-type-delete",
+    ),
     path("privileges/", views.FleetPrivilegeView.as_view(), name="fleet-privileges"),
 ]

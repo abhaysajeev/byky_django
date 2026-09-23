@@ -197,9 +197,52 @@ UOM = {
     ],
 }
 
+ASSET_TYPE = {
+    "drawer_id": "drawerAssetType",
+    "scr_name": "asset_type",
+    "model": "fleet.AssetType",
+    "add_label": "Add Asset Type",
+    "title_field": "asset_type_name",
+    "sections": [
+        {
+            "title": "",
+            "fields": [
+                {
+                    "id": "company",
+                    "label": "Company",
+                    "kind": "select",
+                    "required": True,
+                    "options_from": "companies_list",
+                    "option_key": "name",
+                    "system_only": True,
+                },
+                {
+                    "id": "asset_type_code",
+                    "label": "Asset Type Code",
+                    "kind": "text",
+                    "required": False,
+                },
+                {
+                    "id": "asset_type_name",
+                    "label": "Asset Type",
+                    "kind": "text",
+                    "required": True,
+                },
+                {
+                    "id": "description",
+                    "label": "Description",
+                    "kind": "textarea",
+                    "required": False,
+                },
+            ],
+        }
+    ],
+}
+
 SPECS = {
     "drawer_brand": BRAND,
     "drawer_category": CATEGORY,
     "drawer_vehicle_type": VEHICLE_TYPE,
     "drawer_uom": UOM,
+    "drawer_asset_type": ASSET_TYPE,
 }

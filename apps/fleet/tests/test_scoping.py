@@ -12,7 +12,7 @@ tests prove it, and prove Category inherits it for free.
 import pytest
 
 from apps.company.models import Company, Country, State
-from apps.fleet.models import UOM, Brand, Category, VehicleType
+from apps.fleet.models import UOM, AssetType, Brand, Category, VehicleType
 from apps.portal.models import Role
 from apps.portal.services import grant_all
 from core.enums import Channel, UserScope
@@ -53,6 +53,8 @@ def two_companies(db):
     )
     UOM.objects.create(company=byky, uom_code="NO", uom_name="Byky UAE UOM")
     UOM.objects.create(company=byky_kw, uom_code="NO", uom_name="Byky Kuwait UOM")
+    AssetType.objects.create(company=byky, asset_type_name="Byky UAE Asset Type")
+    AssetType.objects.create(company=byky_kw, asset_type_name="Byky Kuwait Asset Type")
 
     return {"uae": byky, "kuwait": byky_kw}
 
@@ -264,5 +266,44 @@ def test_a_system_user_must_choose_a_company_for_a_uom(client, two_companies):
     _system_user(client, "platform.admin")
 
     body = client.get("/fleet/uom/list/").content
+
+    assert b'data-field="company"' in body
+
+
+# --- Asset Type: rows ------------------------------------------------------
+
+def test_a_company_user_never_sees_another_companys_asset_type(client, two_companies):
+    _company_user(client, two_companies["uae"], "uae.admin")
+
+    body = client.get("/fleet/asset-type/list/").content
+
+    assert b"Byky UAE Asset Type" in body
+    assert b"Byky Kuwait Asset Type" not in body
+
+
+def test_a_system_user_sees_every_companys_asset_type(client, two_companies):
+    _system_user(client, "platform.admin")
+
+    body = client.get("/fleet/asset-type/list/").content
+
+    assert b"Byky UAE Asset Type" in body
+    assert b"Byky Kuwait Asset Type" in body
+
+
+# --- Asset Type: the drawer follows the same rule -------------------------------
+
+def test_a_company_user_is_not_asked_which_company_for_an_asset_type(client, two_companies):
+    _company_user(client, two_companies["uae"], "uae.admin")
+
+    body = client.get("/fleet/asset-type/list/").content
+
+    assert b'data-field="asset_type_name"' in body
+    assert b'data-field="company"' not in body
+
+
+def test_a_system_user_must_choose_a_company_for_an_asset_type(client, two_companies):
+    _system_user(client, "platform.admin")
+
+    body = client.get("/fleet/asset-type/list/").content
 
     assert b'data-field="company"' in body

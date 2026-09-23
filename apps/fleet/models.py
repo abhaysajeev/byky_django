@@ -150,3 +150,25 @@ class UOM(ApprovalMixin, TimeStampedModel):
 
     def __str__(self):
         return self.uom_name
+
+
+class AssetType(ApprovalMixin, TimeStampedModel):
+    """A type of asset (e.g. Vehicle, Battery, Charger). No legacy table maps
+    to this -- new entity, built clean. asset_type_code is optional, same
+    convention as Vehicle Type's code (no legacy precedent to require it,
+    unlike Brand/Category/UOM's codes)."""
+
+    company = models.ForeignKey(
+        "company.Company", on_delete=models.PROTECT, related_name="asset_types"
+    )
+    asset_type_code = models.CharField("Asset Type Code", max_length=20, blank=True)
+    asset_type_name = models.CharField("Asset Type", max_length=100)
+    description = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "asset_type"
+        ordering = ["asset_type_name"]
+        indexes = [models.Index(fields=["company"])]
+
+    def __str__(self):
+        return self.asset_type_name

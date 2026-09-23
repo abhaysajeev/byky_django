@@ -11,7 +11,7 @@ import json
 import pytest
 
 from apps.company.models import Company, Country, State
-from apps.fleet.models import UOM, Brand, Category, VehicleType
+from apps.fleet.models import UOM, AssetType, Brand, Category, VehicleType
 from apps.portal.models import Role, RolePermission
 from apps.portal.services import grant_all
 from core.enums import ApprovalStatus, Channel
@@ -685,3 +685,125 @@ def test_one_company_cannot_reuse_its_own_uom_code(world):
     UOM.objects.create(company=world["company"], uom_code="NO", uom_name="First")
     with pytest.raises(IntegrityError):
         UOM.objects.create(company=world["company"], uom_code="NO", uom_name="Second")
+
+
+# =============================== Asset Type =========================================
+# --- create, update, delete ---------------------------------------------------
+
+def test_create_an_asset_type(client_in, world):
+    response = post(client_in, "/fleet/asset-type/save/", {
+        "asset_type_name": "Vehicle", "asset_type_code": "VEH",
+    })
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["message"] == "Asset Type saved."
+
+    asset_type = AssetType.objects.get(pk=body["pk"])
+    assert asset_type.company == world["company"]          # from the user, not the payload
+    assert asset_type.is_active is True
+    assert asset_type.approval_status == ApprovalStatus.APPROVED
+
+
+def test_asset_type_code_is_optional(client_in, world):
+    response = post(client_in, "/fleet/asset-type/save/", {"asset_type_name": "Vehicle"})
+
+    assert response.status_code == 200
+    asset_type = AssetType.objects.get(pk=response.json()["pk"])
+    assert asset_type.asset_type_code == ""
+
+
+def test_update_an_asset_type(client_in, world):
+    asset_type = AssetType.objects.create(company=world["company"], asset_type_name="Vehicle")
+
+    post(client_in, "/fleet/asset-type/save/", {"pk": asset_type.pk, "asset_type_name": "Battery"})
+
+    asset_type.refresh_from_db()
+    assert asset_type.asset_type_name == "Battery"
+    assert AssetType.objects.count() == 1                  # updated, not duplicated
+
+
+def test_delete_an_unused_asset_type(client_in, world):
+    asset_type = AssetType.objects.create(company=world["company"], asset_type_name="Vehicle")
+
+    response = post(client_in, f"/fleet/asset-type/{asset_type.pk}/delete/", {})
+
+    assert response.json()["ok"] is True
+    assert AssetType.objects.count() == 0
+
+
+# --- validation -----------------------------------------------------------------
+
+def test_missing_required_asset_type_fields_are_reported_at_once(client_in):
+    response = post(client_in, "/fleet/asset-type/save/", {"asset_type_name": ""})
+
+    assert response.status_code == 400
+    errors = response.json()["errors"]
+    fields = {error["field"] for error in errors}
+
+    assert "Asset Type" in fields                          # labelled as the drawer labels it
+    assert "asset_type_name" not in fields                  # never a column name
+
+
+# --- permission on the write -----------------------------------------------------
+
+@pytest.mark.parametrize("action,payload", [
+    ("create", {"asset_type_name": "X"}),
+    ("update", {"pk": 0, "asset_type_name": "X"}),
+])
+def test_a_role_without_the_asset_type_action_is_refused(client_in, world, action, payload):
+    asset_type = AssetType.objects.create(company=world["company"], asset_type_name="Vehicle")
+    if payload.get("pk") == 0:
+        payload["pk"] = asset_type.pk
+    RolePermission.objects.filter(
+        role=client_in.role, page__code="fleet.asset_type"
+    ).update(**{f"can_{action}": False})
+
+    response = post(client_in, "/fleet/asset-type/save/", payload)
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "forbidden"
+
+
+def test_a_role_without_asset_type_delete_is_refused(client_in, world):
+    asset_type = AssetType.objects.create(company=world["company"], asset_type_name="Vehicle")
+    RolePermission.objects.filter(
+        role=client_in.role, page__code="fleet.asset_type"
+    ).update(can_delete=False)
+
+    response = post(client_in, f"/fleet/asset-type/{asset_type.pk}/delete/", {})
+
+    assert response.status_code == 403
+    assert AssetType.objects.count() == 1
+
+
+# --- scope on the write -----------------------------------------------------------
+
+def test_a_company_user_cannot_edit_another_companys_asset_type(client_in, world):
+    theirs = AssetType.objects.create(company=world["other"], asset_type_name="Their Vehicle")
+
+    response = post(client_in, "/fleet/asset-type/save/",
+                     {"pk": theirs.pk, "asset_type_name": "Hijacked"})
+
+    assert response.status_code == 404                    # not even acknowledged
+    theirs.refresh_from_db()
+    assert theirs.asset_type_name == "Their Vehicle"
+
+
+def test_a_company_user_cannot_post_a_different_company_for_asset_type(client_in, world):
+    response = post(client_in, "/fleet/asset-type/save/",
+                     {"asset_type_name": "Vehicle", "company": world["other"].pk})
+
+    assert response.json()["ok"] is True
+    asset_type = AssetType.objects.get(pk=response.json()["pk"])
+    assert asset_type.company == world["company"]          # the payload was ignored
+
+
+def test_a_company_user_cannot_delete_another_companys_asset_type(client_in, world):
+    theirs = AssetType.objects.create(company=world["other"], asset_type_name="Their Vehicle")
+
+    response = post(client_in, f"/fleet/asset-type/{theirs.pk}/delete/", {})
+
+    assert response.status_code == 404
+    assert AssetType.objects.filter(pk=theirs.pk).exists()

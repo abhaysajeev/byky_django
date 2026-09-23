@@ -6,7 +6,7 @@ Same shape as apps/company/tests/test_screens.py.
 import pytest
 
 from apps.company.models import Company, Country, State
-from apps.fleet.models import UOM, Brand, Category, VehicleType
+from apps.fleet.models import UOM, AssetType, Brand, Category, VehicleType
 from apps.portal.models import Page, Role, RolePermission
 from apps.portal.services import grant_all
 from core.enums import Channel
@@ -19,6 +19,7 @@ SCREENS = [
     ("/fleet/category/list/", "fleet.category"),
     ("/fleet/vehicle-type/list/", "fleet.vehicle_type"),
     ("/fleet/uom/list/", "fleet.uom"),
+    ("/fleet/asset-type/list/", "fleet.asset_type"),
     ("/fleet/privileges/", "fleet.privileges"),
 ]
 
@@ -190,3 +191,33 @@ def test_the_sidebar_hides_uom_when_permission_is_revoked(signed_in, company):
     body = signed_in.get("/dashboard/").content
 
     assert b'class="menu-label">UOM</span>' not in body
+
+
+def test_the_asset_type_screen_renders_with_data(signed_in, company):
+    AssetType.objects.create(company=company, asset_type_name="Vehicle")
+
+    response = signed_in.get("/fleet/asset-type/list/")
+
+    assert response.status_code == 200
+    assert b"Vehicle" in response.content
+
+
+def test_asset_type_code_is_optional_in_the_grid(signed_in, company):
+    AssetType.objects.create(company=company, asset_type_name="Vehicle")
+
+    response = signed_in.get("/fleet/asset-type/list/")
+
+    assert response.status_code == 200
+
+
+def test_the_sidebar_lists_asset_type_once_granted(signed_in):
+    assert b'class="menu-label">Asset Type</span>' in signed_in.get("/dashboard/").content
+
+
+def test_the_sidebar_hides_asset_type_when_permission_is_revoked(signed_in, company):
+    role = Role.objects.get(name="Administrator")
+    RolePermission.objects.filter(role=role, page__code="fleet.asset_type").update(can_read=False)
+
+    body = signed_in.get("/dashboard/").content
+
+    assert b'class="menu-label">Asset Type</span>' not in body
