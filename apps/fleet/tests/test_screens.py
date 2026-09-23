@@ -19,6 +19,7 @@ SCREENS = [
     ("/fleet/category/list/", "fleet.category"),
     ("/fleet/vehicle-type/list/", "fleet.vehicle_type"),
     ("/fleet/uom/list/", "fleet.uom"),
+    ("/fleet/privileges/", "fleet.privileges"),
 ]
 
 

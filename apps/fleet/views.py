@@ -13,6 +13,7 @@ from apps.company.scoping import companies_for
 from apps.fleet import drawers, forms, scoping
 from apps.fleet.models import UOM, Brand, Category, VehicleType
 from apps.portal.permissions import PagePermissionMixin
+from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
 from theme import drawers as theme_drawers
 from theme.views import ThemedTemplateView
@@ -232,3 +233,11 @@ class UOMDelete(company_writes.EntityDeleteView):
     model = UOM
     page_code = "fleet.uom"
     noun = "UOM"
+
+
+class FleetPrivilegeView(PrivilegeScreenView):
+    """Inventory's copy of the shared privilege grid."""
+
+    page_code = "fleet.privileges"
+    module_code = "fleet"
+    module_label = "Vehicle Management"

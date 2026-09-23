@@ -99,6 +99,7 @@ PAGES = [
     ("fleet.category", "fleet", "Category", "fleet-category-list", CRUD_PRINT, 2, False),
     ("fleet.vehicle_type", "fleet", "Vehicle Type", "fleet-vehicle-type-list", CRUD_PRINT, 3, False),
     ("fleet.uom", "fleet", "UOM", "fleet-uom-list", CRUD_PRINT, 4, False),
+    ("fleet.privileges", "fleet", "Privileges", "fleet-privileges", ["read", "update"], 9, False),
 
     ("system.role", "system", "Roles", "portal-role-list", CRUD, 1, False),
     ("system.user", "system", "Users", "portal-user-list", CRUD, 2, False),
