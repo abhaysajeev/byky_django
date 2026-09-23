@@ -1,6 +1,6 @@
 """Which fleet rows a user may see."""
 
-from apps.fleet.models import UOM, AssetType, Brand, Category, VehicleType
+from apps.fleet.models import UOM, Asset, AssetType, Brand, Category, VehicleType
 from core.scoping import scoped_to
 
 
@@ -22,3 +22,7 @@ def uoms_for(user):
 
 def asset_types_for(user):
     return scoped_to(AssetType.objects.all(), user)
+
+
+def assets_for(user):
+    return scoped_to(Asset.objects.all(), user)

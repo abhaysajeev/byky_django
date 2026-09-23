@@ -6,7 +6,7 @@ Same shape as apps/company/tests/test_screens.py.
 import pytest
 
 from apps.company.models import Company, Country, State
-from apps.fleet.models import UOM, AssetType, Brand, Category, VehicleType
+from apps.fleet.models import UOM, Asset, AssetType, Brand, Category, VehicleType
 from apps.portal.models import Page, Role, RolePermission
 from apps.portal.services import grant_all
 from core.enums import Channel
@@ -20,6 +20,7 @@ SCREENS = [
     ("/fleet/vehicle-type/list/", "fleet.vehicle_type"),
     ("/fleet/uom/list/", "fleet.uom"),
     ("/fleet/asset-type/list/", "fleet.asset_type"),
+    ("/fleet/asset/list/", "fleet.asset"),
     ("/fleet/privileges/", "fleet.privileges"),
 ]
 
@@ -221,3 +222,39 @@ def test_the_sidebar_hides_asset_type_when_permission_is_revoked(signed_in, comp
     body = signed_in.get("/dashboard/").content
 
     assert b'class="menu-label">Asset Type</span>' not in body
+
+
+def test_the_asset_screen_renders_with_data(signed_in, company):
+    asset_type = AssetType.objects.create(company=company, asset_type_name="Vehicle")
+    Asset.objects.create(company=company, asset_code="AST-001", asset_type=asset_type)
+
+    response = signed_in.get("/fleet/asset/list/")
+
+    assert response.status_code == 200
+    assert b"AST-001" in response.content
+    assert b"Vehicle" in response.content
+
+
+def test_an_asset_with_no_brand_or_custodian_or_branch_renders_fine(signed_in, company):
+    """brand, custodian and branch are all optional -- the empty-dash display
+    path must not crash on a bare-minimum asset."""
+    asset_type = AssetType.objects.create(company=company, asset_type_name="Vehicle")
+    Asset.objects.create(company=company, asset_code="AST-002", asset_type=asset_type)
+
+    response = signed_in.get("/fleet/asset/list/")
+
+    assert response.status_code == 200
+    assert b"AST-002" in response.content
+
+
+def test_the_sidebar_lists_asset_once_granted(signed_in):
+    assert b'class="menu-label">Asset</span>' in signed_in.get("/dashboard/").content
+
+
+def test_the_sidebar_hides_asset_when_permission_is_revoked(signed_in, company):
+    role = Role.objects.get(name="Administrator")
+    RolePermission.objects.filter(role=role, page__code="fleet.asset").update(can_read=False)
+
+    body = signed_in.get("/dashboard/").content
+
+    assert b'class="menu-label">Asset</span>' not in body

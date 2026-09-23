@@ -172,3 +172,58 @@ class AssetType(ApprovalMixin, TimeStampedModel):
 
     def __str__(self):
         return self.asset_type_name
+
+
+class Asset(ApprovalMixin, TimeStampedModel):
+    """One physical asset (a vehicle, typically). asset_type is required;
+    brand, custodian and branch are deliberately optional -- current
+    location/assignment is tracked elsewhere (Inventory Branch Mapping),
+    this table is the asset's own record."""
+
+    company = models.ForeignKey(
+        "company.Company", on_delete=models.PROTECT, related_name="assets"
+    )
+    asset_code = models.CharField("Asset Code", max_length=30)
+    asset_type = models.ForeignKey(
+        "fleet.AssetType", on_delete=models.PROTECT, related_name="assets"
+    )
+    brand = models.ForeignKey(
+        "fleet.Brand", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="assets",
+    )
+    serial_no = models.CharField("Serial No", max_length=50, blank=True)
+    manufacturer = models.CharField(max_length=100, blank=True)
+    custodian = models.ForeignKey(
+        "crew.Employee", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="custodied_assets",
+    )
+    supplier = models.CharField(max_length=150, blank=True)
+    purchase_invoice_no = models.CharField("Purchase Invoice No", max_length=50, blank=True)
+    description = models.TextField(blank=True)
+    warranty_from_date = models.DateField(null=True, blank=True)
+    warranty_to_date = models.DateField(null=True, blank=True)
+    branch = models.ForeignKey(
+        "company.Branch", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="assets",
+    )
+
+    class Meta:
+        db_table = "asset"
+        ordering = ["asset_code"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "asset_code"],
+                name="uniq_asset_code_per_company",
+                violation_error_message="An asset with this code already exists.",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["company"]),
+            models.Index(fields=["asset_type"]),
+            models.Index(fields=["brand"]),
+            models.Index(fields=["custodian"]),
+            models.Index(fields=["branch"]),
+        ]
+
+    def __str__(self):
+        return self.asset_code

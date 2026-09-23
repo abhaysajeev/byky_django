@@ -9,9 +9,10 @@ endpoints reused straight from apps.company.writes rather than redefined here
 from django.urls import reverse
 
 from apps.company import writes as company_writes
-from apps.company.scoping import companies_for
+from apps.company.scoping import branches_for, companies_for
+from apps.crew.scoping import employees_for
 from apps.fleet import drawers, forms, scoping
-from apps.fleet.models import UOM, AssetType, Brand, Category, VehicleType
+from apps.fleet.models import UOM, Asset, AssetType, Brand, Category, VehicleType
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
@@ -38,6 +39,14 @@ class FleetScreenView(PagePermissionMixin, ThemedTemplateView):
             "brands_list": list(
                 scoping.brands_for(user).filter(is_active=True).values("id", "brand_name")
             ),
+            "asset_types_list": list(
+                scoping.asset_types_for(user).filter(is_active=True).values("id", "asset_type_name")
+            ),
+            "employees_list": [
+                {"id": e.pk, "name": f"{e.employee_code} — {e.full_name}"}
+                for e in employees_for(user).filter(is_active=True)
+            ],
+            "branches_list": list(branches_for(user).filter(is_active=True).values("id", "name")),
             "perm": {action: has_permission(user, self.page_code, action) for action in ACTIONS},
         })
         return context
@@ -276,6 +285,69 @@ class AssetTypeDelete(company_writes.EntityDeleteView):
     model = AssetType
     page_code = "fleet.asset_type"
     noun = "Asset Type"
+
+
+class AssetListView(FleetScreenView):
+    template_name = "fleet/asset_list.html"
+    page_code = "fleet.asset"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        rows = []
+        assets = (
+            scoping.assets_for(self.request.user)
+            .select_related("asset_type", "brand", "custodian", "branch")
+        )
+        for i, asset in enumerate(assets):
+            rows.append({
+                "code": asset.asset_code,
+                "asset_type": asset.asset_type.asset_type_name,
+                "brand": asset.brand.brand_name if asset.brand_id else "",
+                "custodian": asset.custodian.full_name if asset.custodian_id else "",
+                "branch": asset.branch.name if asset.branch_id else "",
+                "active": asset.is_active,
+                "pk": asset.pk,
+                "json_id": f"scr-record-asset-{i}",
+                "fields_json": {
+                    "pk": asset.pk,
+                    "company": asset.company_id,
+                    "asset_code": asset.asset_code,
+                    "asset_type": asset.asset_type_id,
+                    "brand": asset.brand_id or "",
+                    "serial_no": asset.serial_no,
+                    "manufacturer": asset.manufacturer,
+                    "custodian": asset.custodian_id or "",
+                    "supplier": asset.supplier,
+                    "purchase_invoice_no": asset.purchase_invoice_no,
+                    "description": asset.description,
+                    "warranty_from_date": (
+                        asset.warranty_from_date.isoformat() if asset.warranty_from_date else ""
+                    ),
+                    "warranty_to_date": (
+                        asset.warranty_to_date.isoformat() if asset.warranty_to_date else ""
+                    ),
+                    "branch": asset.branch_id or "",
+                    "is_active": asset.is_active,
+                },
+            })
+        context["assets"] = rows
+        context["save_url_asset"] = reverse("fleet-asset-save")
+        context["delete_url_asset"] = reverse("fleet-asset-delete", args=[0])
+        context["noun_asset"] = "Asset"
+        return context
+
+
+class AssetSave(company_writes.EntitySaveView):
+    model = Asset
+    form_class = forms.AssetForm
+    page_code = "fleet.asset"
+    noun = "Asset"
+
+
+class AssetDelete(company_writes.EntityDeleteView):
+    model = Asset
+    page_code = "fleet.asset"
+    noun = "Asset"
 
 
 class FleetPrivilegeView(PrivilegeScreenView):

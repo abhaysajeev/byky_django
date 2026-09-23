@@ -1,5 +1,5 @@
 from apps.company.forms import ScopedModelForm
-from apps.fleet.models import UOM, AssetType, Brand, Category, VehicleType
+from apps.fleet.models import UOM, Asset, AssetType, Brand, Category, VehicleType
 
 
 class BrandForm(ScopedModelForm):
@@ -55,3 +55,35 @@ class AssetTypeForm(ScopedModelForm):
         model = AssetType
         fields = ["company", "asset_type_code", "asset_type_name", "description", "is_active"]
         labels = {"asset_type_code": "Asset Type Code", "asset_type_name": "Asset Type"}
+
+
+class AssetForm(ScopedModelForm):
+    class Meta:
+        model = Asset
+        fields = [
+            "company", "asset_code", "asset_type", "brand", "serial_no", "manufacturer",
+            "custodian", "supplier", "purchase_invoice_no", "description",
+            "warranty_from_date", "warranty_to_date", "branch", "is_active",
+        ]
+        labels = {
+            "asset_code": "Asset Code", "serial_no": "Serial No",
+            "purchase_invoice_no": "Purchase Invoice No",
+            "warranty_from_date": "Warranty From Date", "warranty_to_date": "Warranty To Date",
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.user is not None:
+            from apps.company.scoping import branches_for
+            from apps.crew.scoping import employees_for
+            from apps.fleet.scoping import asset_types_for, brands_for
+
+            # Only this company's rows -- ScopedModelForm only scopes the
+            # "company" field itself; every cross-referencing FK needs its
+            # own queryset restriction, or a company user could post another
+            # company's asset type/brand/employee/branch id and have it
+            # accepted (same fix VehicleTypeForm needed for category/brand).
+            self.fields["asset_type"].queryset = asset_types_for(self.user).filter(is_active=True)
+            self.fields["brand"].queryset = brands_for(self.user).filter(is_active=True)
+            self.fields["custodian"].queryset = employees_for(self.user).filter(is_active=True)
+            self.fields["branch"].queryset = branches_for(self.user).filter(is_active=True)

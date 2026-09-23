@@ -24,5 +24,8 @@ urlpatterns = [
         "asset-type/<int:pk>/delete/", views.AssetTypeDelete.as_view(),
         name="fleet-asset-type-delete",
     ),
+    path("asset/list/", views.AssetListView.as_view(), name="fleet-asset-list"),
+    path("asset/save/", views.AssetSave.as_view(), name="fleet-asset-save"),
+    path("asset/<int:pk>/delete/", views.AssetDelete.as_view(), name="fleet-asset-delete"),
     path("privileges/", views.FleetPrivilegeView.as_view(), name="fleet-privileges"),
 ]

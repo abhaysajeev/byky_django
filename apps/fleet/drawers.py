@@ -239,10 +239,115 @@ ASSET_TYPE = {
     ],
 }
 
+ASSET = {
+    "drawer_id": "drawerAsset",
+    "scr_name": "asset",
+    "model": "fleet.Asset",
+    "add_label": "Add Asset",
+    "title_field": "asset_code",
+    "sections": [
+        {
+            "title": "",
+            "fields": [
+                {
+                    "id": "company",
+                    "label": "Company",
+                    "kind": "select",
+                    "required": True,
+                    "options_from": "companies_list",
+                    "option_key": "name",
+                    "system_only": True,
+                },
+                {
+                    "id": "asset_code",
+                    "label": "Asset Code",
+                    "kind": "text",
+                    "required": True,
+                },
+                {
+                    "id": "asset_type",
+                    "label": "Asset Type",
+                    "kind": "select",
+                    "required": True,
+                    "options_from": "asset_types_list",
+                    "option_key": "asset_type_name",
+                },
+                {
+                    "id": "brand",
+                    "label": "Brand",
+                    "kind": "select",
+                    "required": False,
+                    "options_from": "brands_list",
+                    "option_key": "brand_name",
+                },
+                {
+                    "id": "serial_no",
+                    "label": "Serial No",
+                    "kind": "text",
+                    "required": False,
+                },
+                {
+                    "id": "manufacturer",
+                    "label": "Manufacturer",
+                    "kind": "text",
+                    "required": False,
+                },
+                {
+                    "id": "custodian",
+                    "label": "Custodian",
+                    "kind": "select",
+                    "required": False,
+                    "options_from": "employees_list",
+                    "option_key": "name",
+                },
+                {
+                    "id": "supplier",
+                    "label": "Supplier",
+                    "kind": "text",
+                    "required": False,
+                },
+                {
+                    "id": "purchase_invoice_no",
+                    "label": "Purchase Invoice No",
+                    "kind": "text",
+                    "required": False,
+                },
+                {
+                    "id": "description",
+                    "label": "Description",
+                    "kind": "textarea",
+                    "required": False,
+                },
+                {
+                    "id": "warranty_from_date",
+                    "label": "Warranty From Date",
+                    "kind": "date",
+                    "required": False,
+                },
+                {
+                    "id": "warranty_to_date",
+                    "label": "Warranty To Date",
+                    "kind": "date",
+                    "required": False,
+                },
+                {
+                    "id": "branch",
+                    "label": "Branch",
+                    "kind": "select",
+                    "required": False,
+                    "options_from": "branches_list",
+                    "option_key": "name",
+                },
+            ],
+        }
+    ],
+}
+
 SPECS = {
     "drawer_brand": BRAND,
     "drawer_category": CATEGORY,
     "drawer_vehicle_type": VEHICLE_TYPE,
     "drawer_uom": UOM,
     "drawer_asset_type": ASSET_TYPE,
+    "drawer_asset": ASSET,
 }

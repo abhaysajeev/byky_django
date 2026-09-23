@@ -12,7 +12,7 @@ tests prove it, and prove Category inherits it for free.
 import pytest
 
 from apps.company.models import Company, Country, State
-from apps.fleet.models import UOM, AssetType, Brand, Category, VehicleType
+from apps.fleet.models import UOM, Asset, AssetType, Brand, Category, VehicleType
 from apps.portal.models import Role
 from apps.portal.services import grant_all
 from core.enums import Channel, UserScope
@@ -53,8 +53,16 @@ def two_companies(db):
     )
     UOM.objects.create(company=byky, uom_code="NO", uom_name="Byky UAE UOM")
     UOM.objects.create(company=byky_kw, uom_code="NO", uom_name="Byky Kuwait UOM")
-    AssetType.objects.create(company=byky, asset_type_name="Byky UAE Asset Type")
-    AssetType.objects.create(company=byky_kw, asset_type_name="Byky Kuwait Asset Type")
+    uae_asset_type = AssetType.objects.create(company=byky, asset_type_name="Byky UAE Asset Type")
+    kw_asset_type = AssetType.objects.create(
+        company=byky_kw, asset_type_name="Byky Kuwait Asset Type"
+    )
+    Asset.objects.create(
+        company=byky, asset_code="BYKY-UAE-1", asset_type=uae_asset_type, brand=uae_brand,
+    )
+    Asset.objects.create(
+        company=byky_kw, asset_code="BYKY-KW-1", asset_type=kw_asset_type, brand=kw_brand,
+    )
 
     return {"uae": byky, "kuwait": byky_kw}
 
@@ -307,3 +315,66 @@ def test_a_system_user_must_choose_a_company_for_an_asset_type(client, two_compa
     body = client.get("/fleet/asset-type/list/").content
 
     assert b'data-field="company"' in body
+
+
+# --- Asset: rows ------------------------------------------------------
+
+def test_a_company_user_never_sees_another_companys_asset(client, two_companies):
+    _company_user(client, two_companies["uae"], "uae.admin")
+
+    body = client.get("/fleet/asset/list/").content
+
+    assert b"BYKY-UAE-1" in body
+    assert b"BYKY-KW-1" not in body
+
+
+def test_a_system_user_sees_every_companys_asset(client, two_companies):
+    _system_user(client, "platform.admin")
+
+    body = client.get("/fleet/asset/list/").content
+
+    assert b"BYKY-UAE-1" in body
+    assert b"BYKY-KW-1" in body
+
+
+# --- Asset: the drawer follows the same rule -------------------------------
+
+def test_a_company_user_is_not_asked_which_company_for_an_asset(client, two_companies):
+    _company_user(client, two_companies["uae"], "uae.admin")
+
+    body = client.get("/fleet/asset/list/").content
+
+    assert b'data-field="asset_code"' in body
+    assert b'data-field="company"' not in body
+
+
+def test_a_system_user_must_choose_a_company_for_an_asset(client, two_companies):
+    _system_user(client, "platform.admin")
+
+    body = client.get("/fleet/asset/list/").content
+
+    assert b'data-field="company"' in body
+
+
+# --- Asset: the asset_type/brand dropdowns are scoped too ---------------------
+# custodian/branch reuse apps.crew.scoping.employees_for /
+# apps.company.scoping.branches_for directly, already proven scoped
+# elsewhere; asset_type/brand are this module's own, proven here the same
+# way Vehicle Type proved category/brand.
+
+def test_a_company_users_asset_drawer_only_offers_their_own_asset_types(client, two_companies):
+    _company_user(client, two_companies["uae"], "uae.admin")
+
+    body = client.get("/fleet/asset/list/").content
+
+    assert b"Byky UAE Asset Type" in body
+    assert b"Byky Kuwait Asset Type" not in body
+
+
+def test_a_company_users_asset_drawer_only_offers_their_own_brands(client, two_companies):
+    _company_user(client, two_companies["uae"], "uae.admin")
+
+    body = client.get("/fleet/asset/list/").content
+
+    assert b"Byky UAE Brand" in body
+    assert b"Byky Kuwait Brand" not in body

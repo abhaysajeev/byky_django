@@ -11,7 +11,7 @@ import json
 import pytest
 
 from apps.company.models import Company, Country, State
-from apps.fleet.models import UOM, AssetType, Brand, Category, VehicleType
+from apps.fleet.models import UOM, Asset, AssetType, Brand, Category, VehicleType
 from apps.portal.models import Role, RolePermission
 from apps.portal.services import grant_all
 from core.enums import ApprovalStatus, Channel
@@ -807,3 +807,275 @@ def test_a_company_user_cannot_delete_another_companys_asset_type(client_in, wor
 
     assert response.status_code == 404
     assert AssetType.objects.filter(pk=theirs.pk).exists()
+
+
+# =============================== Asset ==============================================
+
+@pytest.fixture
+def asset_refs(world):
+    """An asset type, brand, employee (custodian) and branch for each
+    company -- so an asset has something real to point at, and the
+    cross-company rejection tests have another company's rows to try."""
+    from apps.company.models import Branch, BranchType, Location
+    from apps.crew.models import Designation, Employee
+
+    uae = Location.objects.create(
+        country=world["company"].country, state=world["company"].state,
+        short_code="CORN", name="Corniche",
+    )
+
+    def make(company, tag):
+        designation = Designation.objects.create(
+            company=company, code=f"MECH{tag}", title="Mechanic", rank_order=1
+        )
+        return {
+            "asset_type": AssetType.objects.create(
+                company=company, asset_type_name=f"Vehicle {tag}"
+            ),
+            "brand": Brand.objects.create(
+                company=company, brand_code=f"BYK{tag}", brand_name=f"Byky {tag}"
+            ),
+            "employee": Employee.objects.create(
+                company=company, employee_code=f"E{tag}", first_name="Anil", last_name="R",
+                designation=designation,
+            ),
+            "branch": Branch.objects.create(
+                company=company, location=uae, short_code=f"AUH{tag}", name=f"Station {tag}",
+                branch_type=BranchType.STATION,
+            ),
+        }
+
+    ours = make(world["company"], "1")
+    theirs = make(world["other"], "2")
+    return {"ours": ours, "theirs": theirs}
+
+
+def test_create_an_asset(client_in, world, asset_refs):
+    response = post(client_in, "/fleet/asset/save/", {
+        "asset_code": "AST-001",
+        "asset_type": asset_refs["ours"]["asset_type"].pk,
+        "brand": asset_refs["ours"]["brand"].pk,
+        "custodian": asset_refs["ours"]["employee"].pk,
+        "branch": asset_refs["ours"]["branch"].pk,
+        "serial_no": "SN-1", "manufacturer": "Byky Motors", "supplier": "ACME Supplies",
+        "purchase_invoice_no": "INV-1", "warranty_from_date": "2026-01-01",
+        "warranty_to_date": "2028-01-01",
+    })
+
+    assert response.status_code == 200, response.content
+    body = response.json()
+    assert body["ok"] is True
+    assert body["message"] == "Asset saved."
+
+    asset = Asset.objects.get(pk=body["pk"])
+    assert asset.company == world["company"]                # from the user, not the payload
+    assert asset.asset_type == asset_refs["ours"]["asset_type"]
+    assert asset.brand == asset_refs["ours"]["brand"]
+    assert asset.custodian == asset_refs["ours"]["employee"]
+    assert asset.branch == asset_refs["ours"]["branch"]
+    assert asset.is_active is True
+    assert asset.approval_status == ApprovalStatus.APPROVED
+
+
+def test_brand_custodian_and_branch_are_optional(client_in, world, asset_refs):
+    response = post(client_in, "/fleet/asset/save/", {
+        "asset_code": "AST-001", "asset_type": asset_refs["ours"]["asset_type"].pk,
+    })
+
+    assert response.status_code == 200, response.content
+    asset = Asset.objects.get(pk=response.json()["pk"])
+    assert asset.brand_id is None
+    assert asset.custodian_id is None
+    assert asset.branch_id is None
+
+
+def test_update_an_asset(client_in, world, asset_refs):
+    asset = Asset.objects.create(
+        company=world["company"], asset_code="AST-001",
+        asset_type=asset_refs["ours"]["asset_type"],
+    )
+
+    post(client_in, "/fleet/asset/save/", {
+        "pk": asset.pk, "asset_code": "AST-001",
+        "asset_type": asset_refs["ours"]["asset_type"].pk, "serial_no": "SN-2",
+    })
+
+    asset.refresh_from_db()
+    assert asset.serial_no == "SN-2"
+    assert Asset.objects.count() == 1                       # updated, not duplicated
+
+
+def test_delete_an_unused_asset(client_in, world, asset_refs):
+    asset = Asset.objects.create(
+        company=world["company"], asset_code="AST-001",
+        asset_type=asset_refs["ours"]["asset_type"],
+    )
+
+    response = post(client_in, f"/fleet/asset/{asset.pk}/delete/", {})
+
+    assert response.json()["ok"] is True
+    assert Asset.objects.count() == 0
+
+
+# --- validation -----------------------------------------------------------------
+
+def test_missing_required_asset_fields_are_reported_at_once(client_in):
+    response = post(client_in, "/fleet/asset/save/", {"asset_code": ""})
+
+    assert response.status_code == 400
+    errors = response.json()["errors"]
+    fields = {error["field"] for error in errors}
+
+    assert "Asset Code" in fields                             # labelled as the drawer labels it
+    assert "Asset type" in fields                             # Django's default FK field label
+    assert "asset_code" not in fields                         # never a column name
+
+
+def test_a_duplicate_asset_code_is_reported_in_words(client_in, world, asset_refs):
+    Asset.objects.create(
+        company=world["company"], asset_code="AST-001",
+        asset_type=asset_refs["ours"]["asset_type"],
+    )
+
+    response = post(client_in, "/fleet/asset/save/", {
+        "asset_code": "AST-001", "asset_type": asset_refs["ours"]["asset_type"].pk,
+    })
+
+    assert response.status_code == 400
+    assert any("already exists" in error["message"] for error in response.json()["errors"])
+
+
+def test_a_company_user_cannot_pick_another_companys_asset_type(client_in, world, asset_refs):
+    response = post(client_in, "/fleet/asset/save/", {
+        "asset_code": "AST-001", "asset_type": asset_refs["theirs"]["asset_type"].pk,
+    })
+
+    assert response.status_code == 400
+    assert any("valid choice" in error["message"] for error in response.json()["errors"])
+    assert Asset.objects.count() == 0
+
+
+def test_a_company_user_cannot_pick_another_companys_brand_on_an_asset(client_in, world, asset_refs):
+    response = post(client_in, "/fleet/asset/save/", {
+        "asset_code": "AST-001", "asset_type": asset_refs["ours"]["asset_type"].pk,
+        "brand": asset_refs["theirs"]["brand"].pk,
+    })
+
+    assert response.status_code == 400
+    assert any("valid choice" in error["message"] for error in response.json()["errors"])
+    assert Asset.objects.count() == 0
+
+
+def test_a_company_user_cannot_pick_another_companys_employee_as_custodian(client_in, world, asset_refs):
+    response = post(client_in, "/fleet/asset/save/", {
+        "asset_code": "AST-001", "asset_type": asset_refs["ours"]["asset_type"].pk,
+        "custodian": asset_refs["theirs"]["employee"].pk,
+    })
+
+    assert response.status_code == 400
+    assert any("valid choice" in error["message"] for error in response.json()["errors"])
+    assert Asset.objects.count() == 0
+
+
+def test_a_company_user_cannot_pick_another_companys_branch_on_an_asset(client_in, world, asset_refs):
+    response = post(client_in, "/fleet/asset/save/", {
+        "asset_code": "AST-001", "asset_type": asset_refs["ours"]["asset_type"].pk,
+        "branch": asset_refs["theirs"]["branch"].pk,
+    })
+
+    assert response.status_code == 400
+    assert any("valid choice" in error["message"] for error in response.json()["errors"])
+    assert Asset.objects.count() == 0
+
+
+# --- permission on the write -----------------------------------------------------
+
+@pytest.mark.parametrize("action", ["create", "update"])
+def test_a_role_without_the_asset_action_is_refused(client_in, world, asset_refs, action):
+    asset = Asset.objects.create(
+        company=world["company"], asset_code="AST-001",
+        asset_type=asset_refs["ours"]["asset_type"],
+    )
+    payload = {"asset_code": "X", "asset_type": asset_refs["ours"]["asset_type"].pk}
+    if action == "update":
+        payload["pk"] = asset.pk
+    RolePermission.objects.filter(
+        role=client_in.role, page__code="fleet.asset"
+    ).update(**{f"can_{action}": False})
+
+    response = post(client_in, "/fleet/asset/save/", payload)
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "forbidden"
+
+
+def test_a_role_without_asset_delete_is_refused(client_in, world, asset_refs):
+    asset = Asset.objects.create(
+        company=world["company"], asset_code="AST-001",
+        asset_type=asset_refs["ours"]["asset_type"],
+    )
+    RolePermission.objects.filter(
+        role=client_in.role, page__code="fleet.asset"
+    ).update(can_delete=False)
+
+    response = post(client_in, f"/fleet/asset/{asset.pk}/delete/", {})
+
+    assert response.status_code == 403
+    assert Asset.objects.count() == 1
+
+
+# --- scope on the write -----------------------------------------------------------
+
+def test_a_company_user_cannot_edit_another_companys_asset(client_in, world, asset_refs):
+    theirs = Asset.objects.create(
+        company=world["other"], asset_code="AST-001",
+        asset_type=asset_refs["theirs"]["asset_type"],
+    )
+
+    response = post(client_in, "/fleet/asset/save/", {
+        "pk": theirs.pk, "asset_code": "HIJACKED",
+        "asset_type": asset_refs["theirs"]["asset_type"].pk,
+    })
+
+    assert response.status_code == 404                      # not even acknowledged
+    theirs.refresh_from_db()
+    assert theirs.asset_code == "AST-001"
+
+
+def test_a_company_user_cannot_delete_another_companys_asset(client_in, world, asset_refs):
+    theirs = Asset.objects.create(
+        company=world["other"], asset_code="AST-001",
+        asset_type=asset_refs["theirs"]["asset_type"],
+    )
+
+    response = post(client_in, f"/fleet/asset/{theirs.pk}/delete/", {})
+
+    assert response.status_code == 404
+    assert Asset.objects.filter(pk=theirs.pk).exists()
+
+
+def test_two_companies_may_use_the_same_asset_code(world, asset_refs):
+    ours = Asset.objects.create(
+        company=world["company"], asset_code="AST-001",
+        asset_type=asset_refs["ours"]["asset_type"],
+    )
+    theirs = Asset.objects.create(
+        company=world["other"], asset_code="AST-001",
+        asset_type=asset_refs["theirs"]["asset_type"],
+    )
+
+    assert (ours.asset_code, theirs.asset_code) == ("AST-001", "AST-001")
+
+
+def test_one_company_cannot_reuse_its_own_asset_code(world, asset_refs):
+    from django.db import IntegrityError
+
+    Asset.objects.create(
+        company=world["company"], asset_code="AST-001",
+        asset_type=asset_refs["ours"]["asset_type"],
+    )
+    with pytest.raises(IntegrityError):
+        Asset.objects.create(
+            company=world["company"], asset_code="AST-001",
+            asset_type=asset_refs["ours"]["asset_type"],
+        )
