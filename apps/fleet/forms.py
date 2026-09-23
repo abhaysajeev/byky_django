@@ -1,5 +1,5 @@
 from apps.company.forms import ScopedModelForm
-from apps.fleet.models import Brand, Category, VehicleType
+from apps.fleet.models import UOM, Brand, Category, VehicleType
 
 
 class BrandForm(ScopedModelForm):
@@ -41,3 +41,10 @@ class VehicleTypeForm(ScopedModelForm):
             # post another company's category/brand id and have it accepted.
             self.fields["category"].queryset = categories_for(self.user).filter(is_active=True)
             self.fields["brand"].queryset = brands_for(self.user).filter(is_active=True)
+
+
+class UOMForm(ScopedModelForm):
+    class Meta:
+        model = UOM
+        fields = ["company", "uom_code", "uom_name", "description", "is_active"]
+        labels = {"uom_code": "UOM Code", "uom_name": "UOM Name"}

@@ -11,7 +11,7 @@ from django.urls import reverse
 from apps.company import writes as company_writes
 from apps.company.scoping import companies_for
 from apps.fleet import drawers, forms, scoping
-from apps.fleet.models import Brand, Category, VehicleType
+from apps.fleet.models import UOM, Brand, Category, VehicleType
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.services import has_permission
 from theme import drawers as theme_drawers
@@ -189,3 +189,46 @@ class VehicleTypeDelete(company_writes.EntityDeleteView):
     model = VehicleType
     page_code = "fleet.vehicle_type"
     noun = "Vehicle Type"
+
+
+class UOMListView(FleetScreenView):
+    template_name = "fleet/uom_list.html"
+    page_code = "fleet.uom"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        rows = []
+        for i, uom in enumerate(scoping.uoms_for(self.request.user)):
+            rows.append({
+                "code": uom.uom_code,
+                "name": uom.uom_name,
+                "active": uom.is_active,
+                "pk": uom.pk,
+                "json_id": f"scr-record-uom-{i}",
+                "fields_json": {
+                    "pk": uom.pk,
+                    "company": uom.company_id,
+                    "uom_code": uom.uom_code,
+                    "uom_name": uom.uom_name,
+                    "description": uom.description,
+                    "is_active": uom.is_active,
+                },
+            })
+        context["uoms"] = rows
+        context["save_url_uom"] = reverse("fleet-uom-save")
+        context["delete_url_uom"] = reverse("fleet-uom-delete", args=[0])
+        context["noun_uom"] = "UOM"
+        return context
+
+
+class UOMSave(company_writes.EntitySaveView):
+    model = UOM
+    form_class = forms.UOMForm
+    page_code = "fleet.uom"
+    noun = "UOM"
+
+
+class UOMDelete(company_writes.EntityDeleteView):
+    model = UOM
+    page_code = "fleet.uom"
+    noun = "UOM"

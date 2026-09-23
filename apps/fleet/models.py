@@ -117,3 +117,36 @@ class VehicleType(ApprovalMixin, TimeStampedModel):
 
     def __str__(self):
         return self.vehicle_type_name
+
+
+class UOM(ApprovalMixin, TimeStampedModel):
+    """Unit of measure (e.g. Number). Legacy ImsUnit had a real code
+    ("NO"), unlike Vehicle Type's code, so uom_code is required and unique
+    per company here, same convention as Brand/Category. ImsUnit also
+    carried ParentUnitId and HasSerialNo -- only 1 row ever existed in QA,
+    both unused (null/0), so neither is carried forward.
+    """
+
+    company = models.ForeignKey(
+        "company.Company", on_delete=models.PROTECT, related_name="uoms"
+    )
+    uom_code = models.CharField("UOM Code", max_length=20)
+    uom_name = models.CharField("UOM Name", max_length=100)
+    description = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "uom"
+        verbose_name = "UOM"
+        verbose_name_plural = "UOMs"
+        ordering = ["uom_name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "uom_code"],
+                name="uniq_uom_code_per_company",
+                violation_error_message="A UOM with this code already exists.",
+            ),
+        ]
+        indexes = [models.Index(fields=["company"])]
+
+    def __str__(self):
+        return self.uom_name

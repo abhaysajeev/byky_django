@@ -6,7 +6,7 @@ Same shape as apps/company/tests/test_screens.py.
 import pytest
 
 from apps.company.models import Company, Country, State
-from apps.fleet.models import Brand, Category, VehicleType
+from apps.fleet.models import UOM, Brand, Category, VehicleType
 from apps.portal.models import Page, Role, RolePermission
 from apps.portal.services import grant_all
 from core.enums import Channel
@@ -18,6 +18,7 @@ SCREENS = [
     ("/fleet/brand/list/", "fleet.brand"),
     ("/fleet/category/list/", "fleet.category"),
     ("/fleet/vehicle-type/list/", "fleet.vehicle_type"),
+    ("/fleet/uom/list/", "fleet.uom"),
 ]
 
 
@@ -165,3 +166,26 @@ def test_the_sidebar_hides_vehicle_type_when_permission_is_revoked(signed_in, co
     body = signed_in.get("/dashboard/").content
 
     assert b'class="menu-label">Vehicle Type</span>' not in body
+
+
+def test_the_uom_screen_renders_with_data(signed_in, company):
+    UOM.objects.create(company=company, uom_code="NO", uom_name="Number")
+
+    response = signed_in.get("/fleet/uom/list/")
+
+    assert response.status_code == 200
+    assert b"Number" in response.content
+    assert b"NO" in response.content
+
+
+def test_the_sidebar_lists_uom_once_granted(signed_in):
+    assert b'class="menu-label">UOM</span>' in signed_in.get("/dashboard/").content
+
+
+def test_the_sidebar_hides_uom_when_permission_is_revoked(signed_in, company):
+    role = Role.objects.get(name="Administrator")
+    RolePermission.objects.filter(role=role, page__code="fleet.uom").update(can_read=False)
+
+    body = signed_in.get("/dashboard/").content
+
+    assert b'class="menu-label">UOM</span>' not in body

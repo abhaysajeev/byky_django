@@ -1,0 +1,121 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}UOM - Inventory{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Inventory</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>UOM</b>
+      </div>
+      <h1 class="scr-title">UOM</h1>
+      <p class="scr-sub">Units of measure used across inventory.</p>
+    </div>
+    <div class="scr-head-actions">
+      {% if perm.print %}
+      <button type="button" class="scr-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="m7 11 5 5 5-5"></path><path d="M4 20h16"></path></svg>
+        Export
+      </button>
+      {% endif %}
+      {% if perm.create %}
+      <button type="button" class="scr-btn-primary" data-scr-open="uom:add">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+        Add UOM
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="scr-card" data-scr-noun-singular="uom" data-scr-noun-plural="uoms" data-scr-delete-url="{{ delete_url_uom }}" data-scr-noun="{{ noun_uom }}">
+    <div class="scr-toolbar">
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="text" placeholder="Search UOM or code" />
+      </div>
+
+      <span class="scr-toolbar-count">{{ uoms|length }} UOMs</span>
+    </div>
+
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>UOM Name</th>
+            <th>UOM Code</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in uoms %}
+          <tr class="scr-row" data-search="{{ u.code|lower }} {{ u.name|lower }}" data-record-id="{{ u.json_id }}" data-pk="{{ u.pk }}">
+            <td style="font-weight:600">{{ u.name }}</td>
+            <td><span class="scr-code">{{ u.code }}</span></td>
+            <td>{% if u.active %}<span class="scr-badge scr-badge-active"><i></i>Active</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Inactive</span>{% endif %}</td>
+            <td>
+              <div class="scr-row-actions">
+                {% include "byky/partials/row_actions.html" with edit_open="uom:edit" %}
+              </div>
+            </td>
+          </tr>
+          {{ u.fields_json|json_script:u.json_id }}
+          {% empty %}
+          <tr>
+            <td colspan="4" style="padding:0">
+              <div class="scr-empty">
+                <span class="scr-empty-ico">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"></path></svg>
+                </span>
+                <div>
+                  <div class="scr-empty-title">No UOMs yet</div>
+                  <p class="scr-empty-sub">Add the first unit of measure.</p>
+                </div>
+                {% if perm.create %}
+                <button type="button" class="scr-btn-primary" data-scr-open="uom:add">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+                  Add UOM
+                </button>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="scr-pager">
+      <span class="scr-pager-info">Showing {{ uoms|length }} of {{ uoms|length }}</span>
+      <div class="scr-pager-nav">
+        <button type="button" class="scr-pager-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"></path></svg>
+        </button>
+        <span class="scr-pager-current">1</span>
+        <button type="button" class="scr-pager-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 6 6 6-6 6"></path></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% include "byky/partials/drawer.html" with save_url=save_url_uom spec=drawer_uom module_label="Inventory · UOM" %}
+{% include "byky/partials/confirm_modal.html" %}
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}

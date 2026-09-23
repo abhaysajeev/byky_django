@@ -155,8 +155,51 @@ VEHICLE_TYPE = {
     ],
 }
 
+UOM = {
+    "drawer_id": "drawerUom",
+    "scr_name": "uom",
+    "model": "fleet.UOM",
+    "add_label": "Add UOM",
+    "title_field": "uom_name",
+    "sections": [
+        {
+            "title": "",
+            "fields": [
+                {
+                    "id": "company",
+                    "label": "Company",
+                    "kind": "select",
+                    "required": True,
+                    "options_from": "companies_list",
+                    "option_key": "name",
+                    "system_only": True,
+                },
+                {
+                    "id": "uom_code",
+                    "label": "UOM Code",
+                    "kind": "text",
+                    "required": True,
+                },
+                {
+                    "id": "uom_name",
+                    "label": "UOM Name",
+                    "kind": "text",
+                    "required": True,
+                },
+                {
+                    "id": "description",
+                    "label": "Description",
+                    "kind": "textarea",
+                    "required": False,
+                },
+            ],
+        }
+    ],
+}
+
 SPECS = {
     "drawer_brand": BRAND,
     "drawer_category": CATEGORY,
     "drawer_vehicle_type": VEHICLE_TYPE,
+    "drawer_uom": UOM,
 }

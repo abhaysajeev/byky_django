@@ -11,7 +11,7 @@ import json
 import pytest
 
 from apps.company.models import Company, Country, State
-from apps.fleet.models import Brand, Category, VehicleType
+from apps.fleet.models import UOM, Brand, Category, VehicleType
 from apps.portal.models import Role, RolePermission
 from apps.portal.services import grant_all
 from core.enums import ApprovalStatus, Channel
@@ -540,3 +540,148 @@ def test_a_company_user_cannot_delete_another_companys_vehicle_type(client_in, w
 
     assert response.status_code == 404
     assert VehicleType.objects.filter(pk=theirs.pk).exists()
+
+
+# =============================== UOM ===============================================
+# --- create, update, delete ---------------------------------------------------
+
+def test_create_a_uom(client_in, world):
+    response = post(client_in, "/fleet/uom/save/", {"uom_code": "NO", "uom_name": "Number"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["message"] == "UOM saved."
+
+    uom = UOM.objects.get(pk=body["pk"])
+    assert uom.company == world["company"]                 # from the user, not the payload
+    assert uom.is_active is True
+    assert uom.approval_status == ApprovalStatus.APPROVED
+
+
+def test_update_a_uom(client_in, world):
+    uom = UOM.objects.create(company=world["company"], uom_code="NO", uom_name="Number")
+
+    post(client_in, "/fleet/uom/save/", {"pk": uom.pk, "uom_code": "NO", "uom_name": "Numbers"})
+
+    uom.refresh_from_db()
+    assert uom.uom_name == "Numbers"
+    assert UOM.objects.count() == 1                        # updated, not duplicated
+
+
+def test_delete_an_unused_uom(client_in, world):
+    uom = UOM.objects.create(company=world["company"], uom_code="NO", uom_name="Number")
+
+    response = post(client_in, f"/fleet/uom/{uom.pk}/delete/", {})
+
+    assert response.json()["ok"] is True
+    assert UOM.objects.count() == 0
+
+
+def test_uom_description_is_optional(client_in, world):
+    response = post(client_in, "/fleet/uom/save/", {"uom_code": "NO", "uom_name": "Number"})
+
+    assert response.status_code == 200
+    uom = UOM.objects.get(pk=response.json()["pk"])
+    assert uom.description == ""
+
+
+# --- validation -----------------------------------------------------------------
+
+def test_a_duplicate_uom_code_is_reported_in_words(client_in, world):
+    UOM.objects.create(company=world["company"], uom_code="NO", uom_name="Number")
+
+    response = post(client_in, "/fleet/uom/save/", {"uom_code": "NO", "uom_name": "Numbers"})
+
+    assert response.status_code == 400
+    assert any("already exists" in error["message"] for error in response.json()["errors"])
+
+
+def test_missing_required_uom_fields_are_reported_at_once(client_in):
+    response = post(client_in, "/fleet/uom/save/", {"uom_code": "", "uom_name": ""})
+
+    assert response.status_code == 400
+    errors = response.json()["errors"]
+    fields = {error["field"] for error in errors}
+
+    assert len(errors) >= 2
+    assert "UOM Code" in fields                            # labelled as the drawer labels it
+    assert "uom_code" not in fields                          # never a column name
+
+
+# --- permission on the write -----------------------------------------------------
+
+@pytest.mark.parametrize("action,payload", [
+    ("create", {"uom_code": "X", "uom_name": "X"}),
+    ("update", {"pk": 0, "uom_code": "X", "uom_name": "X"}),
+])
+def test_a_role_without_the_uom_action_is_refused(client_in, world, action, payload):
+    uom = UOM.objects.create(company=world["company"], uom_code="NO", uom_name="Number")
+    if payload.get("pk") == 0:
+        payload["pk"] = uom.pk
+    RolePermission.objects.filter(
+        role=client_in.role, page__code="fleet.uom"
+    ).update(**{f"can_{action}": False})
+
+    response = post(client_in, "/fleet/uom/save/", payload)
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "forbidden"
+
+
+def test_a_role_without_uom_delete_is_refused(client_in, world):
+    uom = UOM.objects.create(company=world["company"], uom_code="NO", uom_name="Number")
+    RolePermission.objects.filter(
+        role=client_in.role, page__code="fleet.uom"
+    ).update(can_delete=False)
+
+    response = post(client_in, f"/fleet/uom/{uom.pk}/delete/", {})
+
+    assert response.status_code == 403
+    assert UOM.objects.count() == 1
+
+
+# --- scope on the write -----------------------------------------------------------
+
+def test_a_company_user_cannot_edit_another_companys_uom(client_in, world):
+    theirs = UOM.objects.create(company=world["other"], uom_code="NO", uom_name="Their Number")
+
+    response = post(client_in, "/fleet/uom/save/",
+                     {"pk": theirs.pk, "uom_code": "NO", "uom_name": "Hijacked"})
+
+    assert response.status_code == 404                    # not even acknowledged
+    theirs.refresh_from_db()
+    assert theirs.uom_name == "Their Number"
+
+
+def test_a_company_user_cannot_post_a_different_company_for_uom(client_in, world):
+    response = post(client_in, "/fleet/uom/save/",
+                     {"uom_code": "NO", "uom_name": "Number", "company": world["other"].pk})
+
+    assert response.json()["ok"] is True
+    uom = UOM.objects.get(pk=response.json()["pk"])
+    assert uom.company == world["company"]                 # the payload was ignored
+
+
+def test_a_company_user_cannot_delete_another_companys_uom(client_in, world):
+    theirs = UOM.objects.create(company=world["other"], uom_code="NO", uom_name="Their Number")
+
+    response = post(client_in, f"/fleet/uom/{theirs.pk}/delete/", {})
+
+    assert response.status_code == 404
+    assert UOM.objects.filter(pk=theirs.pk).exists()
+
+
+def test_two_companies_may_use_the_same_uom_code(world):
+    ours = UOM.objects.create(company=world["company"], uom_code="NO", uom_name="Ours")
+    theirs = UOM.objects.create(company=world["other"], uom_code="NO", uom_name="Theirs")
+
+    assert (ours.uom_code, theirs.uom_code) == ("NO", "NO")
+
+
+def test_one_company_cannot_reuse_its_own_uom_code(world):
+    from django.db import IntegrityError
+
+    UOM.objects.create(company=world["company"], uom_code="NO", uom_name="First")
+    with pytest.raises(IntegrityError):
+        UOM.objects.create(company=world["company"], uom_code="NO", uom_name="Second")

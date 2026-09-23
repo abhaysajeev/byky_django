@@ -15,4 +15,7 @@ urlpatterns = [
         "vehicle-type/<int:pk>/delete/", views.VehicleTypeDelete.as_view(),
         name="fleet-vehicle-type-delete",
     ),
+    path("uom/list/", views.UOMListView.as_view(), name="fleet-uom-list"),
+    path("uom/save/", views.UOMSave.as_view(), name="fleet-uom-save"),
+    path("uom/<int:pk>/delete/", views.UOMDelete.as_view(), name="fleet-uom-delete"),
 ]

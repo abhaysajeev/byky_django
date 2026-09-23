@@ -12,7 +12,7 @@ tests prove it, and prove Category inherits it for free.
 import pytest
 
 from apps.company.models import Company, Country, State
-from apps.fleet.models import Brand, Category, VehicleType
+from apps.fleet.models import UOM, Brand, Category, VehicleType
 from apps.portal.models import Role
 from apps.portal.services import grant_all
 from core.enums import Channel, UserScope
@@ -51,6 +51,8 @@ def two_companies(db):
     VehicleType.objects.create(
         company=byky_kw, category=kw_category, brand=kw_brand, vehicle_type_name="Byky Kuwait Type"
     )
+    UOM.objects.create(company=byky, uom_code="NO", uom_name="Byky UAE UOM")
+    UOM.objects.create(company=byky_kw, uom_code="NO", uom_name="Byky Kuwait UOM")
 
     return {"uae": byky, "kuwait": byky_kw}
 
@@ -225,3 +227,42 @@ def test_a_company_users_vehicle_type_drawer_only_offers_their_own_brands(client
 
     assert b"Byky UAE Brand" in body
     assert b"Byky Kuwait Brand" not in body
+
+
+# --- UOM: rows ------------------------------------------------------
+
+def test_a_company_user_never_sees_another_companys_uom(client, two_companies):
+    _company_user(client, two_companies["uae"], "uae.admin")
+
+    body = client.get("/fleet/uom/list/").content
+
+    assert b"Byky UAE UOM" in body
+    assert b"Byky Kuwait UOM" not in body
+
+
+def test_a_system_user_sees_every_companys_uom(client, two_companies):
+    _system_user(client, "platform.admin")
+
+    body = client.get("/fleet/uom/list/").content
+
+    assert b"Byky UAE UOM" in body
+    assert b"Byky Kuwait UOM" in body
+
+
+# --- UOM: the drawer follows the same rule -------------------------------------
+
+def test_a_company_user_is_not_asked_which_company_for_a_uom(client, two_companies):
+    _company_user(client, two_companies["uae"], "uae.admin")
+
+    body = client.get("/fleet/uom/list/").content
+
+    assert b'data-field="uom_code"' in body
+    assert b'data-field="company"' not in body
+
+
+def test_a_system_user_must_choose_a_company_for_a_uom(client, two_companies):
+    _system_user(client, "platform.admin")
+
+    body = client.get("/fleet/uom/list/").content
+
+    assert b'data-field="company"' in body
