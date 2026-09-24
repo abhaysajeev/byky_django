@@ -60,6 +60,7 @@
             <th>Vehicle Name</th>
             <th>Vehicle Type</th>
             <th>RFID Tag EPC</th>
+            <th>Current Branch</th>
             <th>Available</th>
             <th>Status</th>
             <th>Actions</th>
@@ -67,11 +68,12 @@
         </thead>
         <tbody>
           {% for v in vehicles %}
-          <tr class="scr-row" data-search="{{ v.code|lower }} {{ v.name|lower }} {{ v.vehicle_type|lower }} {{ v.rfid_epc|lower }}" data-record-id="{{ v.json_id }}" data-pk="{{ v.pk }}">
+          <tr class="scr-row" data-search="{{ v.code|lower }} {{ v.name|lower }} {{ v.vehicle_type|lower }} {{ v.rfid_epc|lower }} {{ v.branch|lower }}" data-record-id="{{ v.json_id }}" data-pk="{{ v.pk }}">
             <td style="font-weight:600"><span class="scr-code">{{ v.code }}</span></td>
             <td>{{ v.name }}</td>
             <td>{{ v.vehicle_type }}</td>
             <td>{{ v.rfid_epc|default:"—" }}</td>
+            <td>{{ v.branch|default:"—" }}</td>
             <td>{% if v.available %}<span class="scr-badge scr-badge-active"><i></i>Available</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Unavailable</span>{% endif %}</td>
             <td>{% if v.active %}<span class="scr-badge scr-badge-active"><i></i>Active</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Inactive</span>{% endif %}</td>
             <td>
@@ -83,7 +85,7 @@
           {{ v.fields_json|json_script:v.json_id }}
           {% empty %}
           <tr>
-            <td colspan="7" style="padding:0">
+            <td colspan="8" style="padding:0">
               <div class="scr-empty">
                 <span class="scr-empty-ico">
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"></path></svg>

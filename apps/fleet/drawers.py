@@ -409,6 +409,14 @@ VEHICLE = {
                     "required": False,
                 },
                 {
+                    "id": "current_branch",
+                    "label": "Current Branch",
+                    "kind": "select",
+                    "required": False,
+                    "options_from": "branches_list",
+                    "option_key": "name",
+                },
+                {
                     "id": "is_available",
                     "label": "Available",
                     "kind": "checkbox",

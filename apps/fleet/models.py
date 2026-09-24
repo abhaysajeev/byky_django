@@ -266,6 +266,16 @@ class Vehicle(ApprovalMixin, TimeStampedModel):
     # needs to be unique, but "no tag assigned yet" has to be representable.
     rfid_epc = models.CharField("RFID Tag EPC", max_length=64, blank=True)
     is_available = models.BooleanField(default=True)
+    # Where the vehicle is now (design/vehicle_inventory_schema: "set by
+    # mapping and transfers"). Set by hand on the Vehicle screen until
+    # Inventory Branch Mapping exists; that will then keep it current. Empty
+    # means not at any station (warehouse, in transit, not yet placed).
+    # Always one of the vehicle's own company's branches -- a composite FK in
+    # migration 0010 refuses anything else.
+    current_branch = models.ForeignKey(
+        "company.Branch", null=True, blank=True, on_delete=models.PROTECT,
+        related_name="vehicles", verbose_name="Current Branch",
+    )
 
     class Meta:
         db_table = "vehicle"

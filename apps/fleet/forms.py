@@ -94,11 +94,11 @@ class VehicleForm(ScopedModelForm):
         model = Vehicle
         fields = [
             "company", "vehicle_code", "vehicle_name", "vehicle_type", "uom",
-            "rfid_epc", "is_available", "is_active",
+            "rfid_epc", "is_available", "current_branch", "is_active",
         ]
         labels = {
             "vehicle_code": "Vehicle Code", "vehicle_name": "Vehicle Name",
-            "rfid_epc": "RFID Tag EPC",
+            "rfid_epc": "RFID Tag EPC", "current_branch": "Current Branch",
         }
 
     def __init__(self, *args, **kwargs):
@@ -112,3 +112,8 @@ class VehicleForm(ScopedModelForm):
                 is_active=True
             )
             self.fields["uom"].queryset = uoms_for(self.user).filter(is_active=True)
+            # This company's branches only; the database's composite FK is
+            # the backstop (fleet 0010).
+            from apps.company.scoping import branches_for
+
+            self.fields["current_branch"].queryset = branches_for(self.user).filter(is_active=True)

@@ -371,7 +371,7 @@ class VehicleListView(FleetScreenView):
         context = super().get_context_data(**kwargs)
         rows = []
         vehicles = (
-            scoping.vehicles_for(self.request.user).select_related("vehicle_type", "uom")
+            scoping.vehicles_for(self.request.user).select_related("vehicle_type", "uom", "current_branch")
         )
         for i, vehicle in enumerate(vehicles):
             rows.append({
@@ -380,6 +380,7 @@ class VehicleListView(FleetScreenView):
                 "vehicle_type": vehicle.vehicle_type.vehicle_type_name,
                 "uom": vehicle.uom.uom_name,
                 "rfid_epc": vehicle.rfid_epc,
+                "branch": vehicle.current_branch.name if vehicle.current_branch_id else "",
                 "available": vehicle.is_available,
                 "active": vehicle.is_active,
                 "pk": vehicle.pk,
@@ -392,6 +393,7 @@ class VehicleListView(FleetScreenView):
                     "vehicle_type": vehicle.vehicle_type_id,
                     "uom": vehicle.uom_id,
                     "rfid_epc": vehicle.rfid_epc,
+                    "current_branch": vehicle.current_branch_id or "",
                     "is_available": vehicle.is_available,
                     "is_active": vehicle.is_active,
                 },
