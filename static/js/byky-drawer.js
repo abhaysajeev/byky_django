@@ -40,17 +40,20 @@
         var pill = document.createElement('span');
         pill.className = 'byky-pill';
         var label = document.createElement('span');
-        label.textContent = b.value;
+        /* the option's own text: a value may be an id (Fare's branches) */
+        var text = b.parentElement && b.parentElement.querySelector('span');
+        label.textContent = text ? text.textContent : b.value;
         var x = document.createElement('button');
         x.type = 'button';
         x.className = 'byky-pill-x';
-        x.setAttribute('aria-label', 'Remove ' + b.value);
+        x.setAttribute('aria-label', 'Remove ' + label.textContent);
         x.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg>';
         /* stopPropagation, or removing a pill would also open the menu */
         x.addEventListener('click', function (e) {
           e.stopPropagation();
           b.checked = false;
-          render();
+          /* a change like any other, so a page listening for it (Fare) hears it */
+          b.dispatchEvent(new Event('change', { bubbles: true }));
         });
         pill.appendChild(label);
         pill.appendChild(x);

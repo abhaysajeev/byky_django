@@ -42,6 +42,9 @@ DJANGO_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    # Registers the index-expression wrappers (OpClass) that the fare app's
+    # exclusion constraints render; ArrayField alone never needed it.
+    "django.contrib.postgres",
 ]
 
 THIRD_PARTY_APPS = [
@@ -60,6 +63,7 @@ LOCAL_APPS = [
     "apps.devices",
     "apps.crew",
     "apps.fleet",
+    "apps.fare",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS

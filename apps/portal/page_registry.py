@@ -31,6 +31,8 @@ SYSTEM_SVG = "M12 3 4 6v6c0 5 3.4 8.7 8 9 4.6-.3 8-4 8-9V6l-8-3M12 11a2 2 0 1 0 
 # A packing box -- lid seam plus the front vertical seam, matching the other
 # modules' two/three-stroke visual weight.
 FLEET_SVG = "M12 3 4 7l8 4 8-4-8-4M4 7v10l8 4 8-4V7M12 11v10"
+# A price tag -- the tag outline plus its hole.
+FARE_SVG = "M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9-9-9M7.5 7.5h.01"
 
 # code, name, menu header (blank = no divider), sort order, is_flat, svg, svg2
 MODULES = [
@@ -39,6 +41,7 @@ MODULES = [
     ("crew", "Crew", "Operations", 20, False, CREW_SVG, ""),
     ("devices", "Devices", "Operations", 30, False, DEVICES_SVG, ""),
     ("fleet", "Inventory", "Operations", 40, False, FLEET_SVG, ""),
+    ("fare", "Fare & Offers", "Operations", 50, False, FARE_SVG, ""),
     ("system", "Users & Roles", "System", 90, False, SYSTEM_SVG, ""),
 ]
 
@@ -102,6 +105,9 @@ PAGES = [
     ("fleet.asset_type", "fleet", "Asset Type", "fleet-asset-type-list", CRUD_PRINT, 5, False),
     ("fleet.asset", "fleet", "Asset", "fleet-asset-list", CRUD_PRINT, 6, False),
     ("fleet.privileges", "fleet", "Privileges", "fleet-privileges", ["read", "update"], 9, False),
+
+    ("fare.fare", "fare", "Fares", "fare-fare-list", CRUD_PRINT, 1, False),
+    ("fare.privileges", "fare", "Privileges", "fare-privileges", ["read", "update"], 9, False),
 
     ("system.role", "system", "Roles", "portal-role-list", CRUD, 1, False),
     ("system.user", "system", "Users", "portal-user-list", CRUD, 2, False),

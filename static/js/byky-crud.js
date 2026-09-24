@@ -175,7 +175,9 @@
      so the CSRF handling, the toast and the error modal exist once. */
   window.BykyCrud = {
     post: post, postFile: postFile, toast: toast, toastAfterReload: toastAfterReload,
-    showMessages: showMessages, open: open, close: close
+    showMessages: showMessages, open: open, close: close,
+    // byky-fare.js: deleting a season from the fare form asks first, in the same modal.
+    confirmThen: confirmThen
   };
 
   /* ── reading the drawer ───────────────────────────────────────────── */

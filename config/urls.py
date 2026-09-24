@@ -12,6 +12,7 @@ urlpatterns = [
     path("crew/", include("apps.crew.urls")),
     path("devices/", include("apps.devices.urls")),
     path("fleet/", include("apps.fleet.urls")),
+    path("fare/", include("apps.fare.urls")),
     path("api/v1/<app:app>/", include("apps.devices.api_urls")),
     path("api/v1/<app:app>/", include("apps.portal.api_urls")),
     # Must come before the catch-all below, or it swallows these too.

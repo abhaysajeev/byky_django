@@ -919,3 +919,81 @@ textarea.scr-drawer-input { height: auto; min-height: 72px; padding: 10px 13px; 
 .scr-set-pick-row[hidden] { display: none; }
 .scr-set-pick-row:has(input:checked) { background: #fdf6f6; }
 .scr-set-pick-row:has(input:disabled) { color: #a9a6c4; cursor: not-allowed; }
+
+/* ── Fare add/edit page (apps/fare, byky-fare.js). One fare holds its own
+   special prices and its seasons, each season with its own; these draw those
+   lists, the "never applies" warnings the server reports, and the Test fare
+   answer. Kept to this block, all prefixed scr-fare-. ─────────────────── */
+/* five price fields under a section, same grid as the rest of the form */
+.scr-fare-price-grid { margin-top: 16px; }
+/* the rules table sits inside a card body, so it gets its own frame */
+.scr-fare-table { border: 1px solid #eeedf5; border-radius: 12px; }
+.scr-fare-table td { vertical-align: top; }
+.scr-fare-num { text-align: right !important; white-space: nowrap; }
+.scr-fare-actions { display: inline-flex; gap: 6px; }
+.scr-fare-kind { display: block; font-size: 11px; color: #9490bb; }
+/* a single date inside a season still wins there -- said next to the row */
+.scr-fare-note { display: block; font-size: 11px; color: #6b6790; margin-top: 3px; }
+/* saved but never charged: a warning, not an error, so amber not red */
+.scr-fare-warn { display: inline-block; margin-top: 5px; font-size: 11px; font-weight: 600; color: #8a5200; background: #fff4e0; border-radius: 6px; padding: 2px 7px; }
+.scr-fare-warn-why { display: block; font-size: 11px; color: #8a5200; margin-top: 3px; max-width: 320px; white-space: normal; }
+.scr-fare-warn-inline { color: #8a5200; font-weight: 600; }
+.scr-fare-banner { list-style: none; margin: 0 0 14px; padding: 10px 14px; border-radius: 10px; background: #fff4e0; color: #6b4200; font-size: 12.5px; display: flex; flex-direction: column; gap: 4px; }
+.scr-fare-hint { margin-bottom: 14px; }
+.scr-fare-empty { margin: 0; padding: 18px; text-align: center; color: #9490bb; border: 1px dashed #e4e3ee; border-radius: 12px; font-size: 12.5px; }
+/* a season is a block with its own base price and its own rules table */
+.scr-fare-season { border: 1px solid #eeedf5; border-radius: 12px; }
+.scr-fare-season + .scr-fare-season { margin-top: 10px; }
+.scr-fare-season-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; flex-wrap: wrap; }
+.scr-fare-season-meta { display: block; font-size: 12px; color: #6b6790; margin-top: 2px; }
+.scr-fare-season-actions { display: flex; align-items: center; gap: 8px; }
+.scr-fare-season-body { border-top: 1px solid #eeedf5; padding: 16px 14px; background: #fbfaff; border-radius: 0 0 12px 12px; }
+.scr-fare-season-body .scr-input { background: #fff; }
+.scr-fare-sub { font-size: 12.5px; font-weight: 700; margin: 18px 0 0 !important; }
+.scr-fare-sub-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 18px; }
+.scr-fare-sub-row .scr-fare-sub { margin: 0 !important; }
+.scr-fare-season-help { margin: 6px 0 10px !important; }
+/* dialogs: wider than the default so the five price fields sit two by two */
+.scr-fare-modal { width: min(600px, 100%); }
+.scr-fare-modal .scr-modal-body { overflow-y: auto; }
+.scr-fare-dialog-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 4px; }
+.scr-fare-modal [data-rule-errors] { margin-bottom: 14px; padding: 10px 12px; border-radius: 10px; background: #fdecec; }
+/* weekday picks, Sunday first -- the order the UAE week is read in */
+.scr-fare-days { display: flex; flex-wrap: wrap; gap: 6px; }
+.scr-fare-day { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border: 1px solid #e4e3ee; border-radius: 8px; font-size: 12.5px; font-weight: 600; color: #4b4770; cursor: pointer; background: #fff; }
+.scr-fare-day input { position: absolute; opacity: 0; pointer-events: none; }
+.scr-fare-day:has(input:checked) { background: #1a1640; border-color: #1a1640; color: #fff; }
+.scr-fare-day:has(input:focus-visible) { outline: 2px solid #4f46e5; outline-offset: 2px; }
+/* Test fare */
+.scr-fare-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; margin: 0 0 16px; padding: 12px 14px; border-radius: 12px; background: #fbfaff; border: 1px solid #eeedf5; }
+.scr-fare-summary dt { font-size: 11px; color: #9490bb; }
+.scr-fare-summary dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.scr-fare-result { margin-top: 16px; border: 1px solid #e4e3ee; border-radius: 12px; padding: 16px; }
+.scr-fare-result.is-none { background: #fbfaff; }
+.scr-fare-result.is-none p { margin-top: 4px !important; color: #6b6790; }
+.scr-fare-result-top { display: flex; justify-content: space-between; gap: 14px; flex-wrap: wrap; align-items: flex-start; }
+.scr-fare-result-when { font-size: 11px; color: #9490bb; }
+.scr-fare-result-source { font-weight: 600; margin-top: 2px; }
+.scr-fare-result-block { font-size: 12px; color: #6b6790; }
+.scr-fare-result-amount { font-size: 26px; font-weight: 700; letter-spacing: -0.6px; font-variant-numeric: tabular-nums; }
+.scr-fare-result-amount small { font-size: 13px; font-weight: 500; color: #6b6790; margin-right: 4px; }
+.scr-fare-result-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin: 14px 0 0; padding-top: 12px; border-top: 1px solid #eeedf5; }
+.scr-fare-result-grid dt { font-size: 11px; color: #9490bb; }
+.scr-fare-result-grid dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.scr-fare-also { list-style: none; margin: 12px 0 0; padding: 10px 0 0; border-top: 1px solid #eeedf5; font-size: 12px; color: #6b6790; display: flex; flex-direction: column; gap: 3px; }
+.scr-fare-result-day { margin-top: 14px; }
+/* the day as the device will get it: one block per price, a mark at the time tested */
+.scr-fare-timeline { position: relative; display: flex; height: 30px; margin-top: 6px; border-radius: 8px; overflow: hidden; border: 1px solid #e4e3ee; background: #fbfaff; }
+.scr-fare-seg { height: 100%; display: flex; align-items: center; padding-left: 6px; font-size: 11px; font-weight: 600; color: #1a1640; border-left: 2px solid #fff; overflow: hidden; white-space: nowrap; }
+.scr-fare-seg:first-child { border-left: 0; }
+.scr-fare-seg.is-base { background: #eeedf5; }
+.scr-fare-seg.is-base.is-season { background: #e3f1e0; }
+.scr-fare-seg.is-every_day { background: #fde9cf; }
+.scr-fare-seg.is-selected_days { background: #dedcfb; }
+.scr-fare-seg.is-single_date { background: #f8d5dc; }
+.scr-fare-marker { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #1a1640; }
+.scr-fare-axis { display: flex; justify-content: space-between; font-size: 10.5px; color: #a9a6c4; margin-top: 4px; font-variant-numeric: tabular-nums; }
+@media (max-width: 600px) {
+  .scr-fare-dialog-grid, .scr-fare-summary { grid-template-columns: 1fr; }
+  .scr-fare-result-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

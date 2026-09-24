@@ -12,6 +12,8 @@ can sit next to a screen-specific icon button (e.g. Approve):
   </div>
 
 `edit_open` must match the drawer's data-scr-open key (its scr_name:edit).
+A screen that edits on its own page (Fares) passes `edit_href` instead: the item
+becomes a link, reading "View" for someone who may not update.
 
 Edit and Delete are hidden unless the screen's `perm` dict allows them; the
 server refuses the action either way -- hiding a control is a courtesy, the
@@ -23,7 +25,12 @@ Frontend-only, per CLAUDE.md 1: Delete has no backend write behind it.
     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="12" cy="19" r="1.6"></circle></svg>
   </button>
   <div class="scr-menu" hidden>
-    {% if perm.update|default_if_none:True %}
+    {% if edit_href %}
+    <a class="scr-menu-item" href="{{ edit_href }}">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10a2.1 2.1 0 0 0-3-3L5 17z"></path><path d="M14.5 6.5 17.5 9.5"></path></svg>
+      {% if perm.update|default_if_none:True %}Edit{% else %}View{% endif %}
+    </a>
+    {% elif perm.update|default_if_none:True %}
     <button type="button" class="scr-menu-item" data-scr-open="{{ edit_open }}">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10a2.1 2.1 0 0 0-3-3L5 17z"></path><path d="M14.5 6.5 17.5 9.5"></path></svg>
       Edit

@@ -1,0 +1,208 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Fares - Fare &amp; Offers{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Fare &amp; Offers</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Fares</b>
+      </div>
+      <h1 class="scr-title">Fares</h1>
+      <p class="scr-sub">What each vehicle type costs, where and when. A branch with its own fare uses it instead of the company fare.</p>
+    </div>
+    <div class="scr-head-actions">
+      {% if perm.create %}
+      <a href="{% url 'fare-fare-add' %}" class="scr-btn-primary">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+        Add Fare
+      </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="scr-tiles">
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-green">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9-9-9"></path><path d="M7.5 7.5h.01"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ count_active }}</div><div class="scr-tile-lab">Active fares</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-blue">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M16 3v4M8 3v4M3 11h18"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ count_current }}</div><div class="scr-tile-lab">In force today</div></div>
+    </div>
+    <div class="scr-tile">
+      <span class="scr-tile-ico scr-tile-ico-amber">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M8 12h8"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ count_inactive }}</div><div class="scr-tile-lab">Inactive</div></div>
+    </div>
+  </div>
+
+  <div class="scr-card" data-scr-delete-url="{{ delete_url }}" data-scr-noun="Fare">
+    <div class="scr-toolbar">
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="text" placeholder="Search vehicle type, category or branch" />
+      </div>
+
+      <div class="scr-filter-wrap" data-filter-key="category">
+        <button type="button" class="scr-filter-btn">
+          <span class="scr-filter-label">All categories</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+        </button>
+        <div class="scr-filter-menu" hidden>
+          <button type="button" class="scr-filter-opt is-active" data-value="">All categories</button>
+          {% for c in categories %}<button type="button" class="scr-filter-opt" data-value="{{ c }}">{{ c }}</button>{% endfor %}
+        </div>
+      </div>
+
+      <div class="scr-filter-wrap" data-filter-key="level">
+        <button type="button" class="scr-filter-btn">
+          <span class="scr-filter-label">All levels</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+        </button>
+        <div class="scr-filter-menu" hidden>
+          <button type="button" class="scr-filter-opt is-active" data-value="">All levels</button>
+          <button type="button" class="scr-filter-opt" data-value="Company">Company</button>
+          <button type="button" class="scr-filter-opt" data-value="Branch">Branch</button>
+        </div>
+      </div>
+
+      <div class="scr-filter-wrap" data-filter-key="period">
+        <button type="button" class="scr-filter-btn">
+          <span class="scr-filter-label">Any period</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+        </button>
+        <div class="scr-filter-menu" hidden>
+          <button type="button" class="scr-filter-opt is-active" data-value="">Any period</button>
+          <button type="button" class="scr-filter-opt" data-value="Current">Current</button>
+          <button type="button" class="scr-filter-opt" data-value="Upcoming">Upcoming</button>
+          <button type="button" class="scr-filter-opt" data-value="Expired">Expired</button>
+        </div>
+      </div>
+
+      <div class="scr-filter-wrap" data-filter-key="status">
+        <button type="button" class="scr-filter-btn">
+          <span class="scr-filter-label">All status</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+        </button>
+        <div class="scr-filter-menu" hidden>
+          <button type="button" class="scr-filter-opt is-active" data-value="">All status</button>
+          <button type="button" class="scr-filter-opt" data-value="Active">Active</button>
+          <button type="button" class="scr-filter-opt" data-value="Inactive">Inactive</button>
+        </div>
+      </div>
+
+      <span class="scr-toolbar-count">{{ fares|length }} fare{{ fares|length|pluralize }}</span>
+    </div>
+
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Vehicle Type</th>
+            {% if sees_every_company %}<th>Company</th>{% endif %}
+            <th>Package</th>
+            <th>Applies To</th>
+            <th>Validity</th>
+            <th style="text-align:right">Basic Fare (AED)</th>
+            <th>Special Pricing</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in fares %}
+          <tr class="scr-row" data-pk="{{ f.pk }}"
+              data-search="{{ f.name|lower }} {{ f.category|lower }} {{ f.branches|lower }} {{ f.company|lower }}"
+              data-category="{{ f.category }}" data-level="{{ f.level }}" data-period="{{ f.period }}"
+              data-status="{% if f.active %}Active{% else %}Inactive{% endif %}">
+            <td>
+              <a class="scr-co-name" href="{{ f.edit_url }}" style="font-weight:600">{{ f.name }} · {{ f.package }} min</a>
+              <div class="scr-contact-sub">{{ f.category }}</div>
+            </td>
+            {% if sees_every_company %}<td>{{ f.company }}</td>{% endif %}
+            <td>{{ f.package }} min</td>
+            <td>
+              {{ f.level }}
+              <div class="scr-contact-sub" title="{{ f.branches }}">{{ f.scope }}</div>
+            </td>
+            <td>
+              {{ f.validity }}
+              <div class="scr-contact-sub">{{ f.period }}</div>
+            </td>
+            <td style="text-align:right">{{ f.base_fare }}</td>
+            <td>
+              {% if f.rules or f.seasons %}
+              {{ f.rules }} price{{ f.rules|pluralize }}{% if f.seasons %} · {{ f.seasons }} season{{ f.seasons|pluralize }}{% endif %}
+              {% else %}<span class="scr-contact-sub">Base fare only</span>{% endif %}
+            </td>
+            <td>{% if f.active %}<span class="scr-badge scr-badge-active"><i></i>Active</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Inactive</span>{% endif %}</td>
+            <td>
+              <div class="scr-row-actions">
+                {% include "byky/partials/row_actions.html" with edit_href=f.edit_url %}
+              </div>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="{% if sees_every_company %}9{% else %}8{% endif %}" style="padding:0">
+              <div class="scr-empty">
+                <span class="scr-empty-ico">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9-9-9"></path><path d="M7.5 7.5h.01"></path></svg>
+                </span>
+                <div>
+                  <div class="scr-empty-title">No fares yet</div>
+                  <p class="scr-empty-sub">Add a fare to price a vehicle type for its package time.</p>
+                </div>
+                {% if perm.create %}
+                <a href="{% url 'fare-fare-add' %}" class="scr-btn-primary">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+                  Add Fare
+                </a>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="scr-pager">
+      <span class="scr-pager-info">Showing {{ fares|length }} of {{ fares|length }}</span>
+      <div class="scr-pager-nav">
+        <button type="button" class="scr-pager-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"></path></svg>
+        </button>
+        <span class="scr-pager-current">1</span>
+        <button type="button" class="scr-pager-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 6 6 6-6 6"></path></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% include "byky/partials/confirm_modal.html" %}
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}

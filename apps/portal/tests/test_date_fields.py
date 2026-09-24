@@ -47,6 +47,7 @@ DATE_KINDS = {"date", "datetime"}
 # flatpickr and the script that binds it.
 SCREENS_WITH_DATES = [
     "/crew/employee/list/",
+    "/fare/add/",
 ]
 
 
