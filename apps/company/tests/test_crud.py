@@ -18,6 +18,7 @@ from apps.company.models import (
     Department,
     Location,
     State,
+    WeekDay,
 )
 from apps.portal.models import Role, RolePermission
 from apps.portal.services import grant_all
@@ -247,9 +248,9 @@ def test_the_schedule_saves_as_a_whole(client_in, world):
     response = post(client_in, "/company/branch-working-time/save/", {
         "branch": branch.pk,
         "shifts": [
-            {"week_day": 0, "shift_number": 1, "start": "08:00", "end": "16:00"},
-            {"week_day": 1, "shift_number": 1, "start": "08:00", "end": "16:00"},
-            {"week_day": 2, "shift_number": 1, "start": "", "end": ""},   # not worked
+            {"week_day": WeekDay.SUNDAY, "shift_number": 1, "start": "08:00", "end": "16:00"},
+            {"week_day": WeekDay.MONDAY, "shift_number": 1, "start": "08:00", "end": "16:00"},
+            {"week_day": WeekDay.TUESDAY, "shift_number": 1, "start": "", "end": ""},   # not worked
         ],
     })
 
@@ -263,17 +264,17 @@ def test_saving_the_schedule_replaces_the_old_one(client_in, world):
         name="Corniche Station", branch_type=BranchType.STATION,
     )
     BranchWorkingTime.objects.create(
-        branch=branch, week_day=5, shift_number=1, start_time="09:00", end_time="17:00"
+        branch=branch, week_day=WeekDay.FRIDAY, shift_number=1, start_time="09:00", end_time="17:00"
     )
 
     post(client_in, "/company/branch-working-time/save/", {
         "branch": branch.pk,
-        "shifts": [{"week_day": 0, "shift_number": 1, "start": "08:00", "end": "16:00"}],
+        "shifts": [{"week_day": WeekDay.SUNDAY, "shift_number": 1, "start": "08:00", "end": "16:00"}],
     })
 
     rows = BranchWorkingTime.objects.filter(branch=branch)
     assert rows.count() == 1
-    assert rows.first().week_day == 0          # the Friday row is gone, not orphaned
+    assert rows.first().week_day == WeekDay.SUNDAY   # the Friday row is gone, not orphaned
 
 
 def test_half_a_shift_is_refused_by_name(client_in, world):
@@ -284,7 +285,7 @@ def test_half_a_shift_is_refused_by_name(client_in, world):
 
     response = post(client_in, "/company/branch-working-time/save/", {
         "branch": branch.pk,
-        "shifts": [{"week_day": 0, "shift_number": 2, "start": "08:00", "end": ""}],
+        "shifts": [{"week_day": WeekDay.SUNDAY, "shift_number": 2, "start": "08:00", "end": ""}],
     })
 
     assert response.status_code == 400
@@ -299,7 +300,7 @@ def test_the_schedule_of_another_companys_branch_is_out_of_reach(client_in, worl
 
     response = post(client_in, "/company/branch-working-time/save/", {
         "branch": theirs.pk,
-        "shifts": [{"week_day": 0, "shift_number": 1, "start": "08:00", "end": "16:00"}],
+        "shifts": [{"week_day": WeekDay.SUNDAY, "shift_number": 1, "start": "08:00", "end": "16:00"}],
     })
 
     assert response.status_code == 400

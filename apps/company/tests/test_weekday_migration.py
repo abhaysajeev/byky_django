@@ -1,0 +1,48 @@
+"""0008_weekday_monday_zero moves saved working times from Sunday=0 to
+Python's Monday=0, and back.
+
+A Sunday and a Monday row on the same branch and shift are the case a single
+in-place UPDATE would trip over: PostgreSQL checks the (branch, week_day,
+shift_number) unique constraint row by row, so Monday 1 -> 0 would collide
+with Sunday still at 0. The migration parks the values first; this proves it.
+"""
+
+import pytest
+from django.db import connection
+from django.db.migrations.executor import MigrationExecutor
+
+from apps.company.models import BranchWorkingTime, WeekDay
+from apps.company.tests.test_crud import world  # noqa: F401 -- fixture
+from apps.company.tests.test_working_time import shift, station  # noqa: F401 -- fixture
+
+BEFORE = [("company", "0007_branch_code_per_company")]
+AFTER = [("company", "0008_weekday_monday_zero")]
+
+
+def migrate(target):
+    executor = MigrationExecutor(connection)
+    executor.loader.build_graph()
+    executor.migrate(target)
+
+
+def days_by_shift(branch):
+    return dict(
+        BranchWorkingTime.objects.filter(branch=branch).values_list("start_time", "week_day")
+    )
+
+
+@pytest.mark.django_db(transaction=True)
+def test_every_day_moves_both_ways_without_colliding(station):
+    # One row per weekday, shift 1, each with its own start hour so it can be
+    # told apart after the move: Monday 01:00, Tuesday 02:00 ... Sunday 07:00.
+    for day in WeekDay:
+        shift(station, day, 1, f"{day.value + 1:02d}:00", "23:00")
+    after = days_by_shift(station)
+
+    migrate(BEFORE)
+    before = days_by_shift(station)
+    for start, new_value in after.items():
+        assert before[start] == (new_value + 1) % 7      # Sunday back to 0, Monday to 1 ...
+
+    migrate(AFTER)
+    assert days_by_shift(station) == after

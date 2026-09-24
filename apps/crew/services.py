@@ -187,7 +187,7 @@ ADDRESS_TYPES = AddressType
 # client's own scoping for the Oct 2 demo -- see today_assignment's docstring
 # and absent_today below.
 
-from apps.company.models import Branch, BranchWorkingTime
+from apps.company.models import Branch, BranchWorkingTime, WeekDay
 from apps.company.services import week_day_of
 from core.timezones import business_date_for, zone_for
 from apps.crew.models import DutyRoster, DutyRosterDayType, RosterCategory
@@ -268,7 +268,8 @@ def week_dates(year, month, week_index):
     day = 1
     while day <= days_in_month:
         start = day
-        until_saturday = 6 - week_day_of(datetime.date(year, month, day))
+        # Saturday is 5, Sunday 6: a week starting on Sunday runs 6 days on.
+        until_saturday = (WeekDay.SATURDAY - week_day_of(datetime.date(year, month, day))) % 7
         end = min(day + until_saturday, days_in_month)
         weeks.append([datetime.date(year, month, d) for d in range(start, end + 1)])
         day = end + 1

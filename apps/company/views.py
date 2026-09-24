@@ -26,7 +26,7 @@ from apps.company.models import (
     Department,
     Location,
     State,
-    WeekDay,
+    UAE_WEEK,
 )
 from apps.crew.scoping import employees_for
 from apps.portal.permissions import PagePermissionMixin
@@ -374,7 +374,7 @@ class BranchWorkingTimeView(CompanyScreenView):
         )
         selected = self.request.GET.get("branch") or ""
         context.update({
-            "days": [{"value": value, "label": label} for value, label in WeekDay.choices],
+            "days": [{"value": day.value, "label": day.label} for day in UAE_WEEK],
             "shifts": SHIFTS,
             "wt_branches": [
                 {

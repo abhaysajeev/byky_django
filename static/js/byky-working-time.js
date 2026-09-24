@@ -25,7 +25,10 @@
 
   var MIN_WAIT = 1500;
   var MAX_SHIFTS = 4;
-  var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  // Indexed by WeekDay value -- Python's numbering, Monday is 0.
+  var DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  // The screen's order, the UAE week: Sunday first. Errors are listed in it.
+  var UAE_WEEK = [6, 0, 1, 2, 3, 4, 5];
 
   var canUpdate = root.dataset.canUpdate === '1';
   var select = root.querySelector('[data-wt-branch]');
@@ -189,8 +192,9 @@
       }
       (byDay[s.week_day] = byDay[s.week_day] || {})[s.shift_number] = s;
     });
-    Object.keys(byDay).forEach(function (day) {
+    UAE_WEEK.forEach(function (day) {
       var shiftsOfDay = byDay[day];
+      if (!shiftsOfDay) return;
       var previousEnd = null;
       for (var n = 1; n <= MAX_SHIFTS; n++) {
         var s = shiftsOfDay[n];

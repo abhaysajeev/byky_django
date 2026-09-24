@@ -342,10 +342,10 @@ def sunday_at(monkeypatch):
 
 
 def sunday_shift(branch, start="08:00", end="16:00"):
-    from apps.company.models import BranchWorkingTime
+    from apps.company.models import BranchWorkingTime, WeekDay
 
     BranchWorkingTime.objects.create(
-        branch=branch, week_day=0, shift_number=1, start_time=start, end_time=end,
+        branch=branch, week_day=WeekDay.SUNDAY, shift_number=1, start_time=start, end_time=end,
     )
 
 

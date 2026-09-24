@@ -20,13 +20,28 @@ class BranchType(models.TextChoices):
 
 
 class WeekDay(models.IntegerChoices):
-    SUNDAY = 0, "Sunday"
-    MONDAY = 1, "Monday"
-    TUESDAY = 2, "Tuesday"
-    WEDNESDAY = 3, "Wednesday"
-    THURSDAY = 4, "Thursday"
-    FRIDAY = 5, "Friday"
-    SATURDAY = 6, "Saturday"
+    """Python's own numbering, `date.weekday()`: Monday is 0, Sunday is 6.
+
+    One numbering everywhere -- models, services, fares, the apps -- so nothing
+    has to translate between Python and the database. Screens still list the
+    UAE week, Sunday first: see UAE_WEEK.
+    """
+
+    MONDAY = 0, "Monday"
+    TUESDAY = 1, "Tuesday"
+    WEDNESDAY = 2, "Wednesday"
+    THURSDAY = 3, "Thursday"
+    FRIDAY = 4, "Friday"
+    SATURDAY = 5, "Saturday"
+    SUNDAY = 6, "Sunday"
+
+
+# The order screens show the days in: the UAE week runs Sunday to Saturday.
+# Display order only -- the stored value is always WeekDay's.
+UAE_WEEK = (
+    WeekDay.SUNDAY, WeekDay.MONDAY, WeekDay.TUESDAY, WeekDay.WEDNESDAY,
+    WeekDay.THURSDAY, WeekDay.FRIDAY, WeekDay.SATURDAY,
+)
 
 
 class TaxType(models.TextChoices):

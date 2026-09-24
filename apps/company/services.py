@@ -15,7 +15,7 @@ import zoneinfo
 
 from django.utils import timezone
 
-from apps.company.models import BranchWorkingTime, WeekDay
+from apps.company.models import UAE_WEEK, BranchWorkingTime, WeekDay
 
 OPEN, CLOSED, NOT_SET = "open", "closed", "not_set"
 
@@ -34,8 +34,8 @@ def local_now(company, at=None):
 
 
 def week_day_of(moment):
-    """WeekDay value for a datetime: Sunday is 0 here, Monday is 0 in Python."""
-    return moment.isoweekday() % 7
+    """WeekDay value for a date or datetime -- Python's own, Monday is 0."""
+    return moment.weekday()
 
 
 def branch_open_state(branch, at=None):
@@ -140,7 +140,7 @@ def validate_schedule(shifts):
         by_day[day][number] = (start, end)
 
     rows = []
-    for day in sorted(by_day):
+    for day in sorted(by_day, key=UAE_WEEK.index):       # errors read in screen order
         shifts_of_day = by_day[day]
         previous_end = None
         for number in SHIFTS:

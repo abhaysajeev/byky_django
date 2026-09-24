@@ -13,7 +13,9 @@ import pytest
 from django.db import IntegrityError
 from django.utils import timezone
 
-from apps.company.models import Branch, BranchType, BranchWorkingTime, Company, Country, Location, State
+from apps.company.models import (
+    Branch, BranchType, BranchWorkingTime, Company, Country, Location, State, WeekDay,
+)
 from apps.crew import services
 from apps.crew.models import DutyRoster, DutyRosterDayType, Employee, RosterCategory
 from apps.portal.models import Role
@@ -86,7 +88,7 @@ def working_time(world):
             start_time=datetime.time(7, 0), end_time=datetime.time(23, 0),
         )
     BranchWorkingTime.objects.create(
-        branch=world["branch"], week_day=0, shift_number=2,
+        branch=world["branch"], week_day=WeekDay.SUNDAY, shift_number=2,
         start_time=datetime.time(23, 0), end_time=datetime.time(3, 0),
     )
 
