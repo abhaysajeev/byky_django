@@ -235,3 +235,54 @@ class Asset(ApprovalMixin, TimeStampedModel):
 
     def __str__(self):
         return self.asset_code
+
+
+class Vehicle(ApprovalMixin, TimeStampedModel):
+    """One physical rental vehicle. Legacy ImsStockItem, stripped of its
+    FMCG-lineage columns (MRP, ReorderLevel, HSNCode, ...) and of fields
+    verified unused (ParentStockID, IsFragile, LogoName, StockImage --
+    "populated" by a null-check but every sample was an empty string).
+
+    No category/brand fields here -- both come from vehicle_type, so a
+    vehicle can never disagree with its own type. Distinct from Asset:
+    Vehicle is the rental catalog entry, Asset is a separate equipment
+    registry -- confirmed with the user, not the same thing.
+    """
+
+    company = models.ForeignKey(
+        "company.Company", on_delete=models.PROTECT, related_name="vehicles"
+    )
+    vehicle_code = models.CharField("Vehicle Code", max_length=30)
+    vehicle_name = models.CharField("Vehicle Name", max_length=100)
+    vehicle_type = models.ForeignKey(
+        "fleet.VehicleType", on_delete=models.PROTECT, related_name="vehicles"
+    )
+    uom = models.ForeignKey(
+        "fleet.UOM", on_delete=models.PROTECT, related_name="vehicles"
+    )
+    rfid_epc = models.CharField("RFID Tag EPC", max_length=64)
+    is_available = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "vehicle"
+        ordering = ["vehicle_code"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "vehicle_code"],
+                name="uniq_vehicle_code_per_company",
+                violation_error_message="A vehicle with this code already exists.",
+            ),
+            models.UniqueConstraint(
+                fields=["company", "rfid_epc"],
+                name="uniq_vehicle_rfid_epc_per_company",
+                violation_error_message="A vehicle with this RFID tag already exists.",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["company"]),
+            models.Index(fields=["vehicle_type"]),
+            models.Index(fields=["uom"]),
+        ]
+
+    def __str__(self):
+        return self.vehicle_code

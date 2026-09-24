@@ -12,7 +12,7 @@ from apps.company import writes as company_writes
 from apps.company.scoping import branches_for, companies_for
 from apps.crew.scoping import employees_for
 from apps.fleet import drawers, forms, scoping
-from apps.fleet.models import UOM, Asset, AssetType, Brand, Category, VehicleType
+from apps.fleet.models import UOM, Asset, AssetType, Brand, Category, Vehicle, VehicleType
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
@@ -47,6 +47,13 @@ class FleetScreenView(PagePermissionMixin, ThemedTemplateView):
                 for e in employees_for(user).filter(is_active=True)
             ],
             "branches_list": list(branches_for(user).filter(is_active=True).values("id", "name")),
+            "vehicle_types_list": list(
+                scoping.vehicle_types_for(user).filter(is_active=True)
+                .values("id", "vehicle_type_name")
+            ),
+            "uoms_list": list(
+                scoping.uoms_for(user).filter(is_active=True).values("id", "uom_name")
+            ),
             "perm": {action: has_permission(user, self.page_code, action) for action in ACTIONS},
         })
         return context
@@ -354,6 +361,59 @@ class AssetDelete(company_writes.EntityDeleteView):
     model = Asset
     page_code = "fleet.asset"
     noun = "Asset"
+
+
+class VehicleListView(FleetScreenView):
+    template_name = "fleet/vehicle_list.html"
+    page_code = "fleet.vehicle"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        rows = []
+        vehicles = (
+            scoping.vehicles_for(self.request.user).select_related("vehicle_type", "uom")
+        )
+        for i, vehicle in enumerate(vehicles):
+            rows.append({
+                "code": vehicle.vehicle_code,
+                "name": vehicle.vehicle_name,
+                "vehicle_type": vehicle.vehicle_type.vehicle_type_name,
+                "uom": vehicle.uom.uom_name,
+                "rfid_epc": vehicle.rfid_epc,
+                "available": vehicle.is_available,
+                "active": vehicle.is_active,
+                "pk": vehicle.pk,
+                "json_id": f"scr-record-vehicle-{i}",
+                "fields_json": {
+                    "pk": vehicle.pk,
+                    "company": vehicle.company_id,
+                    "vehicle_code": vehicle.vehicle_code,
+                    "vehicle_name": vehicle.vehicle_name,
+                    "vehicle_type": vehicle.vehicle_type_id,
+                    "uom": vehicle.uom_id,
+                    "rfid_epc": vehicle.rfid_epc,
+                    "is_available": vehicle.is_available,
+                    "is_active": vehicle.is_active,
+                },
+            })
+        context["vehicles"] = rows
+        context["save_url_vehicle"] = reverse("fleet-vehicle-save")
+        context["delete_url_vehicle"] = reverse("fleet-vehicle-delete", args=[0])
+        context["noun_vehicle"] = "Vehicle"
+        return context
+
+
+class VehicleSave(company_writes.EntitySaveView):
+    model = Vehicle
+    form_class = forms.VehicleForm
+    page_code = "fleet.vehicle"
+    noun = "Vehicle"
+
+
+class VehicleDelete(company_writes.EntityDeleteView):
+    model = Vehicle
+    page_code = "fleet.vehicle"
+    noun = "Vehicle"
 
 
 class FleetPrivilegeView(PrivilegeScreenView):

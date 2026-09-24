@@ -11,7 +11,7 @@ import json
 import pytest
 
 from apps.company.models import Company, Country, State
-from apps.fleet.models import UOM, Asset, AssetType, Brand, Category, VehicleType
+from apps.fleet.models import UOM, Asset, AssetType, Brand, Category, Vehicle, VehicleType
 from apps.portal.models import Role, RolePermission
 from apps.portal.services import grant_all
 from core.enums import ApprovalStatus, Channel
@@ -1102,4 +1102,278 @@ def test_one_company_cannot_reuse_its_own_asset_code(world, asset_refs):
         Asset.objects.create(
             company=world["company"], asset_code="AST-001",
             asset_type=asset_refs["ours"]["asset_type"],
+        )
+
+
+# =============================== Vehicle ============================================
+
+@pytest.fixture
+def vehicle_refs(world):
+    """A vehicle type + UOM for each company -- so a vehicle has something
+    real to point at, and the cross-company rejection tests have another
+    company's rows to try."""
+    def make(company, tag):
+        category = Category.objects.create(
+            company=company, category_code=f"BYKY{tag}", category_name=f"Byky {tag}"
+        )
+        brand = Brand.objects.create(
+            company=company, brand_code=f"BYK{tag}", brand_name=f"Byky {tag}"
+        )
+        return {
+            "vehicle_type": VehicleType.objects.create(
+                company=company, category=category, brand=brand,
+                vehicle_type_name=f"Monaco {tag}",
+            ),
+            "uom": UOM.objects.create(
+                company=company, uom_code=f"NO{tag}", uom_name=f"Number {tag}"
+            ),
+        }
+
+    return {"ours": make(world["company"], "1"), "theirs": make(world["other"], "2")}
+
+
+def test_create_a_vehicle(client_in, world, vehicle_refs):
+    # is_available explicit, matching how the real drawer always sends it
+    # (byky-crud.js::collect() reads every checkbox's .checked state and
+    # never omits the key) -- omitting it here would test an unrealistic
+    # payload no browser client actually sends.
+    response = post(client_in, "/fleet/vehicle/save/", {
+        "vehicle_code": "V-001", "vehicle_name": "Monaco 1",
+        "vehicle_type": vehicle_refs["ours"]["vehicle_type"].pk,
+        "uom": vehicle_refs["ours"]["uom"].pk, "rfid_epc": "EPC-001",
+        "is_available": True,
+    })
+
+    assert response.status_code == 200, response.content
+    body = response.json()
+    assert body["ok"] is True
+    assert body["message"] == "Vehicle saved."
+
+    vehicle = Vehicle.objects.get(pk=body["pk"])
+    assert vehicle.company == world["company"]              # from the user, not the payload
+    assert vehicle.vehicle_type == vehicle_refs["ours"]["vehicle_type"]
+    assert vehicle.uom == vehicle_refs["ours"]["uom"]
+    assert vehicle.is_active is True
+    assert vehicle.is_available is True                     # BooleanField default
+    assert vehicle.approval_status == ApprovalStatus.APPROVED
+
+
+def test_update_a_vehicle(client_in, world, vehicle_refs):
+    vehicle = Vehicle.objects.create(
+        company=world["company"], vehicle_code="V-001", vehicle_name="Monaco 1",
+        vehicle_type=vehicle_refs["ours"]["vehicle_type"], uom=vehicle_refs["ours"]["uom"],
+        rfid_epc="EPC-001",
+    )
+
+    post(client_in, "/fleet/vehicle/save/", {
+        "pk": vehicle.pk, "vehicle_code": "V-001", "vehicle_name": "Monaco 1 Refurbished",
+        "vehicle_type": vehicle_refs["ours"]["vehicle_type"].pk,
+        "uom": vehicle_refs["ours"]["uom"].pk, "rfid_epc": "EPC-001",
+    })
+
+    vehicle.refresh_from_db()
+    assert vehicle.vehicle_name == "Monaco 1 Refurbished"
+    assert Vehicle.objects.count() == 1                      # updated, not duplicated
+
+
+def test_delete_an_unused_vehicle(client_in, world, vehicle_refs):
+    vehicle = Vehicle.objects.create(
+        company=world["company"], vehicle_code="V-001", vehicle_name="Monaco 1",
+        vehicle_type=vehicle_refs["ours"]["vehicle_type"], uom=vehicle_refs["ours"]["uom"],
+        rfid_epc="EPC-001",
+    )
+
+    response = post(client_in, f"/fleet/vehicle/{vehicle.pk}/delete/", {})
+
+    assert response.json()["ok"] is True
+    assert Vehicle.objects.count() == 0
+
+
+def test_a_vehicle_can_be_marked_unavailable(client_in, world, vehicle_refs):
+    response = post(client_in, "/fleet/vehicle/save/", {
+        "vehicle_code": "V-001", "vehicle_name": "Monaco 1",
+        "vehicle_type": vehicle_refs["ours"]["vehicle_type"].pk,
+        "uom": vehicle_refs["ours"]["uom"].pk, "rfid_epc": "EPC-001",
+        "is_available": False,
+    })
+
+    assert response.status_code == 200, response.content
+    vehicle = Vehicle.objects.get(pk=response.json()["pk"])
+    assert vehicle.is_available is False
+
+
+# --- validation -----------------------------------------------------------------
+
+def test_missing_required_vehicle_fields_are_reported_at_once(client_in):
+    response = post(client_in, "/fleet/vehicle/save/", {"vehicle_code": "", "vehicle_name": ""})
+
+    assert response.status_code == 400
+    errors = response.json()["errors"]
+    fields = {error["field"] for error in errors}
+
+    assert "Vehicle Code" in fields                           # labelled as the drawer labels it
+    assert "vehicle_code" not in fields                        # never a column name
+
+
+def test_a_duplicate_vehicle_code_is_reported_in_words(client_in, world, vehicle_refs):
+    Vehicle.objects.create(
+        company=world["company"], vehicle_code="V-001", vehicle_name="Monaco 1",
+        vehicle_type=vehicle_refs["ours"]["vehicle_type"], uom=vehicle_refs["ours"]["uom"],
+        rfid_epc="EPC-001",
+    )
+
+    response = post(client_in, "/fleet/vehicle/save/", {
+        "vehicle_code": "V-001", "vehicle_name": "Monaco 2",
+        "vehicle_type": vehicle_refs["ours"]["vehicle_type"].pk,
+        "uom": vehicle_refs["ours"]["uom"].pk, "rfid_epc": "EPC-002",
+    })
+
+    assert response.status_code == 400
+    assert any("already exists" in error["message"] for error in response.json()["errors"])
+
+
+def test_a_duplicate_rfid_epc_is_reported_in_words(client_in, world, vehicle_refs):
+    Vehicle.objects.create(
+        company=world["company"], vehicle_code="V-001", vehicle_name="Monaco 1",
+        vehicle_type=vehicle_refs["ours"]["vehicle_type"], uom=vehicle_refs["ours"]["uom"],
+        rfid_epc="EPC-001",
+    )
+
+    response = post(client_in, "/fleet/vehicle/save/", {
+        "vehicle_code": "V-002", "vehicle_name": "Monaco 2",
+        "vehicle_type": vehicle_refs["ours"]["vehicle_type"].pk,
+        "uom": vehicle_refs["ours"]["uom"].pk, "rfid_epc": "EPC-001",
+    })
+
+    assert response.status_code == 400
+    assert any("already exists" in error["message"] for error in response.json()["errors"])
+
+
+def test_a_company_user_cannot_pick_another_companys_vehicle_type(client_in, world, vehicle_refs):
+    response = post(client_in, "/fleet/vehicle/save/", {
+        "vehicle_code": "V-001", "vehicle_name": "Monaco 1",
+        "vehicle_type": vehicle_refs["theirs"]["vehicle_type"].pk,
+        "uom": vehicle_refs["ours"]["uom"].pk, "rfid_epc": "EPC-001",
+    })
+
+    assert response.status_code == 400
+    assert any("valid choice" in error["message"] for error in response.json()["errors"])
+    assert Vehicle.objects.count() == 0
+
+
+def test_a_company_user_cannot_pick_another_companys_uom(client_in, world, vehicle_refs):
+    response = post(client_in, "/fleet/vehicle/save/", {
+        "vehicle_code": "V-001", "vehicle_name": "Monaco 1",
+        "vehicle_type": vehicle_refs["ours"]["vehicle_type"].pk,
+        "uom": vehicle_refs["theirs"]["uom"].pk, "rfid_epc": "EPC-001",
+    })
+
+    assert response.status_code == 400
+    assert any("valid choice" in error["message"] for error in response.json()["errors"])
+    assert Vehicle.objects.count() == 0
+
+
+# --- permission on the write -----------------------------------------------------
+
+@pytest.mark.parametrize("action", ["create", "update"])
+def test_a_role_without_the_vehicle_action_is_refused(client_in, world, vehicle_refs, action):
+    vehicle = Vehicle.objects.create(
+        company=world["company"], vehicle_code="V-001", vehicle_name="Monaco 1",
+        vehicle_type=vehicle_refs["ours"]["vehicle_type"], uom=vehicle_refs["ours"]["uom"],
+        rfid_epc="EPC-001",
+    )
+    payload = {
+        "vehicle_code": "X", "vehicle_name": "X",
+        "vehicle_type": vehicle_refs["ours"]["vehicle_type"].pk,
+        "uom": vehicle_refs["ours"]["uom"].pk, "rfid_epc": "EPC-999",
+    }
+    if action == "update":
+        payload["pk"] = vehicle.pk
+    RolePermission.objects.filter(
+        role=client_in.role, page__code="fleet.vehicle"
+    ).update(**{f"can_{action}": False})
+
+    response = post(client_in, "/fleet/vehicle/save/", payload)
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "forbidden"
+
+
+def test_a_role_without_vehicle_delete_is_refused(client_in, world, vehicle_refs):
+    vehicle = Vehicle.objects.create(
+        company=world["company"], vehicle_code="V-001", vehicle_name="Monaco 1",
+        vehicle_type=vehicle_refs["ours"]["vehicle_type"], uom=vehicle_refs["ours"]["uom"],
+        rfid_epc="EPC-001",
+    )
+    RolePermission.objects.filter(
+        role=client_in.role, page__code="fleet.vehicle"
+    ).update(can_delete=False)
+
+    response = post(client_in, f"/fleet/vehicle/{vehicle.pk}/delete/", {})
+
+    assert response.status_code == 403
+    assert Vehicle.objects.count() == 1
+
+
+# --- scope on the write -----------------------------------------------------------
+
+def test_a_company_user_cannot_edit_another_companys_vehicle(client_in, world, vehicle_refs):
+    theirs = Vehicle.objects.create(
+        company=world["other"], vehicle_code="V-001", vehicle_name="Their Monaco",
+        vehicle_type=vehicle_refs["theirs"]["vehicle_type"], uom=vehicle_refs["theirs"]["uom"],
+        rfid_epc="EPC-001",
+    )
+
+    response = post(client_in, "/fleet/vehicle/save/", {
+        "pk": theirs.pk, "vehicle_code": "HIJACKED", "vehicle_name": "Hijacked",
+        "vehicle_type": vehicle_refs["theirs"]["vehicle_type"].pk,
+        "uom": vehicle_refs["theirs"]["uom"].pk, "rfid_epc": "EPC-001",
+    })
+
+    assert response.status_code == 404                       # not even acknowledged
+    theirs.refresh_from_db()
+    assert theirs.vehicle_code == "V-001"
+
+
+def test_a_company_user_cannot_delete_another_companys_vehicle(client_in, world, vehicle_refs):
+    theirs = Vehicle.objects.create(
+        company=world["other"], vehicle_code="V-001", vehicle_name="Their Monaco",
+        vehicle_type=vehicle_refs["theirs"]["vehicle_type"], uom=vehicle_refs["theirs"]["uom"],
+        rfid_epc="EPC-001",
+    )
+
+    response = post(client_in, f"/fleet/vehicle/{theirs.pk}/delete/", {})
+
+    assert response.status_code == 404
+    assert Vehicle.objects.filter(pk=theirs.pk).exists()
+
+
+def test_two_companies_may_use_the_same_vehicle_code(world, vehicle_refs):
+    ours = Vehicle.objects.create(
+        company=world["company"], vehicle_code="V-001", vehicle_name="Ours",
+        vehicle_type=vehicle_refs["ours"]["vehicle_type"], uom=vehicle_refs["ours"]["uom"],
+        rfid_epc="EPC-001",
+    )
+    theirs = Vehicle.objects.create(
+        company=world["other"], vehicle_code="V-001", vehicle_name="Theirs",
+        vehicle_type=vehicle_refs["theirs"]["vehicle_type"], uom=vehicle_refs["theirs"]["uom"],
+        rfid_epc="EPC-002",
+    )
+
+    assert (ours.vehicle_code, theirs.vehicle_code) == ("V-001", "V-001")
+
+
+def test_one_company_cannot_reuse_its_own_vehicle_code(world, vehicle_refs):
+    from django.db import IntegrityError
+
+    Vehicle.objects.create(
+        company=world["company"], vehicle_code="V-001", vehicle_name="First",
+        vehicle_type=vehicle_refs["ours"]["vehicle_type"], uom=vehicle_refs["ours"]["uom"],
+        rfid_epc="EPC-001",
+    )
+    with pytest.raises(IntegrityError):
+        Vehicle.objects.create(
+            company=world["company"], vehicle_code="V-001", vehicle_name="Second",
+            vehicle_type=vehicle_refs["ours"]["vehicle_type"], uom=vehicle_refs["ours"]["uom"],
+            rfid_epc="EPC-002",
         )

@@ -1,0 +1,127 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Vehicle - Inventory{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Inventory</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Vehicle</b>
+      </div>
+      <h1 class="scr-title">Vehicle</h1>
+      <p class="scr-sub">The rental fleet catalog.</p>
+    </div>
+    <div class="scr-head-actions">
+      {% if perm.print %}
+      <button type="button" class="scr-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="m7 11 5 5 5-5"></path><path d="M4 20h16"></path></svg>
+        Export
+      </button>
+      {% endif %}
+      {% if perm.create %}
+      <button type="button" class="scr-btn-primary" data-scr-open="vehicle:add">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+        Add Vehicle
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="scr-card" data-scr-noun-singular="vehicle" data-scr-noun-plural="vehicles" data-scr-delete-url="{{ delete_url_vehicle }}" data-scr-noun="{{ noun_vehicle }}">
+    <div class="scr-toolbar">
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="text" placeholder="Search vehicle code, name, type or RFID tag" />
+      </div>
+
+      <span class="scr-toolbar-count">{{ vehicles|length }} vehicles</span>
+    </div>
+
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Vehicle Code</th>
+            <th>Vehicle Name</th>
+            <th>Vehicle Type</th>
+            <th>RFID Tag EPC</th>
+            <th>Available</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for v in vehicles %}
+          <tr class="scr-row" data-search="{{ v.code|lower }} {{ v.name|lower }} {{ v.vehicle_type|lower }} {{ v.rfid_epc|lower }}" data-record-id="{{ v.json_id }}" data-pk="{{ v.pk }}">
+            <td style="font-weight:600"><span class="scr-code">{{ v.code }}</span></td>
+            <td>{{ v.name }}</td>
+            <td>{{ v.vehicle_type }}</td>
+            <td>{{ v.rfid_epc }}</td>
+            <td>{% if v.available %}<span class="scr-badge scr-badge-active"><i></i>Available</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Unavailable</span>{% endif %}</td>
+            <td>{% if v.active %}<span class="scr-badge scr-badge-active"><i></i>Active</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Inactive</span>{% endif %}</td>
+            <td>
+              <div class="scr-row-actions">
+                {% include "byky/partials/row_actions.html" with edit_open="vehicle:edit" %}
+              </div>
+            </td>
+          </tr>
+          {{ v.fields_json|json_script:v.json_id }}
+          {% empty %}
+          <tr>
+            <td colspan="7" style="padding:0">
+              <div class="scr-empty">
+                <span class="scr-empty-ico">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"></path></svg>
+                </span>
+                <div>
+                  <div class="scr-empty-title">No vehicles yet</div>
+                  <p class="scr-empty-sub">Add the first vehicle to the fleet.</p>
+                </div>
+                {% if perm.create %}
+                <button type="button" class="scr-btn-primary" data-scr-open="vehicle:add">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+                  Add Vehicle
+                </button>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="scr-pager">
+      <span class="scr-pager-info">Showing {{ vehicles|length }} of {{ vehicles|length }}</span>
+      <div class="scr-pager-nav">
+        <button type="button" class="scr-pager-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"></path></svg>
+        </button>
+        <span class="scr-pager-current">1</span>
+        <button type="button" class="scr-pager-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 6 6 6-6 6"></path></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% include "byky/partials/drawer.html" with save_url=save_url_vehicle spec=drawer_vehicle module_label="Inventory · Vehicle" %}
+{% include "byky/partials/confirm_modal.html" %}
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}

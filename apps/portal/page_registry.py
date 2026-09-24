@@ -104,6 +104,7 @@ PAGES = [
     ("fleet.uom", "fleet", "UOM", "fleet-uom-list", CRUD_PRINT, 4, False),
     ("fleet.asset_type", "fleet", "Asset Type", "fleet-asset-type-list", CRUD_PRINT, 5, False),
     ("fleet.asset", "fleet", "Asset", "fleet-asset-list", CRUD_PRINT, 6, False),
+    ("fleet.vehicle", "fleet", "Vehicle", "fleet-vehicle-list", CRUD_PRINT, 7, False),
     ("fleet.privileges", "fleet", "Privileges", "fleet-privileges", ["read", "update"], 9, False),
 
     ("fare.fare", "fare", "Fares", "fare-fare-list", CRUD_PRINT, 1, False),

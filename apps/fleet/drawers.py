@@ -355,6 +355,71 @@ ASSET = {
     ],
 }
 
+VEHICLE = {
+    "drawer_id": "drawerVehicle",
+    "scr_name": "vehicle",
+    "model": "fleet.Vehicle",
+    "add_label": "Add Vehicle",
+    "title_field": "vehicle_code",
+    "sections": [
+        {
+            "title": "",
+            "fields": [
+                {
+                    "id": "company",
+                    "label": "Company",
+                    "kind": "select",
+                    "required": True,
+                    "options_from": "companies_list",
+                    "option_key": "name",
+                    "system_only": True,
+                },
+                {
+                    "id": "vehicle_code",
+                    "label": "Vehicle Code",
+                    "kind": "text",
+                    "required": True,
+                },
+                {
+                    "id": "vehicle_name",
+                    "label": "Vehicle Name",
+                    "kind": "text",
+                    "required": True,
+                },
+                {
+                    "id": "vehicle_type",
+                    "label": "Vehicle Type",
+                    "kind": "select",
+                    "required": True,
+                    "options_from": "vehicle_types_list",
+                    "option_key": "vehicle_type_name",
+                },
+                {
+                    "id": "uom",
+                    "label": "UOM",
+                    "kind": "select",
+                    "required": True,
+                    "options_from": "uoms_list",
+                    "option_key": "uom_name",
+                },
+                {
+                    "id": "rfid_epc",
+                    "label": "RFID Tag EPC",
+                    "kind": "text",
+                    "required": True,
+                },
+                {
+                    "id": "is_available",
+                    "label": "Available",
+                    "kind": "checkbox",
+                    "required": False,
+                    "checked": True,
+                },
+            ],
+        }
+    ],
+}
+
 SPECS = {
     "drawer_brand": BRAND,
     "drawer_category": CATEGORY,
@@ -362,4 +427,5 @@ SPECS = {
     "drawer_uom": UOM,
     "drawer_asset_type": ASSET_TYPE,
     "drawer_asset": ASSET,
+    "drawer_vehicle": VEHICLE,
 }

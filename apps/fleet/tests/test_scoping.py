@@ -12,7 +12,7 @@ tests prove it, and prove Category inherits it for free.
 import pytest
 
 from apps.company.models import Company, Country, State
-from apps.fleet.models import UOM, Asset, AssetType, Brand, Category, VehicleType
+from apps.fleet.models import UOM, Asset, AssetType, Brand, Category, Vehicle, VehicleType
 from apps.portal.models import Role
 from apps.portal.services import grant_all
 from core.enums import Channel, UserScope
@@ -45,14 +45,14 @@ def two_companies(db):
     kw_category = Category.objects.create(
         company=byky_kw, category_code="BYKY", category_name="Byky Kuwait Category"
     )
-    VehicleType.objects.create(
+    uae_vehicle_type = VehicleType.objects.create(
         company=byky, category=uae_category, brand=uae_brand, vehicle_type_name="Byky UAE Type"
     )
-    VehicleType.objects.create(
+    kw_vehicle_type = VehicleType.objects.create(
         company=byky_kw, category=kw_category, brand=kw_brand, vehicle_type_name="Byky Kuwait Type"
     )
-    UOM.objects.create(company=byky, uom_code="NO", uom_name="Byky UAE UOM")
-    UOM.objects.create(company=byky_kw, uom_code="NO", uom_name="Byky Kuwait UOM")
+    uae_uom = UOM.objects.create(company=byky, uom_code="NO", uom_name="Byky UAE UOM")
+    kw_uom = UOM.objects.create(company=byky_kw, uom_code="NO", uom_name="Byky Kuwait UOM")
     uae_asset_type = AssetType.objects.create(company=byky, asset_type_name="Byky UAE Asset Type")
     kw_asset_type = AssetType.objects.create(
         company=byky_kw, asset_type_name="Byky Kuwait Asset Type"
@@ -62,6 +62,14 @@ def two_companies(db):
     )
     Asset.objects.create(
         company=byky_kw, asset_code="BYKY-KW-1", asset_type=kw_asset_type, brand=kw_brand,
+    )
+    Vehicle.objects.create(
+        company=byky, vehicle_code="BYKY-UAE-V1", vehicle_name="Byky UAE Vehicle",
+        vehicle_type=uae_vehicle_type, uom=uae_uom, rfid_epc="EPC-UAE-1",
+    )
+    Vehicle.objects.create(
+        company=byky_kw, vehicle_code="BYKY-KW-V1", vehicle_name="Byky Kuwait Vehicle",
+        vehicle_type=kw_vehicle_type, uom=kw_uom, rfid_epc="EPC-KW-1",
     )
 
     return {"uae": byky, "kuwait": byky_kw}
@@ -378,3 +386,62 @@ def test_a_company_users_asset_drawer_only_offers_their_own_brands(client, two_c
 
     assert b"Byky UAE Brand" in body
     assert b"Byky Kuwait Brand" not in body
+
+
+# --- Vehicle: rows ------------------------------------------------------
+
+def test_a_company_user_never_sees_another_companys_vehicle(client, two_companies):
+    _company_user(client, two_companies["uae"], "uae.admin")
+
+    body = client.get("/fleet/vehicle/list/").content
+
+    assert b"BYKY-UAE-V1" in body
+    assert b"BYKY-KW-V1" not in body
+
+
+def test_a_system_user_sees_every_companys_vehicle(client, two_companies):
+    _system_user(client, "platform.admin")
+
+    body = client.get("/fleet/vehicle/list/").content
+
+    assert b"BYKY-UAE-V1" in body
+    assert b"BYKY-KW-V1" in body
+
+
+# --- Vehicle: the drawer follows the same rule -------------------------------
+
+def test_a_company_user_is_not_asked_which_company_for_a_vehicle(client, two_companies):
+    _company_user(client, two_companies["uae"], "uae.admin")
+
+    body = client.get("/fleet/vehicle/list/").content
+
+    assert b'data-field="vehicle_code"' in body
+    assert b'data-field="company"' not in body
+
+
+def test_a_system_user_must_choose_a_company_for_a_vehicle(client, two_companies):
+    _system_user(client, "platform.admin")
+
+    body = client.get("/fleet/vehicle/list/").content
+
+    assert b'data-field="company"' in body
+
+
+# --- Vehicle: the vehicle_type/uom dropdowns are scoped too ---------------------
+
+def test_a_company_users_vehicle_drawer_only_offers_their_own_vehicle_types(client, two_companies):
+    _company_user(client, two_companies["uae"], "uae.admin")
+
+    body = client.get("/fleet/vehicle/list/").content
+
+    assert b"Byky UAE Type" in body
+    assert b"Byky Kuwait Type" not in body
+
+
+def test_a_company_users_vehicle_drawer_only_offers_their_own_uoms(client, two_companies):
+    _company_user(client, two_companies["uae"], "uae.admin")
+
+    body = client.get("/fleet/vehicle/list/").content
+
+    assert b"Byky UAE UOM" in body
+    assert b"Byky Kuwait UOM" not in body

@@ -6,7 +6,7 @@ Same shape as apps/company/tests/test_screens.py.
 import pytest
 
 from apps.company.models import Company, Country, State
-from apps.fleet.models import UOM, Asset, AssetType, Brand, Category, VehicleType
+from apps.fleet.models import UOM, Asset, AssetType, Brand, Category, Vehicle, VehicleType
 from apps.portal.models import Page, Role, RolePermission
 from apps.portal.services import grant_all
 from core.enums import Channel
@@ -21,6 +21,7 @@ SCREENS = [
     ("/fleet/uom/list/", "fleet.uom"),
     ("/fleet/asset-type/list/", "fleet.asset_type"),
     ("/fleet/asset/list/", "fleet.asset"),
+    ("/fleet/vehicle/list/", "fleet.vehicle"),
     ("/fleet/privileges/", "fleet.privileges"),
 ]
 
@@ -258,3 +259,37 @@ def test_the_sidebar_hides_asset_when_permission_is_revoked(signed_in, company):
     body = signed_in.get("/dashboard/").content
 
     assert b'class="menu-label">Asset</span>' not in body
+
+
+def test_the_vehicle_screen_renders_with_data(signed_in, company):
+    vehicle_type = VehicleType.objects.create(
+        company=company,
+        category=Category.objects.create(company=company, category_code="BYKY", category_name="Byky"),
+        brand=Brand.objects.create(company=company, brand_code="BYK", brand_name="Byky"),
+        vehicle_type_name="Monaco",
+    )
+    uom = UOM.objects.create(company=company, uom_code="NO", uom_name="Number")
+    Vehicle.objects.create(
+        company=company, vehicle_code="V-001", vehicle_name="Monaco 1",
+        vehicle_type=vehicle_type, uom=uom, rfid_epc="EPC-001",
+    )
+
+    response = signed_in.get("/fleet/vehicle/list/")
+
+    assert response.status_code == 200
+    assert b"V-001" in response.content
+    assert b"EPC-001" in response.content
+    assert b"Monaco" in response.content
+
+
+def test_the_sidebar_lists_vehicle_once_granted(signed_in):
+    assert b'class="menu-label">Vehicle</span>' in signed_in.get("/dashboard/").content
+
+
+def test_the_sidebar_hides_vehicle_when_permission_is_revoked(signed_in, company):
+    role = Role.objects.get(name="Administrator")
+    RolePermission.objects.filter(role=role, page__code="fleet.vehicle").update(can_read=False)
+
+    body = signed_in.get("/dashboard/").content
+
+    assert b'class="menu-label">Vehicle</span>' not in body

@@ -1,5 +1,5 @@
 from apps.company.forms import ScopedModelForm
-from apps.fleet.models import UOM, Asset, AssetType, Brand, Category, VehicleType
+from apps.fleet.models import UOM, Asset, AssetType, Brand, Category, Vehicle, VehicleType
 
 
 class BrandForm(ScopedModelForm):
@@ -87,3 +87,28 @@ class AssetForm(ScopedModelForm):
             self.fields["brand"].queryset = brands_for(self.user).filter(is_active=True)
             self.fields["custodian"].queryset = employees_for(self.user).filter(is_active=True)
             self.fields["branch"].queryset = branches_for(self.user).filter(is_active=True)
+
+
+class VehicleForm(ScopedModelForm):
+    class Meta:
+        model = Vehicle
+        fields = [
+            "company", "vehicle_code", "vehicle_name", "vehicle_type", "uom",
+            "rfid_epc", "is_available", "is_active",
+        ]
+        labels = {
+            "vehicle_code": "Vehicle Code", "vehicle_name": "Vehicle Name",
+            "rfid_epc": "RFID Tag EPC",
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.user is not None:
+            from apps.fleet.scoping import uoms_for, vehicle_types_for
+
+            # Only this company's vehicle types and UOMs -- same fix as
+            # VehicleTypeForm/AssetForm needed for their own cross-referencing FKs.
+            self.fields["vehicle_type"].queryset = vehicle_types_for(self.user).filter(
+                is_active=True
+            )
+            self.fields["uom"].queryset = uoms_for(self.user).filter(is_active=True)
