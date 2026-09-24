@@ -260,7 +260,11 @@ class Vehicle(ApprovalMixin, TimeStampedModel):
     uom = models.ForeignKey(
         "fleet.UOM", on_delete=models.PROTECT, related_name="vehicles"
     )
-    rfid_epc = models.CharField("RFID Tag EPC", max_length=64)
+    # Optional: real legacy data (imsstockitem, live export) has vehicles
+    # whose BarCode is a placeholder shared across several rows ("1", "2",
+    # "4", ...) rather than a real per-vehicle tag -- a true value still
+    # needs to be unique, but "no tag assigned yet" has to be representable.
+    rfid_epc = models.CharField("RFID Tag EPC", max_length=64, blank=True)
     is_available = models.BooleanField(default=True)
 
     class Meta:
@@ -274,6 +278,7 @@ class Vehicle(ApprovalMixin, TimeStampedModel):
             ),
             models.UniqueConstraint(
                 fields=["company", "rfid_epc"],
+                condition=~models.Q(rfid_epc=""),
                 name="uniq_vehicle_rfid_epc_per_company",
                 violation_error_message="A vehicle with this RFID tag already exists.",
             ),

@@ -406,7 +406,7 @@ VEHICLE = {
                     "id": "rfid_epc",
                     "label": "RFID Tag EPC",
                     "kind": "text",
-                    "required": True,
+                    "required": False,
                 },
                 {
                     "id": "is_available",

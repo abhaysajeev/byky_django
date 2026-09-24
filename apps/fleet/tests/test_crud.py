@@ -1249,6 +1249,25 @@ def test_a_duplicate_rfid_epc_is_reported_in_words(client_in, world, vehicle_ref
     assert any("already exists" in error["message"] for error in response.json()["errors"])
 
 
+def test_rfid_epc_is_optional_and_two_blanks_coexist(client_in, world, vehicle_refs):
+    """rfid_epc's uniqueness constraint is conditional (~Q(rfid_epc="")) --
+    two vehicles with no tag assigned yet must not collide with each other."""
+    first = post(client_in, "/fleet/vehicle/save/", {
+        "vehicle_code": "V-001", "vehicle_name": "Monaco 1",
+        "vehicle_type": vehicle_refs["ours"]["vehicle_type"].pk,
+        "uom": vehicle_refs["ours"]["uom"].pk,
+    })
+    second = post(client_in, "/fleet/vehicle/save/", {
+        "vehicle_code": "V-002", "vehicle_name": "Monaco 2",
+        "vehicle_type": vehicle_refs["ours"]["vehicle_type"].pk,
+        "uom": vehicle_refs["ours"]["uom"].pk,
+    })
+
+    assert first.status_code == 200, first.content
+    assert second.status_code == 200, second.content
+    assert Vehicle.objects.filter(rfid_epc="").count() == 2
+
+
 def test_a_company_user_cannot_pick_another_companys_vehicle_type(client_in, world, vehicle_refs):
     response = post(client_in, "/fleet/vehicle/save/", {
         "vehicle_code": "V-001", "vehicle_name": "Monaco 1",

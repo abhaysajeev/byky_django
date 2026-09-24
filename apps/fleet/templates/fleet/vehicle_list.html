@@ -71,7 +71,7 @@
             <td style="font-weight:600"><span class="scr-code">{{ v.code }}</span></td>
             <td>{{ v.name }}</td>
             <td>{{ v.vehicle_type }}</td>
-            <td>{{ v.rfid_epc }}</td>
+            <td>{{ v.rfid_epc|default:"—" }}</td>
             <td>{% if v.available %}<span class="scr-badge scr-badge-active"><i></i>Available</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Unavailable</span>{% endif %}</td>
             <td>{% if v.active %}<span class="scr-badge scr-badge-active"><i></i>Active</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Inactive</span>{% endif %}</td>
             <td>
