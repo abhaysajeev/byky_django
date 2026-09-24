@@ -16,8 +16,11 @@ deferred while this function rewrites a fare's rows (so two rules can swap
 windows) and checked again before it returns.
 """
 
+import datetime
+
 from django.db import IntegrityError, connection, transaction
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q
+from django.utils import timezone
 
 from apps.company.scoping import branches_for, companies_for
 from apps.fare import payload, pricing
@@ -27,6 +30,7 @@ from apps.fare.scoping import fares_for
 from apps.fleet.models import VehicleType
 from apps.fleet.scoping import vehicle_types_for
 from core.enums import ApprovalStatus
+from core.timezones import business_date_for, zone_for
 
 # Deferred while save_fare rewrites a fare, re-checked before it returns.
 DEFERRED = (
@@ -406,3 +410,97 @@ def _write(user, fare, context, spec, meta):
         if branch.pk not in linked:
             FareBranch.objects.create(fare=fare, branch=branch)
     return fare
+
+
+# -- The operator app's fare download (apps/fare/api.py) --------------------------------
+#
+# Every fare package of one vehicle type, sent whole: the app runs the
+# precedence itself (design/fares and offers/fare-schema.md section 4). The
+# branch is the caller's -- taken from its session, never from the request.
+
+
+class UnknownVehicleType(Exception):
+    """Not this branch's company's, or not active and approved."""
+
+
+RULE_ORDER = {"single_date": 0, "selected_days": 1, "every_day": 2}
+
+
+def _device_price(row):
+    return {
+        "base_fare": str(row.base_fare), "grace_minutes": row.grace_minutes,
+        "concurrent_interval_minutes": row.concurrent_interval_minutes,
+        "concurrent_fare": str(row.concurrent_fare),
+        "concurrent_grace_minutes": row.concurrent_grace_minutes,
+    }
+
+
+def _device_rules(rules):
+    rules = sorted(rules, key=lambda r: (RULE_ORDER[r.kind], r.on_date or datetime.date.min, r.start_minute))
+    return [
+        {
+            "id": r.pk, "kind": r.kind,
+            "on_date": r.on_date.isoformat() if r.on_date else None,
+            "weekdays": sorted(r.weekdays or []),
+            "start": pricing.hhmm(r.start_minute), "end": pricing.hhmm(r.end_minute),
+            "price": _device_price(r),
+        }
+        for r in rules
+    ]
+
+
+def device_fares(branch, vehicle_type_id, *, at=None):
+    """The fare download for one vehicle type at `branch`: active, approved
+    fares that have not ended, company-level and this branch's own. Both
+    levels are sent; the app lets the branch's fare win."""
+    company = branch.company
+    vehicle_type = (VehicleType.objects.select_related("category")
+                    .filter(pk=vehicle_type_id, company=company, is_active=True,
+                            approval_status=ApprovalStatus.APPROVED).first())
+    if vehicle_type is None:
+        raise UnknownVehicleType()
+
+    now = at or timezone.now()
+    today = business_date_for(company, now)
+    fares = with_children(
+        Fare.objects.filter(company=company, vehicle_type=vehicle_type, is_active=True,
+                            approval_status=ApprovalStatus.APPROVED, valid_to__gte=today)
+        .filter(Q(level=FareLevel.COMPANY) | Q(level=FareLevel.BRANCH, branch_links__branch=branch))
+        .distinct()
+        .order_by("package_minutes", "valid_from", "level")
+    )
+
+    out = []
+    for fare in fares:
+        rules = list(fare.rules.all())
+        out.append({
+            "fare_id": fare.pk, "version": fare.lock_version, "level": fare.level,
+            "package_minutes": fare.package_minutes,
+            "valid_from": fare.valid_from.isoformat(), "valid_to": fare.valid_to.isoformat(),
+            "base_price": _device_price(fare),
+            "special_prices": _device_rules(r for r in rules if r.season_id is None),
+            "seasons": [
+                {
+                    "id": s.pk, "name": s.name,
+                    "start_date": s.start_date.isoformat(), "end_date": s.end_date.isoformat(),
+                    "base_price": _device_price(s),
+                    "special_prices": _device_rules(r for r in rules if r.season_id == s.pk),
+                }
+                for s in fare.seasons.all()
+            ],
+        })
+
+    return {
+        "generated_at": now.astimezone(zone_for(company)).isoformat(timespec="seconds"),
+        "business_date": today.isoformat(),
+        "company": {"id": company.pk, "code": company.short_code, "timezone": company.timezone,
+                    "tax_type": company.tax_type, "discount_type": company.discount_type},
+        "branch": {"id": branch.pk, "code": branch.short_code, "name": branch.name},
+        "vehicle_type": {
+            "id": vehicle_type.pk, "name": vehicle_type.vehicle_type_name,
+            "code": vehicle_type.vehicle_type_code, "category": vehicle_type.category.category_name,
+            "tax_percentage": (str(vehicle_type.tax_percentage)
+                               if vehicle_type.tax_percentage is not None else None),
+        },
+        "fares": out,
+    }
