@@ -16,3 +16,5 @@ drf-spectacular==0.30.0
 # WhiteNoise like every other static file -- the Swagger page then loads
 # with no jsdelivr/unpkg CDN call (config/settings.py SPECTACULAR_SETTINGS).
 drf-spectacular-sidecar==2026.9.1
+# Reads the client's Excel masters (apps/fleet/management/commands/import_vehicle_tags.py).
+openpyxl==3.1.5
