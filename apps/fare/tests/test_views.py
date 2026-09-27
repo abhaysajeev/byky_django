@@ -1,7 +1,6 @@
 """The fare screens and endpoints: who may, what they see, what comes back."""
 
 
-import pytest
 
 from apps.fare.models import Fare
 from apps.fare.tests.conftest import D, make_fare, make_rule, make_season, post
@@ -25,11 +24,6 @@ def fare_data(world, **changes):
 
 
 # -- Screens ------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("url", ["/fare/list/", "/fare/add/", "/fare/privileges/"])
-def test_the_screens_render(client_in, url):
-    assert client_in.get(url).status_code == 200
 
 
 def test_the_list_shows_this_companys_fares_only(client_in, world):
@@ -62,11 +56,6 @@ def test_save_sits_beside_test_fare_and_a_saved_fare_is_locked(client_in, world)
     assert "Fixed once saved" in html
     for field in ('data-fare-field="vehicle_type" disabled', 'data-fare-category disabled'):
         assert field in html
-
-
-def test_the_list_needs_read(client_in):
-    revoke(client_in, "read")
-    assert client_in.get("/fare/list/").status_code == 403
 
 
 def test_the_add_page_needs_create(client_in):

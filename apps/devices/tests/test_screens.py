@@ -1,7 +1,7 @@
-"""Every Device screen renders, refuses, and survives an empty database.
+"""The Device screens with real devices in them: status, sessions, mappings.
 
-The empty case matters most in this pass: no device has ever registered against
-this system, so "no rows yet" has to be a working state rather than a crash.
+That every screen renders on an empty database, refuses a role without it and
+sends a stranger to sign in is apps/portal/tests/test_every_screen.py.
 """
 
 import datetime
@@ -10,16 +10,9 @@ import pytest
 from django.utils import timezone
 
 from apps.devices.models import Device, DeviceMapping, DeviceStatus
-from apps.portal.models import Page
 from apps.portal.session_models import AppSession
 from core.enums import Channel
 from core.models import User
-
-SCREENS = [
-    ("/devices/approval/", "devices.device_approval"),
-    ("/devices/mapping/", "devices.device_mapping"),
-    ("/devices/privileges/", "devices.privileges"),
-]
 
 
 @pytest.fixture
@@ -40,38 +33,6 @@ def approved_device(company, branch):
         device=device, branch=branch, from_date=datetime.date(2026, 9, 1)
     )
     return device
-
-
-@pytest.mark.parametrize("url,page_code", SCREENS)
-def test_a_screen_renders_on_an_empty_database(signed_in, url, page_code):
-    response = signed_in.get(url)
-
-    assert response.status_code == 200
-    assert b"byky-sidebar" in response.content
-
-
-@pytest.mark.parametrize("url,page_code", SCREENS)
-def test_a_screen_refuses_a_role_without_permission(no_permissions, url, page_code):
-    assert no_permissions.get(url).status_code == 403
-
-
-@pytest.mark.parametrize("url,page_code", SCREENS)
-def test_a_screen_sends_a_stranger_to_sign_in(client, db, url, page_code):
-    response = client.get(url)
-
-    assert response.status_code == 302
-    assert response.url.startswith("/login/")
-
-
-@pytest.mark.parametrize("url,page_code", SCREENS)
-def test_every_screen_has_a_page_row(db, url, page_code):
-    """A screen with no Page row cannot be permission-checked and never reaches
-    the sidebar."""
-    page = Page.objects.get(code=page_code)
-
-    assert page.is_active
-    assert "read" in page.actions
-    assert "web" in page.channels
 
 
 def test_a_pending_device_waits_on_the_approval_screen(signed_in, company):

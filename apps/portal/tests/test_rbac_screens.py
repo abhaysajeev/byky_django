@@ -60,24 +60,6 @@ def post_json(client, url, payload):
     return client.post(url, data=json.dumps(payload), content_type="application/json")
 
 
-SCREENS = [
-    "/portal/role/list/",
-    "/portal/user/list/",
-    "/company/privileges/",
-    "/crew/privileges/",
-]
-
-
-@pytest.mark.parametrize("url", SCREENS)
-def test_every_screen_renders(admin, url):
-    assert admin.get(url).status_code == 200
-
-
-@pytest.mark.parametrize("url", SCREENS)
-def test_every_screen_refuses_a_role_without_permission(visitor, url):
-    assert visitor.get(url).status_code == 403
-
-
 # --- Roles -------------------------------------------------------------------
 
 def test_a_new_role_grants_nothing(admin, company):

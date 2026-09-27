@@ -31,15 +31,6 @@ from core.models import User
 
 PASSWORD = "Byky#2026"
 
-SCREENS = [
-    ("/crew/employee/list/", "crew.employee"),
-    ("/crew/designation/list/", "crew.designation"),
-    ("/crew/address/list/", "crew.employee_address"),
-    ("/crew/block-unblock/", "crew.block_unblock"),
-    ("/crew/attendance/list/", "crew.attendance"),
-]
-
-
 @pytest.fixture
 def world(db):
     country = Country.objects.create(short_code="AE", name="United Arab Emirates")
@@ -97,26 +88,6 @@ def make_employee(world, code="BYKY0001", **extra):
 
 
 # --- the screens --------------------------------------------------------------
-
-@pytest.mark.parametrize("url,page_code", SCREENS)
-def test_a_screen_renders_on_an_empty_database(client_in, url, page_code):
-    response = client_in.get(url)
-
-    assert response.status_code == 200
-    assert b"byky-sidebar" in response.content
-
-
-@pytest.mark.parametrize("url,page_code", SCREENS)
-def test_a_screen_refuses_a_role_without_permission(client, world, url, page_code):
-    role = Role.objects.create(company=world["company"], name="Visitor")
-    User.objects.create_user(
-        "vis.itor", PASSWORD, display_name="Vis", company=world["company"], role=role,
-        allowed_channels=[Channel.WEB],
-    )
-    client.post("/login/", {"username": "vis.itor", "password": PASSWORD})
-
-    assert client.get(url).status_code == 403
-
 
 def test_the_screens_render_with_data(client_in, world):
     employee = make_employee(world)

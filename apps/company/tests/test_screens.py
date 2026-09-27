@@ -1,13 +1,13 @@
-"""Every Company screen renders, refuses, and survives an empty database.
+"""The Company screens with real rows in them, and the sidebar.
 
-The last one matters most for this pass: the screens are ported markup wired to
-real queries, so "no rows yet" has to be a working state, not a crash.
+That every screen renders on an empty database, refuses a role without it and
+sends a stranger to sign in is apps/portal/tests/test_every_screen.py.
 """
 
 import pytest
 
 from apps.company.models import Branch, BranchType, Company, Country, Department, Location, State
-from apps.portal.models import Page, Role, RolePermission
+from apps.portal.models import Role, RolePermission
 from apps.portal.services import grant_all
 from core.enums import Channel
 from core.models import User
@@ -48,51 +48,6 @@ def signed_in(client, company):
     )
     client.post("/login/", {"username": "sara.k", "password": PASSWORD})
     return client
-
-
-@pytest.fixture
-def no_permissions(client, company):
-    """A user with a role that grants nothing."""
-    role = Role.objects.create(company=company, name="Visitor")
-    User.objects.create_user(
-        "vis.itor", PASSWORD, display_name="Vis Itor", company=company, role=role,
-        allowed_channels=[Channel.WEB],
-    )
-    client.post("/login/", {"username": "vis.itor", "password": PASSWORD})
-    return client
-
-
-@pytest.mark.parametrize("url,page_code", SCREENS)
-def test_a_screen_renders_on_an_empty_database(signed_in, url, page_code):
-    response = signed_in.get(url)
-
-    assert response.status_code == 200
-    assert b"byky-sidebar" in response.content          # the shell rendered
-    assert page_code  # the screen is registered; see the next test
-
-
-@pytest.mark.parametrize("url,page_code", SCREENS)
-def test_a_screen_refuses_a_role_without_permission(no_permissions, url, page_code):
-    assert no_permissions.get(url).status_code == 403
-
-
-@pytest.mark.parametrize("url,page_code", SCREENS)
-def test_a_screen_sends_a_stranger_to_sign_in(client, db, url, page_code):
-    response = client.get(url)
-
-    assert response.status_code == 302
-    assert response.url.startswith("/login/")
-
-
-@pytest.mark.parametrize("url,page_code", SCREENS)
-def test_every_screen_has_a_page_row(db, url, page_code):
-    """A screen with no Page row cannot be permission-checked and never appears
-    in the sidebar."""
-    page = Page.objects.get(code=page_code)
-
-    assert page.is_active
-    assert "read" in page.actions
-    assert "web" in page.channels
 
 
 def test_screens_render_with_data(signed_in, company):

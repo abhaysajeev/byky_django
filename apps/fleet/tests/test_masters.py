@@ -29,7 +29,7 @@ from django.db import IntegrityError, transaction
 from apps.company.models import Branch, BranchType, Company, Country, Location, State
 from apps.crew.models import Designation, Employee
 from apps.fleet.models import UOM, Asset, AssetType, Brand, Category, Vehicle, VehicleType
-from apps.portal.models import Page, Role, RolePermission
+from apps.portal.models import Role, RolePermission
 from apps.portal.services import grant_all
 from core.enums import ApprovalStatus, Channel, UserScope
 from core.models import User
@@ -122,9 +122,6 @@ MASTERS = [
 ]
 WITH_CODES = [m for m in MASTERS if m.code]
 PICKS = [pytest.param(m, form_field, ref, id=f"{m.slug}-{form_field}") for m in MASTERS for form_field, ref in m.picks]
-SCREENS = [f"/fleet/{m.slug}/list/" for m in MASTERS] + ["/fleet/privileges/"]
-
-
 # -- The world ----------------------------------------------------------------------------------
 
 
@@ -327,37 +324,6 @@ def test_system_scope_does_not_bypass_permissions(system_client):
 
 
 # -- Screens ------------------------------------------------------------------------------------
-
-
-@pytest.fixture
-def empty_company(db):
-    """A company with no fleet data at all."""
-    uae = Country.objects.create(short_code="AE", name="United Arab Emirates")
-    return Company.objects.create(short_code="BYKY", name="BYKY", country=uae,
-                                  state=State.objects.create(country=uae, short_code="AUH", name="Abu Dhabi"),
-                                  phone_number="+9710000000", email="ops@byky.test")
-
-
-def test_every_screen_renders_on_an_empty_database_and_has_a_page_row(client, empty_company):
-    sign_in(client, "sara.k", company=empty_company)
-    for url in SCREENS:
-        response = client.get(url)
-        assert response.status_code == 200 and b"byky-sidebar" in response.content, url
-    for master in MASTERS:
-        page = Page.objects.get(code=master.page)
-        assert page.is_active and "read" in page.actions and "web" in page.channels, master.page
-
-
-def test_every_screen_refuses_a_role_without_permission_and_a_stranger(client, world):
-    for url in SCREENS:
-        response = client.get(url)
-        assert response.status_code == 302 and response.url.startswith("/login/"), url
-    role = Role.objects.create(company=world["ours"], name="Visitor")
-    User.objects.create_user("vis.itor", PASSWORD, display_name="Vis", company=world["ours"], role=role,
-                             allowed_channels=[Channel.WEB])
-    client.post("/login/", {"username": "vis.itor", "password": PASSWORD})
-    for url in SCREENS:
-        assert client.get(url).status_code == 403, url
 
 
 def test_the_sidebar_lists_exactly_the_screens_the_role_may_read(client_in):
