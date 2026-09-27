@@ -560,25 +560,6 @@
   var testResult = testBox.querySelector('[data-test-result]');
   timePicker(testTime);
 
-  function summary() {
-    var type = vehicleType.selectedOptions[0];
-    var names = branchBoxes.filter(function (b) { return b.checked; })
-      .map(function (b) { return b.parentElement.querySelector('span').textContent; });
-    var rows = [
-      ['Vehicle type', type && type.value ? type.textContent : '—'],
-      ['Category', type && type.value ? type.dataset.category : '—'],
-      ['Package time', pkg.value ? pkg.value + ' min' : '—'],
-      ['Fare level', level() === 'branch' ? 'Branch' : 'Company'],
-      ['Applies to', level() === 'branch' ? (names.join(', ') || '—') : 'All branches'],
-      ['Valid', dateLabel(isoOf(validFrom)) + ' – ' + dateLabel(isoOf(validTo))],
-      ['Tax', tax.value || '— not set —'],
-      ['Status', status.value === '1' ? 'Active' : 'Inactive']
-    ];
-    testBox.querySelector('[data-test-summary]').innerHTML = rows.map(function (r) {
-      return '<div><dt>' + r[0] + '</dt><dd>' + esc(r[1]) + '</dd></div>';
-    }).join('');
-  }
-
   var testSeq = 0;
 
   function testMessage(title, text) {
@@ -624,7 +605,6 @@
   }
 
   function openTest() {
-    summary();
     Crud.open('fare-test');
   }
 

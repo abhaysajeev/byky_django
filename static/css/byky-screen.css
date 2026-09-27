@@ -991,9 +991,6 @@ textarea.scr-drawer-input { height: auto; min-height: 72px; padding: 10px 13px; 
 .scr-fare-day:has(input:checked) { background: #1a1640; border-color: #1a1640; color: #fff; }
 .scr-fare-day:has(input:focus-visible) { outline: 2px solid #4f46e5; outline-offset: 2px; }
 /* Test fare */
-.scr-fare-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; margin: 0 0 16px; padding: 12px 14px; border-radius: 12px; background: #fbfaff; border: 1px solid #eeedf5; }
-.scr-fare-summary dt { font-size: 11px; color: #9490bb; }
-.scr-fare-summary dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 /* date, time and the button on one line; the button sits level with the inputs */
 .scr-fare-test-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 12px; align-items: end; }
 .scr-fare-test-row .scr-btn { height: 40px; padding: 0 18px; white-space: nowrap; justify-content: center; }
@@ -1007,7 +1004,7 @@ textarea.scr-drawer-input { height: auto; min-height: 72px; padding: 10px 13px; 
 .scr-fare-result-grid dt { font-size: 11px; color: #9490bb; }
 .scr-fare-result-grid dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
 @media (max-width: 600px) {
-  .scr-fare-dialog-grid, .scr-fare-summary { grid-template-columns: 1fr; }
+  .scr-fare-dialog-grid { grid-template-columns: 1fr; }
   .scr-fare-result-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .scr-fare-test-row { grid-template-columns: 1fr; }
 }
