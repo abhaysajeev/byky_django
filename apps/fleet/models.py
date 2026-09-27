@@ -8,8 +8,16 @@ fleet actually needs.
 """
 
 from django.db import models
+from django.db.models import Case, Func, Value, When
+from django.db.models.functions import Cast, Concat, LPad
 
 from core.models import ApprovalMixin, TimeStampedModel
+
+# Vehicle.identifier: "VH-B-" and a five-digit running number from this
+# sequence (migration 0011), longer once it passes 99999.
+IDENTIFIER_SEQUENCE = "vehicle_identifier_seq"
+IDENTIFIER_PREFIX = "VH-B-"
+IDENTIFIER_DIGITS = 5
 
 
 class Brand(ApprovalMixin, TimeStampedModel):
@@ -252,6 +260,29 @@ class Vehicle(ApprovalMixin, TimeStampedModel):
     company = models.ForeignKey(
         "company.Company", on_delete=models.PROTECT, related_name="vehicles"
     )
+    # The internal identifier: never typed, never edited, never reused. The
+    # number comes from a Postgres sequence on every insert -- a screen save,
+    # create(), or an import's bulk_create alike -- the same way as
+    # Device.device_registration_id. `identifier` is the text shown and
+    # searched ("VH-B-00042"), computed by the database from the number.
+    identifier_no = models.BigIntegerField(
+        unique=True, editable=False,
+        db_default=Func(Value(IDENTIFIER_SEQUENCE), function="nextval"),
+    )
+    identifier = models.GeneratedField(
+        verbose_name="Vehicle Identifier",
+        expression=Concat(
+            Value(IDENTIFIER_PREFIX),
+            Case(
+                When(identifier_no__lt=10 ** IDENTIFIER_DIGITS,
+                     then=LPad(Cast("identifier_no", models.CharField()), IDENTIFIER_DIGITS, Value("0"))),
+                default=Cast("identifier_no", models.CharField()),     # past 99999: grows, never truncates
+            ),
+        ),
+        output_field=models.CharField(max_length=30),
+        db_persist=True,
+        unique=True,
+    )
     vehicle_code = models.CharField("Vehicle Code", max_length=30)
     vehicle_name = models.CharField("Vehicle Name", max_length=100)
     vehicle_type = models.ForeignKey(
@@ -279,7 +310,7 @@ class Vehicle(ApprovalMixin, TimeStampedModel):
 
     class Meta:
         db_table = "vehicle"
-        ordering = ["vehicle_code"]
+        ordering = ["identifier_no"]
         constraints = [
             models.UniqueConstraint(
                 fields=["company", "vehicle_code"],

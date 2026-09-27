@@ -25,7 +25,7 @@ def device_vehicles(branch, *, at=None):
             vehicle_type__category__is_active=True, vehicle_type__category__approval_status=approved,
         )
         .select_related("vehicle_type__category", "vehicle_type__brand", "uom")
-        .order_by("vehicle_type__category__category_name", "vehicle_type__vehicle_type_name", "vehicle_code")
+        .order_by("vehicle_type__category__category_name", "vehicle_type__vehicle_type_name", "identifier_no")
     )
 
     categories = {}
@@ -44,7 +44,7 @@ def device_vehicles(branch, *, at=None):
             "vehicles": [],
         })
         type_entry["vehicles"].append({
-            "vehicle_id": vehicle.pk, "vehicle_code": vehicle.vehicle_code,
+            "vehicle_id": vehicle.pk, "vehicle_identifier": vehicle.identifier, "vehicle_code": vehicle.vehicle_code,
             "vehicle_name": vehicle.vehicle_name, "rfid_epc": vehicle.rfid_epc,
             "uom": vehicle.uom.uom_name, "is_available": vehicle.is_available,
         })

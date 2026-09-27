@@ -375,6 +375,15 @@ VEHICLE = {
                     "system_only": True,
                 },
                 {
+                    # Issued by the database on save; shown, never typed.
+                    "id": "identifier",
+                    "label": "Vehicle Identifier",
+                    "kind": "text",
+                    "required": False,
+                    "readonly": True,
+                    "placeholder": "Assigned on save",
+                },
+                {
                     "id": "vehicle_code",
                     "label": "Vehicle Code",
                     "kind": "text",

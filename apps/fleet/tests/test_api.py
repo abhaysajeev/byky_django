@@ -43,12 +43,14 @@ def test_vehicles_come_nested_by_category_and_type(client, world, token, uom):
     assert (category["name"], [t["name"] for t in category["vehicle_types"]]) == ("BYKY", ["Berg", "Monaco"])
     monaco = category["vehicle_types"][1]
     assert monaco["vehicle_type_id"] == world["monaco"].pk and monaco["tax_percentage"] == "5.00"
-    assert monaco["vehicles"] == [
-        {"vehicle_id": Vehicle.objects.get(vehicle_code="MON-1").pk, "vehicle_code": "MON-1",
-         "vehicle_name": "MON-1", "rfid_epc": "E2800", "uom": "Number", "is_available": True},
-        {"vehicle_id": Vehicle.objects.get(vehicle_code="MON-2").pk, "vehicle_code": "MON-2",
+    first, second = (Vehicle.objects.get(vehicle_code=code) for code in ("MON-2", "MON-1"))
+    assert monaco["vehicles"] == [                       # in identifier order: MON-2 was created first
+        {"vehicle_id": first.pk, "vehicle_identifier": first.identifier, "vehicle_code": "MON-2",
          "vehicle_name": "MON-2", "rfid_epc": "E2801", "uom": "Number", "is_available": False},
+        {"vehicle_id": second.pk, "vehicle_identifier": second.identifier, "vehicle_code": "MON-1",
+         "vehicle_name": "MON-1", "rfid_epc": "E2800", "uom": "Number", "is_available": True},
     ]
+    assert first.identifier.startswith("VH-B-") and first.identifier_no < second.identifier_no
 
 
 def test_only_this_stations_active_approved_vehicles(client, world, token, uom):

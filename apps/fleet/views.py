@@ -375,6 +375,7 @@ class VehicleListView(FleetScreenView):
         )
         for i, vehicle in enumerate(vehicles):
             rows.append({
+                "identifier": vehicle.identifier,
                 "code": vehicle.vehicle_code,
                 "name": vehicle.vehicle_name,
                 "vehicle_type": vehicle.vehicle_type.vehicle_type_name,
@@ -388,6 +389,7 @@ class VehicleListView(FleetScreenView):
                 "fields_json": {
                     "pk": vehicle.pk,
                     "company": vehicle.company_id,
+                    "identifier": vehicle.identifier,
                     "vehicle_code": vehicle.vehicle_code,
                     "vehicle_name": vehicle.vehicle_name,
                     "vehicle_type": vehicle.vehicle_type_id,
