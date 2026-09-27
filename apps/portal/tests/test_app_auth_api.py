@@ -2,7 +2,6 @@
 the app sees it. design/03-login.md section 9.1/9.2.
 """
 
-import datetime
 
 import pytest
 from django.core.cache import cache

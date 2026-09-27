@@ -23,9 +23,9 @@ from django.db import models
 
 from apps.company import drawers as company_drawers
 from apps.company.models import Branch, BranchType, Company, Country, Location, State
+from apps.crew import drawers as crew_drawers
 from apps.crew.models import Designation
 from apps.devices import drawers as devices_drawers
-from apps.crew import drawers as crew_drawers
 from apps.portal import drawers as portal_drawers
 from apps.portal.models import Role
 from apps.portal.services import grant_all

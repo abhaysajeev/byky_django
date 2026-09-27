@@ -163,46 +163,6 @@ def test_an_unregistered_device_is_refused(client, app_user):
     assert response.json()["code"] == "device_not_registered"
 
 
-def test_a_device_with_no_station_is_refused(client, app_user, world):
-    unmapped = Device.objects.create(
-        company=world["company"], installation_id="till-2", platform="android",
-        channel=Channel.OPERATOR, status=DeviceStatus.APPROVED, approved_at=timezone.now(),
-    )
-    response = _login(client, app_user, unmapped)
-    assert response.status_code == 409
-    assert response.json()["code"] == "device_not_mapped"
-
-
-def test_a_branch_with_no_settings_is_refused(client, app_user, world):
-    other_branch = Branch.objects.create(
-        company=world["company"], location=world["branch"].location, short_code="AUH02",
-        name="Zabeel Park 1", branch_type=BranchType.STATION,
-    )
-    unset = Device.objects.create(
-        company=world["company"], installation_id="till-3", platform="android",
-        channel=Channel.OPERATOR, status=DeviceStatus.APPROVED, approved_at=timezone.now(),
-    )
-    DeviceMapping.objects.create(device=unset, branch=other_branch, from_date=timezone.now())
-
-    response = _login(client, app_user, unset)
-    assert response.status_code == 409
-    assert response.json()["code"] == "device_settings_not_done"
-
-
-def test_session_active_elsewhere_is_refused(client, app_user, device, world):
-    _login(client, app_user, device)
-
-    second = Device.objects.create(
-        company=world["company"], installation_id="till-4", platform="android",
-        channel=Channel.OPERATOR, status=DeviceStatus.APPROVED, approved_at=timezone.now(),
-    )
-    DeviceMapping.objects.create(device=second, branch=world["branch"], from_date=timezone.now())
-
-    response = _login(client, app_user, second)
-    assert response.status_code == 409
-    assert response.json()["code"] == "session_active_elsewhere"
-
-
 # -- Refresh/logout: unmodified, shared code -----------------------------------
 
 

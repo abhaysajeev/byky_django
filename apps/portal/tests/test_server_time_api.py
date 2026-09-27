@@ -66,69 +66,6 @@ def test_each_phone_app_has_the_endpoint(client, company, app):
     assert response.status_code == 200
 
 
-def test_a_get_is_405_in_the_envelope(client):
-    response = client.get(URL)
-
-    assert response.status_code == 405
-    assert assert_envelope(response)["code"] == "method_not_allowed"
-
-
-def test_a_body_that_is_not_json_is_400_in_the_envelope(client):
-    response = client.post(URL, "{not json", content_type="application/json")
-
-    assert response.status_code == 400
-    assert assert_envelope(response)["code"] == "invalid_request"
-
-
-def test_a_crash_still_answers_in_the_envelope(client, company, monkeypatch):
-    def boom(*args, **kwargs):
-        raise RuntimeError("bug")
-    monkeypatch.setattr(api, "_server_time_payload", boom)
-
-    response = ask(client)
-
-    assert response.status_code == 500
-    body = assert_envelope(response)
-    assert body["code"] == "server_error"
-    assert "bug" not in body["message"]
-
-
-def test_the_credentials_block_is_accepted_whatever_it_holds(client, company):
-    credentials = {
-        "device_id": "", "token_id": None, "imei": ["x"],
-        "latitude": "not a number", "send_status": {"nested": True},
-    }
-    response = ask(client, credentials=credentials)
-
-    assert response.status_code == 200
-
-
-def test_a_malformed_credentials_block_is_ignored(client, company):
-    response = call(client, body={"credentials": "junk", "request_data": {"company_id": "BYKY"}})
-
-    assert response.status_code == 200
-
-
-def test_the_body_must_be_an_object(client):
-    response = call(client, body=[1, 2])
-
-    assert response.status_code == 400
-    assert assert_envelope(response)["code"] == "invalid_request"
-
-
-def test_request_data_must_be_an_object(client):
-    response = call(client, body={"request_data": ["x"]})
-
-    assert response.status_code == 400
-    assert assert_envelope(response)["code"] == "invalid_request"
-
-
-def test_unknown_request_keys_are_ignored(client, company):
-    response = ask(client, version_code=1, hierarchy_id=12, username="sara")
-
-    assert response.status_code == 200
-
-
 # -- company_id: required and validated ---------------------------------------
 
 

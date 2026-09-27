@@ -17,7 +17,6 @@ Hence this: read what the templates ask for, check it is on disk.
 import re
 from pathlib import Path
 
-import pytest
 from django.conf import settings
 
 STATIC_TAG = re.compile(r"{%\s*static\s+['\"]([^'\"]+)['\"]")
@@ -47,22 +46,13 @@ def _references():
                 yield template.relative_to(base), path
 
 
-REFERENCES = sorted(set(_references()))
-
-
-def test_there_are_references_to_check():
-    """A regex that matches nothing would make this file a no-op."""
-    assert len(REFERENCES) > 20
-
-
-@pytest.mark.parametrize(
-    "template,path", REFERENCES, ids=[f"{t}:{p}" for t, p in REFERENCES]
-)
-def test_a_referenced_static_file_exists(template, path):
-    if any((d / path).exists() for d in _static_dirs()):
-        return
-    pytest.fail(
-        f"{template} loads {path!r}, which is not in static/. In development "
-        f"this is a silent 404 -- the feature simply does not work -- and in "
-        f"production WhiteNoise's manifest storage raises on the page."
+def test_every_referenced_static_file_exists():
+    references = sorted(set(_references()))
+    assert len(references) > 20, "a regex that matches nothing would make this a no-op"
+    dirs = _static_dirs()
+    missing = [f"{template} loads {path!r}" for template, path in references
+               if not any((d / path).exists() for d in dirs)]
+    assert not missing, (
+        "Not in static/ -- a silent 404 in development (the feature simply does not work) "
+        "and a 500 in production (WhiteNoise's manifest storage raises):\n  " + "\n  ".join(missing)
     )

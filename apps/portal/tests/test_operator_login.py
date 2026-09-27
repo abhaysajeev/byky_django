@@ -208,7 +208,7 @@ def test_an_unmapped_device_is_refused(user, device):
     """Approved, but never given a station."""
     with pytest.raises(auth.LoginRefused) as refused:
         sign_in(user, device)
-    assert refused.value.code == "device_not_mapped"
+    assert (refused.value.code, refused.value.status) == ("device_not_mapped", 409)
 
 
 def test_a_mapped_branch_with_no_settings_is_refused(user, mapped_device):
@@ -217,7 +217,7 @@ def test_a_mapped_branch_with_no_settings_is_refused(user, mapped_device):
     for -- confirmed by reading that table directly."""
     with pytest.raises(auth.LoginRefused) as refused:
         sign_in(user, mapped_device)
-    assert refused.value.code == "device_settings_not_done"
+    assert (refused.value.code, refused.value.status) == ("device_settings_not_done", 409)
 
 
 # -- Step 10: same device vs. a different one, the one genuinely new check ------
@@ -234,7 +234,7 @@ def test_an_open_session_on_another_device_is_refused(user, ready_device, world,
 
     with pytest.raises(auth.LoginRefused) as refused:
         sign_in(user, second_device)
-    assert refused.value.code == "session_active_elsewhere"
+    assert (refused.value.code, refused.value.status) == ("session_active_elsewhere", 409)
 
     # And the first device's session is untouched -- refused, not replaced.
     assert AppSession.objects.filter(user=user, device=ready_device, logged_out_at__isnull=True).exists()
