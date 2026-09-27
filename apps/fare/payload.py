@@ -27,16 +27,19 @@ from decimal import Decimal, InvalidOperation
 
 from apps.fare import pricing
 from apps.fare.models import FareLevel, RuleKind
-from apps.fare.pricing import MIDNIGHT, FareSpec, Issue, Price, Rule, Season
+from apps.fare.pricing import MAX_MINUTES, MIDNIGHT, FareSpec, Issue, Price, Rule, Season
 
+# (name, label, kind, minimum) -- minutes are whole numbers up to one day.
 PRICE_FIELDS = (
-    ("base_fare", "Basic fare", "money"),
-    ("grace_minutes", "Grace period", "minutes"),
-    ("concurrent_interval_minutes", "Concurrent interval", "minutes"),
-    ("concurrent_fare", "Concurrent fare", "money"),
-    ("concurrent_grace_minutes", "Concurrent grace", "minutes"),
+    ("base_fare", "Basic fare", "money", 0),
+    ("grace_minutes", "Grace period", "minutes", 0),
+    ("concurrent_interval_minutes", "Concurrent interval", "minutes", 1),
+    ("concurrent_fare", "Concurrent fare", "money", 0),
+    ("concurrent_grace_minutes", "Concurrent grace", "minutes", 0),
 )
 TIME = re.compile(r"^([01]\d|2[0-4]):([0-5]\d)$")
+WHOLE = re.compile(r"^\d+$")                      # "010" is 10; "1.5", "-1", "1e3" are not minutes
+AMOUNT = re.compile(r"^-?\d+(\.\d+)?$")           # plain decimals only: no "1e3", no "Infinity"
 MAX_MONEY = Decimal("9999999999.99")   # DecimalField(max_digits=12, decimal_places=2)
 CENTS = Decimal("0.01")
 
@@ -58,23 +61,28 @@ class _Reader:
         self.errors.append(Issue(key, where, message))
         return None
 
-    def whole(self, value, key, where, *, minimum=0, maximum=32767):
-        try:
-            number = int(str(value).strip())
-        except (TypeError, ValueError):
-            return self.fail(key, where, "Enter a whole number of minutes.")
+    def whole(self, value, key, where, *, minimum=0, maximum=MAX_MINUTES):
+        text = "" if value is None or isinstance(value, bool) else str(value).strip()
+        if not WHOLE.match(text):
+            return self.fail(key, where, "Enter a whole number of minutes, such as 10.")
+        number = int(text)
         if not minimum <= number <= maximum:
-            return self.fail(key, where, f"Enter a number from {minimum} to {maximum}.")
+            return self.fail(key, where, f"Enter {minimum} to {maximum} minutes.")
         return number
 
     def money(self, value, key, where):
-        try:
-            amount = Decimal(str(value).strip())
-        except (InvalidOperation, TypeError, ValueError):
+        text = "" if value is None or isinstance(value, bool) else str(value).strip()
+        if not AMOUNT.match(text):
             return self.fail(key, where, "Enter an amount, such as 50.00.")
-        if not amount.is_finite() or amount.as_tuple().exponent < -2:
+        try:
+            amount = Decimal(text)
+        except InvalidOperation:
+            return self.fail(key, where, "Enter an amount, such as 50.00.")
+        if amount < 0:
+            return self.fail(key, where, "The amount cannot be negative.")
+        if amount.as_tuple().exponent < -2 and amount != amount.quantize(CENTS):
             return self.fail(key, where, "Use at most two decimal places.")
-        if abs(amount) > MAX_MONEY:
+        if amount > MAX_MONEY:
             return self.fail(key, where, "That amount is too large.")
         return amount.quantize(CENTS)                 # "80" and "80.00" are one price
 
@@ -100,12 +108,12 @@ class _Reader:
     def price(self, data, key, where):
         data = data if isinstance(data, dict) else {}
         values = {}
-        for name, label, kind in PRICE_FIELDS:
+        for name, label, kind, minimum in PRICE_FIELDS:
             place = f"{where} · {label}"
             if kind == "money":
                 values[name] = self.money(data.get(name), key, place)
             else:
-                values[name] = self.whole(data.get(name), key, place)
+                values[name] = self.whole(data.get(name), key, place, minimum=minimum)
         if any(v is None for v in values.values()):
             return None
         return Price(**values)
@@ -182,7 +190,7 @@ def parse(data):
 
     valid_from = reader.date(data.get("valid_from"), "", "Valid from")
     valid_to = reader.date(data.get("valid_to"), "", "Valid to")
-    package = reader.whole(data.get("package_minutes"), "", "Package time")
+    package = reader.whole(data.get("package_minutes"), "", "Package time", minimum=1)
     base = reader.price(data.get("base"), "", "Base fare")
     rules = _rules(reader, data.get("rules"), "Special pricing", meta)
 

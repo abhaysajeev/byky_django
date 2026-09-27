@@ -8,9 +8,10 @@ transaction, after collecting every problem at once:
   - format problems (payload.parse) and the fare's own rules (pricing.validate_spec);
   - scope: the company comes from the user, the vehicle type and branches must
     belong to it, and a rule or season id must belong to this very fare;
-  - clashes with other active fares (conflicts), named by fare and branch.
+  - clashes with other active fares (conflicts), named by fare and branch;
+  - a saved fare keeps its vehicle type and package time (LOCKED_MESSAGE).
 
-The database's exclusion constraints are the backstop for anything that slips
+The database's constraints and triggers are the backstop for anything that slips
 past -- two people saving at once, or a caller that skips this module. They are
 deferred while this function rewrites a fare's rows (so two rules can swap
 windows) and checked again before it returns.
@@ -34,9 +35,7 @@ from core.timezones import business_date_for, zone_for
 
 # Deferred while save_fare rewrites a fare, re-checked before it returns.
 DEFERRED = (
-    "fare_company_no_overlap", "fare_branch_no_overlap", "fare_season_no_overlap",
-    "fare_rule_every_day_fare", "fare_rule_every_day_season",
-    "fare_rule_days_fare", "fare_rule_days_season", "fare_rule_single_date",
+    "fare_company_no_overlap", "fare_branch_no_overlap", "fare_season_no_crossing", "fare_rule_no_crossing",
 )
 
 # A database refusal, in words, for the rare save that the checks above could
@@ -46,9 +45,15 @@ CONSTRAINT_MESSAGES = {
                                               "package now covers these dates. Reload and check."),
     "fare_branch_no_overlap": ("Branches", "Another active fare now covers one of these branches on "
                                            "these dates. Reload and check."),
-    "fare_season_no_overlap": ("Seasons", "Two seasons share a date. A date can belong to one season only."),
+    "fare_season_no_crossing": ("Seasons", "Two seasons partly overlap or have the same dates. Reload and check."),
+    "fare_rule_no_crossing": ("Special pricing", "Two prices of the same kind partly overlap or have the same "
+                                                 "time. Reload and check."),
 }
-OVERLAP_MESSAGE = ("Special pricing", "Two prices of the same kind cover the same time. Reload and check.")
+
+# What a rental on the device is tied to: a package's rentals, its tickets and
+# the device's cached copy all assume the vehicle type and package time never
+# move under them. A different vehicle type or package is a different fare.
+LOCKED_MESSAGE = "can't be changed once the fare is saved. Add a new fare instead."
 
 
 class Invalid(Exception):
@@ -216,6 +221,18 @@ def _context(user, meta, fare=None):
     return context, errors
 
 
+def _locked(meta, spec, fare):
+    """A saved fare's vehicle type and package time stay as they are."""
+    if fare is None:
+        return []
+    errors = []
+    if meta["vehicle_type"] and meta["vehicle_type"] != fare.vehicle_type_id:
+        errors.append(_error("Vehicle type", f"Vehicle type {LOCKED_MESSAGE}"))
+    if spec is not None and spec.package_minutes != fare.package_minutes:
+        errors.append(_error("Package time", f"Package time {LOCKED_MESSAGE}"))
+    return errors
+
+
 def _own_ids(meta, fare):
     """A rule or season id must belong to the fare being saved -- never a way
     to reach into another fare's rows."""
@@ -275,7 +292,8 @@ def check(user, data, test=None):
     context, scope_errors = _context(user, parsed.meta, fare)
     spec = parsed.spec
     own = _issues(pricing.validate_spec(spec)) if spec else []
-    errors = _issues(parsed.errors) + scope_errors + own + conflicts(context, spec, fare.pk if fare else None)
+    errors = (_issues(parsed.errors) + scope_errors + _locked(parsed.meta, spec, fare) + own
+              + conflicts(context, spec, fare.pk if fare else None))
     answer = {"errors": errors, "never": {}, "notes": {}, "holidays": [], "test": None}
     if spec is None or own:
         return answer            # the fare itself is inconsistent: any answer could mislead
@@ -307,8 +325,8 @@ def _apply_price(row, price):
 
 def _friendly(error):
     name = getattr(getattr(error.__cause__, "diag", None), "constraint_name", "") or ""
-    field, message = CONSTRAINT_MESSAGES.get(name, OVERLAP_MESSAGE if name.startswith("fare_rule") else
-                                             ("Fare", "This fare conflicts with another change. Reload and try again."))
+    field, message = CONSTRAINT_MESSAGES.get(
+        name, ("Fare", "This fare conflicts with another change. Reload and try again."))
     return [_error(field, message)]
 
 
@@ -337,7 +355,7 @@ def save_fare(user, data):
                     raise Stale(fare)
 
             spec = parsed.spec
-            errors = (_issues(parsed.errors) + scope_errors + _own_ids(meta, fare)
+            errors = (_issues(parsed.errors) + scope_errors + _locked(meta, spec, fare) + _own_ids(meta, fare)
                       + (_issues(pricing.validate_spec(spec)) if spec else [])
                       + conflicts(context, spec, fare.pk if fare else None))
             if errors:

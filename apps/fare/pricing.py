@@ -10,14 +10,19 @@ Which price applies at a date and minute -- fixed, never set by a user
 
   1. a single date (always on the fare, never in a season) whose window holds
      the minute wins;
-  2. otherwise one price list is used: the season covering the date, else the
-     fare itself;
+  2. otherwise one price list is used: the innermost season covering the
+     date, else the fare itself;
   3. in that list: a selected-days rule, then an every-day rule, then the
      list's own base price.
 
-validate_spec -- mirrored by the database's constraints -- guarantees at most
-one match at every step, so every minute of a valid fare has exactly one price.
-Brute-force checked against design/fares and offers/fare_algorithm_check.py.
+Within one kind, windows may sit one inside another (08:00-20:00 with
+12:00-14:00 inside it); the innermost -- the shortest -- wins. Seasons nest
+the same way by date. Windows that partly overlap ("cross") or are identical
+are refused, and that is exactly what makes the innermost unique: in a family
+of windows that are pairwise nested or apart, the ones covering any minute
+form a chain. validate_spec -- backed by the database's triggers -- enforces
+it, so every minute of a valid fare has exactly one price. Brute-force checked
+in tests/test_pricing.py and design/fares and offers/fare_algorithm_check.py.
 
 Times are minutes from midnight: a window is [start, end), and end 1440 is
 midnight. Weekdays are company.WeekDay: Python's numbering, Monday is 0.
@@ -30,6 +35,7 @@ from decimal import Decimal
 from apps.company.models import UAE_WEEK, WeekDay
 
 MIDNIGHT = 1440
+MAX_MINUTES = 1440         # package, intervals and graces: at most one day
 ONE_DAY = datetime.timedelta(days=1)
 
 EVERY_DAY, SELECTED_DAYS, SINGLE_DATE = "every_day", "selected_days", "single_date"
@@ -80,6 +86,10 @@ class Rule:
     def holds(self, minute):
         return self.start <= minute < self.end
 
+    @property
+    def length(self):
+        return self.end - self.start
+
 
 @dataclass(frozen=True)
 class Season:
@@ -93,6 +103,14 @@ class Season:
     def covers(self, day):
         return self.start <= day <= self.end
 
+    @property
+    def length(self):
+        return (self.end - self.start).days
+
+    def within(self, other):
+        """Inside `other` (or `other` itself)."""
+        return other.start <= self.start and self.end <= other.end
+
 
 @dataclass(frozen=True)
 class FareSpec:
@@ -104,10 +122,10 @@ class FareSpec:
     seasons: tuple = ()
 
     def season_on(self, day):
-        for season in self.seasons:
-            if season.covers(day):
-                return season
-        return None
+        """The innermost season covering `day` -- unique, since seasons are
+        nested or apart (validate_spec)."""
+        covering = [s for s in self.seasons if s.covers(day)]
+        return min(covering, key=lambda s: s.length) if covering else None
 
     def singles_on(self, day):
         return [r for r in self.rules if r.kind == SINGLE_DATE and r.on_date == day]
@@ -203,22 +221,42 @@ def _price_issues(price, key, where):
         issues.append(Issue(key, where, "Basic fare cannot be negative."))
     if price.concurrent_fare < 0:
         issues.append(Issue(key, where, "Concurrent fare cannot be negative."))
-    if price.concurrent_interval_minutes < 1:
-        issues.append(Issue(key, where, "Concurrent interval must be at least 1 minute."))
-    if price.grace_minutes < 0 or price.concurrent_grace_minutes < 0:
-        issues.append(Issue(key, where, "Grace periods cannot be negative."))
+    if not 1 <= price.concurrent_interval_minutes <= MAX_MINUTES:
+        issues.append(Issue(key, where, f"Concurrent interval must be 1 to {MAX_MINUTES} minutes."))
+    if not (0 <= price.grace_minutes <= MAX_MINUTES and 0 <= price.concurrent_grace_minutes <= MAX_MINUTES):
+        issues.append(Issue(key, where, f"Grace periods must be 0 to {MAX_MINUTES} minutes."))
     return issues
 
 
-def _overlaps(a, b):
-    """Two rules of one kind in one list that can meet at the same minute."""
-    if a.kind != b.kind or not (a.start < b.end and b.start < a.end):
-        return False
+def _share_a_day(a, b):
     if a.kind == EVERY_DAY:
         return True
     if a.kind == SELECTED_DAYS:
         return bool(a.weekdays & b.weekdays)
     return a.on_date == b.on_date
+
+
+def _clash_of(a_start, a_end, b_start, b_end):
+    """"same", "cross" or "" for two spans that may overlap. Identical is a
+    tie; partly overlapping has no innermost. Nested or apart is fine."""
+    if (a_start, a_end) == (b_start, b_end):
+        return "same"
+    if (a_start <= b_start and b_end <= a_end) or (b_start <= a_start and a_end <= b_end):
+        return ""
+    return "cross"
+
+
+def _clash(a, b):
+    """For two rules of one list: same kind, a shared day, overlapping windows."""
+    if a.kind != b.kind or not _share_a_day(a, b) or not (a.start < b.end and b.start < a.end):
+        return ""
+    return _clash_of(a.start, a.end, b.start, b.end)
+
+
+def _season_clash(a, b):
+    if not (a.start <= b.end and b.start <= a.end):
+        return ""
+    return _clash_of(a.start, a.end, b.start, b.end)
 
 
 def _list_issues(spec, rules, season):
@@ -245,11 +283,18 @@ def _list_issues(spec, rules, season):
                                     f"({date_label(spec.valid_from)} – {date_label(spec.valid_to)})."))
         issues.extend(_price_issues(rule.price, rule.key, where))
         for other in rules[index + 1:]:
-            if _overlaps(rule, other):
+            clash = _clash(rule, other)
+            kind = KIND_LABELS[rule.kind].lower()
+            if clash == "same":
                 issues.append(Issue(
                     other.key, f"{owner}{rule_label(other)}",
-                    f"Overlaps {rule_label(rule)}. Two {KIND_LABELS[rule.kind].lower()} "
-                    "prices cannot cover the same time.",
+                    f"Same time as {rule_label(rule)}. Two {kind} prices cannot cover exactly the same time.",
+                ))
+            elif clash == "cross":
+                issues.append(Issue(
+                    other.key, f"{owner}{rule_label(other)}",
+                    f"Partly overlaps {rule_label(rule)}. Two {kind} prices can sit one inside the "
+                    "other, or apart, but cannot partly overlap.",
                 ))
     return issues
 
@@ -260,8 +305,8 @@ def validate_spec(spec):
     issues = []
     if spec.valid_to < spec.valid_from:
         issues.append(Issue("", "Valid to", "The fare ends before it starts."))
-    if spec.package_minutes < 1:
-        issues.append(Issue("", "Package time", "Package time must be at least 1 minute."))
+    if not 1 <= spec.package_minutes <= MAX_MINUTES:
+        issues.append(Issue("", "Package time", f"Package time must be 1 to {MAX_MINUTES} minutes."))
     issues.extend(_price_issues(spec.base, "", "Base fare"))
     issues.extend(_list_issues(spec, spec.rules, None))
 
@@ -278,9 +323,14 @@ def validate_spec(spec):
         issues.extend(_price_issues(season.base, season.key, f"{name} · base fare"))
         issues.extend(_list_issues(spec, season.rules, season))
         for other in spec.seasons[index + 1:]:
-            if season.start <= other.end and other.start <= season.end:
+            clash = _season_clash(season, other)
+            if clash == "same":
                 issues.append(Issue(other.key, other.name or "Season",
-                                    f"Shares dates with {name}. A date can belong to one season only."))
+                                    f"Same dates as {name}. Two seasons cannot cover exactly the same dates."))
+            elif clash == "cross":
+                issues.append(Issue(other.key, other.name or "Season",
+                                    f"Partly overlaps {name}. A season can sit inside another, or apart, "
+                                    "but cannot partly overlap it."))
     return issues
 
 
@@ -295,7 +345,9 @@ def resolve(spec, day, minute):
     season = spec.season_on(day)
     found = []   # (Source, used, reason if not used)
 
-    for rule in spec.singles_on(day):
+    # Innermost first within each kind: the shortest window holding the
+    # minute is the one that applies.
+    for rule in sorted(spec.singles_on(day), key=lambda r: r.length):
         if rule.holds(minute):
             found.append(Source(SINGLE_DATE, rule))
 
@@ -303,7 +355,7 @@ def resolve(spec, day, minute):
     lists.append((None, spec.rules))
     for owner, rules in lists:
         for kind in LIST_ORDER:
-            for rule in rules:
+            for rule in sorted(rules, key=lambda r: r.length):
                 if rule.kind == kind and rule.applies_on(day) and rule.holds(minute):
                     found.append(Source(kind, rule, owner))
 
@@ -319,6 +371,8 @@ def resolve(spec, day, minute):
             continue
         if source.tier != SINGLE_DATE and source.season is not active:
             also.append((source, f"not used inside {season.name}"))
+        elif winner is not None and source.tier == winner.tier and source.season is winner.season:
+            also.append((source, "a narrower window inside it applies"))
         else:
             also.append((source, "a more specific price applies"))
 
@@ -378,22 +432,20 @@ def _subtract(free, cut_start, cut_end):
 
 
 def _stretches(spec):
-    """The validity cut into runs of dates that share one season (or none)."""
-    seasons = sorted(
-        (s for s in spec.seasons if s.end >= spec.valid_from and s.start <= spec.valid_to),
-        key=lambda s: s.start,
-    )
-    runs, cursor = [], spec.valid_from
-    for season in seasons:
-        start, end = max(season.start, spec.valid_from), min(season.end, spec.valid_to)
-        if start > cursor:
-            runs.append((cursor, start - ONE_DAY, None))
-        if end >= max(start, cursor):
-            runs.append((max(start, cursor), end, season))
-        cursor = max(cursor, end + ONE_DAY)
-    if cursor <= spec.valid_to:
-        runs.append((cursor, spec.valid_to, None))
-    return runs
+    """The validity cut into runs of dates that share one innermost season (or
+    none). Seasons nest, so the innermost can change only where a season
+    starts or the day after one ends."""
+    # Day numbers, not dates: the day after 31 Dec 9999 is not a date.
+    first, last = spec.valid_from.toordinal(), spec.valid_to.toordinal()
+    cuts = {first, last + 1}
+    for season in spec.seasons:
+        for cut in (season.start.toordinal(), season.end.toordinal() + 1):
+            if first < cut <= last:
+                cuts.add(cut)
+    points = sorted(cuts)
+    day = datetime.date.fromordinal
+    return [(day(start), day(after - 1), spec.season_on(day(start)))
+            for start, after in zip(points, points[1:], strict=False)]
 
 
 def _day_classes(spec):
@@ -420,22 +472,52 @@ def _day_classes(spec):
     return classes
 
 
+def _inside(season, owner):
+    """Whether dates whose innermost season is `season` lie in `owner`'s span:
+    always for the fare's own list (owner None), else when `season` sits
+    inside `owner`."""
+    return owner is None or (season is not None and season.within(owner))
+
+
+def _hidden_by(rule, other, weekday):
+    """Whether `other` takes `rule`'s minutes in its window on `weekday`:
+    a selected-days rule over an every-day one, or a narrower window of the
+    same kind inside it."""
+    if other is rule or other.kind == SINGLE_DATE:
+        return False
+    if other.kind == SELECTED_DAYS and weekday not in other.weekdays:
+        return False
+    if rule.kind == EVERY_DAY and other.kind == SELECTED_DAYS:
+        return True
+    return (other.kind == rule.kind and other.length < rule.length
+            and rule.start <= other.start and other.end <= rule.end)
+
+
 def never_applies(spec):
     """{rule key: reason} for every rule that wins at no minute of any date.
     Saved all the same -- the client may be preparing it on purpose -- but it
     will never be charged, and the screen says so. Single dates always win in
-    their window, so they never appear here."""
+    their window unless a narrower one sits inside; those are covered too."""
     classes = _day_classes(spec)
     owners = [(None, spec.rules)] + [(s, s.rules) for s in spec.seasons]
     reasons = {}
     for owner, rules in owners:
         for rule in rules:
             if rule.kind == SINGLE_DATE:
+                free = [(rule.start, rule.end)]
+                for other in spec.singles_on(rule.on_date):
+                    if other is not rule and other.length < rule.length \
+                            and rule.start <= other.start and other.end <= rule.end:
+                        free = _subtract(free, other.start, other.end)
+                if not free:
+                    reasons[rule.key] = "Always covered by narrower windows inside it on the same date."
                 continue
             applicable = in_list = 0
             wins = False
             for season, weekday, windows in classes:
                 if rule.kind == SELECTED_DAYS and weekday not in rule.weekdays:
+                    continue
+                if not _inside(season, owner):
                     continue
                 applicable += 1
                 if season is not owner:
@@ -444,22 +526,24 @@ def never_applies(spec):
                 free = [(rule.start, rule.end)]
                 for cut in windows:
                     free = _subtract(free, *cut)
-                if rule.kind == EVERY_DAY:
-                    for other in rules:
-                        if other.kind == SELECTED_DAYS and weekday in other.weekdays:
-                            free = _subtract(free, other.start, other.end)
+                for other in rules:
+                    if _hidden_by(rule, other, weekday):
+                        free = _subtract(free, other.start, other.end)
                 if free:
                     wins = True
                     break
             if wins:
                 continue
-            if owner is None and applicable and not in_list:
-                reasons[rule.key] = "Every day it could apply is inside a season, which uses its own prices."
-            elif not in_list:
+            if applicable and not in_list:
+                reasons[rule.key] = (
+                    "Every day it could apply is inside a narrower season, which uses its own prices."
+                    if owner else "Every day it could apply is inside a season, which uses its own prices.")
+            elif not applicable:
                 reasons[rule.key] = ("None of its days fall inside this season." if owner
                                      else "None of its days fall inside the fare validity.")
             else:
-                reasons[rule.key] = "Always covered by a more specific price (a single date or a selected-days rule)."
+                reasons[rule.key] = ("Always covered by a more specific price: a single date, a "
+                                     "selected-days rule, or narrower windows inside it.")
     return reasons
 
 

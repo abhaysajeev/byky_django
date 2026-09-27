@@ -1,5 +1,6 @@
-"""The database's own guard: every CHECK and EXCLUDE on the fare tables, and
-the composite foreign keys that keep branch links and seasons honest.
+"""The database's own guard: every CHECK and EXCLUDE on the fare tables, the
+triggers that refuse crossing rules and seasons, and the composite foreign
+keys that keep branch links and seasons honest.
 
 These hold even if apps.fare.services is bypassed -- that is their job.
 """
@@ -31,6 +32,11 @@ def test_fare_dates_and_numbers(world):
     refused(lambda: make_fare(world, package_minutes=0), "fare_package_positive")
     refused(lambda: make_fare(world, base_fare=Decimal("-1")), "fare_money_not_negative")
     refused(lambda: make_fare(world, concurrent_interval_minutes=0), "fare_interval_positive")
+    refused(lambda: make_fare(world, package_minutes=1441), "fare_package_max")
+    refused(lambda: make_fare(world, grace_minutes=1441), "fare_minutes_max")
+    refused(lambda: make_fare(world, concurrent_interval_minutes=1441), "fare_minutes_max")
+    make_fare(world, package_minutes=1440, grace_minutes=1440, concurrent_interval_minutes=1440,
+              concurrent_grace_minutes=1440)                                   # one day is the limit
 
 
 def test_two_live_company_fares_cannot_overlap(world):
@@ -90,13 +96,19 @@ def test_reactivating_into_a_clash_is_refused(world):
 # -- fare_season ---------------------------------------------------------------------
 
 
-def test_seasons_of_one_fare_cannot_share_a_date(world):
+def test_seasons_may_nest_but_not_cross(world):
     fare = make_fare(world)
     make_season(fare, D(2026, 4, 1), D(2026, 4, 30))
-    refused(lambda: make_season(fare, D(2026, 4, 30), D(2026, 5, 10), name="Late"), "fare_season_no_overlap")
+    refused(lambda: make_season(fare, D(2026, 4, 30), D(2026, 5, 10), name="Late"), "fare_season_no_crossing")
+    refused(lambda: make_season(fare, D(2026, 4, 1), D(2026, 4, 30), name="Twin"), "fare_season_no_crossing")
     refused(lambda: make_season(fare, D(2026, 6, 2), D(2026, 6, 1), name="Backwards"), "fare_season_dates")
+    make_season(fare, D(2026, 4, 10), D(2026, 4, 20), name="Inside")             # nested: fine
+    make_season(fare, D(2026, 3, 1), D(2026, 5, 31), name="Around")              # around both: fine
     other = make_fare(world, vehicle_type=world["berg"])
-    make_season(other, D(2026, 4, 1), D(2026, 4, 30))                           # another fare: fine
+    make_season(other, D(2026, 4, 5), D(2026, 5, 5))                            # another fare: fine
+    inside = fare.seasons.get(name="Inside")
+    refused(lambda: type(inside).objects.filter(pk=inside.pk).update(end_date=D(2026, 5, 3)),
+            "fare_season_no_crossing")                                         # an update is checked too
 
 
 # -- fare_rule --------------------------------------------------------------------------
@@ -121,29 +133,34 @@ def test_rule_fields_match_their_kind(world):
     refused(lambda: make_rule(fare, RuleKind.SELECTED_DAYS, weekdays=[7]), "fare_rule_weekday_values")
 
 
-def test_every_day_rules_in_one_list_cannot_overlap(world):
+def test_every_day_rules_may_nest_but_not_cross(world):
     fare = make_fare(world)
     season = make_season(fare, D(2026, 4, 1), D(2026, 4, 30))
     make_rule(fare, start=960, end=1200)
-    refused(lambda: make_rule(fare, start=1080, end=1320), "fare_rule_every_day_fare")
-    make_rule(fare, start=1200, end=1320)                                       # back to back
+    refused(lambda: make_rule(fare, start=1080, end=1320), "fare_rule_no_crossing")      # crosses
+    refused(lambda: make_rule(fare, start=960, end=1200), "fare_rule_no_crossing")       # identical
+    make_rule(fare, start=1000, end=1100)                                       # inside: fine
+    make_rule(fare, start=600, end=1300)                                        # around: fine
+    make_rule(fare, start=1300, end=1320)                                       # back to back
     make_rule(fare, start=960, end=1200, season=season)                          # the season's own list
-    refused(lambda: make_rule(fare, start=1000, end=1100, season=season), "fare_rule_every_day_season")
+    refused(lambda: make_rule(fare, start=1100, end=1250, season=season), "fare_rule_no_crossing")
 
 
-def test_selected_days_overlap_only_on_a_shared_day(world):
+def test_selected_days_clash_only_on_a_shared_day(world):
     fare = make_fare(world)
     make_rule(fare, RuleKind.SELECTED_DAYS, 840, 1320, weekdays=[SAT, SUN])
-    make_rule(fare, RuleKind.SELECTED_DAYS, 840, 1320, weekdays=[MON])
-    refused(lambda: make_rule(fare, RuleKind.SELECTED_DAYS, 900, 960, weekdays=[SUN]), "fare_rule_days_fare")
+    make_rule(fare, RuleKind.SELECTED_DAYS, 800, 900, weekdays=[MON])
+    make_rule(fare, RuleKind.SELECTED_DAYS, 900, 960, weekdays=[SUN])            # inside, on Sunday
+    refused(lambda: make_rule(fare, RuleKind.SELECTED_DAYS, 800, 900, weekdays=[SUN]), "fare_rule_no_crossing")
 
 
-def test_single_dates_overlap_only_on_the_same_date(world):
+def test_single_dates_clash_only_on_the_same_date(world):
     fare = make_fare(world)
     make_rule(fare, RuleKind.SINGLE_DATE, 720, 1320, on_date=D(2026, 12, 2))
-    make_rule(fare, RuleKind.SINGLE_DATE, 720, 1320, on_date=D(2026, 12, 3))
+    make_rule(fare, RuleKind.SINGLE_DATE, 600, 780, on_date=D(2026, 12, 3))
+    make_rule(fare, RuleKind.SINGLE_DATE, 1080, 1200, on_date=D(2026, 12, 2))    # inside
     refused(lambda: make_rule(fare, RuleKind.SINGLE_DATE, 600, 780, on_date=D(2026, 12, 2)),
-            "fare_rule_single_date")
+            "fare_rule_no_crossing")
 
 
 def test_different_kinds_may_overlap(world):
@@ -179,7 +196,30 @@ def test_swapping_two_windows_passes_when_deferred(world):
     b = make_rule(fare, start=720, end=840)
     with transaction.atomic():
         with connection.cursor() as cursor:
-            cursor.execute("SET CONSTRAINTS fare_rule_every_day_fare DEFERRED")
-        FareRule.objects.filter(pk=a.pk).update(start_minute=720, end_minute=840)
-        FareRule.objects.filter(pk=b.pk).update(start_minute=600, end_minute=720)
-    assert FareRule.objects.get(pk=a.pk).start_minute == 720
+            cursor.execute("SET CONSTRAINTS fare_rule_no_crossing DEFERRED")
+        FareRule.objects.filter(pk=a.pk).update(start_minute=780, end_minute=840)
+        FareRule.objects.filter(pk=b.pk).update(start_minute=600, end_minute=780)
+    assert FareRule.objects.get(pk=a.pk).start_minute == 780
+
+
+def test_a_deferred_clash_is_still_caught_at_the_end(world):
+    fare = make_fare(world)
+    a = make_rule(fare, start=600, end=720)
+    make_rule(fare, start=720, end=840)
+    with pytest.raises(IntegrityError), transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute("SET CONSTRAINTS fare_rule_no_crossing DEFERRED")
+        FareRule.objects.filter(pk=a.pk).update(end_minute=780)                    # now crosses
+        with connection.cursor() as cursor:
+            cursor.execute("SET CONSTRAINTS fare_rule_no_crossing IMMEDIATE")
+
+
+def test_a_row_deleted_before_the_deferred_check_is_ignored(world):
+    fare = make_fare(world)
+    make_rule(fare, start=600, end=720)
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute("SET CONSTRAINTS fare_rule_no_crossing DEFERRED")
+        clash = make_rule(fare, start=660, end=780)
+        clash.delete()
+    assert FareRule.objects.count() == 1

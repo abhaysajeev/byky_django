@@ -3,7 +3,8 @@
 Fixed cases walk the example fare from the prototype (design/fares and offers/
 fare-prototype.html), renumbered to Monday=0. Then a seeded brute force
 compares every date and half hour of hundreds of random fares against an
-independent reference copied from design/fares and offers/fare_algorithm_check.py.
+independent reference: nested-or-apart validity, innermost wins, and a check
+that the covering windows really do form a chain.
 No database needed.
 """
 
@@ -125,9 +126,51 @@ def with_rules(*rules, seasons=()):
     return FareSpec(D(2026, 1, 1), D(2026, 12, 31), 30, price(50), rules, seasons)
 
 
-def test_two_every_day_prices_cannot_share_a_minute():
+def test_two_every_day_prices_cannot_partly_overlap():
     spec = with_rules(rule("a", EVERY_DAY, "16:00", "20:00", 70), rule("b", EVERY_DAY, "18:00", "22:00", 80))
-    assert messages(spec) == [("b", "Overlaps Every day · 16:00 – 20:00. Two every day prices cannot cover the same time.")]
+    assert messages(spec) == [("b", "Partly overlaps Every day · 16:00 – 20:00. Two every day prices can sit "
+                                    "one inside the other, or apart, but cannot partly overlap.")]
+
+
+def test_identical_windows_are_a_tie_and_refused():
+    spec = with_rules(rule("a", EVERY_DAY, "16:00", "20:00", 70), rule("b", EVERY_DAY, "16:00", "20:00", 80))
+    assert messages(spec) == [("b", "Same time as Every day · 16:00 – 20:00. Two every day prices cannot "
+                                    "cover exactly the same time.")]
+
+
+def test_a_window_inside_another_is_allowed_and_the_innermost_wins():
+    spec = with_rules(rule("day", EVERY_DAY, "08:00", "20:00", 70), rule("lunch", EVERY_DAY, "12:00", "14:00", 90))
+    assert messages(spec) == []
+    at = {t: pricing.resolve(spec, D(2026, 3, 4), hm(t)).source.rule.key for t in ("09:00", "12:00", "13:59", "14:00")}
+    assert at == {"09:00": "day", "12:00": "lunch", "13:59": "lunch", "14:00": "day"}
+    also = pricing.resolve(spec, D(2026, 3, 4), hm("13:00")).also
+    assert [(s.rule.key, reason) for s, reason in also] == [("day", "a narrower window inside it applies")]
+
+
+# The examples discussed with the client: A 06-10, B 07-09 inside A.
+def test_the_worked_examples():
+    a, b = rule("A", EVERY_DAY, "06:00", "10:00", 1), rule("B", EVERY_DAY, "07:00", "09:00", 2)
+    assert messages(with_rules(a, b)) == []
+    # C 08-10: inside A, but crosses B (07-09) -> refused.
+    assert [k for k, _ in messages(with_rules(a, b, rule("C", EVERY_DAY, "08:00", "10:00", 3)))] == ["C"]
+    # D 07:30-08:30 inside B inside A, and E 05-20 around all of them -> fine.
+    d, e = rule("D", EVERY_DAY, "07:30", "08:30", 4), rule("E", EVERY_DAY, "05:00", "20:00", 5)
+    spec = with_rules(a, b, d, e)
+    assert messages(spec) == []
+    who = {t: pricing.resolve(spec, D(2026, 3, 4), hm(t)).source.rule.key
+           for t in ("05:00", "06:30", "07:15", "08:00", "08:45", "09:30", "12:00")}
+    assert who == {"05:00": "E", "06:30": "A", "07:15": "B", "08:00": "D", "08:45": "B", "09:30": "A", "12:00": "E"}
+    # 06-10 on Sat,Sun and 08-12 on Sun only: crossing on the shared Sunday.
+    assert messages(with_rules(rule("x", SELECTED_DAYS, "06:00", "10:00", 1, days=(SAT, SUN)),
+                               rule("y", SELECTED_DAYS, "08:00", "12:00", 1, days=(SUN,))))[0][0] == "y"
+    # The same windows on days that never meet: fine.
+    assert messages(with_rules(rule("x", SELECTED_DAYS, "06:00", "10:00", 1, days=(SAT,)),
+                               rule("y", SELECTED_DAYS, "08:00", "12:00", 1, days=(SUN,)))) == []
+    # Two single dates on one day nest the same way.
+    on = D(2026, 12, 2)
+    nd = with_rules(rule("n1", SINGLE_DATE, "10:00", "22:00", 100, on=on),
+                    rule("n2", SINGLE_DATE, "18:00", "20:00", 150, on=on))
+    assert messages(nd) == [] and pricing.resolve(nd, on, hm("19:00")).source.rule.key == "n2"
 
 
 def test_back_to_back_windows_do_not_overlap():
@@ -161,21 +204,50 @@ def test_a_single_date_must_be_inside_the_validity_and_not_in_a_season():
     assert "added on the fare" in messages(with_rules(seasons=(season,)))[0][1]
 
 
-def test_seasons_cannot_share_a_date_or_leave_the_validity():
+def test_seasons_cannot_partly_overlap_or_leave_the_validity():
     a = Season("s1", "Spring", D(2026, 4, 1), D(2026, 4, 30), price(55))
     b = Season("s2", "Ramadan", D(2026, 4, 30), D(2026, 5, 20), price(60))
     c = Season("s3", "Winter", D(2026, 12, 1), D(2027, 1, 31), price(60))
-    found = messages(with_rules(seasons=(a, b, c)))
-    assert ("s2", "Shares dates with Spring. A date can belong to one season only.") in found
+    d = Season("s4", "Spring again", D(2026, 4, 1), D(2026, 4, 30), price(56))
+    found = messages(with_rules(seasons=(a, b, c, d)))
+    assert ("s2", "Partly overlaps Spring. A season can sit inside another, or apart, "
+                  "but cannot partly overlap it.") in found
+    assert ("s4", "Same dates as Spring. Two seasons cannot cover exactly the same dates.") in found
     assert any(k == "s3" and "inside the fare validity" in m for k, m in found)
+
+
+def test_a_season_inside_a_season_uses_its_own_prices():
+    summer = Season("su", "Summer", D(2026, 2, 1), D(2026, 9, 30), price(60),
+                    (rule("su1", EVERY_DAY, "16:00", "20:00", 75),))
+    eid = Season("eid", "Eid", D(2026, 4, 10), D(2026, 5, 15), price(90))
+    spec = with_rules(rule("f1", EVERY_DAY, "16:00", "20:00", 70), seasons=(summer, eid))
+    assert messages(spec) == []
+    assert pricing.resolve(spec, D(2026, 3, 1), hm("17:00")).source.rule.key == "su1"
+    inside = pricing.resolve(spec, D(2026, 4, 20), hm("17:00"))
+    assert (inside.price.base_fare, inside.source.season.key, inside.source.rule) == (90, "eid", None)
+    assert pricing.resolve(spec, D(2026, 5, 16), hm("17:00")).source.rule.key == "su1"
+    assert pricing.resolve(spec, D(2026, 10, 1), hm("17:00")).source.rule.key == "f1"
+    assert pricing.never_applies(spec) == {}
+    # A season rule whose days all fall in the inner season never applies.
+    short = Season("su", "Summer", D(2026, 4, 1), D(2026, 5, 31), price(60),
+                   (rule("sat", SELECTED_DAYS, "10:00", "12:00", 70, days=(SAT,)),))
+    inner = Season("x", "May", D(2026, 4, 4), D(2026, 5, 31), price(60))   # 4 Apr is the first Saturday
+    assert pricing.never_applies(with_rules(seasons=(short, inner))) == {
+        "sat": "Every day it could apply is inside a narrower season, which uses its own prices.",
+    }
 
 
 def test_money_and_intervals_are_checked_everywhere():
     bad = Price(Decimal("-1"), 5, 0, Decimal("1"), 0)
     spec = FareSpec(D(2026, 1, 1), D(2026, 12, 31), 0, bad, (), ())
     assert {m for _, m in messages(spec)} >= {
-        "Package time must be at least 1 minute.", "Basic fare cannot be negative.",
-        "Concurrent interval must be at least 1 minute.",
+        "Package time must be 1 to 1440 minutes.", "Basic fare cannot be negative.",
+        "Concurrent interval must be 1 to 1440 minutes.",
+    }
+    long = FareSpec(D(2026, 1, 1), D(2026, 12, 31), 1441, Price(Decimal("1"), 1441, 1441, Decimal("1"), 0), (), ())
+    assert {m for _, m in messages(long)} == {
+        "Package time must be 1 to 1440 minutes.", "Concurrent interval must be 1 to 1440 minutes.",
+        "Grace periods must be 0 to 1440 minutes.",
     }
 
 
@@ -188,6 +260,17 @@ def test_a_season_over_the_whole_fare_hides_the_fares_own_rules():
     assert pricing.never_applies(spec) == {
         "a": "Every day it could apply is inside a season, which uses its own prices.",
     }
+
+
+def test_a_window_filled_by_narrower_ones_never_applies():
+    spec = with_rules(rule("out", EVERY_DAY, "08:00", "12:00", 70),
+                      rule("in1", EVERY_DAY, "08:00", "10:00", 71), rule("in2", EVERY_DAY, "10:00", "12:00", 72))
+    assert list(pricing.never_applies(spec)) == ["out"]
+    on = D(2026, 12, 2)
+    singles = with_rules(rule("d1", SINGLE_DATE, "10:00", "12:00", 1, on=on),
+                         rule("d2", SINGLE_DATE, "10:00", "11:00", 2, on=on),
+                         rule("d3", SINGLE_DATE, "11:00", "12:00", 3, on=on))
+    assert list(pricing.never_applies(singles)) == ["d1"]
 
 
 def test_every_day_hidden_by_an_all_week_selected_days_rule():
@@ -217,6 +300,17 @@ def test_a_very_long_validity_stays_fast():
 # independent of the code under test on purpose.
 
 
+def ref_nested_or_apart(a0, a1, b0, b1, closed=False):
+    """Spans [a0, a1) and [b0, b1) -- or [a0, a1] with closed -- are apart, or
+    one strictly inside the other. Identical is not allowed."""
+    apart = (a1 < b0 or b1 < a0) if closed else (a1 <= b0 or b1 <= a0)
+    if apart:
+        return True
+    if (a0, a1) == (b0, b1):
+        return False
+    return (a0 <= b0 and b1 <= a1) or (b0 <= a0 and a1 <= b1)
+
+
 def ref_valid(spec):
     def list_ok(rules):
         for i, a in enumerate(rules):
@@ -225,10 +319,11 @@ def ref_valid(spec):
             if a.kind == SELECTED_DAYS and not a.weekdays:
                 return False
             for b in rules[i + 1:]:
-                if a.kind != b.kind or not (a.start < b.end and b.start < a.end):
+                if a.kind != b.kind:
                     continue
-                if a.kind == EVERY_DAY or (a.kind == SELECTED_DAYS and a.weekdays & b.weekdays) \
-                        or (a.kind == SINGLE_DATE and a.on_date == b.on_date):
+                shared = a.kind == EVERY_DAY or (a.kind == SELECTED_DAYS and a.weekdays & b.weekdays) \
+                    or (a.kind == SINGLE_DATE and a.on_date == b.on_date)
+                if shared and not ref_nested_or_apart(a.start, a.end, b.start, b.end):
                     return False
         return True
 
@@ -241,22 +336,37 @@ def ref_valid(spec):
         if not (spec.valid_from <= s.start <= s.end <= spec.valid_to) or not list_ok(s.rules):
             return False
         for o in spec.seasons[i + 1:]:
-            if s.start <= o.end and o.start <= s.end:
+            if not ref_nested_or_apart(s.start, s.end, o.start, o.end, closed=True):
                 return False
     return True
 
 
+def ref_innermost(found, span):
+    """Every candidate with the smallest span. Also checks the chain the
+    validation promises: each covering candidate lies inside the next."""
+    if not found:
+        return []
+    found = sorted(found, key=lambda x: span(x)[1] - span(x)[0])
+    for inner, outer in zip(found, found[1:], strict=False):
+        (i0, i1), (o0, o1) = span(inner), span(outer)
+        assert o0 <= i0 and i1 <= o1 and (i0, i1) != (o0, o1), "covering windows must form a chain"
+    shortest = span(found[0])[1] - span(found[0])[0]
+    return [x for x in found if span(x)[1] - span(x)[0] == shortest]
+
+
 def ref_resolve(spec, d, m):
+    window = lambda r: (r.start, r.end)                                  # noqa: E731
     singles = [x for x in spec.rules if x.kind == SINGLE_DATE and x.on_date == d and x.start <= m < x.end]
     if singles:
-        return singles
-    ss = [s for s in spec.seasons if s.start <= d <= s.end]
+        return ref_innermost(singles, window)
+    ss = ref_innermost([s for s in spec.seasons if s.start <= d <= s.end],
+                       lambda s: (s.start.toordinal(), s.end.toordinal()))
     rules = ss[0].rules if ss else spec.rules
     days = [r for r in rules if r.kind == SELECTED_DAYS and d.weekday() in r.weekdays and r.start <= m < r.end]
     if days:
-        return days
+        return ref_innermost(days, window)
     every = [r for r in rules if r.kind == EVERY_DAY and r.start <= m < r.end]
-    return every or [None]
+    return ref_innermost(every, window) or [None]
 
 
 def random_window():
@@ -282,9 +392,9 @@ def random_spec(n):
         rules.append(Rule(f"d{n}-{i}", SINGLE_DATE, a, b, price(random.randint(1, 99)),
                           frozenset(), v0 + datetime.timedelta(days=random.randint(0, span))))
     seasons = []
-    for i in range(random.randint(0, 2)):
+    for i in range(random.randint(0, 3)):
         s = v0 + datetime.timedelta(days=random.randint(0, span))
-        e = min(v1, s + datetime.timedelta(days=random.randint(0, 12)))
+        e = min(v1, s + datetime.timedelta(days=random.randint(0, 20)))
         seasons.append(Season(f"s{n}-{i}", f"S{i}", s, e, price(random.randint(1, 99)),
                               tuple(random_rule(f"s{n}-{i}-{j}") for j in range(random.randint(0, 3)))))
     return FareSpec(v0, v1, 30, price(50), tuple(rules), tuple(seasons))
@@ -292,7 +402,7 @@ def random_spec(n):
 
 def test_brute_force_matches_the_reference():
     random.seed(7)
-    valid = 0
+    valid = nested = 0
     for n in range(1200):
         spec = random_spec(n)
         assert (pricing.validate_spec(spec) == []) == ref_valid(spec), n
@@ -318,7 +428,9 @@ def test_brute_force_matches_the_reference():
                 at = next(s for s in segments if s.start <= m < s.end)
                 assert at.price == pricing.resolve(spec, day, m).price
             day += datetime.timedelta(days=1)
-        hidden = {r.key for r in spec.rules if r.kind != SINGLE_DATE} \
-            | {r.key for s in spec.seasons for r in s.rules}
-        assert set(pricing.never_applies(spec)) == hidden - won, n
-    assert valid > 300
+        every = {r.key for r in spec.rules} | {r.key for s in spec.seasons for r in s.rules}
+        assert set(pricing.never_applies(spec)) == every - won, n
+        nested += any(a.kind == b.kind == EVERY_DAY and a.start < b.end and b.start < a.end
+                      for rules in [spec.rules, *(s.rules for s in spec.seasons)]
+                      for i, a in enumerate(rules) for b in rules[i + 1:])
+    assert valid > 300 and nested > 100            # plenty of fares really do nest

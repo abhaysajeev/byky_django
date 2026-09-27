@@ -12,22 +12,24 @@ brings its own base price and special prices. Single dates live on the fare
 and win everywhere, seasons included.
 
 The database refuses anything that could give two prices for one minute:
-exclusion constraints on overlapping rules, seasons and live fares. They are
-DEFERRABLE INITIALLY IMMEDIATE -- checked at once for any caller, deferred by
+exclusion constraints on live fares that overlap, and constraint triggers
+(migration 0002) on rules and seasons that cross or are identical -- nested
+ones are allowed, the innermost wins (apps.fare.pricing). All are DEFERRABLE
+INITIALLY IMMEDIATE -- checked at once for any caller, deferred by
 services.save_fare alone while it rewrites a fare's rows in one transaction.
 """
 
 from django.contrib.postgres.constraints import ExclusionConstraint
 from django.contrib.postgres.fields import ArrayField, RangeBoundary, RangeOperators
-from django.contrib.postgres.indexes import OpClass
 from django.db import models
 from django.db.models import CheckConstraint, Deferrable, F, Q, UniqueConstraint
 
 from apps.company.models import WeekDay
-from apps.fare.db import DateRangeFunc, IntRangeFunc
+from apps.fare.db import DateRangeFunc
 from core.models import ApprovalMixin, TimeStampedModel
 
 MIDNIGHT = 1440
+MAX_MINUTES = 1440     # package time, intervals and graces: at most one day
 EQUAL, OVERLAPS = RangeOperators.EQUAL, RangeOperators.OVERLAPS
 IMMEDIATE = Deferrable.IMMEDIATE
 
@@ -35,9 +37,6 @@ IMMEDIATE = Deferrable.IMMEDIATE
 def dates(start, end):
     """Both ends included: a fare valid to 31 Dec is valid on 31 Dec."""
     return DateRangeFunc(start, end, RangeBoundary(inclusive_lower=True, inclusive_upper=True))
-
-
-MINUTES = IntRangeFunc("start_minute", "end_minute")   # [start, end): 10-11 and 11-12 meet, never overlap
 
 
 class FareLevel(models.TextChoices):
@@ -70,6 +69,11 @@ def price_checks(prefix):
     return [
         CheckConstraint(condition=Q(base_fare__gte=0, concurrent_fare__gte=0), name=f"{prefix}_money_not_negative"),
         CheckConstraint(condition=Q(concurrent_interval_minutes__gt=0), name=f"{prefix}_interval_positive"),
+        CheckConstraint(
+            condition=Q(grace_minutes__lte=MAX_MINUTES, concurrent_interval_minutes__lte=MAX_MINUTES,
+                        concurrent_grace_minutes__lte=MAX_MINUTES),
+            name=f"{prefix}_minutes_max",
+        ),
     ]
 
 
@@ -93,6 +97,7 @@ class Fare(ApprovalMixin, TimeStampedModel, PricedModel):
         constraints = [
             CheckConstraint(condition=Q(valid_to__gte=F("valid_from")), name="fare_valid_dates"),
             CheckConstraint(condition=Q(package_minutes__gt=0), name="fare_package_positive"),
+            CheckConstraint(condition=Q(package_minutes__lte=MAX_MINUTES), name="fare_package_max"),
             *price_checks("fare"),
             # Target of fare_branch's composite foreign key (migration 0001):
             # the branch links' copies can only ever equal their fare's.
@@ -173,7 +178,10 @@ class FareBranch(models.Model):
 
 class FareSeason(PricedModel):
     """A date range inside the fare with its own base price and special
-    prices. On its dates the fare's own base and rules are not used."""
+    prices. On its dates the fare's own base and rules are not used. Seasons
+    may nest (Eid inside Summer): the innermost covering a date is used.
+    Crossing or identical ranges are refused by the trigger
+    fare_season_no_crossing (migration 0002)."""
 
     fare = models.ForeignKey(Fare, on_delete=models.CASCADE, related_name="seasons")
     name = models.CharField("Season Name", max_length=100)
@@ -189,37 +197,25 @@ class FareSeason(PricedModel):
             # Target of fare_rule's (season, fare) foreign key: a rule's season
             # always belongs to the rule's own fare.
             UniqueConstraint(fields=["id", "fare"], name="fare_season_id_fare"),
-            ExclusionConstraint(
-                name="fare_season_no_overlap",
-                expressions=[("fare", EQUAL), (dates("start_date", "end_date"), OVERLAPS)],
-                deferrable=IMMEDIATE,
-                violation_error_message="A date can belong to one season only.",
-            ),
         ]
 
     def __str__(self):
         return self.name
 
 
-def _rule_overlap(name, kind, list_field, extra=(), **condition):
-    return ExclusionConstraint(
-        name=name,
-        expressions=[(list_field, EQUAL), *extra, (MINUTES, OVERLAPS)],
-        condition=Q(kind=kind, **condition),
-        deferrable=IMMEDIATE,
-        violation_error_message="Two prices of the same kind cannot cover the same time.",
-    )
-
-
 class FareRule(PricedModel):
     """A special price: every day, on selected days, or on a single date,
-    inside a time window. season is empty for the fare's own rules."""
+    inside a time window. season is empty for the fare's own rules.
+
+    Two rules of one kind in one list that share a day may nest (12-14 inside
+    08-20; the innermost wins) or be apart; crossing or identical windows are
+    refused by the trigger fare_rule_no_crossing (migration 0002)."""
 
     fare = models.ForeignKey(Fare, on_delete=models.CASCADE, related_name="rules")
     season = models.ForeignKey(FareSeason, null=True, blank=True, on_delete=models.CASCADE, related_name="rules")
     kind = models.CharField(max_length=16, choices=RuleKind.choices)
-    # int4[], not smallint[]: intarray's GiST operator class (overlap on days
-    # in the exclusion constraint) only takes int4[].
+    # int4[] rather than smallint[]: kept from migration 0001, whose GiST
+    # constraints needed it; the trigger's && (a shared day) works on either.
     weekdays = ArrayField(models.IntegerField(choices=WeekDay.choices), default=list, blank=True)
     on_date = models.DateField(null=True, blank=True)
     # Minutes from midnight: Python's time cannot hold 24:00, and "until
@@ -245,14 +241,6 @@ class FareRule(PricedModel):
                 ),
                 name="fare_rule_kind_fields",
             ),
-            # One constraint per price list: the fare's own, and each season's.
-            _rule_overlap("fare_rule_every_day_fare", RuleKind.EVERY_DAY, "fare", season__isnull=True),
-            _rule_overlap("fare_rule_every_day_season", RuleKind.EVERY_DAY, "season", season__isnull=False),
-            _rule_overlap("fare_rule_days_fare", RuleKind.SELECTED_DAYS, "fare",
-                          extra=[(OpClass("weekdays", name="gist__int_ops"), OVERLAPS)], season__isnull=True),
-            _rule_overlap("fare_rule_days_season", RuleKind.SELECTED_DAYS, "season",
-                          extra=[(OpClass("weekdays", name="gist__int_ops"), OVERLAPS)], season__isnull=False),
-            _rule_overlap("fare_rule_single_date", RuleKind.SINGLE_DATE, "fare", extra=[("on_date", EQUAL)]),
         ]
 
     def __str__(self):

@@ -240,3 +240,66 @@ def test_a_saved_fare_round_trips_through_the_form(world, user):
     parsed = payload.parse(sent)
     assert parsed.errors == []
     assert parsed.spec == services.spec_from_fare(loaded)
+
+
+# -- Nesting, locks and numbers ----------------------------------------------------------
+
+
+def test_nested_prices_and_seasons_save_and_crossing_ones_are_named(world, user):
+    fare, warnings = services.save_fare(user, data(
+        world, rules=[every("day", "08:00", "20:00", 60), every("lunch", "12:00", "14:00", 90)],
+        seasons=[{"key": "su", "name": "Summer", "start_date": "2026-02-01", "end_date": "2026-09-30",
+                  "base": price(55), "rules": []},
+                 {"key": "eid", "name": "Eid", "start_date": "2026-04-10", "end_date": "2026-05-15",
+                  "base": price(95), "rules": []}]))
+    assert fare.rules.count() == 2 and fare.seasons.count() == 2 and warnings["never"] == {}
+
+    with pytest.raises(Invalid) as error:
+        services.save_fare(user, data(world, vehicle_type=world["berg"].pk, rules=[
+            every("a", "06:00", "10:00", 1), every("b", "07:00", "09:00", 2), every("c", "08:00", "10:00", 3)]))
+    assert [e["key"] for e in error.value.errors] == ["c"]
+    assert "Partly overlaps Every day · 07:00 – 09:00" in messages(error)
+
+
+def test_vehicle_type_and_package_time_are_locked_after_save(world, user):
+    fare, _ = services.save_fare(user, data(world))
+    sent = payload.serialise(services.with_children(Fare.objects.filter(pk=fare.pk)).get())
+    sent.update(vehicle_type=world["berg"].pk, package_minutes=60)
+    with pytest.raises(Invalid) as error:
+        services.save_fare(user, sent)
+    assert fields(error) == ["Vehicle type", "Package time"]
+    assert "can't be changed once the fare is saved" in messages(error)
+    assert services.check(user, sent)["errors"][0]["field"] == "Vehicle type"   # the live banner sees it too
+    saved = Fare.objects.get(pk=fare.pk)
+    assert (saved.vehicle_type, saved.package_minutes) == (world["monaco"], 30)
+
+
+def fare_with(base=None, **fields):
+    return {"vehicle_type": 1, "level": "company", "valid_from": "2026-01-01", "valid_to": "2026-12-31",
+            "package_minutes": 30, "base": base or price(50), **fields}
+
+
+@pytest.mark.parametrize("value,ok", [
+    ("010", True), ("0", True), ("1440", True), (" 15 ", True), (15, True),
+    ("1441", False), ("-1", False), ("1.5", False), ("", False), ("1e3", False), (None, False), (True, False),
+])
+def test_minutes_are_whole_numbers_up_to_a_day(value, ok):
+    parsed = payload.parse(fare_with({**price(50), "grace_minutes": value}))
+    assert (parsed.errors == []) is ok, parsed.errors
+    if ok:
+        assert parsed.spec.base.grace_minutes == int(str(value).strip())
+
+
+@pytest.mark.parametrize("value", ["0", "1441"])
+def test_package_time_is_one_minute_to_a_day(value):
+    parsed = payload.parse(fare_with(package_minutes=value))
+    assert [e.message for e in parsed.errors] == ["Enter 1 to 1440 minutes."]
+
+
+@pytest.mark.parametrize("value,result", [
+    ("50", "50.00"), ("050.5", "50.50"), ("0", "0.00"), ("12.345", None), ("-1", None),
+    ("1e3", None), ("abc", None), ("Infinity", None), ("99999999999", None),
+])
+def test_amounts_are_plain_decimals(value, result):
+    parsed = payload.parse(fare_with(price(value)))
+    assert (str(parsed.spec.base.base_fare) if parsed.spec else None) == result
