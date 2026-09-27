@@ -124,7 +124,7 @@ def test_company_id_may_also_arrive_in_credentials(client, company):
 
 
 def test_request_data_company_id_wins_over_credentials(client, company):
-    second = Company.objects.create(
+    Company.objects.create(
         short_code="1001", name="Second", country=company.country, state=company.state,
         phone_number="+9712222222", email="two@byky.test", timezone="Asia/Kuwait",
     )
@@ -158,7 +158,7 @@ def test_the_matched_companys_own_timezone_is_returned(client, company):
 
 
 def test_each_company_gets_its_own_zone_even_when_several_share_the_database(client, company):
-    second = Company.objects.create(
+    Company.objects.create(
         short_code="1001", name="Second", country=company.country, state=company.state,
         phone_number="+9712222222", email="two@byky.test", timezone="Asia/Kuwait",
     )

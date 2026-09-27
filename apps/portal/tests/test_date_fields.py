@@ -53,8 +53,7 @@ SCREENS_WITH_DATES = [
 
 def _fields(spec):
     for section in spec.get("sections", []):
-        for field in section.get("fields", []):
-            yield field
+        yield from section.get("fields", [])
 
 
 def _model_field(spec, field_id):
@@ -87,7 +86,7 @@ def test_a_drawer_field_matches_the_model_field_behind_it(name, spec):
         if model_field is None:
             continue
 
-        is_date_model = isinstance(model_field, (models.DateField, models.DateTimeField))
+        is_date_model = isinstance(model_field, models.DateField | models.DateTimeField)
         is_date_drawer = field.get("kind") in DATE_KINDS
 
         if is_date_model and not is_date_drawer:
