@@ -143,7 +143,7 @@ def test_a_blocked_employee_is_refused(client, employee, app_user, device):
 
 
 def test_a_user_without_the_employee_channel_is_refused(client, world, employee, device):
-    user = User.objects.create_user(
+    User.objects.create_user(
         "BYKY002", PASSWORD, display_name="No App", company=world["company"],
         role=world["role"], employee=employee, allowed_channels=[Channel.WEB],
     )

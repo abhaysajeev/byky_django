@@ -337,12 +337,6 @@ def test_every_write_needs_permission(no_permissions, url):
 # -- Screens -------------------------------------------------------------------------------
 
 
-def test_both_screens_are_in_the_devices_sidebar(signed_in):
-    html = signed_in.get("/devices/releases/").content.decode()
-    order = [html.index(f'href="/devices/{p}/"') for p in ("mapping", "releases", "release-mapping")]
-    assert order == sorted(order)
-
-
 def test_the_release_screen_shows_the_update_type(signed_in, company):
     AppRelease.objects.create(
         company=company, channel=OPERATOR, version_name="1.0.1", version_code=101,

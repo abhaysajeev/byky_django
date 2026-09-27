@@ -14,7 +14,6 @@ from apps.devices import api, services
 from apps.devices.models import Device, DeviceStatus
 from core.enums import Channel
 
-
 OPERATOR = Channel.OPERATOR
 
 

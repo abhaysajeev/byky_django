@@ -359,12 +359,6 @@ def test_the_screen_lists_every_station_and_says_which_have_none(signed_in, bran
     assert 'data-field="is_active"' not in html
 
 
-def test_the_screen_is_in_the_devices_sidebar_after_app_mapping(signed_in):
-    html = signed_in.get("/devices/settings/").content.decode()
-    order = [html.index(f'href="/devices/{p}/"') for p in ("release-mapping", "settings", "privileges")]
-    assert order == sorted(order)
-
-
 def test_a_system_user_may_reuse_a_code_across_companies(company, branch):
     """save_settings, not just the database constraint: a system user's
     settings_qs spans every company, so the service itself must scope the

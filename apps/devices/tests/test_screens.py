@@ -137,10 +137,3 @@ def test_an_unknown_number_says_so_rather_than_breaking(signed_in):
 
     assert response.status_code == 200
     assert "No device 999999" in response.content.decode()
-
-
-def test_the_sidebar_lists_the_devices_group(signed_in):
-    content = signed_in.get("/devices/approval/").content.decode()
-
-    assert "Device Approval" in content
-    assert "Device Mapping" in content

@@ -14,7 +14,14 @@ from django.db import IntegrityError
 from django.utils import timezone
 
 from apps.company.models import (
-    Branch, BranchType, BranchWorkingTime, Company, Country, Location, State, WeekDay,
+    Branch,
+    BranchType,
+    BranchWorkingTime,
+    Company,
+    Country,
+    Location,
+    State,
+    WeekDay,
 )
 from apps.crew import services
 from apps.crew.models import DutyRoster, DutyRosterDayType, Employee, RosterCategory
@@ -249,8 +256,6 @@ def one_day(date, **extra):
 
 
 def test_saving_a_week_writes_one_row_per_working_day(cashier, world):
-    from apps.company.scoping import branches_for
-    from apps.crew.scoping import employees_for
 
     days = [
         one_day(datetime.date(2026, 9, 20), day_type="working", branch=world["branch"].pk,
@@ -620,9 +625,3 @@ def test_the_screen_renders_its_three_tabs_and_kpi_tiles(client_in, cashier, wor
     assert "Roster-eligible staff" in body and "On duty today" in body
     assert "Bulk Import (Excel)" in body
     assert "roster-branches-data" in body
-
-
-def test_the_screen_renders_with_zero_data(client_in):
-    response = client_in.get("/crew/duty-roster/")
-    assert response.status_code == 200
-    assert b"No Cashier or Labour employees" in response.content

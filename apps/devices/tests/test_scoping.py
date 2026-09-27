@@ -103,7 +103,12 @@ def test_the_screens_show_only_the_signed_in_company_rows(signed_in, own_device,
 
 def _catalogue(company, branch, code, device_name):
     from apps.devices.models import (
-        AppRelease, AppReleaseMapping, BillContinuity, BillKind, DeviceSettings, ReleaseScope,
+        AppRelease,
+        AppReleaseMapping,
+        BillContinuity,
+        BillKind,
+        DeviceSettings,
+        ReleaseScope,
     )
 
     rel = AppRelease.objects.create(

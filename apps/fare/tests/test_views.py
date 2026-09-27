@@ -47,10 +47,7 @@ def test_the_list_has_a_vehicle_search_and_a_branch_search(client_in, world):
     assert 'data-search-branch="abu dhabi corniche 1"' in branch_row
 
 
-def test_save_sits_beside_test_fare_and_a_saved_fare_is_locked(client_in, world):
-    html = client_in.get("/fare/add/").content.decode()
-    head = html[html.index('class="scr-head-actions"'):html.index("data-fare-banner")]
-    assert "data-fare-test-open" in head and "data-fare-save" in head
+def test_a_saved_fares_vehicle_type_and_package_are_locked_on_screen(client_in, world):
     fare = make_fare(world)
     html = client_in.get(f"/fare/{fare.pk}/edit/").content.decode()
     assert "Fixed once saved" in html

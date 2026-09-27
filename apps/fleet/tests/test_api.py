@@ -4,9 +4,13 @@ itself: the form's scoping and the database's same-company guard."""
 import pytest
 from django.db import IntegrityError, connection, transaction
 
-from apps.fare.tests.test_api import call, fresh_throttle, token, world  # noqa: F401 -- fixtures
+from apps.fare.tests import test_api as fare_api
 from apps.fleet.models import UOM, Vehicle
 from core.enums import ApprovalStatus
+
+# The signed-in till from the fare API tests, reused as fixtures here.
+call = fare_api.call
+world, token, fresh_throttle = fare_api.world, fare_api.token, fare_api.fresh_throttle
 
 URL = "/api/v1/operator/vehicles"
 APPROVED = ApprovalStatus.APPROVED

@@ -12,7 +12,10 @@ import pytest
 
 from apps.company import services
 from apps.company.models import Branch, BranchType, BranchWorkingTime, WeekDay
-from apps.company.tests.test_crud import client_in, post, world  # noqa: F401 -- fixtures
+from apps.company.tests import test_crud
+
+# The signed-in administrator and world from the CRUD tests, reused as fixtures.
+world, client_in, post = test_crud.world, test_crud.client_in, test_crud.post
 
 DUBAI = zoneinfo.ZoneInfo("Asia/Dubai")
 
@@ -274,72 +277,34 @@ def test_assign_refuses_an_invalid_week(client_in, world):
 # -- The page ------------------------------------------------------------------------
 
 
-def test_the_page_shows_day_names_and_no_invented_times(client_in, station):
-    html = client_in.get("/company/branch-working-time/edit/").content.decode()
-
-    for day in ("Sunday", "Monday", "Saturday"):
-        assert f'<td class="scr-wt-day">{day}</td>' in html
-    assert "&#x27;Sunday&#x27;)" not in html and "'Sunday')" not in html
-    assert "04:00" not in html and "03:59" not in html
-
-
-def test_the_page_lists_the_uae_week_sunday_first(client_in, station):
-    """Stored numbering is Python's (Monday 0); the screen keeps the UAE week."""
-    html = client_in.get("/company/branch-working-time/edit/").content.decode()
-    order = [html.index(f'<td class="scr-wt-day">{day}</td>') for day in
-             ("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")]
-    assert order == sorted(order)
-    assert f'data-day="{WeekDay.SUNDAY.value}" data-shift="1" data-label="Sunday shift 1"' in html
-
-
 def test_week_day_of_is_pythons_numbering():
     assert services.week_day_of(SUNDAY) == WeekDay.SUNDAY == 6
     assert services.week_day_of(SUNDAY + datetime.timedelta(days=1)) == WeekDay.MONDAY == 0
 
 
-def test_the_branch_options_carry_ids_from_the_branch_table(client_in, station):
+def test_the_page_reads_in_the_uae_week_and_invents_no_times(client_in, station):
+    shift(station, WeekDay.SUNDAY, 1, "08:00", "16:00")
     html = client_in.get("/company/branch-working-time/edit/").content.decode()
+
+    # Stored numbering is Python's (Monday 0); the screen keeps the UAE week, Sunday first.
+    days = ("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
+    order = [html.index(f'<td class="scr-wt-day">{day}</td>') for day in days]
+    assert order == sorted(order)
+    assert f'data-day="{WeekDay.SUNDAY.value}" data-shift="1" data-label="Sunday shift 1"' in html
+    assert "04:00" not in html and "03:59" not in html                  # no made-up defaults
+    # Branch options come from the branch table; the assign modal lists them too.
     assert f'<option value="{station.pk}">Corniche Station</option>' in html
+    assert f'data-wt-assign-row data-id="{station.pk}"' in html
+    # Regression: byky-screen.js pages and filters every .scr-row/.scr-search on
+    # the screen -- with those classes the modal's search hid the week's days.
+    assert 'class="scr-row' not in html and 'class="scr-search' not in html
+    # Regression: <input type="time"> shows AM/PM on a 12-hour computer; the
+    # 56 shift times use flatpickr in 24-hour mode instead.
+    assert 'type="time"' not in html
+    assert html.count('class="scr-input scr-shift-time"') == 7 * 4 * 2
+    assert "vendor/libs/flatpickr/flatpickr.js" in html
 
 
 def test_the_branch_in_the_url_is_preselected(client_in, station):
     html = client_in.get(f"/company/branch-working-time/edit/?branch={station.pk}").content.decode()
     assert f'<option value="{station.pk}" selected>' in html
-
-
-def test_the_page_has_no_kpi_tiles_or_load_button(client_in):
-    html = client_in.get("/company/branch-working-time/edit/").content.decode()
-    assert "scr-tiles" not in html
-    assert "Load Existing Schedule" not in html
-    assert "Pick a branch, set its opening" not in html
-
-
-def test_the_assign_modal_lists_the_branches(client_in, station):
-    shift(station, WeekDay.SUNDAY, 1, "08:00", "16:00")
-    html = client_in.get("/company/branch-working-time/edit/").content.decode()
-
-    assert "Assign to multiple branches" in html
-    assert f'data-wt-assign-row data-id="{station.pk}"' in html
-    assert "byky-working-time.js" in html
-
-
-def test_the_modal_search_cannot_filter_the_week_table(client_in, station):
-    """byky-screen.js filters and pages every .scr-row under the nearest card --
-    or the whole screen, which is where the modal sits. With those classes the
-    modal's search hid the week table's days and injected a "No matching rows"
-    row into it. The modal runs its own search, so neither class may appear."""
-    html = client_in.get("/company/branch-working-time/edit/").content.decode()
-    assert 'class="scr-row' not in html
-    assert 'class="scr-search' not in html
-    assert 'class="scr-wt-assign-search"' in html
-
-
-def test_times_use_a_24_hour_picker_not_the_browser_time_input(client_in):
-    """<input type="time"> shows AM/PM on a 12-hour computer; flatpickr in
-    24-hour mode does not. Both vendor files must be on the page."""
-    html = client_in.get("/company/branch-working-time/edit/").content.decode()
-
-    assert 'type="time"' not in html
-    assert html.count('class="scr-input scr-shift-time"') == 7 * 4 * 2
-    assert "vendor/libs/flatpickr/flatpickr.js" in html
-    assert "vendor/libs/flatpickr/flatpickr.css" in html

@@ -10,5 +10,8 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings"
 python_files = ["test_*.py", "*_test.py"]
-# Keep the test database between runs; --create-db rebuilds it after a migration.
-addopts = "--reuse-db"
+# Keep the test databases between runs; --create-db rebuilds them after a migration.
+# Two workers (pytest-xdist, requirements/dev.txt): ~120s instead of ~180s here.
+# Not "auto": four workers plus Postgres ran a 12 GB dev machine out of memory.
+# `pytest -n0` runs serially, e.g. to debug one test with a breakpoint.
+addopts = "--reuse-db -n 2"
