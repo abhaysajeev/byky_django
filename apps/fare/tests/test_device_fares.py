@@ -29,10 +29,10 @@ agree with it. Counters at the end prove every tricky case really occurred.
 
 import datetime
 import random
-
-import pytest
 from collections import Counter
 from decimal import Decimal
+
+import pytest
 
 from apps.company.models import Branch, BranchType
 from apps.fare import services

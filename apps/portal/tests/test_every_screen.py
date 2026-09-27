@@ -13,9 +13,9 @@ from django.urls import reverse
 
 from apps.company.models import Company, Country, State
 from apps.portal.models import Page, Role
-from apps.portal.page_registry import PAGES
+from apps.portal.page_registry import PAGES, SYSTEM_ONLY
 from apps.portal.services import grant_all
-from core.enums import Channel
+from core.enums import Channel, UserScope
 from core.models import User
 
 PASSWORD = "Byky#2026"
@@ -34,12 +34,13 @@ def company(db):
                                   phone_number="+9710000000", email="ops@byky.test")
 
 
-def sign_in(client, company, username, *, grant):
-    role = Role.objects.create(company=company, name=username)
+def sign_in(client, company, username, *, grant, system=False):
+    role = Role.objects.create(company=None if system else company, name=username)
     if grant:
         grant_all(role)
-    User.objects.create_user(username, PASSWORD, display_name=username, company=company, role=role,
-                             allowed_channels=[Channel.WEB])
+    scope = {"scope": UserScope.SYSTEM} if system else {"company": company}
+    User.objects.create_user(username, PASSWORD, display_name=username, role=role,
+                             allowed_channels=[Channel.WEB], **scope)
     client.post("/login/", {"username": username, "password": PASSWORD})
 
 
@@ -47,7 +48,20 @@ def test_every_screen_renders_for_a_role_that_may_read_it(client, company):
     sign_in(client, company, "sara.k", grant=True)
     for code, url_name in LIVE:
         response = client.get(reverse(url_name))
+        if code in SYSTEM_ONLY:
+            # Every box ticked, still refused: system-only is a scope rule.
+            assert response.status_code == 403, code
+            continue
         assert response.status_code == 200 and b"byky-sidebar" in response.content, code
+
+
+def test_system_only_screens_render_for_a_system_user_only(client, company):
+    sign_in(client, company, "platform.admin", grant=True, system=True)
+    assert SYSTEM_ONLY
+    for code, url_name in LIVE:
+        if code in SYSTEM_ONLY:
+            response = client.get(reverse(url_name))
+            assert response.status_code == 200 and b"byky-sidebar" in response.content, code
 
 
 def test_every_screen_refuses_a_stranger_and_a_role_without_it(client, company):
@@ -64,4 +78,5 @@ def test_every_screen_is_registered_for_the_web(db):
     for code, _url_name in LIVE:
         page = Page.objects.get(code=code)
         assert page.is_active and "read" in page.actions and "web" in page.channels, code
+        assert page.system_only == (code in SYSTEM_ONLY), code
     assert not Page.objects.filter(code__in=RETIRED, is_active=True).exists()

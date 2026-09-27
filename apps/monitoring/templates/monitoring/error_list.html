@@ -1,0 +1,89 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Error Logs - Logs{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block content %}
+{% comment %}
+Every ERROR the server logged -- device API crashes, web screen 500s, and every
+log.exception() in the apps -- with the request it happened under. Filtered
+and paged by the server. Newest first.
+{% endcomment %}
+<div class="scr">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Logs</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Error Logs</b>
+      </div>
+      <h1 class="scr-title">Error Logs</h1>
+      <p class="scr-sub">Errors from the device APIs and the web screens, with the full traceback and the request they happened in. Kept for {{ keep_days }} days.</p>
+    </div>
+  </div>
+
+  <div class="scr-card">
+    <form method="get" class="scr-mon-filters">
+      <label class="scr-mon-field"><span>From</span><input type="date" name="from" class="scr-input" value="{{ params.from }}" /></label>
+      <label class="scr-mon-field"><span>To</span><input type="date" name="to" class="scr-input" value="{{ params.to }}" /></label>
+      <label class="scr-mon-field"><span>Level</span>
+        <select name="level" class="scr-input">
+          <option value="">Any level</option>
+          {% for l in levels %}<option value="{{ l }}"{% if params.level == l %} selected{% endif %}>{{ l|capfirst }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="scr-mon-field"><span>Where</span>
+        <select name="source" class="scr-input">
+          <option value="">Anywhere</option>
+          {% for value, label in sources %}<option value="{{ value }}"{% if params.source == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="scr-mon-field scr-mon-wide"><span>Search</span><input type="text" name="q" class="scr-input" value="{{ params.q }}" placeholder="Message, exception, path or logger" /></label>
+      <label class="scr-mon-field"><span>Request ID</span><input type="text" name="request" class="scr-input" value="{{ params.request }}" placeholder="From X-Request-ID" /></label>
+      <div class="scr-mon-actions">
+        <button type="submit" class="scr-btn-primary">Filter</button>
+        <a href="{% url 'monitoring-error-list' %}" class="scr-btn-secondary">Clear</a>
+      </div>
+    </form>
+
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Level</th>
+            <th>Where</th>
+            <th>Error</th>
+            <th>Path</th>
+            <th>User</th>
+            <th>Company</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in rows %}
+          <tr class="scr-mon-row">
+            <td style="white-space:nowrap"><a class="scr-mon-link" href="{% url 'monitoring-error-detail' e.pk %}">{{ e.created_at|date:"d M Y, H:i:s" }}</a></td>
+            <td><span class="scr-badge scr-badge-rejected"><i></i>{{ e.level|capfirst }}</span></td>
+            <td>{{ e.get_source_display }}{% if e.app %}<div class="scr-contact-sub">{{ e.app|capfirst }}</div>{% endif %}</td>
+            <td class="scr-mon-message"><b>{{ e.exception_type|default:e.logger }}</b><div class="scr-contact-sub">{{ e.message|truncatechars:160 }}</div></td>
+            <td>{% if e.path %}<span class="scr-code">{{ e.method }} {{ e.path|truncatechars:48 }}</span>{% else %}—{% endif %}</td>
+            <td>{{ e.username|default:"—" }}</td>
+            <td>{{ e.company_name|default:"—" }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7" style="padding:0"><div class="scr-empty"><div><div class="scr-empty-title">No errors</div><p class="scr-empty-sub">Nothing was logged for these filters.</p></div></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% include "monitoring/_pager.html" %}
+  </div>
+</div>
+{% endblock %}

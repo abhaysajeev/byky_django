@@ -18,13 +18,21 @@ def has_permission(user, page_code, action):
     if not role_id or not user.is_active:
         return False
 
-    return RolePermission.objects.filter(
+    return _reachable(user, RolePermission.objects.filter(
         role_id=role_id,
         page__code=page_code,
         page__is_active=True,
         page__actions__contains=[action],
         **{f"can_{action}": True},
-    ).exists()
+    )).exists()
+
+
+def _reachable(user, permissions):
+    """A system-only page is never granted to a company user, whatever the
+    role says -- the one scope rule applied on top of the permission ticks."""
+    if getattr(user, "sees_every_company", False):
+        return permissions
+    return permissions.exclude(page__system_only=True)
 
 
 def permissions_for(user, channel):
@@ -35,9 +43,9 @@ def permissions_for(user, channel):
         return []
 
     rows = (
-        RolePermission.objects.filter(
+        _reachable(user, RolePermission.objects.filter(
             role_id=role_id, page__is_active=True, page__channels__contains=[channel]
-        )
+        ))
         .select_related("page", "page__module")
         .order_by("page__module__sort_order", "page__sort_order")
     )

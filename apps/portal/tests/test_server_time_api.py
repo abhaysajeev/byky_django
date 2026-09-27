@@ -189,7 +189,7 @@ def test_server_utc_date_time_is_real_utc(client, company, monkeypatch):
     assert body["server_utc_date_time"] == "2026-09-22T10:00:00Z"
 
 
-def test_the_call_changes_nothing(client, company, django_assert_max_num_queries):
+def test_the_call_changes_nothing(client, company, django_assert_max_num_queries, logs_off):
     with django_assert_max_num_queries(2) as queries:
         ask(client)
 

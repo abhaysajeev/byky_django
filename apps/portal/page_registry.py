@@ -33,6 +33,8 @@ SYSTEM_SVG = "M12 3 4 6v6c0 5 3.4 8.7 8 9 4.6-.3 8-4 8-9V6l-8-3M12 11a2 2 0 1 0 
 FLEET_SVG = "M12 3 4 7l8 4 8-4-8-4M4 7v10l8 4 8-4V7M12 11v10"
 # A price tag -- the tag outline plus its hole.
 FARE_SVG = "M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9-9-9M7.5 7.5h.01"
+# A document with lines -- the server's own logs.
+LOGS_SVG = "M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8l-5-5M14 3v5h5M9 13h6M9 17h6"
 
 # code, name, menu header (blank = no divider), sort order, is_flat, svg, svg2
 MODULES = [
@@ -43,6 +45,7 @@ MODULES = [
     ("fleet", "Inventory", "Operations", 40, False, FLEET_SVG, ""),
     ("fare", "Fare & Offers", "Operations", 50, False, FARE_SVG, ""),
     ("system", "Users & Roles", "System", 90, False, SYSTEM_SVG, ""),
+    ("monitoring", "Logs", "System", 95, False, LOGS_SVG, ""),
 ]
 
 # A page carries its own icon only when its module is flat, i.e. it draws as a
@@ -112,4 +115,15 @@ PAGES = [
 
     ("system.role", "system", "Roles", "portal-role-list", CRUD, 1, False),
     ("system.user", "system", "Users", "portal-user-list", CRUD, 2, False),
+
+    # Read only: logs are written by the server, never by a person.
+    ("monitoring.request_log", "monitoring", "Device Requests", "monitoring-request-list", ["read"], 1, False),
+    ("monitoring.error_log", "monitoring", "Error Logs", "monitoring-error-list", ["read"], 2, False),
 ]
+
+# Screens only a system-scope user may open: a company user is refused whatever
+# their role ticks, and never sees them in the sidebar (services.has_permission).
+SYSTEM_ONLY = {
+    "monitoring.request_log",
+    "monitoring.error_log",
+}

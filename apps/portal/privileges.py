@@ -50,7 +50,10 @@ def matrix_context(user, module_code):
     if module is None:
         return {"roles": [], "mapped_roles": [], "permissions": [], "role_matrices": []}
 
-    pages = list(Page.objects.filter(module=module, is_active=True).order_by("sort_order", "name"))
+    pages = Page.objects.filter(module=module, is_active=True)
+    if not user.sees_every_company:
+        pages = pages.exclude(system_only=True)        # never offered to a company's roles
+    pages = list(pages.order_by("sort_order", "name"))
     actions = module_actions(pages)
     roles = list(roles_for(user).filter(is_active=True))
 

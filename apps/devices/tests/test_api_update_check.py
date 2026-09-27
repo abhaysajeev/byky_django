@@ -296,7 +296,7 @@ def test_the_client_scenario_over_http(client, company, branch, other_branch):
     assert (offered("dubai-tablet"), offered("sharjah-tablet")) == (80, 80)
 
 
-def test_the_check_changes_nothing(client, company, branch, django_assert_max_num_queries):
+def test_the_check_changes_nothing(client, company, branch, django_assert_max_num_queries, logs_off):
     """A pure read -- no write to the device, the mapping or anything else."""
     map_to(release(company, 81), branch)
     tablet(company, "dubai-tablet", station=branch)

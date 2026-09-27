@@ -75,6 +75,10 @@ class Page(models.Model):
 
     sort_order = models.PositiveSmallIntegerField(default=0)
     is_active = models.BooleanField(default=True)
+    # Only a system-scope user may open it (the server's own logs, for
+    # example): a company user is refused whatever their role ticks
+    # (services.has_permission). Set from page_registry.SYSTEM_ONLY.
+    system_only = models.BooleanField(default=False)
 
     # Only read when the page's module is flat, i.e. it draws as a top-level
     # sidebar link and therefore carries its own icon.

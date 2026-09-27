@@ -1,0 +1,75 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Request - Logs{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block content %}
+<div class="scr">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Logs</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <a href="{% url 'monitoring-request-list' %}">Device Requests</a>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Request</b>
+      </div>
+      <h1 class="scr-title"><span class="scr-code scr-mon-title-code">{{ log.method }} {{ log.path }}</span></h1>
+      <p class="scr-sub">{{ log.created_at|date:"d M Y, H:i:s" }} · Request ID <span class="scr-code">{{ log.pk }}</span></p>
+    </div>
+    <div class="scr-head-actions">
+      <a href="javascript:history.back()" class="scr-btn-secondary">Back</a>
+    </div>
+  </div>
+
+  <div class="scr-mon-grid">
+    <div class="scr-card scr-mon-panel">
+      <h2 class="scr-form-title">Summary</h2>
+      <div class="scr-detail-rows">
+        <div class="scr-detail-row"><span class="scr-detail-label">Status</span><span class="scr-detail-value">{% include "monitoring/_status.html" with status=log.status %}</span></div>
+        <div class="scr-detail-row"><span class="scr-detail-label">Code</span><span class="scr-detail-value">{{ log.code|default:"—" }}</span></div>
+        <div class="scr-detail-row"><span class="scr-detail-label">Time taken</span><span class="scr-detail-value">{{ log.duration_ms }} ms</span></div>
+        <div class="scr-detail-row"><span class="scr-detail-label">App</span><span class="scr-detail-value">{{ log.app|capfirst|default:"—" }}</span></div>
+        <div class="scr-detail-row"><span class="scr-detail-label">Endpoint</span><span class="scr-detail-value">{{ log.url_name|default:"—" }}</span></div>
+      </div>
+    </div>
+    <div class="scr-card scr-mon-panel">
+      <h2 class="scr-form-title">Who</h2>
+      <div class="scr-detail-rows">
+        <div class="scr-detail-row"><span class="scr-detail-label">Device</span><span class="scr-detail-value">{% if log.device_no %}Device {{ log.device_no }}{% else %}—{% endif %}</span></div>
+        <div class="scr-detail-row"><span class="scr-detail-label">Installation ID</span><span class="scr-detail-value">{{ log.installation_id|default:"—" }}</span></div>
+        <div class="scr-detail-row"><span class="scr-detail-label">User</span><span class="scr-detail-value">{{ log.username|default:"—" }}</span></div>
+        <div class="scr-detail-row"><span class="scr-detail-label">Company</span><span class="scr-detail-value">{{ log.company_name|default:"—" }}</span></div>
+        <div class="scr-detail-row"><span class="scr-detail-label">Branch</span><span class="scr-detail-value">{{ log.branch_name|default:"—" }}</span></div>
+        <div class="scr-detail-row"><span class="scr-detail-label">IP / App version</span><span class="scr-detail-value">{{ log.ip|default:"—" }}<div class="scr-contact-sub">{{ log.user_agent|default:"" }}</div></span></div>
+      </div>
+    </div>
+  </div>
+
+  {% if errors %}
+  <div class="scr-card scr-mon-panel scr-mon-errors">
+    <h2 class="scr-form-title">Errors during this request</h2>
+    {% for e in errors %}
+    <a class="scr-mon-link" href="{% url 'monitoring-error-detail' e.pk %}">{{ e.exception_type|default:e.level }} — {{ e.message|truncatechars:140 }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="scr-mon-grid">
+    <div class="scr-card scr-mon-panel">
+      <h2 class="scr-form-title">Request body{% if log.request_truncated %} <span class="scr-badge scr-badge-pending"><i></i>Cut at 64 KB</span>{% endif %}</h2>
+      <pre class="scr-mon-json">{{ request_body|default:"(empty)" }}</pre>
+    </div>
+    <div class="scr-card scr-mon-panel">
+      <h2 class="scr-form-title">Response body{% if log.response_truncated %} <span class="scr-badge scr-badge-pending"><i></i>Cut at 64 KB</span>{% endif %}</h2>
+      <pre class="scr-mon-json">{{ response_body|default:"(empty)" }}</pre>
+    </div>
+  </div>
+</div>
+{% endblock %}

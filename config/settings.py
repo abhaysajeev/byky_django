@@ -64,6 +64,7 @@ LOCAL_APPS = [
     "apps.crew",
     "apps.fleet",
     "apps.fare",
+    "apps.monitoring",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -74,6 +75,8 @@ INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
 MIDDLEWARE = [
     "django.middleware.gzip.GZipMiddleware",
+    # Right after GZip, so it sees each reply uncompressed; logs /api/v1/ calls.
+    "apps.monitoring.middleware.RequestLogMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -280,6 +283,23 @@ SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
-    "handlers": {"console": {"class": "logging.StreamHandler"}},
-    "root": {"handlers": ["console"], "level": "INFO"},
+    "handlers": {
+        "console": {"class": "logging.StreamHandler"},
+        # ERROR and above also land in the Error Logs screen, with the request,
+        # user and device they happened under (apps/monitoring/handlers.py).
+        "database": {"class": "apps.monitoring.handlers.DatabaseErrorHandler", "level": "ERROR"},
+    },
+    "root": {"handlers": ["console", "database"], "level": "INFO"},
 }
+
+# -- Request and error logs (apps/monitoring) ------------------------------------
+# Written by a background thread in batches, so a device call never waits on
+# its own log row (apps/monitoring/writer.py). Tests write inline instead.
+MONITORING_SYNC = False
+MONITORING_QUEUE_SIZE = 10_000          # records held before new ones are dropped
+MONITORING_BATCH_SIZE = 200             # records per bulk insert
+MONITORING_FLUSH_SECONDS = 1.0          # longest a record waits in the queue
+MONITORING_BODY_LIMIT = 64 * 1024       # bytes kept of each request/response body
+MONITORING_REQUEST_DAYS = int(os.environ.get("MONITORING_REQUEST_DAYS", 30))
+MONITORING_ERROR_DAYS = int(os.environ.get("MONITORING_ERROR_DAYS", 90))
+MONITORING_PURGE_HOURS = 6              # how often the writer clears expired rows

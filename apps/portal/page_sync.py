@@ -44,25 +44,28 @@ def sync(apps=None):
         modules[code] = module
         created, updated = created + was_created, updated + (not was_created)
 
+    # An earlier migration runs this against the historical Page, which may
+    # predate the column (portal 0013).
+    has_system_only = any(f.name == "system_only" for f in Page._meta.get_fields())
     for code, module_code, name, url_name, actions, sort_order, is_retired in registry.PAGES:
         svg, svg2 = registry.PAGE_ICONS.get(code, ("", ""))
-        _, was_created = Page.objects.update_or_create(
-            code=code,
-            defaults={
-                "module": modules[module_code],
-                "name": name,
-                "url_name": url_name,
-                "actions": list(actions),
-                "channels": ["web"],
-                "sort_order": sort_order,
-                "svg": svg,
-                "svg2": svg2,
-                # A retired screen keeps its row so its RolePermission history
-                # survives, but it is off: no sidebar entry, and
-                # has_permission() refuses it.
-                "is_active": not is_retired,
-            },
-        )
+        defaults = {
+            "module": modules[module_code],
+            "name": name,
+            "url_name": url_name,
+            "actions": list(actions),
+            "channels": ["web"],
+            "sort_order": sort_order,
+            "svg": svg,
+            "svg2": svg2,
+            # A retired screen keeps its row so its RolePermission history
+            # survives, but it is off: no sidebar entry, and
+            # has_permission() refuses it.
+            "is_active": not is_retired,
+        }
+        if has_system_only:
+            defaults["system_only"] = code in registry.SYSTEM_ONLY
+        _, was_created = Page.objects.update_or_create(code=code, defaults=defaults)
         created, updated = created + was_created, updated + (not was_created)
 
     # A page that has dropped out of the registry entirely is deactivated, never

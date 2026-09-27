@@ -1,0 +1,54 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Error - Logs{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block content %}
+<div class="scr">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Logs</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <a href="{% url 'monitoring-error-list' %}">Error Logs</a>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Error</b>
+      </div>
+      <h1 class="scr-title">{{ error.exception_type|default:error.logger }}</h1>
+      <p class="scr-sub">{{ error.created_at|date:"d M Y, H:i:s" }} · {{ error.level|capfirst }} · {{ error.get_source_display }}</p>
+    </div>
+    <div class="scr-head-actions">
+      <a href="javascript:history.back()" class="scr-btn-secondary">Back</a>
+    </div>
+  </div>
+
+  <div class="scr-mon-grid">
+    <div class="scr-card scr-mon-panel">
+      <h2 class="scr-form-title">Message</h2>
+      <p class="scr-mon-message-full">{{ error.message }}</p>
+    </div>
+    <div class="scr-card scr-mon-panel">
+      <h2 class="scr-form-title">Where</h2>
+      <div class="scr-detail-rows">
+        <div class="scr-detail-row"><span class="scr-detail-label">Request</span><span class="scr-detail-value">{% if request_log %}<a class="scr-mon-link" href="{% url 'monitoring-request-detail' request_log.pk %}">{{ request_log.status }} · {{ request_log.path }}</a>{% elif error.path %}<span class="scr-code">{{ error.method }} {{ error.path }}</span>{% else %}Outside a request{% endif %}</span></div>
+        <div class="scr-detail-row"><span class="scr-detail-label">Request ID</span><span class="scr-detail-value">{{ error.request_id|default:"—" }}</span></div>
+        <div class="scr-detail-row"><span class="scr-detail-label">Logger</span><span class="scr-detail-value">{{ error.logger }}</span></div>
+        <div class="scr-detail-row"><span class="scr-detail-label">User</span><span class="scr-detail-value">{{ error.username|default:"—" }}</span></div>
+        <div class="scr-detail-row"><span class="scr-detail-label">Company</span><span class="scr-detail-value">{{ error.company_name|default:"—" }}</span></div>
+        <div class="scr-detail-row"><span class="scr-detail-label">Device</span><span class="scr-detail-value">{% if error.device_no %}Device {{ error.device_no }}{% else %}—{% endif %}</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="scr-card scr-mon-panel">
+    <h2 class="scr-form-title">Traceback</h2>
+    <pre class="scr-mon-json">{{ error.traceback|default:"(no traceback recorded)" }}</pre>
+  </div>
+</div>
+{% endblock %}

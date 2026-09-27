@@ -31,3 +31,24 @@ def fast_password_hashing(settings):
     these tests are checking.
     """
     settings.PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
+
+
+@pytest.fixture(autouse=True)
+def inline_log_writes(settings):
+    """Write request and error logs inline, inside the test's own transaction.
+
+    In a running server a background thread writes them in batches
+    (apps/monitoring/writer.py); a test that makes a call and then reads its log
+    row needs the row there at once, and rolled back with everything else.
+    """
+    settings.MONITORING_SYNC = True
+
+
+@pytest.fixture
+def logs_off(monkeypatch):
+    """No request/error log writes, for a test that counts the queries a call
+    itself makes. In a running server the log row is written by a background
+    thread outside the request, so it is not part of what such a test measures."""
+    from apps.monitoring import writer
+
+    monkeypatch.setattr(writer, "enqueue", lambda kind, fields: None)

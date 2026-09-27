@@ -1008,3 +1008,26 @@ textarea.scr-drawer-input { height: auto; min-height: 72px; padding: 10px 13px; 
   .scr-fare-result-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .scr-fare-test-row { grid-template-columns: 1fr; }
 }
+
+/* ── Logs: Device Requests and Error Logs (apps/monitoring) ─────────────
+   Server-filtered lists, so the filters are a real <form>; detail pages are
+   two-column panels with the stored bodies/traceback in a scrolling block. */
+.scr-mon-filters { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; align-items: end; padding: 18px 20px; border-bottom: 1px solid #f0eff7; }
+.scr-mon-field { display: flex; flex-direction: column; gap: 6px; margin: 0; }
+.scr-mon-field > span { font-size: 11px; font-weight: 600; color: #6b6790; }
+.scr-mon-wide { grid-column: span 2; }
+.scr-mon-actions { display: flex; gap: 8px; }
+.scr-mon-actions .scr-btn-primary, .scr-mon-actions .scr-btn-secondary { height: 40px; display: inline-flex; align-items: center; }
+.scr a.scr-mon-link { font-weight: 600; color: #c2141a; }
+.scr-mon-message { max-width: 420px; white-space: normal; }
+.scr-mon-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.scr-mon-panel { padding: 20px 22px; }
+.scr-mon-panel .scr-form-title { margin-bottom: 12px; display: flex; align-items: center; gap: 10px; }
+.scr-mon-errors { display: flex; flex-direction: column; gap: 6px; }
+.scr-mon-title-code { font-size: 15px; white-space: normal; word-break: break-all; }
+.scr-mon-message-full { margin: 0; font-size: 13px; color: #1a1640; white-space: pre-wrap; word-break: break-word; }
+.scr-mon-json { margin: 0; max-height: 520px; overflow: auto; padding: 14px 16px; border-radius: 12px; background: #fbfaff; border: 1px solid #eeedf5; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11.5px; line-height: 1.55; color: #1a1640; white-space: pre-wrap; word-break: break-word; }
+@media (max-width: 900px) {
+  .scr-mon-grid { grid-template-columns: 1fr; }
+  .scr-mon-wide { grid-column: auto; }
+}

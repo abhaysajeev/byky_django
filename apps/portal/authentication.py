@@ -52,6 +52,9 @@ class AppJWTAuthentication(BaseAuthentication):
         if not session.user.is_active:
             raise AuthenticationFailed("Account not active.")
 
+        # For the request log: which device, branch and user this call came
+        # from (apps/monitoring/middleware.py reads the Django request).
+        request._request.app_session = session
         return (session.user, session)
 
     def authenticate_header(self, request):
