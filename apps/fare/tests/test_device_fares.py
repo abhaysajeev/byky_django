@@ -29,6 +29,8 @@ agree with it. Counters at the end prove every tricky case really occurred.
 
 import datetime
 import random
+
+import pytest
 from collections import Counter
 from decimal import Decimal
 
@@ -49,8 +51,8 @@ D = datetime.date
 DAY = datetime.timedelta(days=1)
 APPROVED, PENDING = ApprovalStatus.APPROVED, ApprovalStatus.PENDING
 SPAN_START = D(2028, 2, 10)                 # the span crosses 29 Feb 2028
-SPAN_END = SPAN_START + 29 * DAY
-ROUNDS = 5
+SPAN_END = SPAN_START + 39 * DAY
+ROUNDS = 25
 EVERY, DAYS, SINGLE = RuleKind.EVERY_DAY, RuleKind.SELECTED_DAYS, RuleKind.SINGLE_DATE
 KIND_RANK = {SINGLE: 0, DAYS: 1, EVERY: 2}
 
@@ -361,6 +363,7 @@ def fares_in(answer):
 # -- The test ---------------------------------------------------------------------------------
 
 
+@pytest.mark.exhaustive
 def test_every_request_gets_exactly_the_right_fares_and_prices(client, world, token):
     world["family"] = Branch.objects.create(company=world["company"], location=world["adc1"].location,
                                             short_code="FAM", name="Family Park", branch_type=BranchType.STATION)
@@ -419,7 +422,7 @@ def test_every_request_gets_exactly_the_right_fares_and_prices(client, world, to
             day += DAY
 
         # The HTTP answer is the service's answer, as JSON.
-        probe = SPAN_START + rng.randint(0, 29) * DAY
+        probe = SPAN_START + rng.randint(0, 39) * DAY
         body = call(client, URL, {"date": probe.isoformat()}, token=token).json()
         assert body["code"] == "ok" and body["data"] == services.device_fares(here, probe)
 

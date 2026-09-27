@@ -409,6 +409,7 @@ def edges(spec):
     return sorted({0} | {m for w in windows for m in (w.start, w.end) if m < MIDNIGHT})
 
 
+@pytest.mark.exhaustive
 def test_brute_force_matches_the_reference():
     random.seed(7)
     valid = nested = 0
