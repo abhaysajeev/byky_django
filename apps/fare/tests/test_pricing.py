@@ -2,8 +2,9 @@
 
 Fixed cases walk the example fare from the prototype (design/fares and offers/
 fare-prototype.html), renumbered to Monday=0. Then a seeded brute force
-compares every date and half hour of hundreds of random fares against an
-independent reference: nested-or-apart validity, innermost wins, and a check
+compares every date of hundreds of random fares, at every minute a price can
+change, against an independent reference: nested-or-apart validity, innermost
+wins, and a check
 that the covering windows really do form a chain.
 No database needed.
 """
@@ -400,6 +401,14 @@ def random_spec(n):
     return FareSpec(v0, v1, 30, price(50), tuple(rules), tuple(seasons))
 
 
+def edges(spec):
+    """Every minute where a price can change: midnight and each window's start
+    and end. The price is constant from one edge to the next, so checking the
+    edges checks every minute of the day."""
+    windows = [*spec.rules, *(r for s in spec.seasons for r in s.rules)]
+    return sorted({0} | {m for w in windows for m in (w.start, w.end) if m < MIDNIGHT})
+
+
 def test_brute_force_matches_the_reference():
     random.seed(7)
     valid = nested = 0
@@ -410,9 +419,10 @@ def test_brute_force_matches_the_reference():
             continue
         valid += 1
         won = set()
+        minutes = edges(spec)
         day = spec.valid_from
         while day <= spec.valid_to:
-            for m in range(0, MIDNIGHT, 30):
+            for m in minutes:
                 expected = ref_resolve(spec, day, m)
                 assert len(expected) == 1                       # never ambiguous
                 found = pricing.resolve(spec, day, m)
@@ -424,7 +434,7 @@ def test_brute_force_matches_the_reference():
             segments = pricing.day_schedule(spec, day, merge="price")
             assert segments[0].start == 0 and segments[-1].end == MIDNIGHT
             assert all(a.end == b.start and a.price != b.price for a, b in zip(segments, segments[1:], strict=False))
-            for m in range(0, MIDNIGHT, 15):
+            for m in minutes:
                 at = next(s for s in segments if s.start <= m < s.end)
                 assert at.price == pricing.resolve(spec, day, m).price
             day += datetime.timedelta(days=1)

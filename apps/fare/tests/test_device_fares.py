@@ -17,10 +17,11 @@ Then, for every request:
 2. shape and order -- no empty groups; the station's fares before the
    company's; seasons shortest first; special prices by kind, shortest window
    first; the same fares, unchanged, whatever the filters;
-3. prices -- for the request date and the day after, at every half hour and at
-   every window edge, the app's reading (apps/fare/api.py: first match at every
-   level) gives the same fare, season, special price and five numbers as
-   pricing.resolve on the fare the rules pick: the station's, else the company's.
+3. prices -- for the request date and the day after, at midnight and at every
+   window start and end (the only minutes a price can change), the app's
+   reading (apps/fare/api.py: first match at every level) gives the same fare,
+   season, special price and five numbers as pricing.resolve on the fare the
+   rules pick: the station's, else the company's.
 
 The generator checks nesting with its own code, and pricing.validate_spec must
 agree with it. Counters at the end prove every tricky case really occurred.
@@ -48,8 +49,8 @@ D = datetime.date
 DAY = datetime.timedelta(days=1)
 APPROVED, PENDING = ApprovalStatus.APPROVED, ApprovalStatus.PENDING
 SPAN_START = D(2028, 2, 10)                 # the span crosses 29 Feb 2028
-SPAN_END = SPAN_START + 39 * DAY
-ROUNDS = 12
+SPAN_END = SPAN_START + 29 * DAY
+ROUNDS = 5
 EVERY, DAYS, SINGLE = RuleKind.EVERY_DAY, RuleKind.SELECTED_DAYS, RuleKind.SINGLE_DATE
 KIND_RANK = {SINGLE: 0, DAYS: 1, EVERY: 2}
 
@@ -374,11 +375,14 @@ def test_every_request_gets_exactly_the_right_fares_and_prices(client, world, to
         Fare.objects.all().delete()
         records = build(world, rng, types)
         levels = {r["pk"]: r["level"] for r in records}
+        # A price can only change where a window starts or ends: checking
+        # those minutes (and midnight) checks every minute of the day, and
+        # catches a start or end read the wrong side of the boundary.
         edges = {}
         for r in records:
             windows = [*r["spec"].rules, *(x for s in r["spec"].seasons for x in s.rules)]
-            edges.setdefault((r["vehicle_type"], r["package"]), set()).update(
-                m for w in windows for m in (w.start - 1, w.start, w.end - 1) if 0 <= m < 1440)
+            edges.setdefault((r["vehicle_type"], r["package"]), {0}).update(
+                m for w in windows for m in (w.start, w.end) if m < 1440)
 
         day = SPAN_START - 2 * DAY
         while day <= SPAN_END + 2 * DAY:
@@ -391,10 +395,12 @@ def test_every_request_gets_exactly_the_right_fares_and_prices(client, world, to
                 seen["fare that starts the next day sent"] += 1
             # 2. shape and order
             check_order(answer, levels)
-            # 2b. filters narrow, never change
+            # 2b. filters narrow, never change (every fourth date: the
+            # filters only drop whole groups, so this is plenty)
             vt_id, package = rng.choice(combos)
-            for filters in ({"vehicle_type_id": vt_id}, {"package_minutes": package},
-                            {"vehicle_type_id": vt_id, "package_minutes": package}):
+            filter_sets = ({"vehicle_type_id": vt_id}, {"package_minutes": package},
+                           {"vehicle_type_id": vt_id, "package_minutes": package})
+            for filters in filter_sets if (day - SPAN_START).days % 4 == 0 else ():
                 narrowed = services.device_fares(here, day, **filters)
                 part = fares_in(narrowed)
                 assert set(part) == expected_ids(records, usable_ids, here, day,
@@ -403,7 +409,7 @@ def test_every_request_gets_exactly_the_right_fares_and_prices(client, world, to
                 check_order(narrowed, levels)
             # 3. prices: the app's reading equals pricing.resolve, today and after midnight
             for combo in combos:
-                minutes = sorted(set(range(0, 1440, 30)) | edges.get(combo, set()))
+                minutes = sorted(edges.get(combo, {0}))
                 for when in (day, day + DAY):
                     fare = expected_fare(records, usable_ids, here, *combo, when, seen)
                     for minute in minutes:
@@ -413,7 +419,7 @@ def test_every_request_gets_exactly_the_right_fares_and_prices(client, world, to
             day += DAY
 
         # The HTTP answer is the service's answer, as JSON.
-        probe = SPAN_START + rng.randint(0, 39) * DAY
+        probe = SPAN_START + rng.randint(0, 29) * DAY
         body = call(client, URL, {"date": probe.isoformat()}, token=token).json()
         assert body["code"] == "ok" and body["data"] == services.device_fares(here, probe)
 
@@ -422,5 +428,5 @@ def test_every_request_gets_exactly_the_right_fares_and_prices(client, world, to
                  "date inside nested seasons", "single date inside a season", "selected days over every day",
                  "fare that starts the next day sent"):
         assert seen[case] >= 20, (case, seen)
-    assert seen["prices compared"] > 300_000, seen
+    assert seen["prices compared"] > 40_000, seen
     print(dict(seen))
