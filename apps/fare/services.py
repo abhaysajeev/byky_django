@@ -21,17 +21,15 @@ import datetime
 
 from django.db import IntegrityError, connection, transaction
 from django.db.models import Prefetch, Q
-from django.utils import timezone
 
 from apps.company.scoping import branches_for, companies_for
 from apps.fare import payload, pricing
-from apps.fare.models import Fare, FareBranch, FareLevel, FareRule, FareSeason
+from apps.fare.models import Fare, FareBranch, FareLevel, FareRule, FareSeason, RuleKind
 from apps.fare.pricing import FareSpec, Price, Rule, Season
 from apps.fare.scoping import fares_for
 from apps.fleet.models import VehicleType
 from apps.fleet.scoping import vehicle_types_for
 from core.enums import ApprovalStatus
-from core.timezones import business_date_for, zone_for
 
 # Deferred while save_fare rewrites a fare, re-checked before it returns.
 DEFERRED = (
@@ -432,16 +430,33 @@ def _write(user, fare, context, spec, meta):
 
 # -- The operator app's fare download (apps/fare/api.py) --------------------------------
 #
-# Every fare package of one vehicle type, sent whole: the app runs the
-# precedence itself (design/fares and offers/fare-schema.md section 4). The
-# branch is the caller's -- taken from its session, never from the request.
+# The device prices rentals offline, so it downloads whole fares once a day
+# (design/fares and offers/fare-schema.md section 4). The server does the date
+# part of the precedence -- which fares, in which order -- and the device the
+# time part, by taking the first match at every level. The order below is
+# what makes "first match" equal pricing.resolve:
+#
+#   fares           this branch's own before the company's; a branch fare and
+#                   a company fare never overlap within their own level
+#                   (fare_branch_no_overlap, fare_company_no_overlap), so the
+#                   first fare whose dates hold the date is the right one;
+#   seasons         shortest first: seasons nest or stand apart, so the first
+#                   holding the date is the innermost;
+#   special prices  single date, then selected days, then every day, and the
+#                   shortest window first within each: windows of one kind
+#                   nest or stand apart, so the first holding the time is the
+#                   innermost of the winning kind.
+#
+# The branch comes from the caller's session, never from the request. The
+# `date + 1` in the selection covers rentals after midnight at a branch still
+# open, with no working-time lookup.
 
 
 class UnknownVehicleType(Exception):
-    """Not this branch's company's, or not active and approved."""
+    """Not this branch's company's, or it, or its category, is not active and approved."""
 
 
-RULE_ORDER = {"single_date": 0, "selected_days": 1, "every_day": 2}
+KIND_ORDER = {RuleKind.SINGLE_DATE: 0, RuleKind.SELECTED_DAYS: 1, RuleKind.EVERY_DAY: 2}
 
 
 def _device_price(row):
@@ -454,7 +469,8 @@ def _device_price(row):
 
 
 def _device_rules(rules):
-    rules = sorted(rules, key=lambda r: (RULE_ORDER[r.kind], r.on_date or datetime.date.min, r.start_minute))
+    rules = sorted(rules, key=lambda r: (KIND_ORDER[r.kind], r.end_minute - r.start_minute,
+                                         r.on_date or datetime.date.min, r.start_minute, r.pk))
     return [
         {
             "id": r.pk, "kind": r.kind,
@@ -467,58 +483,71 @@ def _device_rules(rules):
     ]
 
 
-def device_fares(branch, vehicle_type_id, *, at=None):
-    """The fare download for one vehicle type at `branch`: active, approved
-    fares that have not ended, company-level and this branch's own. Both
-    levels are sent; the app lets the branch's fare win."""
-    company = branch.company
-    vehicle_type = (VehicleType.objects.select_related("category")
-                    .filter(pk=vehicle_type_id, company=company, is_active=True,
-                            approval_status=ApprovalStatus.APPROVED).first())
-    if vehicle_type is None:
-        raise UnknownVehicleType()
-
-    now = at or timezone.now()
-    today = business_date_for(company, now)
-    fares = with_children(
-        Fare.objects.filter(company=company, vehicle_type=vehicle_type, is_active=True,
-                            approval_status=ApprovalStatus.APPROVED, valid_to__gte=today)
-        .filter(Q(level=FareLevel.COMPANY) | Q(level=FareLevel.BRANCH, branch_links__branch=branch))
-        .distinct()
-        .order_by("package_minutes", "valid_from", "level")
-    )
-
-    out = []
-    for fare in fares:
-        rules = list(fare.rules.all())
-        out.append({
-            "fare_id": fare.pk, "version": fare.lock_version, "level": fare.level,
-            "package_minutes": fare.package_minutes,
-            "valid_from": fare.valid_from.isoformat(), "valid_to": fare.valid_to.isoformat(),
-            "base_price": _device_price(fare),
-            "special_prices": _device_rules(r for r in rules if r.season_id is None),
-            "seasons": [
-                {
-                    "id": s.pk, "name": s.name,
-                    "start_date": s.start_date.isoformat(), "end_date": s.end_date.isoformat(),
-                    "base_price": _device_price(s),
-                    "special_prices": _device_rules(r for r in rules if r.season_id == s.pk),
-                }
-                for s in fare.seasons.all()
-            ],
-        })
-
+def _device_fare(fare):
+    rules = list(fare.rules.all())
+    seasons = sorted(fare.seasons.all(), key=lambda s: (s.end_date - s.start_date, s.start_date, s.pk))
     return {
-        "generated_at": now.astimezone(zone_for(company)).isoformat(timespec="seconds"),
-        "business_date": today.isoformat(),
-        "company": {"id": company.pk, "code": company.short_code, "timezone": company.timezone,
-                    "tax_type": company.tax_type, "discount_type": company.discount_type},
-        "branch": {"id": branch.pk, "code": branch.short_code, "name": branch.name},
-        "vehicle_type": {
-            "id": vehicle_type.pk, "name": vehicle_type.vehicle_type_name,
-            "code": vehicle_type.vehicle_type_code, "category": vehicle_type.category.category_name,
-            "tax_percentage": (str(vehicle_type.tax_percentage)
-                               if vehicle_type.tax_percentage is not None else None),
-        },
-        "fares": out,
+        "fare_id": fare.pk, "version": fare.lock_version,
+        "valid_from": fare.valid_from.isoformat(), "valid_to": fare.valid_to.isoformat(),
+        "price": _device_price(fare),
+        "special_prices": _device_rules(r for r in rules if r.season_id is None),
+        "seasons": [
+            {
+                "id": s.pk, "name": s.name,
+                "start_date": s.start_date.isoformat(), "end_date": s.end_date.isoformat(),
+                "price": _device_price(s),
+                "special_prices": _device_rules(r for r in rules if r.season_id == s.pk),
+            }
+            for s in seasons
+        ],
+    }
+
+
+def device_fare_rows(branch, day, *, vehicle_type_id=None, package_minutes=None):
+    """The fares a device at `branch` gets for `day`, unordered: active and
+    approved, of an active, approved vehicle type and category, company-level
+    or linked to this branch, in force on `day` or `day + 1`."""
+    approved = ApprovalStatus.APPROVED
+    fares = Fare.objects.filter(
+        company=branch.company, is_active=True, approval_status=approved,
+        vehicle_type__is_active=True, vehicle_type__approval_status=approved,
+        vehicle_type__category__is_active=True, vehicle_type__category__approval_status=approved,
+        valid_from__lte=day + datetime.timedelta(days=1), valid_to__gte=day,
+    ).filter(Q(level=FareLevel.COMPANY) | Q(level=FareLevel.BRANCH, branch_links__branch=branch))
+    if vehicle_type_id is not None:
+        fares = fares.filter(vehicle_type_id=vehicle_type_id)
+    if package_minutes is not None:
+        fares = fares.filter(package_minutes=package_minutes)
+    return with_children(fares.distinct())
+
+
+def device_fares(branch, day, *, vehicle_type_id=None, package_minutes=None):
+    """The fare download for a device at `branch` for `day`: vehicle type ->
+    package -> fares, in first-match order (see the note above). Filters
+    only narrow it. Raises UnknownVehicleType for a vehicle type this branch
+    cannot use; a usable one with no fare gives an empty list."""
+    if vehicle_type_id is not None:
+        approved = ApprovalStatus.APPROVED
+        usable = VehicleType.objects.filter(
+            pk=vehicle_type_id, company=branch.company, is_active=True, approval_status=approved,
+            category__is_active=True, category__approval_status=approved,
+        ).exists()
+        if not usable:
+            raise UnknownVehicleType()
+
+    fares = sorted(
+        device_fare_rows(branch, day, vehicle_type_id=vehicle_type_id, package_minutes=package_minutes),
+        key=lambda f: (f.vehicle_type.vehicle_type_name, f.vehicle_type_id, f.package_minutes,
+                       0 if f.level == FareLevel.BRANCH else 1, f.valid_from, f.pk),
+    )
+    vehicle_types = {}
+    for fare in fares:
+        entry = vehicle_types.setdefault(fare.vehicle_type_id, {"vehicle_type_id": fare.vehicle_type_id,
+                                                                "packages": {}})
+        package = entry["packages"].setdefault(fare.package_minutes, {"package_minutes": fare.package_minutes,
+                                                                       "fares": []})
+        package["fares"].append(_device_fare(fare))
+    return {
+        "date": day.isoformat(),
+        "vehicle_types": [{**v, "packages": list(v["packages"].values())} for v in vehicle_types.values()],
     }

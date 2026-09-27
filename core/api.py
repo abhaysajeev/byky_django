@@ -174,14 +174,22 @@ def text_field(max_length, **kwargs):
     )
 
 
-def whole_number_field(**kwargs):
-    return serializers.IntegerField(
-        min_value=0,
-        error_messages={
-            **REQUIRED,
-            "invalid": "must be a whole number",
-            "max_string_length": "must be a whole number",
-            "min_value": "must be 0 or more",
-        },
+def whole_number_field(*, min_value=0, max_value=None, **kwargs):
+    messages = {
+        **REQUIRED,
+        "invalid": "must be a whole number",
+        "max_string_length": "must be a whole number",
+        "min_value": f"must be {min_value} or more",
+    }
+    if max_value is not None:
+        messages["max_value"] = f"must be {max_value} or less"
+    return serializers.IntegerField(min_value=min_value, max_value=max_value, error_messages=messages, **kwargs)
+
+
+def date_field(**kwargs):
+    """A calendar date, YYYY-MM-DD only -- the one format every app API uses."""
+    return serializers.DateField(
+        input_formats=["%Y-%m-%d"],
+        error_messages={**REQUIRED, "invalid": "must be a date like 2026-09-30"},
         **kwargs,
     )

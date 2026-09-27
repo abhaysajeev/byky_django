@@ -1,9 +1,10 @@
 """The operator app's fare download -- views only translate HTTP; the rules
 are in apps/fare/services.py::device_fares.
 
-POST /api/v1/{app}/fares sends every fare package of one vehicle type, whole
-(base price, special prices, seasons), for the caller's own station. The app
-runs the precedence itself (design/fares and offers/fare-schema.md section 4).
+POST /api/v1/{app}/fares sends the fares a station needs for one working day,
+whole, in an order where the app takes the first match at every level. The
+server picks the fares by date; the app prices each rental by its time
+(design/fares and offers/fare-schema.md section 4).
 """
 
 from drf_spectacular.utils import extend_schema
@@ -17,74 +18,93 @@ from core.api import envelope, request_parts
 from core.enums import Channel
 from core.schema import SERVER_ERROR, envelope_request, envelope_responses
 
-_PRICE = {"base_fare": "50.00", "grace_minutes": 5, "concurrent_interval_minutes": 10,
-          "concurrent_fare": "10.00", "concurrent_grace_minutes": 0}
 
-# The 200 example Swagger shows: a Monaco with a company fare (special prices
-# and a season) and this station's own fare for part of the year.
+def _price(base_fare, concurrent_fare="10.00"):
+    return {"base_fare": base_fare, "grace_minutes": 5, "concurrent_interval_minutes": 10,
+            "concurrent_fare": concurrent_fare, "concurrent_grace_minutes": 0}
+
+
+def _special(pk, kind, start, end, base_fare, *, on_date=None, weekdays=()):
+    return {"id": pk, "kind": kind, "on_date": on_date, "weekdays": list(weekdays),
+            "start": start, "end": end, "price": _price(base_fare)}
+
+
+# The 200 example Swagger shows: Monaco 30 min on 30 Sep -- this station's own
+# fare starts tomorrow, the company fare runs all year with a lunch price
+# inside the day price, a holiday, and Eid inside Summer.
 _FARES_SAMPLE = {
-    "generated_at": "2026-09-24T06:00:12+04:00",
-    "business_date": "2026-09-24",
-    "company": {"id": 1, "code": "0598", "timezone": "Asia/Dubai",
-                "tax_type": "included", "discount_type": "before_tax"},
-    "branch": {"id": 12, "code": "ADC1", "name": "Abu Dhabi Corniche 1"},
-    "vehicle_type": {"id": 7, "name": "Monaco", "code": "MON", "category": "BYKY", "tax_percentage": "5.00"},
-    "fares": [
+    "date": "2026-09-30",
+    "vehicle_types": [
         {
-            "fare_id": 41, "version": 3, "level": "company", "package_minutes": 30,
-            "valid_from": "2026-01-01", "valid_to": "2026-12-31",
-            "base_price": _PRICE,
-            "special_prices": [
-                {"id": 101, "kind": "single_date", "on_date": "2026-12-02", "weekdays": [],
-                 "start": "12:00", "end": "22:00", "price": {**_PRICE, "base_fare": "100.00", "concurrent_fare": "20.00"}},
-                {"id": 102, "kind": "selected_days", "on_date": None, "weekdays": [5, 6],
-                 "start": "14:00", "end": "22:00", "price": {**_PRICE, "base_fare": "80.00", "concurrent_fare": "15.00"}},
-                {"id": 103, "kind": "every_day", "on_date": None, "weekdays": [],
-                 "start": "16:00", "end": "20:00", "price": {**_PRICE, "base_fare": "70.00", "concurrent_fare": "12.00"}},
+            "vehicle_type_id": 56,
+            "packages": [
+                {
+                    "package_minutes": 30,
+                    "fares": [
+                        {
+                            "fare_id": 57, "version": 1, "valid_from": "2026-10-01", "valid_to": "2026-12-31",
+                            "price": _price("55.00", "8.00"), "special_prices": [], "seasons": [],
+                        },
+                        {
+                            "fare_id": 41, "version": 3, "valid_from": "2026-01-01", "valid_to": "2026-12-31",
+                            "price": _price("50.00"),
+                            "special_prices": [
+                                _special(101, "single_date", "18:00", "22:00", "100.00", on_date="2026-12-02"),
+                                _special(102, "selected_days", "14:00", "22:00", "80.00", weekdays=[5, 6]),
+                                _special(104, "every_day", "12:00", "14:00", "90.00"),
+                                _special(103, "every_day", "08:00", "20:00", "60.00"),
+                            ],
+                            "seasons": [
+                                {"id": 12, "name": "Eid", "start_date": "2026-04-10", "end_date": "2026-05-15",
+                                 "price": _price("95.00"), "special_prices": []},
+                                {"id": 9, "name": "Summer", "start_date": "2026-02-01", "end_date": "2026-09-30",
+                                 "price": _price("55.00"),
+                                 "special_prices": [_special(110, "every_day", "16:00", "20:00", "75.00")]},
+                            ],
+                        },
+                    ],
+                },
             ],
-            "seasons": [
-                {"id": 9, "name": "Spring", "start_date": "2026-04-10", "end_date": "2026-05-15",
-                 "base_price": {**_PRICE, "base_fare": "55.00"},
-                 "special_prices": [
-                     {"id": 110, "kind": "every_day", "on_date": None, "weekdays": [],
-                      "start": "16:00", "end": "20:00", "price": {**_PRICE, "base_fare": "90.00", "concurrent_fare": "15.00"}},
-                 ]},
-            ],
-        },
-        {
-            "fare_id": 57, "version": 1, "level": "branch", "package_minutes": 30,
-            "valid_from": "2026-10-01", "valid_to": "2026-12-31",
-            "base_price": {**_PRICE, "base_fare": "45.00", "concurrent_fare": "8.00"},
-            "special_prices": [], "seasons": [],
         },
     ],
 }
 
 _DESCRIPTION = """
-Every fare package of one vehicle type, **whole**, for the caller's own station --
-the station comes from the login session, never from the request.
+The fares this station needs for one working day. Call it at login with that
+day's `date`; calling again when online is safe -- each answer **replaces**
+what the app holds for the same filters. Clear the fare cache at every login.
 
-**Sent:** active, approved fares for this vehicle type that have not ended
-(`valid_to` >= today, company time), company-level ones and this station's own.
+**Request** (`request_data`): `date` required (`YYYY-MM-DD`, the company's local
+date, taken as sent); `vehicle_type_id` and `package_minutes` optional -- each
+only narrows the answer. The station comes from the login session.
 
-**Reading it** (the app runs this). Prices of one kind may sit one inside
-another (`12:00-14:00` inside `08:00-20:00`), and seasons may nest by date
-(Eid inside Summer): **the innermost -- the shortest window, the shortest
-season -- wins**. The server refuses windows or seasons that partly overlap
-or are identical, so the innermost at each step is always exactly one.
-1. Take the fare for the chosen `package_minutes` with `valid_from <= date <= valid_to`;
-   when a `branch` and a `company` fare both match, the **branch** one wins.
-2. A `single_date` special price on that date whose window holds the time wins
-   (the shortest such window, if several hold it).
-3. Otherwise, if seasons cover the date, use **the shortest one's** `base_price` and
-   `special_prices`; else the fare's own.
-4. In that list: `selected_days` (weekday in `weekdays`), then `every_day`, then
-   `base_price`. Within `selected_days` or `every_day`, the shortest window that
-   holds the time wins.
+**Sent:** active, approved fares of active, approved vehicle types, company-level
+and this station's own, in force on `date` **or the day after** (for rentals
+after midnight). Each fare comes whole.
 
-**Formats:** weekdays Monday=0 ... Sunday=6; times local to `company.timezone`,
-window includes `start`, excludes `end`, `"24:00"` is midnight; dates inclusive;
-money is a 2-decimal string.
+**Pricing a rental** -- vehicle type, package, and the rental's **start** date and
+time; the start fixes the price for the whole rental. At every step take the
+**first** match in the order sent:
+1. **Fare:** in that vehicle type and package's `fares`, the first whose
+   `valid_from <= date <= valid_to`. None: no fare -- do not rent.
+2. **Single date:** in that fare's `special_prices`, the first `single_date` with
+   `on_date` = the date and `start <= time < end`. Found: use its `price`. Done.
+3. **List:** the first of the fare's `seasons` with `start_date <= date <= end_date`
+   -- use that season's `price` and `special_prices`; none, the fare's own.
+4. **Special price:** in that list's `special_prices`, the first `selected_days`
+   (weekday in `weekdays`) or `every_day` entry with `start <= time < end`
+   (skip `single_date`). Found: use its `price`; else the list's own `price`.
+
+The order already puts the station's fare before the company's, the shortest
+season first, and single date, selected days, every day with the shortest
+window first -- so the first match is always the right one.
+
+**On the bill:** `fare_id`, `version`, and the season `id` and special price `id`
+used (null when not used).
+
+**Formats:** weekdays Monday=0 ... Sunday=6; times `HH:MM` in the company's
+timezone, `"24:00"` is midnight; dates inclusive; money a 2-decimal string.
+An unknown vehicle type is an error; a known one with no fare is an empty list.
 """
 
 
@@ -96,13 +116,12 @@ class FaresView(APIView):
 
     @extend_schema(
         tags=["Operator Fares"],
-        summary="Every fare package of one vehicle type, for this station",
+        summary="The station's fares for a working day",
         description=_DESCRIPTION,
         request=envelope_request("FaresEnvelope", FaresRequest),
         responses=envelope_responses(
             (200, "ok", "Fares.", _FARES_SAMPLE),
-            (400, "invalid_request", "vehicle_type_id is required.",
-             {"errors": {"vehicle_type_id": "is required"}}),
+            (400, "invalid_request", "date is required.", {"errors": {"date": "is required"}}),
             (400, "unknown_vehicle_type", "That vehicle type is not set up for this station.", {}),
             (401, "not_authenticated", "Sign in first.", {}),
             (403, "wrong_channel", "Not allowed on this app.", {}),
@@ -120,9 +139,12 @@ class FaresView(APIView):
         _, request_data = request_parts(request)
         form = FaresRequest(data=request_data)
         form.is_valid(raise_exception=True)
+        values = form.validated_data
 
         try:
-            data = services.device_fares(branch, form.validated_data["vehicle_type_id"])
+            data = services.device_fares(branch, values["date"],
+                                         vehicle_type_id=values.get("vehicle_type_id"),
+                                         package_minutes=values.get("package_minutes"))
         except services.UnknownVehicleType:
             return envelope("unknown_vehicle_type", "That vehicle type is not set up for this station.",
                             http_status=400)

@@ -1,5 +1,7 @@
 """POST /api/v1/operator/fares, tested through HTTP as the till app sees it:
-sign in, then fetch one vehicle type's fares with the access token."""
+sign in, then fetch the day's fares with the access token. The exhaustive
+check -- every fare set, date and minute against pricing.resolve -- is in
+test_device_fares.py."""
 
 from decimal import Decimal
 
@@ -54,7 +56,8 @@ def world(db):
 
     def vehicle_type(co, name):
         category = Category.objects.get_or_create(company=co, category_code="BYKY",
-                                                  defaults={"category_name": "BYKY"})[0]
+                                                  defaults={"category_name": "BYKY",
+                                                            "approval_status": ApprovalStatus.APPROVED})[0]
         brand = Brand.objects.get_or_create(company=co, brand_code="BYK", defaults={"brand_name": "Byky"})[0]
         return VehicleType.objects.create(company=co, category=category, brand=brand, vehicle_type_name=name,
                                           vehicle_type_code=name[:3].upper(), tax_percentage=Decimal("5.00"),
@@ -84,75 +87,118 @@ def token(client, world):
     return response.json()["data"]["tokens"]["access"]
 
 
-def fares_for(client, token, vehicle_type):
-    return call(client, URL, {"vehicle_type_id": vehicle_type.pk}, token=token)
+APPROVED = {"approval_status": ApprovalStatus.APPROVED}
 
 
-def test_every_package_comes_whole(client, world, token):
-    fare = make_fare(world, approval_status=ApprovalStatus.APPROVED, valid_to=D(2099, 12, 31))
-    make_rule(fare, "single_date", 720, 1320, on_date=D(2099, 12, 2), base_fare=Decimal("100"))
+def fares(client, token, **request_data):
+    return call(client, URL, {"date": "2026-09-30", **request_data}, token=token)
+
+
+def fares_of(body, vehicle_type=None, package=30):
+    """The fare ids of one package in the answer."""
+    for entry in body["data"]["vehicle_types"]:
+        if vehicle_type is None or entry["vehicle_type_id"] == vehicle_type.pk:
+            for pkg in entry["packages"]:
+                if pkg["package_minutes"] == package:
+                    return [f["fare_id"] for f in pkg["fares"]]
+    return []
+
+
+def test_the_days_fares_come_whole_in_first_match_order(client, world, token):
+    fare = make_fare(world, **APPROVED)
+    make_rule(fare, "every_day", 480, 1200, base_fare=Decimal("60"))                  # 08-20
+    make_rule(fare, "every_day", 720, 840, base_fare=Decimal("90"))                   # 12-14, inside it
     make_rule(fare, "selected_days", 840, 1440, weekdays=[WeekDay.SATURDAY, WeekDay.SUNDAY])
-    spring = make_season(fare, D(2099, 4, 10), D(2099, 5, 15), base_fare=Decimal("55"))
-    make_rule(fare, "every_day", 960, 1200, season=spring)
-    own = make_fare(world, branches=[world["adc1"]], approval_status=ApprovalStatus.APPROVED,
-                    valid_from=D(2099, 10, 1), valid_to=D(2099, 12, 31))
+    make_rule(fare, "single_date", 720, 1320, on_date=D(2026, 12, 2), base_fare=Decimal("100"))
+    summer = make_season(fare, D(2026, 2, 1), D(2026, 9, 30), name="Summer")
+    make_season(fare, D(2026, 4, 10), D(2026, 5, 15), name="Eid", base_fare=Decimal("95"))
+    make_rule(fare, "every_day", 960, 1200, season=summer)
+    own = make_fare(world, branches=[world["adc1"]], valid_from=D(2026, 10, 1), **APPROVED)   # starts tomorrow
 
-    body = fares_for(client, token, world["monaco"]).json()
+    body = fares(client, token).json()
 
     assert body["code"] == "ok"
     data = body["data"]
-    assert data["branch"] == {"id": world["adc1"].pk, "code": "ADC1", "name": "Abu Dhabi Corniche 1"}
-    assert data["company"]["code"] == "0598" and data["company"]["timezone"] == "Asia/Dubai"
-    assert data["vehicle_type"] == {"id": world["monaco"].pk, "name": "Monaco", "code": "MON",
-                                    "category": "BYKY", "tax_percentage": "5.00"}
-    assert [f["fare_id"] for f in data["fares"]] == [fare.pk, own.pk]
-    company_fare = data["fares"][0]
-    assert company_fare["level"] == "company" and company_fare["base_price"]["base_fare"] == "50.00"
-    assert [r["kind"] for r in company_fare["special_prices"]] == ["single_date", "selected_days"]
-    assert company_fare["special_prices"][1] == {
-        "id": company_fare["special_prices"][1]["id"], "kind": "selected_days", "on_date": None,
+    assert data["date"] == "2026-09-30"
+    [monaco] = data["vehicle_types"]
+    assert monaco["vehicle_type_id"] == world["monaco"].pk
+    [package] = monaco["packages"]
+    assert package["package_minutes"] == 30
+    assert [f["fare_id"] for f in package["fares"]] == [own.pk, fare.pk]          # the station's first
+    company = package["fares"][1]
+    assert set(company) == {"fare_id", "version", "valid_from", "valid_to", "price", "special_prices", "seasons"}
+    assert company["price"] == {"base_fare": "50.00", "grace_minutes": 5, "concurrent_interval_minutes": 10,
+                                "concurrent_fare": "10.00", "concurrent_grace_minutes": 0}
+    order = [(r["kind"], r["start"], r["end"]) for r in company["special_prices"]]
+    assert order == [("single_date", "12:00", "22:00"), ("selected_days", "14:00", "24:00"),
+                     ("every_day", "12:00", "14:00"), ("every_day", "08:00", "20:00")]
+    assert company["special_prices"][1] == {
+        "id": company["special_prices"][1]["id"], "kind": "selected_days", "on_date": None,
         "weekdays": [5, 6], "start": "14:00", "end": "24:00",
         "price": {"base_fare": "50.00", "grace_minutes": 5, "concurrent_interval_minutes": 10,
                   "concurrent_fare": "10.00", "concurrent_grace_minutes": 0},
     }
-    season = company_fare["seasons"][0]
-    assert (season["name"], season["start_date"], season["base_price"]["base_fare"]) == ("Spring", "2099-04-10", "55.00")
-    assert season["special_prices"][0]["start"] == "16:00"
-    assert data["fares"][1]["level"] == "branch"
+    assert [s["name"] for s in company["seasons"]] == ["Eid", "Summer"]            # the shorter first
+    assert company["seasons"][1]["special_prices"][0]["start"] == "16:00"
 
 
-def test_only_fares_this_station_may_use(client, world, token):
-    approved = {"approval_status": ApprovalStatus.APPROVED, "valid_to": D(2099, 12, 31)}
-    make_fare(world, branches=[world["adc2"]], **approved)                        # another station's
-    make_fare(world, package_minutes=45, is_active=False, **approved)             # inactive
+def test_only_fares_this_station_may_use_on_that_day(client, world, token):
+    kept = make_fare(world, valid_from=D(2026, 9, 1), valid_to=D(2026, 9, 30), **APPROVED)   # ends today
+    make_fare(world, branches=[world["adc2"]], **APPROVED)                        # another station's
+    make_fare(world, package_minutes=45, is_active=False, **APPROVED)             # inactive
     make_fare(world, package_minutes=60)                                          # not approved
-    make_fare(world, package_minutes=90, approval_status=ApprovalStatus.APPROVED,
-              valid_from=D(2020, 1, 1), valid_to=D(2020, 12, 31))                 # already ended
-    make_fare(world, vehicle_type=world["berg"], **approved)                      # another vehicle type
-    assert fares_for(client, token, world["monaco"]).json()["data"]["fares"] == []
+    make_fare(world, package_minutes=90, valid_to=D(2026, 9, 29), **APPROVED)     # ended yesterday
+    make_fare(world, package_minutes=90, valid_from=D(2026, 10, 2), **APPROVED)   # starts the day after tomorrow
+    body = fares(client, token).json()
+    assert fares_of(body) == [kept.pk]
+    assert [p["package_minutes"] for p in body["data"]["vehicle_types"][0]["packages"]] == [30]
+
+
+def test_filters_narrow_the_answer(client, world, token):
+    monaco30 = make_fare(world, **APPROVED)
+    monaco60 = make_fare(world, package_minutes=60, **APPROVED)
+    berg30 = make_fare(world, vehicle_type=world["berg"], **APPROVED)
+
+    def ids(**filters):
+        body = fares(client, token, **filters).json()
+        return sorted(f["fare_id"] for v in body["data"]["vehicle_types"] for p in v["packages"] for f in p["fares"])
+
+    assert ids() == sorted([monaco30.pk, monaco60.pk, berg30.pk])
+    assert ids(vehicle_type_id=world["monaco"].pk) == sorted([monaco30.pk, monaco60.pk])
+    assert ids(package_minutes=30) == sorted([monaco30.pk, berg30.pk])
+    assert ids(vehicle_type_id=world["berg"].pk, package_minutes=30) == [berg30.pk]
+    assert ids(vehicle_type_id=world["berg"].pk, package_minutes=60) == []       # known type, no fare: empty
 
 
 def test_a_vehicle_type_of_another_company_is_refused(client, world, token):
-    response = fares_for(client, token, world["their_type"])
+    response = fares(client, token, vehicle_type_id=world["their_type"].pk)
     assert response.status_code == 400
     assert response.json()["code"] == "unknown_vehicle_type"
 
 
-def test_vehicle_type_id_is_required(client, world, token):
-    response = call(client, URL, {}, token=token)
+@pytest.mark.parametrize("request_data,field", [
+    ({}, "date"),
+    ({"date": "30/09/2026"}, "date"),
+    ({"date": "2026-02-30"}, "date"),
+    ({"date": "2026-09-30", "package_minutes": 0}, "package_minutes"),
+    ({"date": "2026-09-30", "package_minutes": 1441}, "package_minutes"),
+    ({"date": "2026-09-30", "vehicle_type_id": "abc"}, "vehicle_type_id"),
+])
+def test_the_request_is_checked(client, world, token, request_data, field):
+    response = call(client, URL, request_data, token=token)
     assert response.status_code == 400
     assert response.json()["code"] == "invalid_request"
-    assert "vehicle_type_id" in response.json()["data"]["errors"]
+    assert field in response.json()["data"]["errors"]
 
 
 def test_no_token_is_refused(client, world):
-    response = fares_for(client, None, world["monaco"])
+    response = fares(client, None)
     assert response.status_code == 401
     assert response.json()["code"] == "not_authenticated"
 
 
 def test_other_apps_are_refused(client, world, token):
-    response = call(client, "/api/v1/employee/fares", {"vehicle_type_id": world["monaco"].pk}, token=token)
+    response = call(client, "/api/v1/employee/fares", {"date": "2026-09-30"}, token=token)
     assert response.status_code == 403
     assert response.json()["code"] == "wrong_channel"
 

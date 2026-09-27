@@ -5,7 +5,7 @@ import pytest
 from django.db import IntegrityError, connection, transaction
 
 from apps.fare.tests.test_api import call, fresh_throttle, token, world  # noqa: F401 -- fixtures
-from apps.fleet.models import UOM, Category, Vehicle
+from apps.fleet.models import UOM, Vehicle
 from core.enums import ApprovalStatus
 
 URL = "/api/v1/operator/vehicles"
@@ -14,7 +14,6 @@ APPROVED = ApprovalStatus.APPROVED
 
 @pytest.fixture
 def uom(world):
-    Category.objects.update(approval_status=APPROVED)   # the fare fixture leaves categories pending
     return UOM.objects.create(company=world["company"], uom_code="NO", uom_name="Number",
                               approval_status=APPROVED)
 
