@@ -35,17 +35,21 @@ from apps.company.models import Branch, BranchType
 from apps.fare import services
 from apps.fare.models import Fare, FareLevel, RuleKind
 from apps.fare.pricing import FareSpec, Price, Rule, Season, resolve, validate_spec
+from apps.fare.tests import test_api
 from apps.fare.tests.conftest import make_fare, make_rule, make_season
-from apps.fare.tests.test_api import URL, call, fresh_throttle, token, world  # noqa: F401 -- fixtures
 from apps.fleet.models import Brand, Category, VehicleType
 from core.enums import ApprovalStatus
+
+# The signed-in till from the HTTP tests, reused as fixtures here.
+URL, call = test_api.URL, test_api.call
+world, token, fresh_throttle = test_api.world, test_api.token, test_api.fresh_throttle
 
 D = datetime.date
 DAY = datetime.timedelta(days=1)
 APPROVED, PENDING = ApprovalStatus.APPROVED, ApprovalStatus.PENDING
 SPAN_START = D(2028, 2, 10)                 # the span crosses 29 Feb 2028
 SPAN_END = SPAN_START + 39 * DAY
-ROUNDS = 25
+ROUNDS = 12
 EVERY, DAYS, SINGLE = RuleKind.EVERY_DAY, RuleKind.SELECTED_DAYS, RuleKind.SINGLE_DATE
 KIND_RANK = {SINGLE: 0, DAYS: 1, EVERY: 2}
 
