@@ -80,8 +80,8 @@ def _issues(issues):
     return [i.as_dict() for i in issues]
 
 
-def _error(field, message, key=""):
-    return {"key": key, "field": field, "message": message}
+def _error(field, message, key="", missing=False):
+    return {"key": key, "field": field, "message": message, "missing": missing}
 
 
 # -- Saved fare -> spec -----------------------------------------------------------------
@@ -193,7 +193,7 @@ def _context(user, meta, fare=None):
     elif getattr(user, "sees_every_company", False):
         company = companies_for(user).filter(pk=meta["company"]).first()
         if company is None:
-            errors.append(_error("Company", "Choose a company."))
+            errors.append(_error("Company", "Choose a company.", missing=True))
     else:
         company = user.company
 

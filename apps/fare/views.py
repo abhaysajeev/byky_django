@@ -60,12 +60,18 @@ class FareListView(FareScreenView):
                       rule_count=Count("rules", filter=Q(rules__season__isnull=True), distinct=True))
             .order_by("vehicle_type__vehicle_type_name", "package_minutes", "-valid_from")
         )
+        # The branch search finds every fare that applies at a branch: its own
+        # and its company's (which covers every branch of the company).
+        company_branches = {}
+        for company_id, name in branches_for(user).order_by("name").values_list("company_id", "name"):
+            company_branches.setdefault(company_id, []).append(name)
         today_of = {}
         rows = []
         for fare in fares:
             today = today_of.setdefault(fare.company_id, business_date_for(fare.company))
             branches = sorted(link.branch.name for link in fare.branch_links.all())
             is_company = fare.level == FareLevel.COMPANY
+            reaches = company_branches.get(fare.company_id, []) if is_company else branches
             rows.append({
                 "pk": fare.pk,
                 "name": fare.vehicle_type.vehicle_type_name,
@@ -75,6 +81,7 @@ class FareListView(FareScreenView):
                 "level": "Company" if is_company else "Branch",
                 "scope": "All branches" if is_company else f"{len(branches)} branch{'es' if len(branches) != 1 else ''}",
                 "branches": ", ".join(branches),
+                "search_branch": " | ".join(reaches),
                 "validity": f"{pricing.date_label(fare.valid_from)} – {pricing.date_label(fare.valid_to)}",
                 "period": _period(fare, today),
                 "base_fare": fare.base_fare,

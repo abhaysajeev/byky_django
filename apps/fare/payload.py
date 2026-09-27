@@ -57,14 +57,14 @@ class _Reader:
     def __init__(self):
         self.errors = []
 
-    def fail(self, key, where, message):
-        self.errors.append(Issue(key, where, message))
+    def fail(self, key, where, message, *, missing=False):
+        self.errors.append(Issue(key, where, message, missing))
         return None
 
     def whole(self, value, key, where, *, minimum=0, maximum=MAX_MINUTES):
         text = "" if value is None or isinstance(value, bool) else str(value).strip()
         if not WHOLE.match(text):
-            return self.fail(key, where, "Enter a whole number of minutes, such as 10.")
+            return self.fail(key, where, "Enter a whole number of minutes, such as 10.", missing=not text)
         number = int(text)
         if not minimum <= number <= maximum:
             return self.fail(key, where, f"Enter {minimum} to {maximum} minutes.")
@@ -73,7 +73,7 @@ class _Reader:
     def money(self, value, key, where):
         text = "" if value is None or isinstance(value, bool) else str(value).strip()
         if not AMOUNT.match(text):
-            return self.fail(key, where, "Enter an amount, such as 50.00.")
+            return self.fail(key, where, "Enter an amount, such as 50.00.", missing=not text)
         try:
             amount = Decimal(text)
         except InvalidOperation:
@@ -88,7 +88,7 @@ class _Reader:
 
     def date(self, value, key, where, *, required=True):
         if value in (None, ""):
-            return self.fail(key, where, "Pick a date.") if required else None
+            return self.fail(key, where, "Pick a date.", missing=True) if required else None
         try:
             return datetime.date.fromisoformat(str(value))
         except ValueError:
@@ -97,7 +97,7 @@ class _Reader:
     def minute(self, value, key, where, *, end=False):
         match = TIME.match(str(value or "").strip())
         if not match:
-            return self.fail(key, where, "Use a 24-hour time such as 08:30.")
+            return self.fail(key, where, "Use a 24-hour time such as 08:30.", missing=not str(value or "").strip())
         minutes = int(match[1]) * 60 + int(match[2])
         if minutes > MIDNIGHT or (minutes == MIDNIGHT and not end):
             return self.fail(key, where, "Use a 24-hour time such as 08:30.")
@@ -180,11 +180,11 @@ def parse(data):
         "rule_ids": {}, "rule_season": {}, "season_ids": {},
     }
     if not meta["vehicle_type"]:
-        reader.fail("", "Vehicle type", "Choose a vehicle type.")
+        reader.fail("", "Vehicle type", "Choose a vehicle type.", missing=True)
     if level not in FareLevel.values:
-        reader.fail("", "Fare level", "Choose company or branch level.")
+        reader.fail("", "Fare level", "Choose company or branch level.", missing=True)
     elif level == FareLevel.BRANCH and not meta["branches"]:
-        reader.fail("", "Branches", "Select at least one branch.")
+        reader.fail("", "Branches", "Select at least one branch.", missing=True)
     if level == FareLevel.COMPANY:
         meta["branches"] = []
 

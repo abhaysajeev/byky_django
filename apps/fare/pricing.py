@@ -159,14 +159,17 @@ class Segment:
 @dataclass(frozen=True)
 class Issue:
     """One problem, in the shape the message modal lists: `field` leads the
-    line, `key` says which row it belongs to ("" for the fare itself)."""
+    line, `key` says which row it belongs to ("" for the fare itself).
+    `missing` marks a required value not filled in yet: Save lists it, but the
+    live banner leaves it out so a half-filled form is not a wall of red."""
 
     key: str
     field: str
     message: str
+    missing: bool = False
 
     def as_dict(self):
-        return {"key": self.key, "field": self.field, "message": self.message}
+        return {"key": self.key, "field": self.field, "message": self.message, "missing": self.missing}
 
 
 # -- Words ------------------------------------------------------------------------

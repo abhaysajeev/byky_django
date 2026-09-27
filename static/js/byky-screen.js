@@ -182,8 +182,16 @@
   }
 
   function applyFilters(scope, keepPage) {
-    var searchInput = scope.querySelector('.scr-search input');
-    var q = (searchInput && searchInput.value || '').trim().toLowerCase();
+    // One or more search boxes, all of which must match (AND). A box with
+    // data-search-key="branch" matches the row's data-search-branch; a box
+    // without one matches data-search, as on every single-search screen.
+    var searches = [];
+    scope.querySelectorAll('.scr-search input').forEach(function (input) {
+      var q = (input.value || '').trim().toLowerCase();
+      if (!q) return;
+      var key = input.dataset.searchKey;
+      searches.push({ q: q, field: key ? 'search' + key.charAt(0).toUpperCase() + key.slice(1) : 'search' });
+    });
     var rows = scope.querySelectorAll('.scr-row');
     var active = {};
     scope.querySelectorAll('.scr-filter-wrap').forEach(function (w) {
@@ -194,7 +202,7 @@
 
     var matches = [];
     rows.forEach(function (tr) {
-      var matchesQ = !q || (tr.dataset.search || '').indexOf(q) > -1;
+      var matchesQ = searches.every(function (s) { return (tr.dataset[s.field] || '').indexOf(s.q) > -1; });
       var matchesAll = Object.keys(active).every(function (key) {
         return !active[key] || tr.dataset[key] === active[key];
       });

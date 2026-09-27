@@ -61,7 +61,12 @@
     <div class="scr-toolbar">
       <div class="scr-search">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
-        <input type="text" placeholder="Search vehicle type, category or branch" />
+        <input type="text" data-search-key="vehicle" placeholder="Search vehicle type" aria-label="Search vehicle type" />
+      </div>
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"></path><circle cx="12" cy="9.5" r="2.5"></circle></svg>
+        <input type="text" data-search-key="branch" placeholder="Search branch" aria-label="Search branch"
+               title="Shows every fare that applies at the branch: its own, and its company's" />
       </div>
 
       <div class="scr-filter-wrap" data-filter-key="category">
@@ -133,7 +138,8 @@
         <tbody>
           {% for f in fares %}
           <tr class="scr-row" data-pk="{{ f.pk }}"
-              data-search="{{ f.name|lower }} {{ f.category|lower }} {{ f.branches|lower }} {{ f.company|lower }}"
+              data-search-vehicle="{{ f.name|lower }} {{ f.category|lower }} {{ f.company|lower }}"
+              data-search-branch="{{ f.search_branch|lower }}"
               data-category="{{ f.category }}" data-level="{{ f.level }}" data-period="{{ f.period }}"
               data-status="{% if f.active %}Active{% else %}Inactive{% endif %}">
             <td>

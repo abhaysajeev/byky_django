@@ -4,7 +4,9 @@
    page decides a price: overlaps, rules that never apply, holiday warnings and
    the Test fare answer all come from the server's check endpoint
    (apps.fare.services.check), which runs the same code as the save. The
-   browser only draws, and checks that a time looks like HH:MM. */
+   browser only draws, keeps number fields clean as they are typed (digits
+   only, no leading zeros, two decimals), and checks that a time looks like
+   HH:MM -- the server checks all of it again. */
 (function () {
   'use strict';
 
@@ -19,11 +21,14 @@
   var KIND = { single_date: 'Single date', selected_days: 'Selected days', every_day: 'Every day' };
   var RANK = { single_date: 0, selected_days: 1, every_day: 2 };
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  // [field, label, unit, minimum]. Minutes run to 1440 (one day).
   var PRICE = [
-    ['base_fare', 'Basic fare', 'AED'], ['grace_minutes', 'Grace period', 'min'],
-    ['concurrent_interval_minutes', 'Concurrent interval', 'min'],
-    ['concurrent_fare', 'Concurrent fare', 'AED'], ['concurrent_grace_minutes', 'Concurrent grace', 'min']
+    ['base_fare', 'Basic fare', 'AED', 0], ['grace_minutes', 'Grace period', 'min', 0],
+    ['concurrent_interval_minutes', 'Concurrent interval', 'min', 1],
+    ['concurrent_fare', 'Concurrent fare', 'AED', 0], ['concurrent_grace_minutes', 'Concurrent grace', 'min', 0]
   ];
+  var MAX_MINUTES = 1440;
+  var MAX_MONEY = 9999999999.99;
   var DAY_SHORT = {};
   options.days.forEach(function (d) { DAY_SHORT[d.value] = d.short; });
 
@@ -109,13 +114,21 @@
 
   function level() { var on = $('[data-fare-field="level"]:checked'); return on ? on.value : ''; }
 
-  function priceFields(scope, price) {
-    return '<div class="scr-grid">' + PRICE.map(function (f) {
+  /* The five price fields, for a three-column grid: basic fare and grace on
+     the first row (after the package time on the base fare, else before an
+     empty cell), the three concurrent fields on the second. */
+  function priceFields(scope, price, spacer) {
+    return PRICE.map(function (f, i) {
       var id = 'fare-' + scope + '-' + f[0];
+      var minutes = f[2] === 'min';
+      var attrs = minutes
+        ? 'inputmode="numeric" maxlength="4" data-num="minutes" data-min="' + f[3] + '" data-max="' + MAX_MINUTES + '" placeholder="0"'
+        : 'inputmode="decimal" maxlength="13" data-num="money" placeholder="0.00"';
       return '<div class="scr-field"><label class="scr-label" for="' + id + '">' + f[1] + ' (' + f[2] + ')' +
-        '<span class="scr-required">*</span></label><input id="' + id + '" class="scr-input" inputmode="decimal" ' +
-        'data-price="' + f[0] + '" value="' + esc(price[f[0]]) + '" /></div>';
-    }).join('') + '</div>';
+        '<span class="scr-required">*</span></label><input id="' + id + '" class="scr-input" autocomplete="off" ' + attrs +
+        ' data-price="' + f[0] + '" value="' + esc(price[f[0]]) + '" /></div>' +
+        (spacer && i === 1 ? '<div class="scr-fare-spacer" aria-hidden="true"></div>' : '');
+    }).join('');
   }
   function readPrice(host) {
     var price = {};
@@ -135,7 +148,12 @@
       box.checked = (initial.branches || []).indexOf(+box.value) !== -1;
       box.dispatchEvent(new Event('change', { bubbles: true }));
     });
-    $('[data-fare-price-host="base"]').innerHTML = priceFields('base', initial.base || {});
+    var baseHost = $('[data-fare-price-host="base"]');
+    $$('[data-price]', baseHost).forEach(function (el) { el.closest('.scr-field').remove(); });
+    baseHost.insertAdjacentHTML('beforeend', priceFields('base', initial.base || {}, false));
+    // A saved fare keeps its vehicle type: show its category, locked.
+    var type = vehicleType.selectedOptions[0];
+    if (initial.pk && type && type.value) category.value = type.dataset.category || '';
     applyFilters();
     showLevel();
     showTax();
@@ -258,7 +276,7 @@
           '</div>' +
         '</div>' +
         (open ? '<div class="scr-fare-season-body">' +
-          '<div class="scr-grid">' +
+          '<div class="scr-grid scr-fare-grid-3">' +
             '<div class="scr-field"><label class="scr-label" for="season-name-' + esc(s.key) + '">Season name<span class="scr-required">*</span></label>' +
               '<input id="season-name-' + esc(s.key) + '" class="scr-input" data-season-field="name" value="' + esc(s.name) + '" /></div>' +
             '<div class="scr-field"><label class="scr-label" for="season-from-' + esc(s.key) + '">From date<span class="scr-required">*</span></label>' +
@@ -267,7 +285,7 @@
               '<input id="season-to-' + esc(s.key) + '" class="scr-input byky-date" data-season-date="end_date" placeholder="Select date" /></div>' +
           '</div>' +
           '<h3 class="scr-fare-sub">Season base fare</h3>' +
-          '<div data-season-price>' + priceFields('season-' + s.key, s.base) + '</div>' +
+          '<div class="scr-grid scr-fare-grid-3" data-season-price>' + priceFields('season-' + s.key, s.base, true) + '</div>' +
           '<div class="scr-fare-sub-row"><h3 class="scr-fare-sub">Special pricing in ' + esc(s.name || 'this season') + '</h3>' +
             (canSave ? '<button type="button" class="scr-btn scr-btn-small" data-fare-add-rule="' + esc(s.key) + '">Add price</button>' : '') + '</div>' +
           '<p class="scr-help scr-fare-season-help">Selected days → Every day → season base fare.' +
@@ -327,17 +345,107 @@
     }, 400);
   }
 
+  /* Two parts. Red: what would stop the save -- a clash with another fare,
+     crossing windows, a locked field -- found live, before Save is pressed.
+     Values simply not filled in yet are left to Save. Amber: saved fine, but
+     worth knowing (holiday dates that won't reach a branch, prices that
+     never apply). */
   function renderBanner() {
-    var host = $('[data-fare-banner]');
+    var host = document.querySelector('[data-fare-banner]');
+    var errors = marks.errors.filter(function (e) { return !e.missing; });
     var never = Object.keys(marks.never).length;
-    var items = [];
-    marks.holidays.forEach(function (h) { items.push('<li>' + esc(h.message) + '</li>'); });
+    var notes = [];
+    marks.holidays.forEach(function (h) { notes.push('<li>' + esc(h.message) + '</li>'); });
     if (never) {
-      items.push('<li>' + never + ' special price' + (never === 1 ? ' never applies' : 's never apply') +
+      notes.push('<li>' + never + ' special price' + (never === 1 ? ' never applies' : 's never apply') +
         '. It is saved, but will never be charged. See the rows marked below.</li>');
     }
-    host.innerHTML = items.length ? '<ul class="scr-fare-banner">' + items.join('') + '</ul>' : '';
+    host.innerHTML =
+      (errors.length ? '<ul class="scr-fare-banner is-error"><li class="scr-fare-banner-title">' +
+        (errors.length === 1 ? 'This fare can\'t be saved yet' : errors.length + ' things stop this fare from saving') + '</li>' +
+        errors.map(function (e) {
+          return '<li>' + (e.field ? '<span class="scr-msg-field">' + esc(e.field) + '</span>' : '') + esc(e.message) + '</li>';
+        }).join('') + '</ul>' : '') +
+      (notes.length ? '<ul class="scr-fare-banner">' + notes.join('') + '</ul>' : '');
   }
+
+  // -- Number fields -------------------------------------------------------------
+  // Cleaned as they are typed, so "010" never happens: minutes keep digits
+  // only and lose leading zeros; money keeps one point and two decimals.
+
+  function cleanNumber(el) {
+    var v = el.value;
+    if (el.dataset.num === 'minutes') {
+      v = v.replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+    } else {
+      v = v.replace(/[^\d.]/g, '');
+      var dot = v.indexOf('.');
+      if (dot !== -1) v = v.slice(0, dot + 1) + v.slice(dot + 1).replace(/\./g, '').slice(0, 2);
+      v = v.replace(/^0+(?=\d)/, '');
+      if (v.charAt(0) === '.') v = '0' + v;
+    }
+    if (v !== el.value) el.value = v;
+  }
+
+  /* '' when fine, else what is wrong. Money is tidied to two decimals. */
+  function numberProblem(el) {
+    var v = el.value.trim();
+    if (!v) return 'Required.';
+    if (el.dataset.num === 'minutes') {
+      var n = +v, lo = +(el.dataset.min || 0), hi = +(el.dataset.max || MAX_MINUTES);
+      return n < lo || n > hi ? 'Enter ' + lo + ' to ' + hi + ' minutes.' : '';
+    }
+    var amount = parseFloat(v);
+    if (isNaN(amount)) return 'Enter an amount, such as 50.00.';
+    if (amount > MAX_MONEY) return 'That amount is too large.';
+    return '';
+  }
+
+  function markNumber(el, problem) {
+    var field = el.closest('.scr-field');
+    var note = field && field.querySelector('.scr-fare-field-error');
+    el.classList.toggle('is-invalid', !!problem);
+    el.setAttribute('aria-invalid', problem ? 'true' : 'false');
+    if (problem && field && !note) {
+      note = document.createElement('div');
+      note.className = 'scr-fare-field-error';
+      field.appendChild(note);
+    }
+    if (note) { if (problem) note.textContent = problem; else note.remove(); }
+  }
+
+  function checkNumber(el) {
+    var problem = numberProblem(el);
+    if (!problem && el.dataset.num === 'money') {
+      var tidy = parseFloat(el.value).toFixed(2);
+      if (tidy !== el.value) { el.value = tidy; el.dispatchEvent(new Event('input', { bubbles: true })); }
+    }
+    markNumber(el, problem);
+    return !problem;
+  }
+
+  /* Every number field in `scope`; returns how many are wrong. */
+  function checkNumbers(scope) {
+    return $$('[data-num]', scope).filter(function (el) { return !el.disabled && !checkNumber(el); }).length;
+  }
+
+  // Capture: runs before the page's own input handlers read the value.
+  document.addEventListener('input', function (e) {
+    var el = e.target;
+    if (!el.dataset || !el.dataset.num) return;
+    cleanNumber(el);
+    if (el.classList.contains('is-invalid') && !numberProblem(el)) markNumber(el, '');
+  }, true);
+  document.addEventListener('focusin', function (e) {
+    var el = e.target;
+    // Typing replaces the value (a default 0 included) rather than adding to it.
+    if (el.dataset && el.dataset.num && !el.readOnly) setTimeout(function () { el.select(); }, 0);
+  });
+  document.addEventListener('focusout', function (e) {
+    var el = e.target;
+    if (el.dataset && el.dataset.num && !el.disabled && el.value.trim() !== '') checkNumber(el);
+    else if (el.dataset && el.dataset.num && el.value.trim() === '') markNumber(el, 'Required.');
+  });
 
   function changed() { dirty = true; scheduleCheck(); }
 
@@ -383,7 +491,7 @@
     setIso(ruleDate, rule.on_date);
     setTime(ruleFrom, rule.start);
     setTime(ruleTo, rule.end === '24:00' ? '00:00' : rule.end);
-    rulePriceHost.innerHTML = priceFields('rule', rule.price);
+    rulePriceHost.innerHTML = priceFields('rule', rule.price, true);
     ruleErrors.hidden = true;
     showKind();
     Crud.open('fare-rule');
@@ -413,6 +521,11 @@
      and shows only the problems this price adds -- so an unrelated error
      elsewhere on the page never blocks it. */
   function saveRule() {
+    if (checkNumbers(ruleBox)) {
+      ruleErrors.innerHTML = '<li class="scr-msg-item">Fix the highlighted fields.</li>';
+      ruleErrors.hidden = false;
+      return;
+    }
     var rule = readRule();
     var next = withRule(rule);
     var url = root.dataset.checkUrl;
@@ -476,9 +589,13 @@
       '<div class="scr-fare-axis"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>';
   }
 
+  var testSeq = 0;
+
   function runTest() {
     var time = hhmm(testTime.value);
+    var seq = ++testSeq;
     Crud.post(root.dataset.checkUrl, { fare: collect(), test: { date: isoOf(testDate), time: time } }).then(function (result) {
+      if (seq !== testSeq) return;          // a later date or time was asked since; its answer wins
       var body = result.body || {};
       if (body.errors && body.errors.length && !body.test) {
         testResult.innerHTML = '<div class="scr-fare-result is-none"><b>Fix the fare first</b><ul class="scr-msg-list">' +
@@ -532,6 +649,7 @@
   // -- Save ------------------------------------------------------------------------
 
   function save(button) {
+    checkNumbers(root);          // marks the fields; the server's list says the rest
     button.disabled = true;
     Crud.post(root.dataset.saveUrl, collect()).then(function (result) {
       button.disabled = false;

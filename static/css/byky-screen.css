@@ -924,8 +924,32 @@ textarea.scr-drawer-input { height: auto; min-height: 72px; padding: 10px 13px; 
    special prices and its seasons, each season with its own; these draw those
    lists, the "never applies" warnings the server reports, and the Test fare
    answer. Kept to this block, all prefixed scr-fare-. ─────────────────── */
-/* five price fields under a section, same grid as the rest of the form */
+/* Fixed columns, not auto-fit: fields that appear and disappear (branches,
+   the company picker) never reflow the others. Fare details runs four
+   across; prices run three -- package, basic fare, grace over the three
+   concurrent fields -- so every price block on the page lines up alike. */
+.scr-fare-grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.scr-fare-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.scr-fare-span { grid-column: 1 / -1; }
+.scr-fare-spacer { min-height: 0; }
 .scr-fare-price-grid { margin-top: 16px; }
+[data-fare] .scr-input:disabled { background: #f8f7fb; color: #8b87b0; cursor: not-allowed; opacity: 1; }
+.scr-input.is-invalid { border-color: #d81f26; background: #fffafa; }
+.scr-fare-field-error { font-size: 10.5px; color: #c2141a; margin-top: 6px; }
+/* the live banner sits under the page head; empty, it takes no room */
+[data-fare-banner]:empty { display: none; }
+[data-fare-banner] .scr-fare-banner { margin: 0; }
+[data-fare-banner] .scr-fare-banner + .scr-fare-banner { margin-top: 10px; }
+.scr-fare-banner.is-error { background: #fdeced; color: #8a0f14; }
+.scr-fare-banner-title { font-weight: 700; }
+.scr-fare-banner .scr-msg-field { font-weight: 600; margin-right: 4px; }
+@media (max-width: 1100px) {
+  .scr-fare-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .scr-fare-grid-4, .scr-fare-grid-3 { grid-template-columns: 1fr; }
+  .scr-fare-spacer { display: none; }
+}
 /* the rules table sits inside a card body, so it gets its own frame */
 .scr-fare-table { border: 1px solid #eeedf5; border-radius: 12px; }
 .scr-fare-table td { vertical-align: top; }

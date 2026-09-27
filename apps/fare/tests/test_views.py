@@ -40,6 +40,30 @@ def test_the_list_shows_this_companys_fares_only(client_in, world):
     assert "Their Kart" not in html
 
 
+def test_the_list_has_a_vehicle_search_and_a_branch_search(client_in, world):
+    make_fare(world)                                                  # company: every branch
+    make_fare(world, vehicle_type=world["berg"], branches=[world["adc1"]])
+    html = client_in.get("/fare/list/").content.decode()
+    assert 'data-search-key="vehicle"' in html and 'data-search-key="branch"' in html
+    company_row = html[html.index('data-search-vehicle="monaco'):]
+    company_row = company_row[:company_row.index(">")]
+    assert "abu dhabi corniche 1" in company_row and "abu dhabi corniche 2" in company_row
+    branch_row = html[html.index('data-search-vehicle="berg'):]
+    branch_row = branch_row[:branch_row.index(">")]
+    assert 'data-search-branch="abu dhabi corniche 1"' in branch_row
+
+
+def test_save_sits_beside_test_fare_and_a_saved_fare_is_locked(client_in, world):
+    html = client_in.get("/fare/add/").content.decode()
+    head = html[html.index('class="scr-head-actions"'):html.index("data-fare-banner")]
+    assert "data-fare-test-open" in head and "data-fare-save" in head
+    fare = make_fare(world)
+    html = client_in.get(f"/fare/{fare.pk}/edit/").content.decode()
+    assert "Fixed once saved" in html
+    for field in ('data-fare-field="vehicle_type" disabled', 'data-fare-category disabled'):
+        assert field in html
+
+
 def test_the_list_needs_read(client_in):
     revoke(client_in, "read")
     assert client_in.get("/fare/list/").status_code == 403

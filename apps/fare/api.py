@@ -67,14 +67,20 @@ the station comes from the login session, never from the request.
 **Sent:** active, approved fares for this vehicle type that have not ended
 (`valid_to` >= today, company time), company-level ones and this station's own.
 
-**Reading it** (the app runs this; the server refuses any fare that would make
-it ambiguous, so the first match at each step is the answer):
+**Reading it** (the app runs this). Prices of one kind may sit one inside
+another (`12:00-14:00` inside `08:00-20:00`), and seasons may nest by date
+(Eid inside Summer): **the innermost -- the shortest window, the shortest
+season -- wins**. The server refuses windows or seasons that partly overlap
+or are identical, so the innermost at each step is always exactly one.
 1. Take the fare for the chosen `package_minutes` with `valid_from <= date <= valid_to`;
    when a `branch` and a `company` fare both match, the **branch** one wins.
-2. A `single_date` special price on that date whose window holds the time wins.
-3. Otherwise, if a season covers the date, use **that season's** `base_price` and
+2. A `single_date` special price on that date whose window holds the time wins
+   (the shortest such window, if several hold it).
+3. Otherwise, if seasons cover the date, use **the shortest one's** `base_price` and
    `special_prices`; else the fare's own.
-4. In that list: `selected_days` (weekday in `weekdays`), then `every_day`, then `base_price`.
+4. In that list: `selected_days` (weekday in `weekdays`), then `every_day`, then
+   `base_price`. Within `selected_days` or `every_day`, the shortest window that
+   holds the time wins.
 
 **Formats:** weekdays Monday=0 ... Sunday=6; times local to `company.timezone`,
 window includes `start`, excludes `end`, `"24:00"` is midnight; dates inclusive;
