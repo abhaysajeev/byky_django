@@ -159,7 +159,7 @@ the server's check endpoint, never from the browser.
           <input id="fare-package" class="scr-input" inputmode="numeric" maxlength="4" autocomplete="off"
                  data-fare-field="package_minutes" data-num="minutes" data-min="1" data-max="1440" placeholder="e.g. 30"
                  {% if is_edit %}disabled{% endif %} />
-          <div class="scr-help">{% if is_edit %}Fixed once saved. For another package, add a new fare.{% else %}1 to 1440. The same for every price on this fare.{% endif %}</div>
+          {% if is_edit %}<div class="scr-help">Fixed once saved. For another package, add a new fare.</div>{% endif %}
         </div>
       </div>
     </div>
@@ -269,17 +269,18 @@ the server's check endpoint, never from the browser.
   </div>
   <div class="scr-modal-body">
     <dl class="scr-fare-summary" data-test-summary></dl>
-    <div class="scr-grid scr-fare-dialog-grid">
+    <div class="scr-fare-test-row">
       <div class="scr-field">
-        <label class="scr-label" for="test-date">Date</label>
-        <input id="test-date" class="scr-input byky-date" data-test-date placeholder="Select date" />
+        <label class="scr-label" for="test-date">Test date</label>
+        <input id="test-date" class="scr-input byky-date" data-test-date placeholder="Test date" />
       </div>
       <div class="scr-field">
-        <label class="scr-label" for="test-time">Time</label>
-        <input id="test-time" class="scr-input" data-test-time placeholder="HH:MM" maxlength="5" autocomplete="off" />
+        <label class="scr-label" for="test-time">Test time</label>
+        <input id="test-time" class="scr-input" data-test-time placeholder="Test time" maxlength="5" autocomplete="off" />
       </div>
+      <button type="button" class="scr-btn" data-test-run>Test fare</button>
     </div>
-    <div data-test-result></div>
+    <div data-test-result aria-live="polite"></div>
   </div>
 </div>
 

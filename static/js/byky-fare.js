@@ -579,23 +579,26 @@
     }).join('');
   }
 
-  function timeline(schedule, minute) {
-    return '<div class="scr-fare-timeline" role="img" aria-label="The whole day">' + schedule.map(function (s) {
-      var width = (s.end - s.start) / 14.4;
-      return '<span class="scr-fare-seg is-' + s.source.tier + (s.source.season && s.source.tier === 'base' ? ' is-season' : '') +
-        '" style="width:' + width + '%" title="' + esc(s.from + ' – ' + s.to + ' · AED ' + s.base_fare + ' · ' + s.source.label) + '">' +
-        (width > 9 ? '<span>' + esc(s.base_fare) + '</span>' : '') + '</span>';
-    }).join('') + '<i class="scr-fare-marker" style="left:' + (minute / 14.4) + '%"></i></div>' +
-      '<div class="scr-fare-axis"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>';
-  }
-
   var testSeq = 0;
 
+  function testMessage(title, text) {
+    testResult.innerHTML = '<div class="scr-fare-result is-none"><b>' + esc(title) + '</b>' +
+      (text ? '<p>' + esc(text) + '</p>' : '') + '</div>';
+  }
+
+  /* Runs on the Test fare button (or Enter), never on its own: the answer
+     always belongs to the date and time on screen. */
   function runTest() {
+    var day = isoOf(testDate);
     var time = hhmm(testTime.value);
+    if (!day || !/^\d\d:\d\d$/.test(time)) {
+      testMessage('Enter a test date and time', '');
+      return;
+    }
     var seq = ++testSeq;
-    Crud.post(root.dataset.checkUrl, { fare: collect(), test: { date: isoOf(testDate), time: time } }).then(function (result) {
-      if (seq !== testSeq) return;          // a later date or time was asked since; its answer wins
+    testResult.innerHTML = '<div class="scr-fare-result is-none is-busy">Testing…</div>';
+    Crud.post(root.dataset.checkUrl, { fare: collect(), test: { date: day, time: time } }).then(function (result) {
+      if (seq !== testSeq) return;          // tested again since; that answer wins
       var body = result.body || {};
       if (body.errors && body.errors.length && !body.test) {
         testResult.innerHTML = '<div class="scr-fare-result is-none"><b>Fix the fare first</b><ul class="scr-msg-list">' +
@@ -605,45 +608,24 @@
       }
       var t = body.test;
       if (!t) { testResult.innerHTML = ''; return; }
-      if (!t.found) {
-        testResult.innerHTML = '<div class="scr-fare-result is-none"><b>' + esc(t.day ? 'No fare on ' + t.day : 'Nothing to show') + '</b><p>' + esc(t.message) + '</p></div>';
-        return;
-      }
+      if (!t.found) { testMessage(t.day ? 'No fare on ' + t.day : 'Nothing to show', t.message); return; }
       var p = t.price;
-      var parts = time.split(':');
-      var minute = (+parts[0]) * 60 + (+parts[1]);
       testResult.innerHTML = '<div class="scr-fare-result">' +
-        '<div class="scr-fare-result-top"><div><span class="scr-fare-result-when">' + esc(time + ' · ' + t.day) + '</span>' +
-          '<div class="scr-fare-result-source">' + esc(t.source.label) + '</div>' +
-          '<div class="scr-fare-result-block">Applies ' + esc(t.block) + '</div></div>' +
-          '<div class="scr-fare-result-amount"><small>AED</small>' + esc(p.base_fare) + '</div></div>' +
+        '<div class="scr-fare-result-when">' + esc(t.day + ' · ' + time) + '</div>' +
+        '<div class="scr-fare-result-source">' + esc(t.source.label) + '</div>' +
         '<dl class="scr-fare-result-grid">' +
-          '<div><dt>Package</dt><dd>' + esc(pkg.value) + ' min</dd></div>' +
+          '<div><dt>Price</dt><dd>AED ' + esc(p.base_fare) + '</dd></div>' +
           '<div><dt>Grace</dt><dd>' + esc(p.grace_minutes) + ' min</dd></div>' +
-          '<div><dt>Then every</dt><dd>' + esc(p.concurrent_interval_minutes) + ' min</dd></div>' +
-          '<div><dt>Adds</dt><dd>AED ' + esc(p.concurrent_fare) + '</dd></div>' +
-          '<div><dt>Conc. grace</dt><dd>' + esc(p.concurrent_grace_minutes) + ' min</dd></div>' +
+          '<div><dt>Concurrent</dt><dd>AED ' + esc(p.concurrent_fare) + ' / ' + esc(p.concurrent_interval_minutes) + ' min</dd></div>' +
+          '<div><dt>Concurrent grace</dt><dd>' + esc(p.concurrent_grace_minutes) + ' min</dd></div>' +
         '</dl>' +
-        (t.also.length ? '<ul class="scr-fare-also">' + t.also.map(function (a) {
-          return '<li><b>Also matches:</b> ' + esc(a.label) + ' (' + esc(a.reason) + ')</li>';
-        }).join('') + '</ul>' : '') +
-        '<div class="scr-fare-result-day"><span class="scr-fare-result-when">The whole day</span>' + timeline(t.schedule, minute) + '</div>' +
       '</div>';
     });
   }
 
   function openTest() {
     summary();
-    if (!isoOf(testDate)) {
-      var from = isoOf(validFrom), today = toIso(new Date());
-      setIso(testDate, from && today < from ? from : today);
-    }
-    if (!testTime.value) {
-      var now = new Date();
-      setTime(testTime, pad(now.getHours()) + ':' + pad(now.getMinutes()));
-    }
     Crud.open('fare-test');
-    runTest();
   }
 
   // -- Save ------------------------------------------------------------------------
@@ -759,8 +741,13 @@
   [validFrom, validTo].forEach(function (el) { picker(el, changed); });
   ruleKind.addEventListener('change', showKind);
   ruleBox.querySelector('[data-rule-save]').addEventListener('click', saveRule);
-  picker(testDate, runTest);
-  testTime.addEventListener('change', runTest);
+  // A new date or time clears the old answer; the button gives the new one.
+  function clearTest() { testSeq += 1; testResult.innerHTML = ''; }
+  picker(testDate, clearTest);
+  testTime.addEventListener('input', clearTest);
+  testTime.addEventListener('change', clearTest);
+  testBox.querySelector('[data-test-run]').addEventListener('click', runTest);
+  testTime.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); runTest(); } });
 
   window.addEventListener('beforeunload', function (e) {
     if (dirty) { e.preventDefault(); e.returnValue = ''; }

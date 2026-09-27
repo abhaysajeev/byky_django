@@ -82,7 +82,9 @@
   background: linear-gradient(100deg, #c2141a, #e8272e); box-shadow: 0 6px 16px -8px rgba(216, 31, 38, 0.55);
   transition: transform 0.18s, box-shadow 0.2s;
 }
-.scr-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 10px 22px -9px rgba(216, 31, 38, 0.6); }
+/* color again on hover: an <a class="scr-btn-primary"> otherwise takes the
+   theme's a:hover red -- red text on the red button. */
+.scr-btn-primary:hover { color: #fff; transform: translateY(-1px); box-shadow: 0 10px 22px -9px rgba(216, 31, 38, 0.6); }
 .scr-btn-secondary {
   border: 1px solid #eeedf5; background: #fff; cursor: pointer; font-size: 12.5px; font-weight: 600;
   color: #8b87b0; padding: 10px 16px; border-radius: 10px; transition: border-color 0.16s, color 0.16s;
@@ -992,32 +994,20 @@ textarea.scr-drawer-input { height: auto; min-height: 72px; padding: 10px 13px; 
 .scr-fare-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; margin: 0 0 16px; padding: 12px 14px; border-radius: 12px; background: #fbfaff; border: 1px solid #eeedf5; }
 .scr-fare-summary dt { font-size: 11px; color: #9490bb; }
 .scr-fare-summary dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
-.scr-fare-result { margin-top: 16px; border: 1px solid #e4e3ee; border-radius: 12px; padding: 16px; }
+/* date, time and the button on one line; the button sits level with the inputs */
+.scr-fare-test-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 12px; align-items: end; }
+.scr-fare-test-row .scr-btn { height: 40px; padding: 0 18px; white-space: nowrap; justify-content: center; }
+.scr-fare-result { margin-top: 16px; border: 1px solid #e4e3ee; border-radius: 12px; padding: 14px 16px; }
 .scr-fare-result.is-none { background: #fbfaff; }
 .scr-fare-result.is-none p { margin-top: 4px !important; color: #6b6790; }
-.scr-fare-result-top { display: flex; justify-content: space-between; gap: 14px; flex-wrap: wrap; align-items: flex-start; }
+.scr-fare-result.is-busy { color: #9490bb; font-size: 12.5px; }
 .scr-fare-result-when { font-size: 11px; color: #9490bb; }
 .scr-fare-result-source { font-weight: 600; margin-top: 2px; }
-.scr-fare-result-block { font-size: 12px; color: #6b6790; }
-.scr-fare-result-amount { font-size: 26px; font-weight: 700; letter-spacing: -0.6px; font-variant-numeric: tabular-nums; }
-.scr-fare-result-amount small { font-size: 13px; font-weight: 500; color: #6b6790; margin-right: 4px; }
-.scr-fare-result-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin: 14px 0 0; padding-top: 12px; border-top: 1px solid #eeedf5; }
+.scr-fare-result-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 12px 0 0; padding-top: 12px; border-top: 1px solid #eeedf5; }
 .scr-fare-result-grid dt { font-size: 11px; color: #9490bb; }
 .scr-fare-result-grid dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
-.scr-fare-also { list-style: none; margin: 12px 0 0; padding: 10px 0 0; border-top: 1px solid #eeedf5; font-size: 12px; color: #6b6790; display: flex; flex-direction: column; gap: 3px; }
-.scr-fare-result-day { margin-top: 14px; }
-/* the day as the device will get it: one block per price, a mark at the time tested */
-.scr-fare-timeline { position: relative; display: flex; height: 30px; margin-top: 6px; border-radius: 8px; overflow: hidden; border: 1px solid #e4e3ee; background: #fbfaff; }
-.scr-fare-seg { height: 100%; display: flex; align-items: center; padding-left: 6px; font-size: 11px; font-weight: 600; color: #1a1640; border-left: 2px solid #fff; overflow: hidden; white-space: nowrap; }
-.scr-fare-seg:first-child { border-left: 0; }
-.scr-fare-seg.is-base { background: #eeedf5; }
-.scr-fare-seg.is-base.is-season { background: #e3f1e0; }
-.scr-fare-seg.is-every_day { background: #fde9cf; }
-.scr-fare-seg.is-selected_days { background: #dedcfb; }
-.scr-fare-seg.is-single_date { background: #f8d5dc; }
-.scr-fare-marker { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #1a1640; }
-.scr-fare-axis { display: flex; justify-content: space-between; font-size: 10.5px; color: #a9a6c4; margin-top: 4px; font-variant-numeric: tabular-nums; }
 @media (max-width: 600px) {
   .scr-fare-dialog-grid, .scr-fare-summary { grid-template-columns: 1fr; }
   .scr-fare-result-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .scr-fare-test-row { grid-template-columns: 1fr; }
 }
