@@ -32,16 +32,16 @@ _VEHICLES_SAMPLE = {
                 {
                     "vehicle_type_id": 7, "code": "", "name": "Monaco", "brand": "BERG", "tax_percentage": "5.00",
                     "vehicles": [
-                        {"vehicle_id": 1041, "vehicle_identifier": "VH-B-01241", "vehicle_code": "MON-0041", "vehicle_name": "Monaco 41",
+                        {"vehicle_id": 1041, "vehicle_identifier": "VB1241", "vehicle_code": "MON-0041", "vehicle_name": "Monaco 41",
                          "rfid_epc": "E28011606000020B1C2D3E41", "uom": "Number", "is_available": True},
-                        {"vehicle_id": 1042, "vehicle_identifier": "VH-B-01242", "vehicle_code": "MON-0042", "vehicle_name": "Monaco 42",
+                        {"vehicle_id": 1042, "vehicle_identifier": "VB1242", "vehicle_code": "MON-0042", "vehicle_name": "Monaco 42",
                          "rfid_epc": "", "uom": "Number", "is_available": False},
                     ],
                 },
                 {
                     "vehicle_type_id": 4, "code": "", "name": "Berg", "brand": "BERG", "tax_percentage": "5.00",
                     "vehicles": [
-                        {"vehicle_id": 2007, "vehicle_identifier": "VH-B-00321", "vehicle_code": "BRG-0007", "vehicle_name": "Berg 7",
+                        {"vehicle_id": 2007, "vehicle_identifier": "VB0321", "vehicle_code": "BRG-0007", "vehicle_name": "Berg 7",
                          "rfid_epc": "E28011606000020B1C2D4F07", "uom": "Number", "is_available": True},
                     ],
                 },
@@ -58,7 +58,7 @@ The station comes from the login session; `request_data` can be empty.
 - `is_available: false` vehicles are included, so the app can say why one cannot be rented.
 - `vehicle_type_id` is the id `POST /api/v1/operator/fares` takes.
 - `rfid_epc` may be `""` (no tag assigned yet): also allow lookup by `vehicle_code`.
-- `vehicle_identifier` (`VH-B-00042`) is the server's own number for the vehicle: unique,
+- `vehicle_identifier` (`VB0042`) is the server's own number for the vehicle: unique,
   never edited, never reused. Vehicles are listed in its order within each type.
 - Categories and vehicle types with no vehicle at this station are left out.
 """

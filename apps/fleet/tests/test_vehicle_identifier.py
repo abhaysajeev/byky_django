@@ -1,4 +1,4 @@
-"""Vehicle.identifier: VH-B-00001 from a database sequence on every insert,
+"""Vehicle.identifier: VB0001 from a database sequence on every insert,
 read-only everywhere, unique, and numbered in a readable order on migration."""
 
 import importlib
@@ -32,15 +32,15 @@ def test_every_insert_path_takes_the_next_number(world):
     numbers = [a.identifier_no, b.identifier_no, c.identifier_no]
     assert numbers == sorted(numbers) and len(set(numbers)) == 3          # returned by the insert itself
     a.refresh_from_db()
-    assert a.identifier == f"VH-B-{a.identifier_no:05d}"
+    assert a.identifier == f"VB{a.identifier_no:04d}"
 
 
-def test_the_identifier_grows_past_five_digits_instead_of_truncating(world):
+def test_the_identifier_grows_past_four_digits_instead_of_truncating(world):
     with connection.cursor() as cursor:
-        cursor.execute("SELECT setval('vehicle_identifier_seq', 123455)")
+        cursor.execute("SELECT setval('vehicle_identifier_seq', 12344)")
     vehicle = make(world, "BIG")
     vehicle.refresh_from_db()
-    assert vehicle.identifier == "VH-B-123456"
+    assert vehicle.identifier == "VB12345"
 
 
 def test_the_identifier_is_unique(world):
@@ -51,11 +51,11 @@ def test_the_identifier_is_unique(world):
 
 def test_the_screen_assigns_it_and_never_takes_it_from_the_form(client, world):
     sign_in(client, "sara.k", company=world["ours"])
-    payload = {**VEHICLE.payload(world["our"]), "identifier": "VH-B-99999", "identifier_no": 99999}
+    payload = {**VEHICLE.payload(world["our"]), "identifier": "VB9999", "identifier_no": 9999}
     created = save(client, VEHICLE, payload)
     assert created.status_code == 200, created.json()
     vehicle = Vehicle.objects.get(pk=created.json()["pk"])
-    assert vehicle.identifier != "VH-B-99999" and vehicle.identifier_no != 99999
+    assert vehicle.identifier != "VB9999" and vehicle.identifier_no != 9999
     before = vehicle.identifier
     save(client, VEHICLE, {**payload, "pk": vehicle.pk, "vehicle_name": "Renamed"})
     vehicle.refresh_from_db()

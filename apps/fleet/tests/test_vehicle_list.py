@@ -108,7 +108,7 @@ def test_the_export_is_every_filtered_vehicle_not_one_page(client_in, fleet):
     assert response["Content-Type"].startswith("text/csv") and "vehicles-" in response["Content-Disposition"]
     rows = export_rows(response)
     assert rows[0][0] == "Vehicle Identifier" and len(rows) == 1 + 60          # all pages, ours only
-    assert all(row[0].startswith("VH-B-") for row in rows[1:])
+    assert all(row[0].startswith("VB") for row in rows[1:])
     unavailable = export_rows(client_in.get(f"{EXPORT}?available=no"))
     assert len(unavailable) == 1 + len([n for n in range(60) if n % 5 == 0])
     assert {row[7] for row in unavailable[1:]} == {"No"}

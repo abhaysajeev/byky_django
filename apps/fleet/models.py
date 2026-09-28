@@ -13,11 +13,11 @@ from django.db.models.functions import Cast, Concat, LPad
 
 from core.models import ApprovalMixin, TimeStampedModel
 
-# Vehicle.identifier: "VH-B-" and a five-digit running number from this
-# sequence (migration 0011), longer once it passes 99999.
+# Vehicle.identifier: "VB" and a four-digit running number from this
+# sequence (migration 0011), longer once it passes 9999 (VB10000).
 IDENTIFIER_SEQUENCE = "vehicle_identifier_seq"
-IDENTIFIER_PREFIX = "VH-B-"
-IDENTIFIER_DIGITS = 5
+IDENTIFIER_PREFIX = "VB"
+IDENTIFIER_DIGITS = 4
 
 
 class Brand(ApprovalMixin, TimeStampedModel):
@@ -264,7 +264,7 @@ class Vehicle(ApprovalMixin, TimeStampedModel):
     # number comes from a Postgres sequence on every insert -- a screen save,
     # create(), or an import's bulk_create alike -- the same way as
     # Device.device_registration_id. `identifier` is the text shown and
-    # searched ("VH-B-00042"), computed by the database from the number.
+    # searched ("VB0042"), computed by the database from the number.
     identifier_no = models.BigIntegerField(
         unique=True, editable=False,
         db_default=Func(Value(IDENTIFIER_SEQUENCE), function="nextval"),
@@ -276,7 +276,7 @@ class Vehicle(ApprovalMixin, TimeStampedModel):
             Case(
                 When(identifier_no__lt=10 ** IDENTIFIER_DIGITS,
                      then=LPad(Cast("identifier_no", models.CharField()), IDENTIFIER_DIGITS, Value("0"))),
-                default=Cast("identifier_no", models.CharField()),     # past 99999: grows, never truncates
+                default=Cast("identifier_no", models.CharField()),     # past 9999: grows, never truncates
             ),
         ),
         output_field=models.CharField(max_length=30),

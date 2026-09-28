@@ -50,7 +50,7 @@ def test_vehicles_come_nested_by_category_and_type(client, world, token, uom):
         {"vehicle_id": second.pk, "vehicle_identifier": second.identifier, "vehicle_code": "MON-1",
          "vehicle_name": "MON-1", "rfid_epc": "E2800", "uom": "Number", "is_available": True},
     ]
-    assert first.identifier.startswith("VH-B-") and first.identifier_no < second.identifier_no
+    assert first.identifier.startswith("VB") and first.identifier_no < second.identifier_no
 
 
 def test_only_this_stations_active_approved_vehicles(client, world, token, uom):
