@@ -43,7 +43,7 @@ def filter_by_url(submenu, url):
     """
     if not submenu:
         return False
-    current = getattr(url.resolver_match, "url_name", None)
+    current = getattr(url, "menu_url_name", None) or getattr(url.resolver_match, "url_name", None)
     for subitem in submenu:
         subitem_url = subitem.get("url")
         if subitem_url == url.path or (current and subitem_url == current):

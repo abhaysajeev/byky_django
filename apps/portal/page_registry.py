@@ -127,3 +127,6 @@ SYSTEM_ONLY = {
     "monitoring.request_log",
     "monitoring.error_log",
 }
+
+# page code -> the URL name its sidebar entry links to.
+MENU_URL = {row[0]: row[3] for row in PAGES}

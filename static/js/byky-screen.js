@@ -58,6 +58,16 @@
     select.addEventListener('change', function () { select.form.submit(); });
   });
 
+  // A row that opens its record (tr[data-scr-href]): the whole row is the
+  // target; a link or button inside it keeps its own click.
+  root.querySelectorAll('tr[data-scr-href]').forEach(function (row) {
+    row.addEventListener('click', function (event) {
+      if (event.target.closest('a, button, input, select, label')) return;
+      if (event.metaKey || event.ctrlKey) window.open(row.dataset.scrHref, '_blank');
+      else window.location.href = row.dataset.scrHref;
+    });
+  });
+
   /* ── KPI tiles as filter shortcuts (data-scr-kpi-filter) ───────────
      data-scr-kpi-filter="<filter key>:<value>" on a .scr-tile/.scr-doc-item
      button clicks the matching .scr-filter-opt for that key in the same

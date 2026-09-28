@@ -56,6 +56,11 @@ def _page(request, queryset):
     return page, query.urlencode()
 
 
+def _filtered(params):
+    """Any filter set, so the page offers Clear (paging alone is not one)."""
+    return any(value.strip() for key, value in params.items() if key != "page")
+
+
 def _names(rows):
     """Device numbers, company and branch names for one page of rows."""
     device_ids = {r.device_id for r in rows if r.device_id}
@@ -114,11 +119,20 @@ class RequestListView(MonitoringView):
             logs = logs.filter(path__icontains=params["path"].strip())
         if params.get("company", "").isdigit():
             logs = logs.filter(company_id=int(params["company"]))
+        text = params.get("q", "").strip()
+        if text:
+            match = (Q(path__icontains=text) | Q(code__iexact=text) | Q(installation_id=text)
+                     | Q(username__iexact=text))
+            if text.isdigit():
+                found = Device.objects.filter(device_registration_id=int(text)).first()
+                if found:
+                    match |= Q(device_id=found.pk) | Q(installation_id=found.installation_id)
+            logs = logs.filter(match)
         page, query = _page(self.request, logs.defer("request_body", "response_body"))
         context.update({
             "page": page, "rows": _names(list(page.object_list)), "query": query, "params": params,
             "apps": APPS, "status_classes": STATUS_CLASSES, "companies": Company.objects.order_by("name"),
-            "keep_days": settings.MONITORING_REQUEST_DAYS,
+            "keep_days": settings.MONITORING_REQUEST_DAYS, "filtered": _filtered(params),
         })
         return context
 
@@ -166,6 +180,7 @@ class ErrorListView(MonitoringView):
         context.update({
             "page": page, "rows": _names(list(page.object_list)), "query": query, "params": params,
             "levels": LEVELS, "sources": ErrorLog.Source.choices, "keep_days": settings.MONITORING_ERROR_DAYS,
+            "filtered": _filtered(params),
         })
         return context
 

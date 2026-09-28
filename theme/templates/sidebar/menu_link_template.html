@@ -2,7 +2,7 @@
 
 {% if item %}
   {% if not item.permission or request.user|has_permission:item.permission %}
-  <li class="byky-menu-item {% if item.url == request.resolver_match.url_name or item.url == request.path %}active{% endif %}">
+  <li class="byky-menu-item {% if item.url == request.resolver_match.url_name or item.url == request.path or item.url == request.menu_url_name %}active{% endif %}">
     {% if item.disabled %}
     <span class="byky-menu-link byky-menu-link-disabled" aria-disabled="true" title="Not available yet">
       {% if top_level %}{% include './menu_icon_template.html' with item=item %}{% endif %}

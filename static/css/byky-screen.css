@@ -381,7 +381,7 @@ button.scr-tile.is-active { border-color: #cc0000; box-shadow: 0 0 0 3px rgba(20
 /* ── company record (full-page form) ─────────────────────────────── */
 .scr-form-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; padding: 20px 22px; border-bottom: 1px solid #f0eff7; }
 .scr-form-title-row { display: flex; align-items: center; gap: 10px; }
-.scr-form-title { font-size: 15px; font-weight: 600; letter-spacing: -0.1px; }
+.scr-form-title { font-size: 15px; font-weight: 600; letter-spacing: -0.1px; line-height: 1.35; }
 .scr-form-badge { font-size: 10.5px; font-weight: 600; letter-spacing: 0.5px; color: #7d7aa0; background: #f4f3f9; padding: 4px 9px; border-radius: 6px; }
 .scr-form-sub { font-size: 12px; color: #9490bb; margin-top: 5px !important; }
 .scr-form-body { padding: 22px; }
@@ -1010,26 +1010,47 @@ textarea.scr-drawer-input { height: auto; min-height: 72px; padding: 10px 13px; 
 }
 
 /* ── Logs: Device Requests and Error Logs (apps/monitoring) ─────────────
-   Server-filtered lists, so the filters are a real <form>; detail pages are
-   two-column panels with the stored bodies/traceback in a scrolling block. */
-.scr-mon-filters { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; align-items: end; padding: 18px 20px; border-bottom: 1px solid #f0eff7; }
-.scr-mon-field { display: flex; flex-direction: column; gap: 6px; margin: 0; }
-.scr-mon-field > span { font-size: 11px; font-weight: 600; color: #6b6790; }
-.scr-mon-wide { grid-column: span 2; }
-.scr-mon-actions { display: flex; gap: 8px; }
-.scr-mon-actions .scr-btn-primary, .scr-mon-actions .scr-btn-secondary { height: 40px; display: inline-flex; align-items: center; }
-.scr a.scr-mon-link { font-weight: 600; color: #c2141a; }
-.scr-mon-message { max-width: 420px; white-space: normal; }
-.scr-mon-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
-.scr-mon-panel { padding: 20px 22px; }
-.scr-mon-panel .scr-form-title { margin-bottom: 12px; display: flex; align-items: center; gap: 10px; }
-.scr-mon-errors { display: flex; flex-direction: column; gap: 6px; }
-.scr-mon-title-code { font-size: 15px; white-space: normal; word-break: break-all; }
-.scr-mon-message-full { margin: 0; font-size: 13px; color: #1a1640; white-space: pre-wrap; word-break: break-word; }
-.scr-mon-json { margin: 0; max-height: 520px; overflow: auto; padding: 14px 16px; border-radius: 12px; background: #fbfaff; border: 1px solid #eeedf5; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11.5px; line-height: 1.55; color: #1a1640; white-space: pre-wrap; word-break: break-word; }
-@media (max-width: 900px) {
-  .scr-mon-grid { grid-template-columns: 1fr; }
-  .scr-mon-wide { grid-column: auto; }
+   Server-filtered lists: the toolbar is a <form> of the same controls as the
+   Vehicle list (search, dropdowns, a date range). A row opens its record
+   (tr[data-scr-href], byky-screen.js). Detail pages use the Device Approval
+   card pattern: a head, then label/value rows or a scrolling code block. */
+.scr-mon-toolbar .scr-search { flex: 1 1 260px; max-width: 360px; }
+.scr-mon-dates { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #9490bb; }
+.scr-mon-dates .scr-input { width: 142px; height: 38px; padding: 0 10px; }
+.scr-mon-toolbar .scr-btn, .scr-mon-toolbar .scr-btn-secondary { height: 38px; display: inline-flex; align-items: center; }
+.scr-mon-row { cursor: pointer; }
+.scr td.scr-mon-num { font-variant-numeric: tabular-nums; }
+.scr a.scr-mon-time { display: block; font-size: 12.5px; font-weight: 600; color: #1a1640; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.scr a.scr-mon-time span { display: block; font-size: 11px; font-weight: 500; color: #9490bb; margin-top: 2px; }
+.scr-mon-row:hover a.scr-mon-time { color: #c2141a; }
+.scr-mon-call { display: inline-block; max-width: 340px; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+.scr-mon-call b { font-weight: 600; color: #1a1640; }
+.scr-mon-muted { color: #9490bb; font-size: 11.5px; }
+.scr-mon-message { min-width: 240px; max-width: 420px; }
+.scr-mon-message .scr-co-city { white-space: normal; }
+.scr-mon-heading { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 19px; letter-spacing: -0.2px; word-break: break-all; }
+.scr-mon-method { color: #c2141a; }
+.scr-mon-id { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11.5px; }
+.scr-mon-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start; }
+.scr-mon-grid-wide { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+.scr-mon-body { padding-top: 6px; padding-bottom: 12px; }
+.scr-mon-wrap { min-width: 0; word-break: break-all; }
+.scr-mon-alert { display: flex; gap: 12px; align-items: flex-start; padding: 14px 18px; border-radius: 14px; background: #fdeced; border: 1px solid #f3c3c5; color: #c2141a; font-size: 12.5px; }
+.scr-mon-alert svg { flex: 0 0 auto; margin-top: 1px; }
+.scr-mon-alert div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.scr-mon-alert b { color: #1a1640; font-weight: 600; }
+.scr-mon-alert a { word-break: break-word; }
+.scr-mon-message-full { margin: 0; font-size: 13px; line-height: 1.55; color: #1a1640; white-space: pre-wrap; word-break: break-word; }
+.scr-mon-json { margin: 0; max-height: 520px; overflow: auto; padding: 14px 16px; border-radius: 12px; background: #fbfaff; border: 1px solid #eeedf5; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11.5px; line-height: 1.6; color: #1a1640; white-space: pre-wrap; word-break: break-word; }
+@media (max-width: 1100px) {
+  .scr-mon-grid, .scr-mon-grid-wide { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  .scr-mon-toolbar .scr-search { max-width: none; flex-basis: 100%; }
+  .scr-mon-toolbar .scr-list-select { flex: 1 1 140px; max-width: none; }
+  .scr-mon-dates { flex: 1 1 100%; }
+  .scr-mon-dates .scr-input { flex: 1; width: auto; }
+  .scr-mon-heading { font-size: 16px; }
 }
 
 /* Dropdown filters in a server-filtered list's toolbar (Vehicle): the

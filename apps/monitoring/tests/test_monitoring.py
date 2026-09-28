@@ -3,6 +3,7 @@
 import datetime
 import json
 import queue
+import re
 
 import pytest
 from django.utils import timezone
@@ -218,6 +219,9 @@ def test_a_system_user_reads_filters_and_opens_both_logs(client, world, system_u
     assert FARES in failed and LOGIN not in failed
     by_device = client.get("/monitoring/requests/?device=till-1").content.decode()
     assert LOGIN in by_device and FARES not in by_device
+    for text in ("till-1", "fares", "not_authenticated"):                    # the one search box
+        found = client.get(f"/monitoring/requests/?q={text}").content.decode()
+        assert (FARES in found) != (text == "till-1") and (LOGIN in found) == (text == "till-1"), text
     tomorrow = (timezone.localdate() + datetime.timedelta(days=1)).isoformat()
     assert LOGIN not in client.get(f"/monitoring/requests/?from={tomorrow}").content.decode()
 
@@ -233,3 +237,6 @@ def test_a_system_user_reads_filters_and_opens_both_logs(client, world, system_u
     assert "it broke" in client.get(f"/monitoring/requests/{log.pk}/").content.decode()
     sidebar = client.get("/dashboard/").content.decode()
     assert "Device Requests" in sidebar and "Error Logs" in sidebar
+    # A detail screen keeps its list's sidebar entry marked.
+    marked = re.search(r'byky-menu-item active">\s*<a href="([^"]+)"', detail)
+    assert marked and marked.group(1) == "/monitoring/requests/"

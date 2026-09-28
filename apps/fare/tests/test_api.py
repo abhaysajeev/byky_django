@@ -12,6 +12,7 @@ from django.utils import timezone
 from apps.company.models import Branch, BranchType, Company, Country, Location, State, WeekDay
 from apps.crew.models import Designation, Employee
 from apps.devices.models import Device, DeviceMapping, DeviceSettings, DeviceStatus
+from apps.fare import api
 from apps.fare.tests.conftest import D, make_fare, make_rule, make_season
 from apps.fleet.models import Brand, Category, VehicleType
 from apps.portal.models import Role
@@ -140,6 +141,21 @@ def test_the_days_fares_come_whole_in_first_match_order(client, world, token):
     }
     assert [s["name"] for s in company["seasons"]] == ["Eid", "Summer"]            # the shorter first
     assert company["seasons"][1]["special_prices"][0]["start"] == "16:00"
+    # The same fares as the Swagger example: it shows exactly what a device gets.
+    assert shape(data) == shape(api._FARES_SAMPLE)
+
+
+def shape(value):
+    """Every key path with its value's type -- lists merged -- so an example
+    and a real answer compare by structure, not by ids or amounts."""
+    if isinstance(value, dict):
+        return {k: shape(v) for k, v in value.items()}
+    if isinstance(value, list):
+        merged = {}
+        for item in value:
+            merged |= shape(item) if isinstance(item, dict) else {"[]": shape(item)}
+        return ["list", merged]
+    return type(value).__name__
 
 
 def test_only_fares_this_station_may_use_on_that_day(client, world, token):

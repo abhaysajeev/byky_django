@@ -8,11 +8,16 @@
 <link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
 {% endblock page_css %}
 
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+{% endblock page_js %}
+
 {% block content %}
 {% comment %}
 Every call a device app made. Filtered and paged by the server from the query
 string (apps/monitoring/views.py): the table is far too big to filter in the
-browser like the masters' lists. Newest first.
+browser like the masters' lists. Newest first; a row opens the call in full.
 {% endcomment %}
 <div class="scr">
 
@@ -28,35 +33,32 @@ browser like the masters' lists. Newest first.
     </div>
   </div>
 
-  <div class="scr-card">
-    <form method="get" class="scr-mon-filters">
-      <label class="scr-mon-field"><span>From</span><input type="date" name="from" class="scr-input" value="{{ params.from }}" /></label>
-      <label class="scr-mon-field"><span>To</span><input type="date" name="to" class="scr-input" value="{{ params.to }}" /></label>
-      <label class="scr-mon-field"><span>App</span>
-        <select name="app" class="scr-input">
-          <option value="">All apps</option>
-          {% for a in apps %}<option value="{{ a }}"{% if params.app == a %} selected{% endif %}>{{ a|capfirst }}</option>{% endfor %}
-        </select>
-      </label>
-      <label class="scr-mon-field"><span>Status</span>
-        <select name="status" class="scr-input">
-          <option value="">Any status</option>
-          {% for s in status_classes %}<option value="{{ s }}"{% if params.status == s %} selected{% endif %}>{{ s }}</option>{% endfor %}
-        </select>
-      </label>
-      <label class="scr-mon-field"><span>Company</span>
-        <select name="company" class="scr-input">
-          <option value="">All companies</option>
-          {% for c in companies %}<option value="{{ c.pk }}"{% if params.company == c.pk|stringformat:"s" %} selected{% endif %}>{{ c.name }}</option>{% endfor %}
-        </select>
-      </label>
-      <label class="scr-mon-field"><span>Device</span><input type="text" name="device" class="scr-input" value="{{ params.device }}" placeholder="Device no. or installation id" /></label>
-      <label class="scr-mon-field"><span>Path</span><input type="text" name="path" class="scr-input" value="{{ params.path }}" placeholder="e.g. fares" /></label>
-      <label class="scr-mon-field"><span>Code</span><input type="text" name="code" class="scr-input" value="{{ params.code }}" placeholder="e.g. invalid_request" /></label>
-      <div class="scr-mon-actions">
-        <button type="submit" class="scr-btn-primary">Filter</button>
-        <a href="{% url 'monitoring-request-list' %}" class="scr-btn-secondary">Clear</a>
+  <div class="scr-card" data-scr-server-paged>
+    <form method="get" class="scr-toolbar scr-mon-toolbar" data-scr-autosubmit>
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="text" name="q" value="{{ params.q }}" placeholder="Path, code, device no., installation ID or user" aria-label="Search requests" />
       </div>
+      <select name="app" class="scr-input scr-list-select" aria-label="App">
+        <option value="">All apps</option>
+        {% for a in apps %}<option value="{{ a }}"{% if params.app == a %} selected{% endif %}>{{ a|capfirst }}</option>{% endfor %}
+      </select>
+      <select name="status" class="scr-input scr-list-select" aria-label="Status">
+        <option value="">Any status</option>
+        {% for s in status_classes %}<option value="{{ s }}"{% if params.status == s %} selected{% endif %}>{{ s }}</option>{% endfor %}
+      </select>
+      <select name="company" class="scr-input scr-list-select" aria-label="Company">
+        <option value="">All companies</option>
+        {% for c in companies %}<option value="{{ c.pk }}"{% if params.company == c.pk|stringformat:"s" %} selected{% endif %}>{{ c.name }}</option>{% endfor %}
+      </select>
+      <div class="scr-mon-dates">
+        <input type="date" name="from" class="scr-input" value="{{ params.from }}" aria-label="From date" title="From" />
+        <span>to</span>
+        <input type="date" name="to" class="scr-input" value="{{ params.to }}" aria-label="To date" title="To" />
+      </div>
+      <button type="submit" class="scr-btn">Filter</button>
+      {% if filtered %}<a href="{% url 'monitoring-request-list' %}" class="scr-btn-secondary">Clear</a>{% endif %}
+      <span class="scr-toolbar-count">{{ page.paginator.count }} request{{ page.paginator.count|pluralize }}</span>
     </form>
 
     <div class="scr-table-scroll scr-sb">
@@ -64,11 +66,11 @@ browser like the masters' lists. Newest first.
         <thead>
           <tr>
             <th>Time</th>
-            <th>App</th>
             <th>Call</th>
             <th>Status</th>
             <th>Code</th>
-            <th style="text-align:right">Time taken</th>
+            <th>Time taken</th>
+            <th>App</th>
             <th>Device</th>
             <th>User</th>
             <th>Company / Branch</th>
@@ -76,19 +78,19 @@ browser like the masters' lists. Newest first.
         </thead>
         <tbody>
           {% for r in rows %}
-          <tr class="scr-mon-row">
-            <td style="white-space:nowrap"><a class="scr-mon-link" href="{% url 'monitoring-request-detail' r.pk %}">{{ r.created_at|date:"d M Y, H:i:s" }}</a></td>
-            <td>{{ r.app|capfirst|default:"—" }}</td>
-            <td><span class="scr-code">{{ r.method }} {{ r.path }}</span></td>
+          <tr class="scr-mon-row" data-scr-href="{% url 'monitoring-request-detail' r.pk %}">
+            <td><a class="scr-mon-time" href="{% url 'monitoring-request-detail' r.pk %}">{{ r.created_at|date:"d M Y" }}<span>{{ r.created_at|date:"H:i:s" }}</span></a></td>
+            <td><span class="scr-code scr-mon-call"><b>{{ r.method }}</b> {{ r.path }}</span></td>
             <td>{% include "monitoring/_status.html" with status=r.status %}</td>
-            <td>{{ r.code|default:"—" }}</td>
-            <td style="text-align:right;white-space:nowrap">{{ r.duration_ms }} ms</td>
-            <td>{% if r.device_no %}Device {{ r.device_no }}{% elif r.installation_id %}<span class="scr-contact-sub">{{ r.installation_id|truncatechars:14 }}</span>{% else %}—{% endif %}</td>
-            <td>{{ r.username|default:"—" }}</td>
-            <td>{{ r.company_name|default:"—" }}{% if r.branch_name %}<div class="scr-contact-sub">{{ r.branch_name }}</div>{% endif %}</td>
+            <td class="scr-state">{{ r.code|default:"—" }}</td>
+            <td class="scr-state scr-mon-num">{{ r.duration_ms }} ms</td>
+            <td class="scr-state">{{ r.app|capfirst|default:"—" }}</td>
+            <td class="scr-state">{% if r.device_no %}Device {{ r.device_no }}{% elif r.installation_id %}<span class="scr-mon-muted" title="{{ r.installation_id }}">{{ r.installation_id|truncatechars:16 }}</span>{% else %}—{% endif %}</td>
+            <td class="scr-state">{{ r.username|default:"—" }}</td>
+            <td><div class="scr-contact">{{ r.company_name|default:"—" }}</div>{% if r.branch_name %}<div class="scr-contact-sub">{{ r.branch_name }}</div>{% endif %}</td>
           </tr>
           {% empty %}
-          <tr><td colspan="9" style="padding:0"><div class="scr-empty"><div><div class="scr-empty-title">No requests</div><p class="scr-empty-sub">Nothing was logged for these filters.</p></div></div></td></tr>
+          <tr><td colspan="9" style="padding:0"><div class="scr-empty"><div><div class="scr-empty-title">{% if filtered %}No requests match{% else %}No requests yet{% endif %}</div><p class="scr-empty-sub">{% if filtered %}Change or clear the filters.{% else %}Calls from the phone apps appear here as they arrive.{% endif %}</p></div></div></td></tr>
           {% endfor %}
         </tbody>
       </table>
