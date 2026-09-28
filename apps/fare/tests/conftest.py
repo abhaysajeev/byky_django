@@ -8,7 +8,19 @@ from decimal import Decimal
 import pytest
 
 from apps.company.models import Branch, BranchType, Company, Country, Location, State
-from apps.fare.models import Fare, FareBranch, FareLevel, FareRule, FareSeason, RuleKind
+from apps.fare.models import (
+    Fare,
+    FareBranch,
+    FareLevel,
+    FareRule,
+    FareSeason,
+    InventoryType,
+    Offer,
+    OfferLevel,
+    PromotionFor,
+    PromotionType,
+    RuleKind,
+)
 from apps.fleet.models import Brand, Category, VehicleType
 from apps.portal.models import Role
 from apps.portal.services import grant_all
@@ -45,7 +57,7 @@ def world(db):
                                           vehicle_type_name=name, tax_percentage=Decimal(tax))
 
     return {
-        "company": byky, "other": other,
+        "company": byky, "other": other, "location": corniche,
         "adc1": branch(byky, "ADC1", "Abu Dhabi Corniche 1"),
         "adc2": branch(byky, "ADC2", "Abu Dhabi Corniche 2"),
         "family": branch(byky, "FAM", "Family Park"),
@@ -101,3 +113,14 @@ def make_season(fare, start, end, name="Spring", **fields):
 def make_rule(fare, kind=RuleKind.EVERY_DAY, start=960, end=1200, *, season=None, weekdays=(), on_date=None, **fields):
     return FareRule.objects.create(fare=fare, season=season, kind=kind, start_minute=start, end_minute=end,
                                    weekdays=list(weekdays), on_date=on_date, **{**PRICE, **fields})
+
+
+def make_offer(world, *, code="PROMO1", **fields):
+    values = {
+        "company": world["company"], "offer_code": code, "offer_name": "Promo",
+        "level": OfferLevel.COMPANY, "valid_from": D(2026, 1, 1), "valid_to": D(2026, 12, 31),
+        "promotion_for": PromotionFor.QUANTITY, "inventory_type": InventoryType.VEHICLE_TYPE,
+        "lower_value": Decimal("1"), "upper_value": Decimal("5"), "promotion_type": PromotionType.QUANTITY,
+    }
+    values.update(fields)
+    return Offer.objects.create(**values)

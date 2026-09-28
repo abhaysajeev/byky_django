@@ -111,6 +111,7 @@ PAGES = [
     ("fleet.privileges", "fleet", "Privileges", "fleet-privileges", ["read", "update"], 9, False),
 
     ("fare.fare", "fare", "Fares", "fare-fare-list", CRUD_PRINT, 1, False),
+    ("fare.offer", "fare", "Offers", "fare-offer-list", CRUD_PRINT, 2, False),
     ("fare.privileges", "fare", "Privileges", "fare-privileges", ["read", "update"], 9, False),
 
     ("system.role", "system", "Roles", "portal-role-list", CRUD, 1, False),

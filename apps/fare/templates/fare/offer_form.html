@@ -1,0 +1,375 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}{% if is_edit %}Edit Offer{% else %}Add Offer{% endif %} - Fare &amp; Offers{% endblock title %}
+
+{% block vendor_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'vendor/libs/flatpickr/flatpickr.css' %}" />
+{% endblock vendor_css %}
+
+{% block vendor_js %}
+{{ block.super }}
+<script src="{% static 'vendor/libs/flatpickr/flatpickr.js' %}"></script>
+{% endblock vendor_js %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+<script src="{% static 'js/byky-datepicker.js' %}"></script>
+<script src="{% static 'js/byky-offer.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+{% comment %}
+One offer, edited whole in the browser and saved in one post (views.OfferSave).
+Promotion Items / Free Promotion Items / Free Item Time Slabs are drawn by
+byky-offer.js from the offer-initial JSON, each edited through a small dialog
+-- the same list + drawer pattern as every other repeatable-row grid in this
+project. No live check and no lock_version: see apps/fare/offer_services.py
+for why this pass doesn't need either.
+{% endcomment %}
+<div class="scr" data-offer data-save-url="{{ save_url }}" data-list-url="{{ list_url }}"
+     data-can-save="{% if can_save %}1{% endif %}">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Fare &amp; Offers</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <a href="{{ list_url }}">Offers</a>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>{% if is_edit %}Edit{% else %}New{% endif %}</b>
+      </div>
+      <h1 class="scr-title">{% if is_edit %}{{ offer.offer_code }} · {{ offer.offer_name }}{% else %}Add Offer{% endif %}</h1>
+      <p class="scr-sub">{% if can_save %}Set the scope and validity, the promotion rule, then its items.{% else %}Read only: you can view this offer, but not change it.{% endif %}</p>
+    </div>
+    <div class="scr-head-actions">
+      <a href="{{ list_url }}" class="scr-btn-secondary" data-offer-cancel>{% if can_save %}Cancel{% else %}Back to list{% endif %}</a>
+      {% if can_save %}<button type="button" class="scr-btn-primary" data-offer-save>Save offer</button>{% endif %}
+    </div>
+  </div>
+
+  <div data-offer-banner aria-live="polite"></div>
+
+  <div class="scr-card">
+    <div class="scr-form-head">
+      <div>
+        <div class="scr-form-title-row"><h2 class="scr-form-title">01 · Promotion Level &amp; Scope</h2></div>
+        <p class="scr-form-sub">Identity and where this promotion applies.</p>
+      </div>
+    </div>
+    <div class="scr-form-body">
+      <div class="scr-grid scr-fare-grid-4">
+        {% if sees_every_company %}
+        <div class="scr-field">
+          <label class="scr-label" for="offer-company">Company<span class="scr-required">*</span></label>
+          <select id="offer-company" class="scr-input" data-offer-field="company" {% if is_edit %}disabled{% endif %}>
+            <option value="">Select company</option>
+            {% for c in companies %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+          </select>
+        </div>
+        {% endif %}
+        <div class="scr-field">
+          <label class="scr-label" for="offer-code">Promotion Code<span class="scr-required">*</span></label>
+          <input id="offer-code" class="scr-input" maxlength="30" autocomplete="off" data-offer-field="offer_code" />
+        </div>
+        <div class="scr-field scr-fare-span">
+          <label class="scr-label" for="offer-name">Promotion Name<span class="scr-required">*</span></label>
+          <input id="offer-name" class="scr-input" maxlength="100" autocomplete="off" data-offer-field="offer_name" />
+        </div>
+        <div class="scr-field">
+          <label class="scr-label" for="offer-status">Status</label>
+          <select id="offer-status" class="scr-input" data-offer-field="is_active">
+            <option value="1">Active</option>
+            <option value="0">Inactive</option>
+          </select>
+        </div>
+        <div class="scr-field scr-fare-span">
+          <span class="scr-label">Promotion Level<span class="scr-required">*</span></span>
+          <div class="scr-radio-row">
+            <label class="scr-radio-label"><input type="radio" class="scr-radio" name="offer-level" value="company" data-offer-field="level" /> Company Wise</label>
+            <label class="scr-radio-label"><input type="radio" class="scr-radio" name="offer-level" value="branch" data-offer-field="level" /> Branch Wise</label>
+            <label class="scr-radio-label"><input type="radio" class="scr-radio" name="offer-level" value="location" data-offer-field="level" /> Location Wise</label>
+          </div>
+        </div>
+        <div class="scr-field" data-offer-branch-wrap hidden>
+          <label class="scr-label" for="offer-branch">Branch<span class="scr-required">*</span></label>
+          <select id="offer-branch" class="scr-input" data-offer-field="branch">
+            <option value="">Select branch</option>
+            {% for b in branches %}<option value="{{ b.id }}" data-company="{{ b.company }}">{{ b.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="scr-field" data-offer-location-wrap hidden>
+          <label class="scr-label" for="offer-location">Location<span class="scr-required">*</span></label>
+          <select id="offer-location" class="scr-input" data-offer-field="location">
+            <option value="">Select location</option>
+            {% for l in locations %}<option value="{{ l.id }}">{{ l.name }}</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="scr-card">
+    <div class="scr-form-head">
+      <div>
+        <div class="scr-form-title-row"><h2 class="scr-form-title">02 · Validity &amp; Qualification</h2></div>
+        <p class="scr-form-sub">The dates this promotion runs, and the rental quantity or amount band that qualifies for it.</p>
+      </div>
+    </div>
+    <div class="scr-form-body">
+      <div class="scr-grid scr-fare-grid-4">
+        <div class="scr-field">
+          <label class="scr-label" for="offer-valid-from">Valid From<span class="scr-required">*</span></label>
+          <input id="offer-valid-from" class="scr-input byky-date" data-offer-date="valid_from" placeholder="Select date" />
+        </div>
+        <div class="scr-field">
+          <label class="scr-label" for="offer-valid-to">Valid To<span class="scr-required">*</span></label>
+          <input id="offer-valid-to" class="scr-input byky-date" data-offer-date="valid_to" placeholder="Select date" />
+        </div>
+        <div class="scr-field">
+          <label class="scr-label" for="offer-promotion-for">Promotion For<span class="scr-required">*</span></label>
+          <select id="offer-promotion-for" class="scr-input" data-offer-field="promotion_for">
+            <option value="">Select</option>
+            <option value="quantity">Quantity</option>
+            <option value="amount">Amount</option>
+          </select>
+        </div>
+        <div class="scr-field">
+          <label class="scr-label" for="offer-inventory-type">Inventory Type<span class="scr-required">*</span></label>
+          <select id="offer-inventory-type" class="scr-input" data-offer-field="inventory_type">
+            <option value="vehicle_type">Vehicle Type</option>
+          </select>
+        </div>
+        <div class="scr-field">
+          <label class="scr-label" for="offer-lower-value">Lower Promotion Value<span class="scr-required">*</span></label>
+          <input id="offer-lower-value" class="scr-input" inputmode="decimal" maxlength="13" autocomplete="off"
+                 data-offer-field="lower_value" data-num="money" placeholder="0.00" />
+        </div>
+        <div class="scr-field">
+          <label class="scr-label" for="offer-upper-value">Upper Promotion Value<span class="scr-required">*</span></label>
+          <input id="offer-upper-value" class="scr-input" inputmode="decimal" maxlength="13" autocomplete="off"
+                 data-offer-field="upper_value" data-num="money" placeholder="0.00" />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="scr-card">
+    <div class="scr-form-head">
+      <div>
+        <div class="scr-form-title-row"><h2 class="scr-form-title">03 · Promotion Rule</h2></div>
+        <p class="scr-form-sub">What this promotion gives, and whether it also needs free items or a time slab.</p>
+      </div>
+    </div>
+    <div class="scr-form-body">
+      <div class="scr-grid scr-fare-grid-4">
+        <div class="scr-field">
+          <label class="scr-label" for="offer-promotion-type">Promotion Type<span class="scr-required">*</span></label>
+          <select id="offer-promotion-type" class="scr-input" data-offer-field="promotion_type">
+            <option value="">Select</option>
+            <option value="quantity">Quantity</option>
+            <option value="amount">Amount</option>
+            <option value="percentage">Percentage</option>
+            <option value="each">Each</option>
+            <option value="offer_price">Offer Price</option>
+          </select>
+        </div>
+        <div class="scr-field" data-offer-free-price-wrap hidden>
+          <label class="scr-label" for="offer-free-or-offer-price">Free / Offer Price<span class="scr-required">*</span></label>
+          <select id="offer-free-or-offer-price" class="scr-input" data-offer-field="free_or_offer_price">
+            <option value="free">Free</option>
+            <option value="offer_price">Offer Price</option>
+          </select>
+        </div>
+        <div class="scr-field">
+          <span class="scr-label">Time Slab Applicable</span>
+          <div class="scr-toggle-row">
+            <button type="button" class="scr-toggle" data-offer-field="time_slab_applicable"><i></i></button>
+          </div>
+        </div>
+        <div class="scr-field">
+          <span class="scr-label">Free Item Selectable</span>
+          <div class="scr-toggle-row">
+            <button type="button" class="scr-toggle" data-offer-field="free_item_selectable"><i></i></button>
+          </div>
+        </div>
+        <div class="scr-field scr-fare-span" data-offer-free-note-wrap hidden>
+          <label class="scr-label" for="offer-free-note">Free Item Note</label>
+          <input id="offer-free-note" class="scr-input" maxlength="255" autocomplete="off" data-offer-field="free_item_selectable_note" />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="scr-card">
+    <div class="scr-form-head">
+      <div>
+        <div class="scr-form-title-row"><h2 class="scr-form-title">Promotion Items</h2></div>
+        <p class="scr-form-sub">The vehicle types and packages this promotion covers.</p>
+      </div>
+      {% if can_save %}<button type="button" class="scr-btn" data-offer-add-item>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+        Add item
+      </button>{% endif %}
+    </div>
+    <div class="scr-form-body">
+      <div data-offer-items></div>
+    </div>
+  </div>
+
+  <div class="scr-card" data-offer-free-items-card hidden>
+    <div class="scr-form-head">
+      <div>
+        <div class="scr-form-title-row"><h2 class="scr-form-title">Free Promotion Items</h2></div>
+        <p class="scr-form-sub">Buy-this-get-that, only relevant when the promotion type is Quantity.</p>
+      </div>
+      {% if can_save %}<button type="button" class="scr-btn" data-offer-add-free-item>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+        Add free item
+      </button>{% endif %}
+    </div>
+    <div class="scr-form-body">
+      <div data-offer-free-items></div>
+    </div>
+  </div>
+
+  <div class="scr-card" data-offer-time-slabs-card hidden>
+    <div class="scr-form-head">
+      <div>
+        <div class="scr-form-title-row"><h2 class="scr-form-title">Free Item Time Slabs</h2></div>
+        <p class="scr-form-sub">Common for the whole scheme -- not per promotion item.</p>
+      </div>
+      {% if can_save %}<button type="button" class="scr-btn" data-offer-add-slab>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+        Add time slab
+      </button>{% endif %}
+    </div>
+    <div class="scr-form-body">
+      <div data-offer-time-slabs></div>
+    </div>
+  </div>
+</div>
+
+{{ initial|json_script:"offer-initial" }}
+{{ options|json_script:"offer-options" }}
+
+{# Promotion item / free item dialog: vehicle type, package, value. #}
+<div class="scr-modal-veil" data-scr-modal-veil="offer-item" hidden></div>
+<div class="scr-modal scr-fare-modal" data-scr-modal="offer-item" hidden>
+  <div class="scr-modal-head">
+    <div>
+      <div class="scr-modal-title" data-item-title>Add item</div>
+    </div>
+    <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+    </button>
+  </div>
+  <div class="scr-modal-body">
+    <ul class="scr-msg-list" data-item-errors hidden></ul>
+    <div class="scr-grid scr-fare-grid-3">
+      <div class="scr-field scr-fare-span">
+        <label class="scr-label" for="item-vehicle-type">Vehicle Type<span class="scr-required">*</span></label>
+        <select id="item-vehicle-type" class="scr-input" data-item-vehicle-type>
+          <option value="">Select vehicle type</option>
+          {% for v in vehicle_types %}<option value="{{ v.id }}" data-company="{{ v.company }}">{{ v.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="scr-field">
+        <label class="scr-label" for="item-package">Package (min)<span class="scr-required">*</span></label>
+        <input id="item-package" class="scr-input" inputmode="numeric" maxlength="4" autocomplete="off"
+               data-item-package data-num="minutes" data-min="1" data-max="1440" placeholder="e.g. 30" />
+      </div>
+      <div class="scr-field" data-item-value-wrap>
+        <label class="scr-label" for="item-value">Value<span class="scr-required">*</span></label>
+        <input id="item-value" class="scr-input" inputmode="decimal" maxlength="13" autocomplete="off"
+               data-item-value data-num="money" placeholder="0.00" />
+      </div>
+    </div>
+  </div>
+  <div class="scr-modal-foot" style="justify-content:flex-end">
+    <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+    <button type="button" class="scr-btn-primary" data-item-save>Save item</button>
+  </div>
+</div>
+
+{# Time slab dialog. #}
+<div class="scr-modal-veil" data-scr-modal-veil="offer-slab" hidden></div>
+<div class="scr-modal scr-fare-modal" data-scr-modal="offer-slab" hidden>
+  <div class="scr-modal-head">
+    <div>
+      <div class="scr-modal-title" data-slab-title>Add time slab</div>
+    </div>
+    <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+    </button>
+  </div>
+  <div class="scr-modal-body">
+    <ul class="scr-msg-list" data-slab-errors hidden></ul>
+    <div class="scr-grid scr-fare-dialog-grid">
+      <div class="scr-field scr-fare-span">
+        <span class="scr-label">Date</span>
+        <div class="scr-radio-row">
+          <label class="scr-radio-label"><input type="radio" class="scr-radio" name="slab-date-mode" value="all_dates" data-slab-date-mode /> All Dates</label>
+          <label class="scr-radio-label"><input type="radio" class="scr-radio" name="slab-date-mode" value="specific_date" data-slab-date-mode /> Specific Date</label>
+        </div>
+      </div>
+      <div class="scr-field" data-slab-date-wrap hidden>
+        <label class="scr-label" for="slab-date">Specific Date</label>
+        <input id="slab-date" class="scr-input byky-date" data-slab-date placeholder="Select date" />
+      </div>
+      <div class="scr-field">
+        <label class="scr-label" for="slab-day">Day<span class="scr-required">*</span></label>
+        <select id="slab-day" class="scr-input" data-slab-day>
+          <option value="all_days">All Days</option>
+          <option value="monday">Monday</option>
+          <option value="tuesday">Tuesday</option>
+          <option value="wednesday">Wednesday</option>
+          <option value="thursday">Thursday</option>
+          <option value="friday">Friday</option>
+          <option value="saturday">Saturday</option>
+          <option value="sunday">Sunday</option>
+        </select>
+      </div>
+      <div class="scr-field">
+        <label class="scr-label" for="slab-from">From</label>
+        <input id="slab-from" class="scr-input" data-slab-from placeholder="HH:MM" maxlength="5" autocomplete="off" />
+      </div>
+      <div class="scr-field">
+        <label class="scr-label" for="slab-to">To</label>
+        <input id="slab-to" class="scr-input" data-slab-to placeholder="HH:MM" maxlength="5" autocomplete="off" />
+      </div>
+      <div class="scr-field scr-fare-span">
+        <label class="scr-label" for="slab-vehicle-type">Vehicle Type<span class="scr-required">*</span></label>
+        <select id="slab-vehicle-type" class="scr-input" data-slab-vehicle-type>
+          <option value="">Select vehicle type</option>
+          {% for v in vehicle_types %}<option value="{{ v.id }}" data-company="{{ v.company }}">{{ v.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="scr-field">
+        <label class="scr-label" for="slab-package">Package (min)<span class="scr-required">*</span></label>
+        <input id="slab-package" class="scr-input" inputmode="numeric" maxlength="4" autocomplete="off"
+               data-slab-package data-num="minutes" data-min="1" data-max="1440" placeholder="e.g. 30" />
+      </div>
+      <div class="scr-field">
+        <label class="scr-label" for="slab-value">Value<span class="scr-required">*</span></label>
+        <input id="slab-value" class="scr-input" inputmode="decimal" maxlength="13" autocomplete="off"
+               data-slab-value data-num="money" placeholder="0.00" />
+      </div>
+    </div>
+  </div>
+  <div class="scr-modal-foot" style="justify-content:flex-end">
+    <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+    <button type="button" class="scr-btn-primary" data-slab-save>Save time slab</button>
+  </div>
+</div>
+
+{% include "byky/partials/confirm_modal.html" %}
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}
