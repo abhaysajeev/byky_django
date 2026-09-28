@@ -1,0 +1,54 @@
+# Deploys main to the VPS. Started by hand: Actions -> Deploy -> Run workflow.
+# The server-side steps (backup, build, start, health check) are in
+# deploy/deploy.sh, versioned with the code.
+#
+# Secrets live in the `vps` environment (repo Settings -> Environments):
+#   VPS_HOST         the server's address
+#   VPS_USER         the key-only account the deploy logs in as (deploy)
+#   VPS_SSH_KEY      that account's private key, made for GitHub only
+#   VPS_KNOWN_HOSTS  the server's host key (ssh-keyscan), so the connection
+#                    only ever talks to this server
+name: Deploy
+
+on:
+  workflow_dispatch:
+
+# Never two deploys at once; a second one waits for the first.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    # Only main is ever deployed, whatever branch the button was pressed on.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: vps
+
+    steps:
+      - name: Set up the SSH key
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Deploy ${{ github.sha }}
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            "$VPS_USER@$VPS_HOST" \
+            "cd ~/byky_django && git fetch --quiet origin main && git reset --hard ${{ github.sha }} && ./deploy/deploy.sh ${{ github.sha }}"
+
+      - name: Remove the key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

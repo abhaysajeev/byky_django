@@ -71,3 +71,40 @@ docker-compose exec web python manage.py shell
 docker-compose exec web pytest
 docker-compose exec web ruff check .
 ```
+
+## CI/CD
+
+**Every pull request and every push to `main`** runs `.github/workflows/ci.yml`
+on GitHub:
+
+| Job | What it checks |
+|---|---|
+| `checks` | `ruff check .`, no missing migrations, the API schema validates, the full test suite on a fresh Postgres 16 |
+| `image` | the production image (`requirements/base.txt`) builds |
+
+`main` only accepts pull requests whose checks are green. Work on a branch,
+push it, open the pull request from the link the push prints, merge on GitHub.
+
+**Deploying** is a button: GitHub → Actions → **Deploy** → Run workflow (it
+always deploys `main`). `.github/workflows/deploy.yml` logs in to the VPS as
+`deploy` and runs `deploy/deploy.sh`, which:
+
+1. backs up the database to `~/backups/byky-<date>-<commit>.dump` (the newest
+   14 are kept) — before anything changes, since migrations run on start;
+2. builds and starts `docker-compose.qa.yml` (project `byky_f_qa`);
+3. waits for `http://127.0.0.1:8007/healthz/` and turns the run red, with the
+   app's last log lines, if it does not answer within 90 seconds.
+
+The same script can be run by hand on the VPS: `cd ~/byky_django && ./deploy/deploy.sh`.
+
+**Restoring a backup** (on the VPS, in `~/byky_django`):
+
+```bash
+docker compose -f docker-compose.qa.yml -p byky_f_qa stop web
+docker compose -f docker-compose.qa.yml -p byky_f_qa exec -T db sh -c 'dropdb -U "$POSTGRES_USER" --force "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
+docker compose -f docker-compose.qa.yml -p byky_f_qa exec -T db sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --no-acl' < ~/backups/<file>.dump
+docker compose -f docker-compose.qa.yml -p byky_f_qa up -d
+```
+
+The VPS's `.env` comes from `.env.qa.example`; note that `DJANGO_ALLOWED_HOSTS`
+must include `127.0.0.1` and `localhost` for the health checks.
