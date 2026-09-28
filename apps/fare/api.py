@@ -14,7 +14,7 @@ from rest_framework.views import APIView
 from apps.fare import services
 from apps.fare.serializers import FaresRequest
 from apps.portal.authentication import AppJWTAuthentication
-from core.api import envelope, request_parts
+from core.api import envelope, request_parts, session_station
 from core.enums import Channel
 from core.schema import SERVER_ERROR, envelope_request, envelope_responses
 
@@ -126,15 +126,16 @@ class FaresView(APIView):
             (401, "not_authenticated", "Sign in first.", {}),
             (403, "wrong_channel", "Not allowed on this app.", {}),
             (409, "device_not_mapped", "This device has no station.", {}),
+            (409, "branch_inactive", "This station is closed.", {}),
             SERVER_ERROR,
         ),
     )
     def post(self, request, app):
         if app != Channel.OPERATOR:
             return envelope("wrong_channel", "Not allowed on this app.", http_status=403)
-        branch = request.auth.branch
-        if branch is None:
-            return envelope("device_not_mapped", "This device has no station.", http_status=409)
+        branch, refused = session_station(request)
+        if refused:
+            return refused
 
         _, request_data = request_parts(request)
         form = FaresRequest(data=request_data)

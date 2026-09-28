@@ -55,6 +55,23 @@ def envelope(code, message, data=None, http_status=status.HTTP_200_OK, headers=N
     )
 
 
+def session_station(request):
+    """(branch, None), or (None, the error to answer) -- the station a signed-in
+    device's download is for.
+
+    Always the session's, never a value the app sends: login copied the
+    device's mapping into it, and the device cannot be re-mapped while signed
+    in (apps/devices/services.py::_mappable). A branch switched off since login
+    still has open sessions, so it is re-checked here on every call.
+    """
+    branch = request.auth.branch
+    if branch is None:
+        return None, envelope("device_not_mapped", "This device has no station.", http_status=409)
+    if not branch.is_active:
+        return None, envelope("branch_inactive", "This station is closed.", http_status=409)
+    return branch, None
+
+
 def request_parts(request):
     """(credentials, request_data) from the body.
 
