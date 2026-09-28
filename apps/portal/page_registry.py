@@ -35,6 +35,12 @@ FLEET_SVG = "M12 3 4 7l8 4 8-4-8-4M4 7v10l8 4 8-4V7M12 11v10"
 FARE_SVG = "M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9-9-9M7.5 7.5h.01"
 # A document with lines -- the server's own logs.
 LOGS_SVG = "M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8l-5-5M14 3v5h5M9 13h6M9 17h6"
+# A person and an ID card -- the customer this module is built around,
+# distinct from Crew's plain person glyph.
+RENTAL_SVG = (
+    "M9 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6M3 20a6 6 0 0 1 10-4.5"
+    "M14 14h7a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1M16.5 18h2"
+)
 
 # code, name, menu header (blank = no divider), sort order, is_flat, svg, svg2
 MODULES = [
@@ -44,6 +50,7 @@ MODULES = [
     ("devices", "Devices", "Operations", 30, False, DEVICES_SVG, ""),
     ("fleet", "Inventory", "Operations", 40, False, FLEET_SVG, ""),
     ("fare", "Fare & Offers", "Operations", 50, False, FARE_SVG, ""),
+    ("rental", "Rental", "Operations", 60, False, RENTAL_SVG, ""),
     ("system", "Users & Roles", "System", 90, False, SYSTEM_SVG, ""),
     ("monitoring", "Logs", "System", 95, False, LOGS_SVG, ""),
 ]
@@ -111,7 +118,11 @@ PAGES = [
     ("fleet.privileges", "fleet", "Privileges", "fleet-privileges", ["read", "update"], 9, False),
 
     ("fare.fare", "fare", "Fares", "fare-fare-list", CRUD_PRINT, 1, False),
+    ("fare.offer", "fare", "Offers", "fare-offer-list", CRUD_PRINT, 2, False),
     ("fare.privileges", "fare", "Privileges", "fare-privileges", ["read", "update"], 9, False),
+
+    ("rental.customer", "rental", "Customer", "rental-customer-list", CRUD_PRINT, 1, False),
+    ("rental.privileges", "rental", "Privileges", "rental-privileges", ["read", "update"], 9, False),
 
     ("system.role", "system", "Roles", "portal-role-list", CRUD, 1, False),
     ("system.user", "system", "Users", "portal-user-list", CRUD, 2, False),

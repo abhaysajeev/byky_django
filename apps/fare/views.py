@@ -13,10 +13,10 @@ from django.urls import reverse
 
 from apps.company import writes as company_writes
 from apps.company.models import UAE_WEEK
-from apps.company.scoping import branches_for, companies_for
-from apps.fare import payload, pricing, services
-from apps.fare.models import Fare, FareLevel
-from apps.fare.scoping import fares_for
+from apps.company.scoping import branches_for, companies_for, locations_for
+from apps.fare import offer_payload, offer_services, payload, pricing, services
+from apps.fare.models import Fare, FareLevel, Offer, OfferLevel
+from apps.fare.scoping import fares_for, offers_for
 from apps.fleet.scoping import categories_for, vehicle_types_for
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
@@ -25,6 +25,7 @@ from core.timezones import business_date_for
 from theme.views import ThemedTemplateView
 
 PAGE = "fare.fare"
+OFFER_PAGE = "fare.offer"
 ACTIONS = ("create", "read", "update", "delete", "print")
 
 
@@ -228,3 +229,168 @@ class FarePrivilegeView(PrivilegeScreenView):
     page_code = "fare.privileges"
     module_code = "fare"
     module_label = "Fare & Offers"
+
+
+# -- Offer / Promotion -----------------------------------------------------------------
+#
+# Models/UI/CRUD only for this pass -- no live /check/ endpoint, no
+# lock_version, no precedence engine. See apps/fare/models.py and
+# apps/fare/offer_services.py for why.
+
+
+class OfferScreenView(PagePermissionMixin, ThemedTemplateView):
+    page_code = OFFER_PAGE
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        context["perm"] = {action: has_permission(user, self.page_code, action) for action in ACTIONS}
+        return context
+
+
+def _offer_period(offer, today):
+    if offer.valid_to < today:
+        return "Expired"
+    if offer.valid_from > today:
+        return "Upcoming"
+    return "Current"
+
+
+class OfferListView(OfferScreenView):
+    template_name = "fare/offer_list.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        offers = (
+            offers_for(user)
+            .select_related("company", "branch", "location")
+            .order_by("-valid_from", "offer_name")
+        )
+        today_of = {}
+        rows = []
+        for offer in offers:
+            today = today_of.setdefault(offer.company_id, business_date_for(offer.company))
+            if offer.level == OfferLevel.BRANCH:
+                scope = offer.branch.name if offer.branch else ""
+            elif offer.level == OfferLevel.LOCATION:
+                scope = offer.location.name if offer.location else ""
+            else:
+                scope = "All branches"
+            rows.append({
+                "pk": offer.pk,
+                "offer_code": offer.offer_code,
+                "offer_name": offer.offer_name,
+                "company": offer.company.name,
+                "level": offer.get_level_display(),
+                "scope": scope,
+                "validity": f"{pricing.date_label(offer.valid_from)} – {pricing.date_label(offer.valid_to)}",
+                "period": _offer_period(offer, today),
+                "promotion_type": offer.get_promotion_type_display(),
+                "band": f"{offer.lower_value} – {offer.upper_value}",
+                "active": offer.is_active,
+                "edit_url": reverse("fare-offer-edit", args=[offer.pk]),
+            })
+        context.update({
+            "offers": rows,
+            "count_active": sum(1 for r in rows if r["active"]),
+            "count_current": sum(1 for r in rows if r["active"] and r["period"] == "Current"),
+            "count_inactive": sum(1 for r in rows if not r["active"]),
+            "sees_every_company": user.sees_every_company,
+            "delete_url": reverse("fare-offer-delete", args=[0]),
+        })
+        return context
+
+
+def _offer_blank(user):
+    return {
+        "pk": None, "company": user.company_id, "offer_code": "", "offer_name": "",
+        "level": OfferLevel.COMPANY, "branch": None, "location": None,
+        "valid_from": "", "valid_to": "", "promotion_for": "", "inventory_type": "vehicle_type",
+        "lower_value": "", "upper_value": "", "promotion_type": "",
+        "time_slab_applicable": False, "free_item_selectable": False, "free_item_selectable_note": "",
+        "free_or_offer_price": "free", "is_active": True,
+        "items": [], "free_items": [], "time_slabs": [],
+    }
+
+
+class OfferFormView(OfferScreenView):
+    """Add (no pk) or edit (pk), same one-view shape as FareFormView."""
+
+    template_name = "fare/offer_form.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        self.required_action = "read" if kwargs.get("pk") else "create"
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        pk = self.kwargs.get("pk")
+        offer = None
+        if pk:
+            offer = offer_services.with_children(offers_for(user).filter(pk=pk)).first()
+            if offer is None:
+                raise Http404("No such offer.")
+        initial = offer_payload.serialise(offer) if offer else _offer_blank(user)
+        can_save = context["perm"]["update" if offer else "create"]
+
+        linked_branch = offer.branch_id if offer else None
+        linked_location = offer.location_id if offer else None
+        linked_types = set()
+        if offer:
+            linked_types |= {row.vehicle_type_id for row in offer.items.all()}
+            linked_types |= {row.vehicle_type_id for row in offer.free_items.all()}
+            linked_types |= {row.vehicle_type_id for row in offer.time_slabs.all()}
+        vehicle_types = (vehicle_types_for(user).select_related("category")
+                         .filter(Q(is_active=True) | Q(pk__in=linked_types)).order_by("vehicle_type_name"))
+        branches = (branches_for(user).filter(Q(is_active=True) | Q(pk=linked_branch)).order_by("name"))
+        locations = (locations_for(user).filter(Q(is_active=True) | Q(pk=linked_location)).order_by("name"))
+        options = {
+            "vehicle_types": [
+                {"id": v.pk, "name": v.vehicle_type_name, "company": v.company_id,
+                 "category": v.category.category_name}
+                for v in vehicle_types
+            ],
+            "branches": [{"id": b.pk, "name": b.name, "company": b.company_id} for b in branches],
+            "locations": [{"id": location.pk, "name": location.name} for location in locations],
+        }
+        context.update({
+            "offer": offer,
+            "is_edit": offer is not None,
+            "can_save": can_save,
+            "initial": initial,
+            "options": options,
+            "vehicle_types": options["vehicle_types"],
+            "branches": options["branches"],
+            "locations": options["locations"],
+            "companies": list(companies_for(user).filter(is_active=True).order_by("name").values("id", "name")),
+            "sees_every_company": user.sees_every_company,
+            "save_url": reverse("fare-offer-save"),
+            "list_url": reverse("fare-offer-list"),
+        })
+        return context
+
+
+class OfferSave(company_writes.WriteView):
+    model = Offer
+    page_code = OFFER_PAGE
+
+    def post(self, request, *args, **kwargs):
+        data = company_writes._payload(request)
+        if not self.may("update" if data.get("pk") else "create"):
+            return self.refused()
+        try:
+            offer = offer_services.save_offer(request.user, data)
+        except offer_services.NotFound:
+            return JsonResponse({"ok": False, "code": "not_found",
+                                 "errors": [{"field": "", "message": "This offer no longer exists."}]}, status=404)
+        except offer_services.Invalid as invalid:
+            return JsonResponse({"ok": False, "code": "invalid", "errors": invalid.errors}, status=400)
+        return JsonResponse({"ok": True, "pk": offer.pk, "message": "Offer saved."})
+
+
+class OfferDelete(company_writes.EntityDeleteView):
+    model = Offer
+    page_code = OFFER_PAGE
+    noun = "Offer"
