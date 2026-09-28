@@ -16,6 +16,7 @@ from django.urls import reverse
 from apps.company import drawers, forms, scoping, writes
 from apps.company import services as company_services
 from apps.company.models import (
+    UAE_WEEK,
     AuthorityType,
     Branch,
     BranchApprovalAuthority,
@@ -26,7 +27,6 @@ from apps.company.models import (
     Department,
     Location,
     State,
-    UAE_WEEK,
 )
 from apps.crew.scoping import employees_for
 from apps.portal.permissions import PagePermissionMixin

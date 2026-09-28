@@ -10,15 +10,22 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.company.models import BranchWorkingTime, WeekDay
+from apps.company.services import week_day_of
 from apps.crew.models import (
     AddressType,
     Attendance,
     BlockAction,
+    DutyRoster,
+    DutyRosterDayType,
     Employee,
     EmployeeAddress,
     EmployeeBlockLog,
     EmployeeDesignation,
+    RosterCategory,
 )
+from core.scoping import scoped_to
+from core.timezones import business_date_for, zone_for
 
 # A document inside this many days counts as needing attention.
 EXPIRY_WARNING_DAYS = 30
@@ -186,12 +193,6 @@ ADDRESS_TYPES = AddressType
 # Two features read against DutyRoster are deliberately not built here, by the
 # client's own scoping for the Oct 2 demo -- see today_assignment's docstring
 # and absent_today below.
-
-from apps.company.models import Branch, BranchWorkingTime, WeekDay
-from apps.company.services import week_day_of
-from core.timezones import business_date_for, zone_for
-from apps.crew.models import DutyRoster, DutyRosterDayType, RosterCategory
-from core.scoping import scoped_to
 
 
 class Invalid(Exception):

@@ -55,10 +55,10 @@ def decode_token(token, *, expected_type):
     every caller catches one thing regardless of what went wrong."""
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
-    except jwt.ExpiredSignatureError:
-        raise TokenInvalid("expired")
-    except jwt.InvalidTokenError:
-        raise TokenInvalid("malformed")
+    except jwt.ExpiredSignatureError as error:
+        raise TokenInvalid("expired") from error
+    except jwt.InvalidTokenError as error:
+        raise TokenInvalid("malformed") from error
     if payload.get("typ") != expected_type:
         raise TokenInvalid("wrong_type")
     return payload

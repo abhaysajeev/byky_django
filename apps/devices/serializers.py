@@ -8,7 +8,6 @@ the app is tested instead of being silently answered "no update" forever.
 from rest_framework import serializers
 
 from apps.devices.models import Platform
-
 from core.api import REQUIRED, text_field, whole_number_field
 
 

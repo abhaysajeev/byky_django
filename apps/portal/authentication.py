@@ -32,8 +32,8 @@ class AppJWTAuthentication(BaseAuthentication):
 
         try:
             payload = app_jwt.decode_token(header[len("Bearer "):], expected_type="access")
-        except app_jwt.TokenInvalid:
-            raise AuthenticationFailed("Invalid or expired token.")
+        except app_jwt.TokenInvalid as error:
+            raise AuthenticationFailed("Invalid or expired token.") from error
 
         session = (
             AppSession.objects

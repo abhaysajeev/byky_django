@@ -25,10 +25,9 @@ from django.http import Http404, HttpResponse, JsonResponse
 from django.urls import reverse
 from django.views import View
 
-from apps.company.scoping import branches_for, companies_for
 from apps.company import writes
+from apps.company.scoping import branches_for, companies_for
 from apps.devices import drawers, scoping, services
-from apps.company.models import Company
 from apps.devices.models import (
     ROUND_OFF_STEPS,
     AppRelease,

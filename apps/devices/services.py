@@ -21,13 +21,14 @@ from decimal import Decimal, InvalidOperation
 from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
 from django.db import IntegrityError, transaction
-from django.db.models import Case, F, IntegerField, Max, Q, Value, When
+from django.db.models import Case, F, IntegerField, Q, Value, When
 from django.utils import timezone
 
 from apps.company import services as company_services
 from apps.company.models import Branch, BranchWorkingTime, Company
 from apps.devices.models import (
     BILL_NUMBER_WIDTH,
+    ROUND_OFF_STEPS,
     VERSION_NAME,
     AppRelease,
     AppReleaseMapping,
@@ -39,7 +40,6 @@ from apps.devices.models import (
     DeviceSettings,
     DeviceStatus,
     DeviceStatusLog,
-    ROUND_OFF_STEPS,
     PrintType,
     ReleaseScope,
     RoundOffMode,
@@ -1090,10 +1090,10 @@ def map_release(releases_qs, release_pk, *, user, scope, branches, targets):
             if not written:
                 raise DeviceActionError(f"Every ticked branch is already on {release}.", "Branches")
             return written
-    except IntegrityError:
+    except IntegrityError as error:
         # Two admins mapping the same branch at once: the unique index let one
         # through. Nothing of this attempt was saved.
-        raise DeviceActionError("Someone changed this mapping just now. Reload and try again.")
+        raise DeviceActionError("Someone changed this mapping just now. Reload and try again.") from error
 
 
 def _switch_off(mapping, user):
