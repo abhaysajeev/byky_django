@@ -14,6 +14,7 @@ import datetime
 import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.db import connection
 
 from apps.company.models import Branch
 from apps.devices import legacy_import as legacy
@@ -106,6 +107,17 @@ def test_the_logo_arrives_byte_for_byte():
 
 
 # --- running the command ---------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def fresh_keys_clear_of_legacy_ids(db):
+    """The export names legacy BranchIDs (1, 95, ...). On a new test database
+    the branch id sequence starts at 1, so a fixture's station could take one
+    of those ids and the import would write to it. Start fresh keys well
+    above every legacy id; runs before any fixture that makes a branch."""
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT setval(pg_get_serial_sequence('branch', 'id'), "
+                       "GREATEST((SELECT COALESCE(MAX(id), 0) FROM branch), 1000000))")
 
 
 @pytest.fixture

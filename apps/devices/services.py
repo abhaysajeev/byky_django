@@ -226,7 +226,7 @@ def update_decision_for_installation(
     release is never held back.
     """
     try:
-        company_id, branch_id = _company_and_branch(installation_id, channel, company_code)
+        company_id, branch_id = _company_and_branch(installation_id, company_code)
     except Exception:
         # Fails open like update_decision: section 9A.7 row 13.
         log.exception("update check: device lookup failed; answering no update")
@@ -272,13 +272,13 @@ def _outside_working_time(branch_id, at=None):
     return None
 
 
-def _company_and_branch(installation_id, channel, company_code=""):
+def _company_and_branch(installation_id, company_code=""):
     """(company_id, branch_id) for an installation; branch None if unplaced."""
     company_id = None
     branch_id = None
     device = (
         Device.objects
-        .filter(installation_id=installation_id, channel=channel)
+        .filter(installation_id=installation_id)      # whichever app registered it
         .only("id", "company_id")
         .first()
     )
@@ -306,7 +306,6 @@ PENDING = "pending_approval"
 RECONNECT_PENDING = "reconnect_pending"
 BLOCKED = "device_blocked"
 RETIRED = "device_retired"
-APP_MISMATCH = "app_mismatch"
 UNAVAILABLE = "registration_unavailable"
 UNKNOWN_COMPANY = "unknown_company"
 
@@ -321,10 +320,15 @@ def _push_token(value):
     return ""
 
 
-def _outcome_of(device, channel):
-    """What a known installation is told, from its own row only."""
-    if device.channel != channel:
-        return APP_MISMATCH
+def _outcome_of(device):
+    """What a known installation is told, from its own row only.
+
+    Whichever app asks: one phone runs the operator, manager and employee
+    apps under one installation_id, and is registered and approved once.
+    `channel` records the app that registered it first. Which apps a person
+    may use is the user's allowed_channels, and the operator app also needs a
+    station mapping -- both checked at login, not here.
+    """
     if device.status == DeviceStatus.RETIRED:
         return RETIRED
     if device.status == DeviceStatus.BLOCKED:
@@ -409,7 +413,7 @@ def register_device(*, installation_id, channel, platform, platform_id="",
     if known is not None:
         _refresh_known(known, channel=channel, platform_id=platform_id,
                        device_model=device_model, push_token=token, now=now)
-        return _outcome_of(known, channel), known
+        return _outcome_of(known), known
 
     company_id, refusal = company_for_registration(company_code)
     if company_id is None:
@@ -430,7 +434,7 @@ def register_device(*, installation_id, channel, platform, platform_id="",
     except IntegrityError:
         # Two first calls raced; the other one created the row. Answer from it.
         device = Device.objects.get(installation_id=installation_id)
-    return _outcome_of(device, channel), device
+    return _outcome_of(device), device
 
 
 # -- Device Approval actions (design/03-login.md sections 9B.3-9B.5) ---------

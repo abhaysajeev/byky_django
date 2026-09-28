@@ -140,7 +140,6 @@ REGISTRATION_REPLIES = {
     services.RECONNECT_PENDING: (status.HTTP_202_ACCEPTED, "Waiting for approval after reinstall."),
     services.BLOCKED: (status.HTTP_403_FORBIDDEN, "This device is blocked. Contact your administrator."),
     services.RETIRED: (status.HTTP_403_FORBIDDEN, "This registration was replaced. Register again."),
-    services.APP_MISMATCH: (status.HTTP_409_CONFLICT, "This device is registered for another app."),
     services.UNAVAILABLE: (status.HTTP_503_SERVICE_UNAVAILABLE,
                            "Registration is not available right now. Try again later."),
     services.UNKNOWN_COMPANY: (status.HTTP_400_BAD_REQUEST,

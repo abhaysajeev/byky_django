@@ -12,9 +12,13 @@ from django.utils import timezone
 from apps.company.models import Company
 from apps.devices import api, services
 from apps.devices.models import Device, DeviceStatus
+from apps.fare.tests import test_api as fare_api
 from core.enums import Channel
 
 OPERATOR = Channel.OPERATOR
+
+# A signed-up operator with a mapped tablet, from the fare API tests.
+world = fare_api.world
 
 
 @pytest.fixture(autouse=True)
@@ -194,13 +198,25 @@ def test_a_blocked_or_retired_tablet_is_stopped(client, company, status, code):
     assert body(response) == {"code": code, "message": body(response)["message"], "data": {}}
 
 
-def test_a_tablet_registered_for_another_app_is_refused(client, company):
-    approved_device(company, channel=Channel.MANAGER)
+@pytest.mark.parametrize("status,http,code", [
+    (DeviceStatus.APPROVED, 200, "approved"),
+    (DeviceStatus.PENDING, 202, "pending_approval"),
+    (DeviceStatus.BLOCKED, 403, "device_blocked"),
+    (DeviceStatus.RETIRED, 403, "device_retired"),
+])
+def test_every_app_on_a_phone_shares_its_one_registration(client, company, status, http, code):
+    """The operator, manager and employee apps send one installation_id: the
+    phone is registered and approved once, and every app is told its state."""
+    device = approved_device(company, channel=Channel.EMPLOYEE, status=status)
 
-    response = register(client, app="operator")
-
-    assert response.status_code == 409
-    assert body(response)["code"] == "app_mismatch"
+    for app in ("operator", "manager", "employee"):
+        response = register(client, app=app)
+        assert (response.status_code, body(response)["code"]) == (http, code), app
+        if code in ("approved", "pending_approval"):
+            assert body(response)["data"]["device_registration_id"] == device.device_registration_id
+    assert Device.objects.count() == 1
+    device.refresh_from_db()
+    assert device.channel == Channel.EMPLOYEE              # still the app that registered it first
 
 
 def test_every_call_records_when_the_tablet_was_seen(client, company):
@@ -355,3 +371,14 @@ def test_one_address_is_rate_limited(client, company, monkeypatch):
     response = register(client, "c")
 
     assert response.status_code == 429
+
+
+def test_the_operator_app_signs_in_on_a_phone_the_employee_app_registered(client, world):
+    """Login finds the phone by installation_id alone; the operator app still
+    needs what it always needs -- approved, and mapped to a station."""
+    Device.objects.filter(installation_id="till-1").update(channel=Channel.EMPLOYEE)
+
+    response = fare_api.call(client, "/api/v1/operator/auth/login",
+                             {"username": "OPR001", "password": fare_api.PASSWORD, "installation_id": "till-1"})
+
+    assert (response.status_code, response.json()["code"]) == (200, "ok")

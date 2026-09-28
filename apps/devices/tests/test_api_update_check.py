@@ -296,6 +296,20 @@ def test_the_client_scenario_over_http(client, company, branch, other_branch):
     assert (offered("dubai-tablet"), offered("sharjah-tablet")) == (80, 80)
 
 
+def test_another_app_on_the_same_phone_gets_its_own_release_for_that_station(client, company, branch):
+    """One phone, one registration, whichever app registered it: the manager
+    app on the operator-registered tablet is placed at its station too."""
+    tablet(company, "shared-phone", station=branch)
+    open_all_day(branch)
+    map_to(release(company, 80, channel="manager"))
+    map_to(release(company, 81, channel="manager"), branch)
+
+    response = call(client, {"installation_id": "shared-phone", "version_code": 79},
+                    url="/api/v1/manager/app/update-check")
+
+    assert assert_envelope(response)["data"]["version_code"] == 81
+
+
 def test_the_check_changes_nothing(client, company, branch, django_assert_max_num_queries, logs_off):
     """A pure read -- no write to the device, the mapping or anything else."""
     map_to(release(company, 81), branch)
