@@ -97,6 +97,9 @@ def natural(text):
     return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", text or "")]
 
 
+RENUMBER_OFFSET = 10 ** 12      # far above any real number; bigint holds it
+
+
 def renumber_identifiers():
     """Give every vehicle a gap-free identifier, VB0001 upwards, in the order
     migration 0011 first numbered them: category, vehicle type, vehicle name
@@ -118,8 +121,11 @@ def renumber_identifiers():
             natural(v.vehicle_type.category.category_name), natural(v.vehicle_type.vehicle_type_name),
             natural(v.vehicle_name), natural(v.vehicle_code), v.pk,
         ))
-        # Out of the way first: the unique index is checked row by row.
-        Vehicle.objects.update(identifier_no=F("identifier_no") * -1)
+        # Out of the way first -- the unique index is checked row by row -- by
+        # moving every number above the new range. Not by negating: the
+        # identifier text pads to four characters, so -100 and -1000 would
+        # both read "VB-100" and collide.
+        Vehicle.objects.update(identifier_no=F("identifier_no") + RENUMBER_OFFSET)
         for number, vehicle in enumerate(ordered, start=1):
             vehicle.identifier_no = number
         Vehicle.objects.bulk_update(ordered, ["identifier_no"], batch_size=1000)

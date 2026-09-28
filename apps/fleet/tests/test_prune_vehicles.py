@@ -55,6 +55,10 @@ def test_a_dry_run_writes_nothing_and_leaves_the_sequence_alone(fleet, world, ca
 
 
 def test_commit_deletes_this_companys_unplaced_vehicles_and_renumbers_gap_free(fleet, world):
+    # Numbers whose text would collide if moved aside carelessly (-100 and
+    # -1000 both pad to "VB-100").
+    Vehicle.objects.filter(vehicle_name="MO 1").update(identifier_no=100)
+    Vehicle.objects.filter(vehicle_name="MO 2").update(identifier_no=1000)
     prune("--commit")
     # Ours at no branch are gone, active or not; another company's are not touched.
     assert not Vehicle.objects.filter(company=world["company"], current_branch__isnull=True).exists()
