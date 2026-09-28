@@ -1,6 +1,8 @@
 {% comment %}
-Server-side pager for the log lists: `page` (a Django Page) and `query` (the
-current filters, without "page"), so paging keeps the filters.
+Pager for a list the server filters and pages (the logs, Vehicle): `page` (a
+Django Page) and `query` (the current filters, without "page"), so paging keeps
+the filters. Lists small enough to page in the browser use byky-screen.js's
+own pager instead.
 {% endcomment %}
 <div class="scr-pager">
   <span class="scr-pager-info">{% if page.paginator.count %}Showing {{ page.start_index }}–{{ page.end_index }} of {{ page.paginator.count }}{% else %}Nothing matches these filters{% endif %}</span>

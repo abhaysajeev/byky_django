@@ -43,8 +43,19 @@
     filterWraps.forEach(function (w) { w.querySelector('.scr-filter-menu').hidden = true; });
   });
 
+  // A list marked data-scr-server-paged is searched, filtered and paged by the
+  // server (e.g. Vehicle): its search box submits a form instead, and none of
+  // the in-browser filtering or paging below touches it.
+  function serverPaged(el) { return !!el.closest('[data-scr-server-paged]'); }
+
   root.querySelectorAll('.scr-search input').forEach(function (input) {
+    if (serverPaged(input)) return;
     input.addEventListener('input', function () { applyFilters(scopeOf(input)); });
+  });
+
+  // A server-filtered list's dropdowns apply as soon as they change.
+  root.querySelectorAll('form[data-scr-autosubmit] select').forEach(function (select) {
+    select.addEventListener('change', function () { select.form.submit(); });
   });
 
   /* ── KPI tiles as filter shortcuts (data-scr-kpi-filter) ───────────
@@ -274,7 +285,7 @@
     if (!card.querySelector('.scr-panel')) scopes.push(card);
   });
   scopes.forEach(function (scope) {
-    if (scope.querySelector('.scr-row')) applyFilters(scope);
+    if (scope.querySelector('.scr-row') && !serverPaged(scope)) applyFilters(scope);
   });
 
   /* ── cascading dropdowns (Country → State → Location → Branch) ────

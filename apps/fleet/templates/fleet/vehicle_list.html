@@ -28,10 +28,10 @@
     </div>
     <div class="scr-head-actions">
       {% if perm.print %}
-      <button type="button" class="scr-btn">
+      <a class="scr-btn" href="{{ export_url_vehicle }}{% if query %}?{{ query }}{% endif %}" title="Every vehicle matching the filters, as CSV">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="m7 11 5 5 5-5"></path><path d="M4 20h16"></path></svg>
         Export
-      </button>
+      </a>
       {% endif %}
       {% if perm.create %}
       <button type="button" class="scr-btn-primary" data-scr-open="vehicle:add">
@@ -42,15 +42,40 @@
     </div>
   </div>
 
-  <div class="scr-card" data-scr-noun-singular="vehicle" data-scr-noun-plural="vehicles" data-scr-delete-url="{{ delete_url_vehicle }}" data-scr-noun="{{ noun_vehicle }}">
-    <div class="scr-toolbar">
+  {% comment %}
+  data-scr-server-paged: the server searches, filters and pages this list
+  (views.VehicleListView); byky-screen.js leaves it alone. The form submits on
+  Enter or Filter, and a select submits as soon as it changes.
+  {% endcomment %}
+  <div class="scr-card" data-scr-server-paged data-scr-noun-singular="vehicle" data-scr-noun-plural="vehicles" data-scr-delete-url="{{ delete_url_vehicle }}" data-scr-noun="{{ noun_vehicle }}">
+    <form method="get" class="scr-toolbar" data-scr-autosubmit>
       <div class="scr-search">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
-        <input type="text" placeholder="Search identifier, code, name, type or RFID tag" />
+        <input type="text" name="q" value="{{ params.q }}" placeholder="Search identifier, code, name, type, RFID tag or branch" aria-label="Search vehicles" />
       </div>
-
-      <span class="scr-toolbar-count">{{ vehicles|length }} vehicles</span>
-    </div>
+      <select name="type" class="scr-input scr-list-select" aria-label="Vehicle type">
+        <option value="">All vehicle types</option>
+        {% for t in vehicle_types_list %}<option value="{{ t.id }}"{% if params.type == t.id|stringformat:"s" %} selected{% endif %}>{{ t.vehicle_type_name }}</option>{% endfor %}
+      </select>
+      <select name="branch" class="scr-input scr-list-select" aria-label="Branch">
+        <option value="">All branches</option>
+        <option value="none"{% if params.branch == "none" %} selected{% endif %}>Not at a branch</option>
+        {% for b in branches_list %}<option value="{{ b.id }}"{% if params.branch == b.id|stringformat:"s" %} selected{% endif %}>{{ b.name }}</option>{% endfor %}
+      </select>
+      <select name="available" class="scr-input scr-list-select" aria-label="Availability">
+        <option value="">Any availability</option>
+        <option value="yes"{% if params.available == "yes" %} selected{% endif %}>Available</option>
+        <option value="no"{% if params.available == "no" %} selected{% endif %}>Unavailable</option>
+      </select>
+      <select name="status" class="scr-input scr-list-select" aria-label="Status">
+        <option value="">All status</option>
+        <option value="active"{% if params.status == "active" %} selected{% endif %}>Active</option>
+        <option value="inactive"{% if params.status == "inactive" %} selected{% endif %}>Inactive</option>
+      </select>
+      <button type="submit" class="scr-btn">Filter</button>
+      {% if filtered %}<a href="{% url 'fleet-vehicle-list' %}" class="scr-btn-secondary">Clear</a>{% endif %}
+      <span class="scr-toolbar-count">{{ page.paginator.count }} vehicle{{ page.paginator.count|pluralize }}</span>
+    </form>
 
     <div class="scr-table-scroll scr-sb">
       <table>
@@ -93,8 +118,8 @@
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"></path></svg>
                 </span>
                 <div>
-                  <div class="scr-empty-title">No vehicles yet</div>
-                  <p class="scr-empty-sub">Add the first vehicle to the fleet.</p>
+                  <div class="scr-empty-title">{% if filtered %}No vehicles match{% else %}No vehicles yet{% endif %}</div>
+                  <p class="scr-empty-sub">{% if filtered %}Change or clear the filters.{% else %}Add the first vehicle to the fleet.{% endif %}</p>
                 </div>
                 {% if perm.create %}
                 <button type="button" class="scr-btn-primary" data-scr-open="vehicle:add">
@@ -110,18 +135,7 @@
       </table>
     </div>
 
-    <div class="scr-pager">
-      <span class="scr-pager-info">Showing {{ vehicles|length }} of {{ vehicles|length }}</span>
-      <div class="scr-pager-nav">
-        <button type="button" class="scr-pager-btn" disabled>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"></path></svg>
-        </button>
-        <span class="scr-pager-current">1</span>
-        <button type="button" class="scr-pager-btn" disabled>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 6 6 6-6 6"></path></svg>
-        </button>
-      </div>
-    </div>
+    {% include "byky/partials/server_pager.html" %}
   </div>
 </div>
 

@@ -6,7 +6,13 @@ endpoints reused straight from apps.company.writes rather than redefined here
 -- Brand needs nothing that generic save/delete doesn't already do.
 """
 
+import csv
+
+from django.core.paginator import Paginator
+from django.db.models import Q
+from django.http import StreamingHttpResponse
 from django.urls import reverse
+from django.utils import timezone
 
 from apps.company import writes as company_writes
 from apps.company.scoping import branches_for, companies_for
@@ -363,17 +369,56 @@ class AssetDelete(company_writes.EntityDeleteView):
     noun = "Asset"
 
 
+PER_PAGE = 50
+
+
+def filtered_vehicles(request):
+    """The vehicles a list or export shows: the user's own, narrowed by the
+    query string. One function for both, so an export is exactly what the
+    screen was showing.
+
+      q          identifier, code, name, vehicle type, RFID tag or branch
+      type       a vehicle type id
+      branch     a branch id, or "none" for vehicles at no station
+      available  "yes" / "no"
+      status     "active" / "inactive"
+    """
+    params = request.GET
+    vehicles = scoping.vehicles_for(request.user).select_related("vehicle_type", "uom", "current_branch")
+    text = params.get("q", "").strip()
+    if text:
+        vehicles = vehicles.filter(
+            Q(identifier__icontains=text) | Q(vehicle_code__icontains=text) | Q(vehicle_name__icontains=text)
+            | Q(vehicle_type__vehicle_type_name__icontains=text) | Q(rfid_epc__icontains=text)
+            | Q(current_branch__name__icontains=text)
+        )
+    if params.get("type", "").isdigit():
+        vehicles = vehicles.filter(vehicle_type_id=int(params["type"]))
+    if params.get("branch") == "none":
+        vehicles = vehicles.filter(current_branch__isnull=True)
+    elif params.get("branch", "").isdigit():
+        vehicles = vehicles.filter(current_branch_id=int(params["branch"]))
+    if params.get("available") in ("yes", "no"):
+        vehicles = vehicles.filter(is_available=params["available"] == "yes")
+    if params.get("status") in ("active", "inactive"):
+        vehicles = vehicles.filter(is_active=params["status"] == "active")
+    return vehicles.order_by("identifier_no")
+
+
 class VehicleListView(FleetScreenView):
+    """The fleet runs to thousands of vehicles, so this list is searched,
+    filtered and paged by the server (PER_PAGE rows), not in the browser."""
+
     template_name = "fleet/vehicle_list.html"
     page_code = "fleet.vehicle"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        page = Paginator(filtered_vehicles(self.request), PER_PAGE).get_page(self.request.GET.get("page"))
+        query = self.request.GET.copy()
+        query.pop("page", None)
         rows = []
-        vehicles = (
-            scoping.vehicles_for(self.request.user).select_related("vehicle_type", "uom", "current_branch")
-        )
-        for i, vehicle in enumerate(vehicles):
+        for i, vehicle in enumerate(page.object_list):
             rows.append({
                 "identifier": vehicle.identifier,
                 "code": vehicle.vehicle_code,
@@ -400,11 +445,57 @@ class VehicleListView(FleetScreenView):
                     "is_active": vehicle.is_active,
                 },
             })
-        context["vehicles"] = rows
-        context["save_url_vehicle"] = reverse("fleet-vehicle-save")
-        context["delete_url_vehicle"] = reverse("fleet-vehicle-delete", args=[0])
-        context["noun_vehicle"] = "Vehicle"
+        context.update({
+            "vehicles": rows,
+            "page": page,
+            "query": query.urlencode(),
+            "params": self.request.GET,
+            "filtered": any(self.request.GET.get(k) for k in ("q", "type", "branch", "available", "status")),
+            "save_url_vehicle": reverse("fleet-vehicle-save"),
+            "delete_url_vehicle": reverse("fleet-vehicle-delete", args=[0]),
+            "export_url_vehicle": reverse("fleet-vehicle-export"),
+            "noun_vehicle": "Vehicle",
+        })
         return context
+
+
+class _Echo:
+    """A file-like that hands back what it is given: csv.writer writes each row
+    straight into the streamed response instead of building it in memory."""
+
+    def write(self, value):
+        return value
+
+
+EXPORT_COLUMNS = ("Vehicle Identifier", "Vehicle Code", "Vehicle Name", "Vehicle Type", "UOM",
+                  "RFID Tag EPC", "Current Branch", "Available", "Status")
+
+
+class VehicleExport(FleetScreenView):
+    """Every vehicle the list's filters match, as CSV -- all pages, streamed
+    row by row, so the size of the fleet never matters. Needs Print."""
+
+    page_code = "fleet.vehicle"
+    required_action = "print"
+
+    def get(self, request, *args, **kwargs):
+        writer = csv.writer(_Echo())
+        vehicles = filtered_vehicles(request).iterator(chunk_size=1000)
+
+        def rows():
+            yield "﻿"                                   # BOM: Excel reads the file as UTF-8
+            yield writer.writerow(EXPORT_COLUMNS)
+            for v in vehicles:
+                yield writer.writerow([
+                    v.identifier, v.vehicle_code, v.vehicle_name, v.vehicle_type.vehicle_type_name,
+                    v.uom.uom_name, v.rfid_epc, v.current_branch.name if v.current_branch_id else "",
+                    "Yes" if v.is_available else "No", "Active" if v.is_active else "Inactive",
+                ])
+
+        stamp = timezone.localtime().strftime("%Y-%m-%d")
+        response = StreamingHttpResponse(rows(), content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="vehicles-{stamp}.csv"'
+        return response
 
 
 class VehicleSave(company_writes.EntitySaveView):

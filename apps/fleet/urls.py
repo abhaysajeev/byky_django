@@ -28,6 +28,7 @@ urlpatterns = [
     path("asset/save/", views.AssetSave.as_view(), name="fleet-asset-save"),
     path("asset/<int:pk>/delete/", views.AssetDelete.as_view(), name="fleet-asset-delete"),
     path("vehicle/list/", views.VehicleListView.as_view(), name="fleet-vehicle-list"),
+    path("vehicle/export/", views.VehicleExport.as_view(), name="fleet-vehicle-export"),
     path("vehicle/save/", views.VehicleSave.as_view(), name="fleet-vehicle-save"),
     path("vehicle/<int:pk>/delete/", views.VehicleDelete.as_view(), name="fleet-vehicle-delete"),
     path("privileges/", views.FleetPrivilegeView.as_view(), name="fleet-privileges"),

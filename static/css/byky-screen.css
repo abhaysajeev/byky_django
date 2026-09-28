@@ -1031,3 +1031,7 @@ textarea.scr-drawer-input { height: auto; min-height: 72px; padding: 10px 13px; 
   .scr-mon-grid { grid-template-columns: 1fr; }
   .scr-mon-wide { grid-column: auto; }
 }
+
+/* Dropdown filters in a server-filtered list's toolbar (Vehicle): the
+   search box's height, sized to their longest option. */
+.scr-toolbar .scr-list-select { width: auto; min-width: 150px; max-width: 220px; height: 38px; }
