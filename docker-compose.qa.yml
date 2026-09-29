@@ -59,6 +59,10 @@ services:
       # the one nginx writes (core/network.py, DRF's throttles).
       DJANGO_NUM_PROXIES: "1"
       DJANGO_COLLECTSTATIC: "1"
+      # A copy of each device request for the central log server (the
+      # log-ingestion project). Empty = not sent. apps/monitoring/shipper.py.
+      LOG_INGEST_URL: ${LOG_INGEST_URL:-}
+      LOG_INGEST_KEY: ${LOG_INGEST_KEY:-}
       POSTGRES_DB: ${POSTGRES_DB:-byky_qa}
       POSTGRES_USER: ${POSTGRES_USER:-byky_qa}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set a real password in .env}

@@ -30,6 +30,8 @@ import time
 from django.conf import settings
 from django.db import close_old_connections, transaction
 
+from apps.monitoring import shipper
+
 log = logging.getLogger("apps.monitoring")
 
 REQUEST, ERROR = "request", "error"
@@ -111,6 +113,10 @@ def _write(batch):
                 ErrorLog.objects.bulk_create(errors)
     except Exception:                       # noqa: BLE001
         _warn(f"could not write {len(batch)} log row(s)")
+        return
+    # Saved: a copy for the central log server, queued for its own thread
+    # (shipper.py) -- a put per row, so this thread never waits on the network.
+    shipper.offer(requests)
 
 
 def _finished(rows):
