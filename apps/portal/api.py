@@ -1,14 +1,14 @@
 """The app-auth API: /api/v1/{app}/auth/... -- design/03-login.md section 9.1.
 
-`employee` and `operator` are wired up here; `manager` is not built yet.
-Both channels now run device steps 7-8 (registered, approved, not
-blocked/retired) -- decided with the client 22 Sep 2026, reversing the
-21 Sep 2026 decision that Employee skipped all device steps. Employee still
-does not run step 9 (branch mapping) or the device_settings check: the app
-runs on staff's own phones, not a station till, and "which branch" comes
-from the duty roster, never a device mapping. Operator runs the full set --
-it's the station till, so "which branch" comes from the device's own
-mapping, not a roster.
+`employee`, `operator` and `manager` are wired up here. All three run device
+steps 7-8 (registered, approved, not blocked/retired) -- decided with the
+client 22 Sep 2026, reversing the 21 Sep 2026 decision that Employee skipped
+all device steps. Employee and Manager do not run step 9 (branch mapping) or
+the device_settings check: those apps run on staff's own phones, not a
+station till -- the employee's "which branch" comes from the duty roster,
+and the manager names it in each attendance call. Operator runs the full
+set -- it's the station till, so "which branch" comes from the device's own
+mapping, not a roster. Manager's login returns the tokens only.
 
 Views only translate HTTP to apps/portal/auth.py + apps/portal/jwt.py +
 apps/crew/services.py/apps/devices/services.py and back, the same shape
@@ -147,9 +147,31 @@ def _operator_login(request, form):
     return envelope("ok", "Logged in.", data)
 
 
+def _manager_login(request, form):
+    """Tokens only -- the manager app asks for nothing else at login yet."""
+    installation_id = (form.validated_data.get("installation_id") or "").strip()
+    if not installation_id:
+        return envelope(
+            "invalid_request", "installation_id is required.",
+            {"errors": {"installation_id": "is required"}}, http_status=400,
+        )
+
+    try:
+        user, session = auth.sign_in_manager(
+            form.validated_data["username"], form.validated_data["password"], installation_id,
+            ip_address=client_ip(request),
+            user_agent=request.META.get("HTTP_USER_AGENT", ""),
+        )
+    except auth.LoginRefused as refused:
+        return envelope(refused.code, refused.message, http_status=refused.status)
+
+    return envelope("ok", "Logged in.", {"tokens": _issue_tokens(user, session)})
+
+
 _LOGIN_BY_CHANNEL = {
     Channel.EMPLOYEE: _employee_login,
     Channel.OPERATOR: _operator_login,
+    Channel.MANAGER: _manager_login,
 }
 
 
@@ -168,9 +190,9 @@ _EMPLOYEE_LOGIN_SUCCESS_DATA = {
     "roster": {
         "week_start": "2026-09-20", "week_end": "2026-09-26",
         "days": [
-            {"date": "2026-09-20", "status": "Working", "branch": "Creek Park 1",
+            {"date": "2026-09-20", "status": "Working", "branch": "Creek Park 1", "branch_code": "AUH01",
              "shift1_start": "07:00", "shift1_end": "23:00", "shift2_start": None, "shift2_end": None},
-            {"date": "2026-09-21", "status": None, "branch": None,
+            {"date": "2026-09-21", "status": None, "branch": None, "branch_code": None,
              "shift1_start": None, "shift1_end": None, "shift2_start": None, "shift2_end": None},
         ],
     },
@@ -195,6 +217,14 @@ _OPERATOR_LOGIN_SUCCESS_DATA = {
     "order_no_prefix": "AUH01", "next_order_number": 335, "next_test_number": 6,
 }
 
+_MANAGER_LOGIN_SUCCESS_DATA = {
+    "tokens": {
+        "access": "eyJhbGciOiJIUzI1NiIs...", "refresh": "eyJhbGciOiJIUzI1NiIs...",
+        "access_expires_at": "2026-09-21T05:46:16.131807+00:00",
+        "refresh_expires_at": "2026-10-21T05:16:16.131807+00:00",
+    },
+}
+
 
 class LoginView(PublicAPIView):
     """POST /api/v1/{app}/auth/login -- password only; no device token yet
@@ -202,28 +232,28 @@ class LoginView(PublicAPIView):
 
     One view, one route, branching on {app} -- design/03-login.md section
     9.1: "One login function, one route per app, so a log line names the
-    app without parsing a body." `manager` isn't built yet and falls through
-    to wrong_channel like any other unrecognised value.
+    app without parsing a body."
     """
 
     throttle_classes = [LoginThrottle]
 
     @extend_schema(
-        tags=["Operator Auth", "Employee Auth"],
+        tags=["Operator Auth", "Employee Auth", "Manager Auth"],
         summary="Sign in -- one URL, a different response per {app}",
         description=(
-            "`{app}` is `operator` or `employee` (`manager` isn't built yet -- "
-            "falls through to `wrong_channel`). Both need `installation_id`: "
-            "Employee checks it's registered/approved/not-blocked/not-retired; "
-            "Operator additionally requires it be mapped to a branch with "
-            "receipt settings configured. See the two success examples below "
-            "for the very different response shapes. "
+            "`{app}` is `operator`, `employee` or `manager`. All need "
+            "`installation_id`: Employee and Manager check it's "
+            "registered/approved/not-blocked/not-retired; Operator additionally "
+            "requires it be mapped to a branch with receipt settings configured. "
+            "Manager gets the tokens only. See the success examples below for "
+            "the different response shapes. "
             "design/login/login-for-employee.md, design/login/login-for-operator.md."
         ),
         request=envelope_request("LoginEnvelope", LoginRequest),
         responses=envelope_responses(
             (200, "ok", "Welcome, Rashed K.", _EMPLOYEE_LOGIN_SUCCESS_DATA, "ok (employee)"),
             (200, "ok", "Logged in.", _OPERATOR_LOGIN_SUCCESS_DATA, "ok (operator)"),
+            (200, "ok", "Logged in.", _MANAGER_LOGIN_SUCCESS_DATA, "ok (manager)"),
             (400, "invalid_request", "installation_id is required.",
              {"errors": {"installation_id": "is required"}}),
             (401, "invalid_credentials", "Wrong username or password.", {}),
@@ -231,7 +261,6 @@ class LoginView(PublicAPIView):
             (403, "company_inactive", "This account is not active.", {}),
             (403, "user_not_approved", "This account is not active.", {}),
             (403, "wrong_channel", "You are not allowed to use this app.", {}),
-            (403, "wrong_channel", "Not allowed on this app.", {}, "wrong_channel (unbuilt app)"),
             (403, "user_blocked", "You are blocked. Contact HR.", {}),
             (409, "device_not_registered", "Setting up this device…", {}),
             (202, "device_pending_approval", "Waiting for approval.", {}),
@@ -266,7 +295,7 @@ class AppRefreshView(PublicAPIView):
     throttle_classes = [RefreshThrottle]
 
     @extend_schema(
-        tags=["Operator Auth", "Employee Auth"],
+        tags=["Operator Auth", "Employee Auth", "Manager Auth"],
         summary="Exchange a refresh token for a new pair -- both tokens rotate",
         description=(
             "Same code for every channel; the session row itself carries "
@@ -339,7 +368,7 @@ class AppLogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
-        tags=["Operator Auth", "Employee Auth"],
+        tags=["Operator Auth", "Employee Auth", "Manager Auth"],
         summary="Close this session",
         description=(
             "No `request_data` -- the body isn't read at all. Only closes "

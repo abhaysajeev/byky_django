@@ -19,7 +19,6 @@ together in one transaction (apps/crew/services.py).
 from django.db import models
 
 from core.enums import ApprovalStatus  # noqa: F401  (documents the shared pattern)
-from core.ids import uuid7
 from core.models import ApprovalMixin, TimeStampedModel
 
 
@@ -30,8 +29,17 @@ class AttendanceMethod(models.TextChoices):
 
 
 class AttendanceSource(models.TextChoices):
-    STATION_SCAN = "station_scan", "Scanned at the station"
-    SELF = "self", "Self check-in"
+    """Which app recorded a punch -- never sent, it follows the channel: the
+    operator (RMS) app scans an employee's QR code, the manager app marks its
+    own user's attendance."""
+
+    QR_SCAN = "qr_scan", "QR scanned"
+    SELF = "self", "Self attendance"
+
+
+class PunchType(models.TextChoices):
+    PUNCH_IN = "punch_in", "Punch in"
+    PUNCH_OUT = "punch_out", "Punch out"
 
 
 class Gender(models.TextChoices):
@@ -295,63 +303,132 @@ class EmployeeBlockLog(TimeStampedModel):
         return f"{self.employee} {self.get_action_display().lower()} on {self.effective_date}"
 
 
-class Attendance(TimeStampedModel):
-    """One punch.
+def _pair(prefix):
+    """A latitude/longitude pair: both or neither, each in range."""
+    lat, lng = f"{prefix}_latitude", f"{prefix}_longitude"
+    return [
+        models.CheckConstraint(
+            condition=models.Q(**{f"{lat}__isnull": True, f"{lng}__isnull": True})
+            | models.Q(**{f"{lat}__isnull": False, f"{lng}__isnull": False}),
+            name=f"attendance_{prefix}_gps_pair",
+        ),
+        models.CheckConstraint(
+            condition=models.Q(**{f"{lat}__isnull": True})
+            | models.Q(**{f"{lat}__gte": -90, f"{lat}__lte": 90, f"{lng}__gte": -180, f"{lng}__lte": 180}),
+            name=f"attendance_{prefix}_gps_range",
+        ),
+    ]
 
-    A transaction, not a master: created on a device in the field, so it carries
-    a UUIDv7 key and a business_date (design/00-findings.md sections 8 and 9).
-    Login no longer writes attendance, unlike the legacy.
+
+class Attendance(TimeStampedModel):
+    """One punch -- one POST from an app, punch in or punch out.
+
+    Two sources, one table (apps/crew/api.py):
+
+    * **qr_scan** -- the employee app shows a QR code built from the login's
+      roster; the operator (RMS) app scans it and posts. The `employee_*`
+      fields are what the QR code carried, the `rms_*` fields the scanning
+      side. QR generation is the apps' business, not the server's.
+    * **self** -- the manager app's own "mark attendance" button. The
+      `employee_*` fields are the manager; the RMS side has only the phone's
+      installation id, clock and GPS.
+
+    `id` is the app's `sync_id`, a UUIDv7 made on the device and resent
+    unchanged on retry, so an offline punch that is sent twice is stored once.
+    `rms_scan_time` is when the punch happened (the scan, or the button
+    press), in company time as the device sent it; `created_on` is when the
+    server received it.
+
+    A punch-out points at the punch-in it closes (`punch_in`), set by the
+    server -- apps/crew/services.py::mark_attendance. The code and name
+    columns are kept as captured beside the foreign keys: they are what the
+    QR code said, not a copy of the employee master.
     """
 
-    id = models.UUIDField(primary_key=True, default=uuid7, editable=False)
+    id = models.UUIDField(primary_key=True, editable=False)
 
+    source = models.CharField(max_length=10, choices=AttendanceSource.choices)
+    punch_type = models.CharField(max_length=10, choices=PunchType.choices)
+    punch_in = models.OneToOneField(
+        "self", null=True, blank=True, on_delete=models.PROTECT, related_name="punch_out",
+    )
+
+    # The person being marked.
     employee = models.ForeignKey(Employee, on_delete=models.PROTECT, related_name="attendance")
-    user = models.ForeignKey(
-        "core.User", null=True, blank=True, on_delete=models.PROTECT, related_name="attendance"
+    employee_code = models.CharField(max_length=20)
+    employee_name = models.CharField(max_length=150)
+    employee_branch = models.ForeignKey(
+        "company.Branch", on_delete=models.PROTECT, related_name="attendance",
     )
-    source = models.CharField(max_length=20, choices=AttendanceSource.choices)
+    employee_installation_id = models.CharField(max_length=64, blank=True)
+    qr_generation_time = models.DateTimeField(null=True, blank=True)
+    employee_latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    employee_longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
 
-    punched_at = models.DateTimeField()
-    # Which day it counts as, in the company's timezone. Written once, never
-    # recomputed -- an offline punch made at 00:20 and synced at 08:00 belongs
-    # to the day it happened.
-    business_date = models.DateField()
-
-    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
-    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
-
-    device = models.ForeignKey(
-        "devices.Device", null=True, blank=True, on_delete=models.PROTECT, related_name="attendance"
+    # The device that recorded it: the RMS app that scanned, or the manager's phone.
+    rms_employee = models.ForeignKey(
+        Employee, null=True, blank=True, on_delete=models.PROTECT, related_name="attendance_scanned",
     )
-    # Required for a station scan, empty for a self check-in.
-    branch = models.ForeignKey(
-        "company.Branch", null=True, blank=True, on_delete=models.PROTECT, related_name="attendance"
+    rms_employee_code = models.CharField(max_length=20, blank=True)
+    rms_employee_name = models.CharField(max_length=150, blank=True)
+    rms_branch = models.ForeignKey(
+        "company.Branch", null=True, blank=True, on_delete=models.PROTECT, related_name="attendance_scanned",
     )
-    scanned_by = models.ForeignKey(
-        "core.User", null=True, blank=True, on_delete=models.PROTECT, related_name="+"
-    )
-    qr_token_id = models.CharField(max_length=64, blank=True)
+    rms_installation_id = models.CharField(max_length=64)
+    rms_scan_time = models.DateTimeField()
+    rms_latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    rms_longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
 
     class Meta:
         db_table = "attendance"
-        ordering = ["-punched_at"]
+        ordering = ["-rms_scan_time"]
         constraints = [
-            # A QR token is single use: scanning the same code twice records one
-            # punch, not two.
+            # What each source carries. A QR scan has both sides; self
+            # attendance has no QR code and no separate scanning person.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        source=AttendanceSource.QR_SCAN,
+                        qr_generation_time__isnull=False, rms_employee__isnull=False,
+                        rms_branch__isnull=False,
+                    )
+                    & ~models.Q(employee_installation_id="")
+                    & ~models.Q(rms_employee_code="")
+                )
+                | models.Q(
+                    source=AttendanceSource.SELF,
+                    qr_generation_time__isnull=True, rms_employee__isnull=True, rms_branch__isnull=True,
+                    employee_installation_id="", rms_employee_code="", rms_employee_name="",
+                    employee_latitude__isnull=True,
+                ),
+                name="attendance_source_fields",
+            ),
+            # Only a punch-out closes a punch-in.
+            models.CheckConstraint(
+                condition=models.Q(punch_type=PunchType.PUNCH_IN, punch_in__isnull=True)
+                | models.Q(punch_type=PunchType.PUNCH_OUT, punch_in__isnull=False),
+                name="attendance_out_has_in",
+            ),
+            # One QR code records one punch in and one punch out, whatever
+            # sync_id a second scan arrives with.
             models.UniqueConstraint(
-                fields=["qr_token_id"], condition=~models.Q(qr_token_id=""),
-                name="uniq_attendance_qr_token",
+                fields=["employee", "qr_generation_time", "punch_type"],
+                condition=models.Q(source=AttendanceSource.QR_SCAN),
+                name="uniq_attendance_qr_scan",
                 violation_error_message="That QR code has already been scanned.",
             ),
+            *_pair("employee"),
+            *_pair("rms"),
         ]
         indexes = [
-            models.Index(fields=["employee", "business_date"]),
-            models.Index(fields=["business_date"]),
-            models.Index(fields=["branch", "business_date"]),
+            models.Index(fields=["employee", "rms_scan_time"]),
+            models.Index(fields=["rms_scan_time"]),
+            models.Index(fields=["employee_branch", "rms_scan_time"]),
+            models.Index(fields=["rms_branch", "rms_scan_time"]),
         ]
 
     def __str__(self):
-        return f"{self.employee} at {self.punched_at}"
+        return f"{self.employee_code} {self.get_punch_type_display()} at {self.rms_scan_time}"
 
 
 class DutyRosterDayType(models.TextChoices):

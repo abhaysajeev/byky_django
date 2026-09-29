@@ -186,22 +186,61 @@ def sign_in_employee(username, password, installation_id, *, ip_address=None, us
     device mapping. Step 10 (refuse a session open on a *different* device)
     is also not run here -- out of scope for this pass, unlike sign_in_operator.
 
-    apps.devices.services is imported locally, not at module level: same
-    circular-import reason documented on sign_in_operator below.
+    Returns (user, session). Raises LoginRefused for every failure.
+    """
+    return _sign_in_phone(
+        Channel.EMPLOYEE, username, password, installation_id,
+        ip_address=ip_address, user_agent=user_agent, now=now,
+    )
+
+
+def sign_in_manager(username, password, installation_id, *, ip_address=None, user_agent="", now=None):
+    """The Manager app's whole sign-in: the same checks as the Employee app
+    (1-6, then device steps 7-8). The manager's own phone, not a station
+    till, so no branch mapping and no device settings -- the one thing the
+    app does with its session so far is mark its user's own attendance, and
+    that call names the branch itself (apps/crew/api.py).
 
     Returns (user, session). Raises LoginRefused for every failure.
     """
-    from apps.devices import services as devices_services
+    return _sign_in_phone(
+        Channel.MANAGER, username, password, installation_id,
+        ip_address=ip_address, user_agent=user_agent, now=now,
+    )
 
+
+def _sign_in_phone(channel, username, password, installation_id, *, ip_address, user_agent, now):
+    """Employee and Manager: account checks, then a registered, approved,
+    unblocked, unretired device -- no station."""
     now = now or timezone.now()
     user = check_credentials(username, password, now=now)
-    check_account(user, Channel.EMPLOYEE)
+    check_account(user, channel)
     if user.employee_id is None:
-        # A user with the employee channel allowed but no linked employee
-        # record has nothing for this app to show -- same generic message as
-        # a wrong password, so it does not leak which usernames exist.
+        # A user with the channel allowed but no linked employee record has
+        # nothing for the app to show -- same generic message as a wrong
+        # password, so it does not leak which usernames exist.
         raise LoginRefused("invalid_credentials", GENERIC_CREDENTIALS_MESSAGE, status=401)
     _clear_failures(user)
+
+    device = approved_device(installation_id)
+
+    session = open_session(
+        user, channel, device=device,
+        ip_address=ip_address, user_agent=user_agent, now=now,
+    )
+    user.last_login = now
+    user.save(update_fields=["last_login"])
+    return user, session
+
+
+def approved_device(installation_id):
+    """Device steps 7-8, the same on every app: registered, approved, not
+    blocked, not retired. Returns the device or raises LoginRefused.
+
+    apps.devices.services is imported locally -- it imports from this module,
+    so a module-level import back would be circular.
+    """
+    from apps.devices import services as devices_services
 
     device = devices_services.device_for_installation(installation_id)
     if device is None:
@@ -212,14 +251,7 @@ def sign_in_employee(username, password, installation_id, *, ip_address=None, us
         raise LoginRefused("device_blocked", "This device is blocked.", status=403)
     if device.status == DeviceStatus.RETIRED:
         raise LoginRefused("device_retired", "This device was replaced.", status=403)
-
-    session = open_session(
-        user, Channel.EMPLOYEE, device=device,
-        ip_address=ip_address, user_agent=user_agent, now=now,
-    )
-    user.last_login = now
-    user.save(update_fields=["last_login"])
-    return user, session
+    return device
 
 
 def sign_in_operator(username, password, installation_id, *, ip_address=None, user_agent="", now=None):
@@ -250,15 +282,7 @@ def sign_in_operator(username, password, installation_id, *, ip_address=None, us
         raise LoginRefused("invalid_credentials", GENERIC_CREDENTIALS_MESSAGE, status=401)
     _clear_failures(user)
 
-    device = devices_services.device_for_installation(installation_id)
-    if device is None:
-        raise LoginRefused("device_not_registered", "Setting up this device…", status=409)
-    if device.status == DeviceStatus.PENDING:
-        raise LoginRefused("device_pending_approval", "Waiting for approval.", status=202)
-    if device.status == DeviceStatus.BLOCKED:
-        raise LoginRefused("device_blocked", "This device is blocked.", status=403)
-    if device.status == DeviceStatus.RETIRED:
-        raise LoginRefused("device_retired", "This device was replaced.", status=403)
+    device = approved_device(installation_id)
 
     branch = device.current_branch
     if branch is None:

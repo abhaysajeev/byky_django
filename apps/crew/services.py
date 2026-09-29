@@ -6,15 +6,16 @@ more tables agreeing with each other.
 
 import datetime
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from apps.company.models import BranchWorkingTime, WeekDay
+from apps.company.models import Branch, BranchWorkingTime, WeekDay
 from apps.company.services import week_day_of
 from apps.crew.models import (
     AddressType,
     Attendance,
+    AttendanceSource,
     BlockAction,
     DutyRoster,
     DutyRosterDayType,
@@ -22,10 +23,11 @@ from apps.crew.models import (
     EmployeeAddress,
     EmployeeBlockLog,
     EmployeeDesignation,
+    PunchType,
     RosterCategory,
 )
 from core.scoping import scoped_to
-from core.timezones import business_date_for, zone_for
+from core.timezones import business_date_for, business_day_range, zone_for
 
 # A document inside this many days counts as needing attention.
 EXPIRY_WARNING_DAYS = 30
@@ -161,21 +163,205 @@ def expiry_state(expiry, today=None):
     return ""
 
 
-def record_punch(employee, source, punched_at, company, **extra):
-    """Write one attendance punch.
+# -- Attendance (apps/crew/api.py) --------------------------------------------
+#
+# One row per punch. A punch-out closes the employee's open punch-in, even
+# across midnight (17:00 -> 01:00). A punch-in is "open" for OPEN_PUNCH_WINDOW
+# after it happened; past that nobody can close it and it reads as a missing
+# punch-out -- so a forgotten punch-out yesterday never locks anyone out today.
 
-    Not reachable from the web -- punches come from the apps -- but the rule for
-    business_date lives here so there is one implementation when they do.
-    """
-    from core.timezones import business_date_for
+OPEN_PUNCH_WINDOW = datetime.timedelta(hours=24)
+HISTORY_MAX_DAYS = 31
 
-    return Attendance.objects.create(
-        employee=employee,
-        source=source,
-        punched_at=punched_at,
-        business_date=business_date_for(company, punched_at),
-        **extra,
+
+class AttendanceRefused(Exception):
+    """A punch the server will not record. `code` is the contract with the
+    apps; `message` is what the person reads."""
+
+    def __init__(self, code, message, status=409):
+        super().__init__(code)
+        self.code = code
+        self.message = message
+        self.status = status
+
+
+class SessionStatus:
+    CLOSED = "closed"
+    OPEN = "open"
+    MISSING_PUNCH_OUT = "missing_punch_out"
+
+
+def session_status(punch_in, now=None):
+    """closed, open (still inside the window) or missing_punch_out."""
+    if _has_punch_out(punch_in):
+        return SessionStatus.CLOSED
+    now = now or timezone.now()
+    if punch_in.rms_scan_time > now - OPEN_PUNCH_WINDOW:
+        return SessionStatus.OPEN
+    return SessionStatus.MISSING_PUNCH_OUT
+
+
+def _has_punch_out(punch_in):
+    try:
+        return punch_in.punch_out is not None
+    except Attendance.DoesNotExist:
+        return False
+
+
+def _employee_by_code(company, code, refusal):
+    employee = Employee.objects.filter(company=company, employee_code=code).first()
+    if employee is None:
+        raise AttendanceRefused(refusal, "No employee with that code.", status=400)
+    return employee
+
+
+def _branch_by_code(company, code, field):
+    branch = Branch.objects.filter(company=company, short_code=code).first()
+    if branch is None:
+        raise AttendanceRefused("unknown_branch", f"No branch with that {field}.", status=400)
+    return branch
+
+
+def _open_punch_in(employee, at):
+    """The punch-in a punch at `at` would find open: the latest one with no
+    punch-out that happened within OPEN_PUNCH_WINDOW before `at`."""
+    return (
+        Attendance.objects
+        .filter(
+            employee=employee, punch_type=PunchType.PUNCH_IN, punch_out__isnull=True,
+            rms_scan_time__gt=at - OPEN_PUNCH_WINDOW, rms_scan_time__lte=at,
+        )
+        .order_by("-rms_scan_time")
+        .first()
     )
+
+
+def mark_attendance(user, source, values):
+    """Record one punch. Returns (row, created) -- created is False when this
+    sync_id was already stored, which the app treats as success.
+
+    `values` is the validated request_data, times already aware in company
+    time. Refusals raise AttendanceRefused; nothing is written then.
+    """
+    company = user.employee.company
+    sync_id = values["sync_id"]
+
+    existing = Attendance.objects.filter(pk=sync_id).select_related("employee").first()
+    if existing is not None:
+        if existing.employee.company_id != company.pk:
+            raise AttendanceRefused("sync_id_conflict", "That sync_id is already used.")
+        return existing, False
+
+    employee = _employee_by_code(company, values["employee_code"], "unknown_employee")
+    if employee.is_blocked:
+        raise AttendanceRefused("employee_blocked", "This employee is blocked.", status=403)
+    if not employee.is_active:
+        raise AttendanceRefused("employee_inactive", "This employee is not active.", status=403)
+
+    row = Attendance(
+        id=sync_id,
+        source=source,
+        punch_type=values["punch_type"],
+        employee=employee,
+        employee_code=values["employee_code"],
+        employee_name=values["employee_name"],
+        employee_branch=_branch_by_code(company, values["employee_branch_code"], "employee_branch_code"),
+        rms_installation_id=values["rms_installation_id"],
+        rms_scan_time=values["rms_scan_time"],
+        rms_latitude=values.get("rms_latitude"),
+        rms_longitude=values.get("rms_longitude"),
+        created_by=user,
+        modified_by=user,
+    )
+    if source == AttendanceSource.QR_SCAN:
+        row.employee_installation_id = values["employee_installation_id"]
+        row.qr_generation_time = values["qr_generation_time"]
+        row.employee_latitude = values.get("employee_latitude")
+        row.employee_longitude = values.get("employee_longitude")
+        row.rms_employee = _employee_by_code(company, values["rms_employee_code"], "unknown_rms_employee")
+        row.rms_employee_code = values["rms_employee_code"]
+        row.rms_employee_name = values["rms_employee_name"]
+        row.rms_branch = _branch_by_code(company, values["rms_branch_code"], "rms_branch_code")
+
+    try:
+        with transaction.atomic():
+            # One employee's punches are decided one at a time: two tablets
+            # scanning the same person at once cannot both find nothing open.
+            Employee.objects.select_for_update().filter(pk=employee.pk).first()
+            _check_sequence(row)
+            row.save(force_insert=True)
+    except IntegrityError:
+        # Lost a race to the same sync_id, or the same QR code scanned twice.
+        existing = Attendance.objects.filter(pk=sync_id).first()
+        if existing is not None:
+            return existing, False
+        raise AttendanceRefused("qr_already_scanned", "That QR code has already been scanned.") from None
+    return row, True
+
+
+def _check_sequence(row):
+    """Punch in only when nothing is open; punch out closes what is open."""
+    at = row.rms_scan_time
+    if row.punch_type == PunchType.PUNCH_IN:
+        open_in = (
+            Attendance.objects
+            .filter(
+                employee=row.employee, punch_type=PunchType.PUNCH_IN, punch_out__isnull=True,
+                rms_scan_time__gt=at - OPEN_PUNCH_WINDOW, rms_scan_time__lt=at + OPEN_PUNCH_WINDOW,
+            )
+            .exists()
+        )
+        if open_in:
+            raise AttendanceRefused("punch_in_open", "Already punched in. Punch out first.")
+        return
+
+    open_in = _open_punch_in(row.employee, at)
+    if open_in is None:
+        later = Attendance.objects.filter(
+            employee=row.employee, punch_type=PunchType.PUNCH_IN, punch_out__isnull=True,
+            rms_scan_time__gt=at, rms_scan_time__lt=at + OPEN_PUNCH_WINDOW,
+        ).exists()
+        if later:
+            raise AttendanceRefused(
+                "punch_out_before_punch_in", "Punch out is earlier than the punch in.",
+            )
+        raise AttendanceRefused("no_open_punch_in", "No punch in to close. Punch in first.")
+    row.punch_in = open_in
+
+
+def attendance_sessions(punch_ins, now=None):
+    """(punch_in, punch_out or None, status, worked_minutes) for each punch-in
+    of a queryset -- the unit both the history API and the screen show."""
+    now = now or timezone.now()
+    out = []
+    for punch_in in punch_ins:
+        punch_out = punch_in.punch_out if _has_punch_out(punch_in) else None
+        worked = None
+        if punch_out is not None:
+            worked = int((punch_out.rms_scan_time - punch_in.rms_scan_time).total_seconds() // 60)
+        out.append((punch_in, punch_out, session_status(punch_in, now), worked))
+    return out
+
+
+def attendance_history(company, employee_code, from_date, to_date, now=None):
+    """(employee, [(day, sessions)]) -- the punch-ins made on each company-local
+    day in the range, each with its punch-out even when that fell the next day.
+    """
+    employee = _employee_by_code(company, employee_code, "unknown_employee")
+    zone = zone_for(company)
+    start, _ = business_day_range(company, from_date)
+    _, end = business_day_range(company, to_date)
+    punch_ins = (
+        Attendance.objects
+        .filter(employee=employee, punch_type=PunchType.PUNCH_IN, rms_scan_time__gte=start, rms_scan_time__lt=end)
+        .select_related("punch_out", "employee_branch", "rms_branch", "punch_out__employee_branch",
+                        "punch_out__rms_branch")
+        .order_by("rms_scan_time")
+    )
+    days = {}
+    for session in attendance_sessions(punch_ins, now):
+        days.setdefault(session[0].rms_scan_time.astimezone(zone).date(), []).append(session)
+    return employee, sorted(days.items())
 
 
 ADDRESS_TYPES = AddressType
@@ -496,17 +682,18 @@ def today_assignment(employee, at=None):
 
 def absent_today(employee):
     """Not built. Design/duty roster/business-logic.md section 7.3: a Working
-    day with no matching Attendance row should read as Absent. Deferred with
-    Attendance's own write path (the QR scan endpoint), by client decision for
-    the Oct 2 demo. Its shape, once built:
+    day with no punch-in should read as Absent. Attendance now has its write
+    path (mark_attendance); the comparison itself is still deferred. Its shape:
 
+        start, end = business_day_range(employee.company, today)
         Attendance.objects.filter(
-            employee=employee, business_date=today,
+            employee=employee, punch_type=PunchType.PUNCH_IN,
+            rms_scan_time__gte=start, rms_scan_time__lt=end,
         ).exists()
 
     compared against today_assignment(employee) is not None.
     """
-    raise NotImplementedError("Attendance is not built yet -- design/duty roster/duty-roster.md")
+    raise NotImplementedError("Absent is not built yet -- design/duty roster/duty-roster.md")
 
 
 # -- The screen's three tabs -----------------------------------------------
@@ -743,7 +930,7 @@ def current_week_roster(employee, *, at=None):
         row = rows.get(day)
         if row is None:
             out.append({
-                "date": day.isoformat(), "status": None, "branch": None,
+                "date": day.isoformat(), "status": None, "branch": None, "branch_code": None,
                 "shift1_start": None, "shift1_end": None,
                 "shift2_start": None, "shift2_end": None,
             })
@@ -753,6 +940,8 @@ def current_week_roster(employee, *, at=None):
             "date": day.isoformat(),
             "status": row.get_day_type_display(),
             "branch": row.branch.name if row.branch_id else None,
+            # The QR code carries this as employee_branch_code (attendance/mark).
+            "branch_code": row.branch.short_code if row.branch_id else None,
             "shift1_start": _hhmm(row.shift1_start, zone),
             "shift1_end": _hhmm(row.shift1_end, zone),
             "shift2_start": _hhmm(row.shift2_start, zone),

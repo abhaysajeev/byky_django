@@ -9,6 +9,7 @@ urlpatterns = [
     path("address/list/", views.EmployeeAddressListView.as_view(), name="crew-address-list"),
     path("block-unblock/", views.BlockUnblockView.as_view(), name="crew-block-unblock"),
     path("attendance/list/", views.AttendanceListView.as_view(), name="crew-attendance-list"),
+    path("attendance/export/", views.AttendanceExport.as_view(), name="crew-attendance-export"),
     path("duty-roster/", views.DutyRosterListView.as_view(), name="crew-duty-roster-list"),
     path("privileges/", views.CrewPrivilegeView.as_view(), name="crew-privileges"),
 

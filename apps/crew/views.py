@@ -8,9 +8,13 @@ Every figure comes from our own tables. Nothing is seeded, and nothing is
 derived from a hash to make a filter look busy.
 """
 
+import csv
 import datetime
 
+from django.core.paginator import Paginator
 from django.db.models import Count, Q
+from django.db.models.functions import TruncDate
+from django.http import StreamingHttpResponse
 from django.urls import reverse
 from django.utils import timezone
 
@@ -28,11 +32,13 @@ from apps.crew.models import (
     DutyRosterDayType,
     Employee,
     EmployeeAddress,
+    PunchType,
     RosterCategory,
 )
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
+from core.timezones import zone_for
 from theme import drawers as theme_drawers
 from theme.views import ThemedTemplateView
 
@@ -298,50 +304,295 @@ class BlockUnblockView(CrewScreenView):
         return context
 
 
-class AttendanceListView(CrewScreenView):
-    """A read-only monitor: no drawer, no Add, no delete.
+# -- Attendance ------------------------------------------------------------
+#
+# Read-only: punches are written by the apps (apps/crew/api.py). One row per
+# employee per day, opening onto that day's punch-in/punch-out pairs. A day is
+# the company-local date of the punch-in; its punch-out may fall the next day.
+# Filtered and paged by the server -- punches grow every day.
 
-    Punches are written by the apps. Until those exist this renders its headers
-    and says so, which is the honest state rather than a hidden screen.
+ATTENDANCE_PER_PAGE = 50
+
+DAY_STATUSES = [
+    ("complete", "Complete"),
+    ("on_duty", "On duty"),
+    ("missing", "Missing punch-out"),
+]
+_DAY_STATUS_FILTER = {
+    "complete": Q(open_count=0, missing_count=0),
+    "on_duty": Q(open_count__gt=0),
+    "missing": Q(missing_count__gt=0),
+}
+
+
+def _date_param(value, default):
+    try:
+        return datetime.date.fromisoformat(value) if value else default
+    except ValueError:
+        return default
+
+
+def _attendance_filters(request):
+    """(punch-ins, zone, from_day, to_day) -- the user's own, narrowed by the
+    query string. Shared by the list and the export.
+
+      q            employee name or code
+      from / to    company-local days (default: today)
+      branch       a branch id -- the employee's or the scanning one
+      source       qr_scan / self
+      designation  a designation id
     """
+    params = request.GET
+    zone = zone_for(getattr(request.user, "company", None))
+    today = timezone.now().astimezone(zone).date()
+    from_day = _date_param(params.get("from"), today)
+    to_day = _date_param(params.get("to"), today)
+    if to_day < from_day:
+        from_day, to_day = to_day, from_day
+
+    start = datetime.datetime.combine(from_day, datetime.time.min, tzinfo=zone)
+    end = datetime.datetime.combine(to_day + datetime.timedelta(days=1), datetime.time.min, tzinfo=zone)
+    punch_ins = scoping.attendance_for(request.user).filter(
+        punch_type=PunchType.PUNCH_IN, rms_scan_time__gte=start, rms_scan_time__lt=end,
+    )
+    text = params.get("q", "").strip()
+    if text:
+        punch_ins = punch_ins.filter(Q(employee_code__icontains=text) | Q(employee_name__icontains=text))
+    if params.get("branch", "").isdigit():
+        branch = int(params["branch"])
+        punch_ins = punch_ins.filter(Q(employee_branch_id=branch) | Q(rms_branch_id=branch))
+    if params.get("source") in AttendanceSource.values:
+        punch_ins = punch_ins.filter(source=params["source"])
+    if params.get("designation", "").isdigit():
+        punch_ins = punch_ins.filter(employee__designation_id=int(params["designation"]))
+    return punch_ins, zone, from_day, to_day
+
+
+def _attendance_days(request, punch_ins, zone):
+    """One row per (employee, day), newest day first, with the counts its
+    status comes from -- narrowed by `status` in the query string."""
+    stale = timezone.now() - services.OPEN_PUNCH_WINDOW
+    days = (
+        punch_ins
+        .annotate(day=TruncDate("rms_scan_time", tzinfo=zone))
+        .values("employee", "day")
+        .annotate(
+            shifts=Count("pk"),
+            open_count=Count("pk", filter=Q(punch_out__isnull=True, rms_scan_time__gt=stale)),
+            missing_count=Count("pk", filter=Q(punch_out__isnull=True, rms_scan_time__lte=stale)),
+        )
+        .order_by("-day", "employee__employee_code")
+    )
+    status = request.GET.get("status")
+    if status in _DAY_STATUS_FILTER:
+        days = days.filter(_DAY_STATUS_FILTER[status])
+    return days
+
+
+def _day_status(day):
+    if day["missing_count"]:
+        return "missing", "Missing punch-out"
+    if day["open_count"]:
+        return "on_duty", "On duty"
+    return "complete", "Complete"
+
+
+def _duration(minutes):
+    if minutes is None:
+        return ""
+    hours, mins = divmod(minutes, 60)
+    return f"{hours}h {mins:02d}m" if hours else f"{mins}m"
+
+
+def _sessions_by_day(punch_ins, keys, zone):
+    """{(employee_id, day): [session, ...]} for the given day rows only."""
+    employees = {employee for employee, _ in keys}
+    rows = (
+        punch_ins.filter(employee_id__in=employees)
+        .select_related(
+            "employee_branch", "rms_branch", "rms_employee",
+            "punch_out", "punch_out__employee_branch", "punch_out__rms_branch",
+        )
+        .order_by("rms_scan_time")
+    )
+    grouped = {}
+    for session in services.attendance_sessions(rows):
+        key = (session[0].employee_id, session[0].rms_scan_time.astimezone(zone).date())
+        if key in keys:
+            grouped.setdefault(key, []).append(session)
+    return grouped
+
+
+def _gps(lat, lng):
+    return f"{lat}, {lng}" if lat is not None else ""
+
+
+def _session_row(index, session, day, zone):
+    punch_in, punch_out, status, worked = session
+    in_at = punch_in.rms_scan_time.astimezone(zone)
+    out_at = punch_out.rms_scan_time.astimezone(zone) if punch_out else None
+    return {
+        "n": index,
+        "in_time": in_at.strftime("%H:%M:%S"),
+        "out_time": out_at.strftime("%H:%M:%S") if out_at else "",
+        "out_next_day": bool(out_at and out_at.date() > day),
+        "worked": _duration(worked),
+        "status": status,
+        "source": punch_in.get_source_display(),
+        "out_source": punch_out.get_source_display() if punch_out and punch_out.source != punch_in.source else "",
+        "employee_branch": punch_in.employee_branch.name,
+        "rms_branch": punch_in.rms_branch.name if punch_in.rms_branch_id else "",
+        "out_rms_branch": punch_out.rms_branch.name if punch_out and punch_out.rms_branch_id else "",
+        "scanned_by": punch_in.rms_employee_name,
+        "scanned_by_code": punch_in.rms_employee_code,
+        "out_scanned_by": punch_out.rms_employee_name if punch_out else "",
+        "qr_generated": (
+            punch_in.qr_generation_time.astimezone(zone).strftime("%H:%M:%S")
+            if punch_in.qr_generation_time else ""
+        ),
+        "employee_device": punch_in.employee_installation_id,
+        "rms_device": punch_in.rms_installation_id,
+        "employee_gps": _gps(punch_in.employee_latitude, punch_in.employee_longitude),
+        "rms_gps": _gps(punch_in.rms_latitude, punch_in.rms_longitude),
+    }
+
+
+class AttendanceListView(CrewScreenView):
+    """A read-only monitor: no drawer, no Add, no edit, no delete -- punches
+    are written by the apps, and what the apps recorded is not rewritten here."""
 
     template_name = "crew/attendance_list.html"
     page_code = "crew.attendance"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        today = timezone.localdate()
+        user = self.request.user
+        punch_ins, zone, from_day, to_day = _attendance_filters(self.request)
+        days = _attendance_days(self.request, punch_ins, zone)
+        page = Paginator(days, ATTENDANCE_PER_PAGE).get_page(self.request.GET.get("page"))
 
-        punches = (
-            scoping.attendance_for(self.request.user)
-            .select_related("employee", "branch", "scanned_by", "device")[:200]
+        keys = {(d["employee"], d["day"]) for d in page.object_list}
+        sessions = _sessions_by_day(punch_ins, keys, zone) if keys else {}
+        employees = Employee.objects.select_related("designation").in_bulk({employee for employee, _ in keys})
+
+        rows = []
+        for i, d in enumerate(page.object_list):
+            employee = employees[d["employee"]]
+            day_sessions = sessions.get((d["employee"], d["day"]), [])
+            status, status_label = _day_status(d)
+            first_in = day_sessions[0][0].rms_scan_time.astimezone(zone) if day_sessions else None
+            outs = [s[1].rms_scan_time.astimezone(zone) for s in day_sessions if s[1] is not None]
+            last_out = max(outs) if outs else None
+            worked = [s[3] for s in day_sessions if s[3] is not None]
+            rows.append({
+                "key": f"att-{i}",
+                "name": employee.full_name,
+                "code": employee.employee_code,
+                "designation": employee.designation.title,
+                "day": d["day"],
+                "first_in": first_in.strftime("%H:%M") if first_in else "",
+                "last_out": last_out.strftime("%H:%M") if last_out else "",
+                "last_out_next_day": bool(last_out and last_out.date() > d["day"]),
+                "worked": _duration(sum(worked)) if worked else "",
+                "shifts": d["shifts"],
+                "branch": day_sessions[0][0].employee_branch.name if day_sessions else "",
+                "status": status,
+                "status_label": status_label,
+                "sessions": [
+                    _session_row(n, s, d["day"], zone) for n, s in enumerate(day_sessions, start=1)
+                ],
+            })
+
+        query = self.request.GET.copy()
+        query.pop("page", None)
+        now = timezone.now()
+        today = now.astimezone(zone).date()
+        today_start = datetime.datetime.combine(today, datetime.time.min, tzinfo=zone)
+        todays = scoping.attendance_for(user).filter(
+            punch_type=PunchType.PUNCH_IN, rms_scan_time__gte=today_start,
+            rms_scan_time__lt=today_start + datetime.timedelta(days=1),
         )
-
-        rows = [
-            {
-                "employee": punch.employee.full_name,
-                "emp_no": punch.employee.employee_code,
-                "source": punch.get_source_display(),
-                "punched_at": punch.punched_at,
-                "business_date": punch.business_date,
-                "branch": punch.branch.name if punch.branch_id else "",
-                "scanned_by": punch.scanned_by.display_name if punch.scanned_by_id else "",
-                "device": punch.device.name if punch.device_id else "",
-            }
-            for punch in punches
-        ]
-
-        todays = scoping.attendance_for(self.request.user).filter(business_date=today)
+        open_ins = scoping.attendance_for(user).filter(punch_type=PunchType.PUNCH_IN, punch_out__isnull=True)
         context.update({
-            "punches": rows,
-            "today_count": todays.count(),
+            "rows": rows,
+            "page": page,
+            "query": query.urlencode(),
+            "params": self.request.GET,
+            "from_day": from_day,
+            "to_day": to_day,
+            "filtered": any(
+                self.request.GET.get(k)
+                for k in ("q", "from", "to", "branch", "source", "status", "designation")
+            ),
             "present_count": todays.values("employee").distinct().count(),
-            "station_count": todays.exclude(branch=None).values("branch").distinct().count(),
-            "self_count": todays.filter(source=AttendanceSource.SELF).count(),
+            "on_duty_count": open_ins.filter(rms_scan_time__gt=now - services.OPEN_PUNCH_WINDOW).count(),
+            "missing_count": punch_ins.filter(
+                punch_out__isnull=True, rms_scan_time__lte=now - services.OPEN_PUNCH_WINDOW,
+            ).count(),
+            "qr_today": todays.filter(source=AttendanceSource.QR_SCAN).count(),
+            "self_today": todays.filter(source=AttendanceSource.SELF).count(),
             "sources_list": [{"id": v, "name": label} for v, label in AttendanceSource.choices],
-            "today": today,
+            "statuses_list": [{"id": v, "name": label} for v, label in DAY_STATUSES],
+            "export_url": reverse("crew-attendance-export"),
         })
         return context
+
+
+class _Echo:
+    """A file-like that hands back what it is given: csv.writer writes each row
+    straight into the streamed response instead of building it in memory."""
+
+    def write(self, value):
+        return value
+
+
+ATTENDANCE_EXPORT_COLUMNS = (
+    "Date", "Employee Code", "Employee Name", "Punch In", "Punch Out", "Worked (min)", "Status",
+    "Source", "Employee Branch", "Scanned At Branch", "Scanned By Code", "Scanned By",
+    "QR Generated", "Employee Device", "RMS Device",
+    "Employee Latitude", "Employee Longitude", "RMS Latitude", "RMS Longitude",
+)
+
+
+class AttendanceExport(CrewScreenView):
+    """Every punch-in/punch-out pair the list's filters match, as CSV -- all
+    pages, streamed. Needs Print."""
+
+    page_code = "crew.attendance"
+    required_action = "print"
+
+    def get(self, request, *args, **kwargs):
+        punch_ins, zone, from_day, to_day = _attendance_filters(request)
+        keys = {(d["employee"], d["day"]) for d in _attendance_days(request, punch_ins, zone)}
+        sessions = _sessions_by_day(punch_ins, keys, zone) if keys else {}
+        writer = csv.writer(_Echo())
+
+        def stamp(moment):
+            return moment.astimezone(zone).strftime("%Y-%m-%d %H:%M:%S") if moment else ""
+
+        def rows():
+            yield "﻿"                                  # BOM: Excel reads the file as UTF-8
+            yield writer.writerow(ATTENDANCE_EXPORT_COLUMNS)
+            for (_, day), day_sessions in sorted(sessions.items(), key=lambda item: (item[0][1], item[1][0][0].employee_code)):
+                for punch_in, punch_out, status, worked in day_sessions:
+                    yield writer.writerow([
+                        day.isoformat(), punch_in.employee_code, punch_in.employee_name,
+                        stamp(punch_in.rms_scan_time), stamp(punch_out.rms_scan_time) if punch_out else "",
+                        worked if worked is not None else "", status,
+                        punch_in.get_source_display(), punch_in.employee_branch.name,
+                        punch_in.rms_branch.name if punch_in.rms_branch_id else "",
+                        punch_in.rms_employee_code, punch_in.rms_employee_name,
+                        stamp(punch_in.qr_generation_time),
+                        punch_in.employee_installation_id, punch_in.rms_installation_id,
+                        punch_in.employee_latitude or "", punch_in.employee_longitude or "",
+                        punch_in.rms_latitude or "", punch_in.rms_longitude or "",
+                    ])
+
+        response = StreamingHttpResponse(rows(), content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = (
+            f'attachment; filename="attendance-{from_day.isoformat()}-to-{to_day.isoformat()}.csv"'
+        )
+        return response
 
 
 def _attention(detail, field, today):

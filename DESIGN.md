@@ -146,18 +146,23 @@ They are **the list screen minus its verbs**, not a new kind of page:
 Rules:
 
 - **Export may stay**, gated on `perm.print`. It is the one verb a monitor has.
+- **Filter and page on the server** once the records grow daily: the toolbar is
+  a GET `<form data-scr-autosubmit>` on a `data-scr-server-paged` card, with a
+  `scr-mon-dates` range and `byky/partials/server_pager.html` (the Logs and
+  Vehicle pattern).
 - **A row is not clickable** unless there is somewhere to go. Do not fake a
-  detail view.
-- **Two date columns, doing two jobs.** The timestamp renders in the company's
-  timezone; the day column shows `business_date`, the day the record counts as.
-  They disagree either side of midnight, and that is the point
-  (`design/00-findings.md` §7-8).
-- **An empty monitor says so, with its headers showing.** "No attendance
-  recorded yet." A screen that hides its own structure teaches nobody what it
-  will hold — and here it is the honest state until the apps exist.
+  detail view. A row that groups several records may **open in place**
+  instead: a `data-scr-expand` chevron shows the hidden `scr-expand-detail`
+  row under it, holding a small `scr-records-table`. Server-paged lists only.
+- **Say which day a record counts as.** Times render in the company's
+  timezone, and a record spanning midnight stays on the day it began, with the
+  later end marked `+1 day` (`design/00-findings.md` §7-8).
+- **An empty monitor says so, with its headers showing.** A screen that hides
+  its own structure teaches nobody what it will hold.
 
-The first of these is Attendance (`apps/crew/templates/crew/attendance_list.html`);
-copy it rather than starting from a list screen and deleting things.
+The first of these is Attendance (`apps/crew/templates/crew/attendance_list.html`):
+one row per employee per day, opening onto that day's punch-in/punch-out pairs.
+Copy it rather than starting from a list screen and deleting things.
 
 ---
 

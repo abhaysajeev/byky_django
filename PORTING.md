@@ -98,8 +98,10 @@ history), `employee_address` (typed). One drawer still writes them in one
 transaction. Nationality is plain text, not a master, until someone needs to
 report on it.
 
-**Attendance is the module's one UUID table** (`00-findings.md` §9) and carries
-`business_date` (§8) — it is written by devices in the field.
+**Attendance is the module's one UUID table** (`00-findings.md` §9) — it is
+written by devices in the field, keyed by the app's own UUIDv7 `sync_id`, one
+row per punch (`apps/crew/api.py`). Its day is the company-local date of
+`rms_scan_time`, the device's own clock, sent in company time.
 
 **Not ported, no models:** Grade Master, Duty Roster, Incentive, Target and their
 branch mappings, and the HRMS privilege matrix.
