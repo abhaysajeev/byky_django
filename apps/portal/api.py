@@ -33,6 +33,7 @@ from apps.portal.serializers import LoginRequest, RefreshRequest, ServerTimeRequ
 from apps.portal.session_models import AppSession, LogoutReason
 from core.api import PublicAPIView, envelope, request_parts
 from core.enums import Channel
+from core.network import client_ip
 from core.schema import RATE_LIMITED, SERVER_ERROR, envelope_request, envelope_responses
 from core.timezones import utc_offset_string, zone_for
 
@@ -89,7 +90,7 @@ def _employee_login(request, form):
     try:
         user, session = auth.sign_in_employee(
             form.validated_data["username"], form.validated_data["password"], installation_id,
-            ip_address=request.META.get("REMOTE_ADDR"),
+            ip_address=client_ip(request),
             user_agent=request.META.get("HTTP_USER_AGENT", ""),
         )
     except auth.LoginRefused as refused:
@@ -115,7 +116,7 @@ def _operator_login(request, form):
     try:
         user, session, device, branch = auth.sign_in_operator(
             form.validated_data["username"], form.validated_data["password"], installation_id,
-            ip_address=request.META.get("REMOTE_ADDR"),
+            ip_address=client_ip(request),
             user_agent=request.META.get("HTTP_USER_AGENT", ""),
         )
     except auth.LoginRefused as refused:

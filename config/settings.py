@@ -208,6 +208,8 @@ REST_FRAMEWORK = {
     # Proxies in front of Django. 0 = trust only the connection's own address,
     # so a client cannot pick its throttle bucket with X-Forwarded-For. Set it
     # to the number of proxies in production, or every tablet shares one bucket.
+    # docker-compose.qa.yml sets 1 (nginx). The request log and the session
+    # audit read the same setting (core/network.py).
     "NUM_PROXIES": int(os.environ.get("DJANGO_NUM_PROXIES", "0")),
 }
 

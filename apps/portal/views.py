@@ -15,14 +15,8 @@ from apps.portal.auth import LoginRefused, close_session, sign_in_web
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.session_models import AppSession, LogoutReason
 from core.middleware import SESSION_ID_KEY, SESSION_USER_KEY
+from core.network import client_ip
 from theme.views import ThemedTemplateView
-
-
-def _client_ip(request):
-    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.META.get("REMOTE_ADDR")
 
 
 @never_cache
@@ -44,7 +38,7 @@ def login_view(request):
     try:
         user, session = sign_in_web(
             username, password,
-            ip_address=_client_ip(request),
+            ip_address=client_ip(request),
             user_agent=request.META.get("HTTP_USER_AGENT", ""),
         )
     except LoginRefused as refusal:

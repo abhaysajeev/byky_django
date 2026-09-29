@@ -223,6 +223,24 @@ def test_signing_in_through_the_form_lands_on_the_dashboard(client, user):
     assert client.get("/").url == "/dashboard/"
 
 
+def test_behind_nginx_the_session_records_the_visitor_not_the_proxy(client, user, settings):
+    settings.REST_FRAMEWORK = {**settings.REST_FRAMEWORK, "NUM_PROXIES": 1}
+
+    client.post("/login/", {"username": "sara.k", "password": PASSWORD},
+                REMOTE_ADDR="172.18.0.5", HTTP_X_FORWARDED_FOR="203.0.113.7")
+
+    assert AppSession.objects.get(user=user).ip_address == "203.0.113.7"
+
+
+def test_without_a_proxy_a_forged_forwarded_header_is_not_recorded(client, user, settings):
+    settings.REST_FRAMEWORK = {**settings.REST_FRAMEWORK, "NUM_PROXIES": 0}
+
+    client.post("/login/", {"username": "sara.k", "password": PASSWORD},
+                REMOTE_ADDR="198.51.100.4", HTTP_X_FORWARDED_FOR="10.9.9.9")
+
+    assert AppSession.objects.get(user=user).ip_address == "198.51.100.4"
+
+
 def test_a_wrong_password_re_renders_the_form_with_one_message(client, user):
     response = client.post("/login/", {"username": "sara.k", "password": "wrong"})
 

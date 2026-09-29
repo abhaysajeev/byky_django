@@ -5,6 +5,7 @@ not even the identifier sequence, which Postgres never rolls back."""
 import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.db.models import F
 
 from apps.fare.tests import test_api as fare_api
 from apps.fleet.models import UOM, Vehicle
@@ -55,6 +56,10 @@ def test_a_dry_run_writes_nothing_and_leaves_the_sequence_alone(fleet, world, ca
 
 
 def test_commit_deletes_this_companys_unplaced_vehicles_and_renumbers_gap_free(fleet, world):
+    # The fixture's own numbers come from the sequence, which earlier tests
+    # have already advanced (Postgres never rolls it back) -- so one of them
+    # may be 100 or 1000 itself. Park them all far above first.
+    Vehicle.objects.update(identifier_no=F("id") + 10 ** 9)
     # Numbers whose text would collide if moved aside carelessly (-100 and
     # -1000 both pad to "VB-100").
     Vehicle.objects.filter(vehicle_name="MO 1").update(identifier_no=100)

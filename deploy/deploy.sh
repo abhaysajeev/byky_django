@@ -50,7 +50,8 @@ log "Building and starting $SHORT"
 "${COMPOSE[@]}" build web
 "${COMPOSE[@]}" up -d
 
-# 3. Wait for the app to answer.
+# 3. Wait for the app to answer -- through nginx (the `proxy` service owns
+#    port 8007), so this proves the whole path a browser takes.
 log "Waiting for $HEALTH_URL"
 for _ in $(seq 1 45); do
     if curl -fsS --max-time 3 "$HEALTH_URL" >/dev/null 2>&1; then
@@ -65,6 +66,8 @@ done
 
 log "The app did not become healthy in 90 s -- last log lines:"
 "${COMPOSE[@]}" logs --tail 80 web || true
+echo
+"${COMPOSE[@]}" logs --tail 30 proxy || true
 echo
 echo "The database backup taken before this deploy is the newest file in $BACKUPS."
 exit 1
