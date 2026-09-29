@@ -306,3 +306,13 @@ MONITORING_BODY_LIMIT = 64 * 1024       # bytes kept of each request/response bo
 MONITORING_REQUEST_DAYS = int(os.environ.get("MONITORING_REQUEST_DAYS", 30))
 MONITORING_ERROR_DAYS = int(os.environ.get("MONITORING_ERROR_DAYS", 90))
 MONITORING_PURGE_HOURS = 6              # how often the writer clears expired rows
+
+# -- A copy of every device request for the central log server ---------------------
+# (the log-ingestion project: its own dashboards, its own retention). Sent from
+# its own thread after the row is saved here (apps/monitoring/shipper.py); off
+# unless both are set. The key is the project's ingest key on that server.
+LOG_INGEST_URL = os.environ.get("LOG_INGEST_URL", "")          # e.g. https://logs.example.net/ingest/batch
+LOG_INGEST_KEY = os.environ.get("LOG_INGEST_KEY", "")
+LOG_INGEST_QUEUE_SIZE = 5_000           # rows waiting to be sent before new ones are dropped
+LOG_INGEST_BATCH_BYTES = 4 * 1024 * 1024  # under the log server's 8 MB body limit
+LOG_INGEST_TIMEOUT = 5                  # seconds per POST
