@@ -82,9 +82,7 @@ taken from the access token's session.
 - `vehicle_identifier` (`VB0042`) is the server's own number for the vehicle: unique, never
   edited, never reused. Vehicles are listed in its order within each type.
 - `vehicle_type_id` is the id `POST /api/v1/operator/fares` takes.
-- `is_direct_rent` (on the vehicle type): `true` = a fixed-time ride (the small kids' vehicles in
-  an enclosed area), billed in full **before handover** -- no runtime fare, and the vehicle is
-  not tracked as out on rent. `false` = the normal rental, charged on the time ridden.
+- `is_direct_rent` (per vehicle type): `true` = billed before handover, no runtime fare.
 - `rfid_epc` may be `""` (no tag assigned yet): also allow lookup by `vehicle_code`.
 
 A category or vehicle type this station cannot use (another company's, inactive, not
