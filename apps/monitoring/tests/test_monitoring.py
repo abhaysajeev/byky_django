@@ -15,6 +15,7 @@ from apps.monitoring.services import purge
 from apps.portal import privileges
 from apps.portal.models import Role
 from apps.portal.services import grant_all
+from apps.portal.session_models import AppSession
 from core.enums import Channel, UserScope
 from core.models import User
 
@@ -54,6 +55,16 @@ def test_a_signed_in_call_records_the_device_branch_and_user(client, world, toke
     user = User.objects.get(username__iexact="OPR001")
     assert (log.user_id, log.company_id, log.branch_id) == (user.pk, world["company"].pk, world["adc1"].pk)
     assert log.device_id is not None and log.status == 200
+
+
+def test_behind_nginx_the_log_and_the_session_record_the_device_not_the_proxy(client, world, settings):
+    settings.REST_FRAMEWORK = {**settings.REST_FRAMEWORK, "NUM_PROXIES": 1}
+    client.defaults.update(REMOTE_ADDR="172.18.0.5", HTTP_X_FORWARDED_FOR="203.0.113.7")
+
+    assert login(client).status_code == 200
+
+    assert RequestLog.objects.get(path=LOGIN).ip == "203.0.113.7"
+    assert AppSession.objects.get().ip_address == "203.0.113.7"
 
 
 def test_a_refused_call_is_logged_with_its_code(client, world):

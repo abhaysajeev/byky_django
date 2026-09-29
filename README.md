@@ -108,3 +108,14 @@ docker compose -f docker-compose.qa.yml -p byky_f_qa up -d
 
 The VPS's `.env` comes from `.env.qa.example`; note that `DJANGO_ALLOWED_HOSTS`
 must include `127.0.0.1` and `localhost` for the health checks.
+
+**nginx sits in front of gunicorn** (the `proxy` service; config in
+`deploy/nginx/qa.conf`). Only nginx publishes port 8007. gunicorn's sync
+workers each wait on one connection until a request arrives, and Chrome opens
+connections ahead of need: without nginx those idle connections tied up the
+workers, gunicorn killed them after 30 s, and Chrome showed the resulting bare
+"Internal Server Error" to the user. nginx holds idle connections itself and
+passes gunicorn only complete requests. Because every request now arrives from
+nginx, the visitor's address comes from `X-Forwarded-For`, trusted for exactly
+one proxy (`DJANGO_NUM_PROXIES=1`, read by `core/network.py` and DRF's
+throttles).

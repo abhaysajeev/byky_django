@@ -82,3 +82,14 @@ jobs:
       # anywhere: proves a deploy would build.
       - name: Build the production image
         run: docker build --build-arg REQUIREMENTS=requirements/base.txt -t byky-web:ci .
+
+      # A broken proxy config would otherwise only show up as a failed deploy.
+      # Placeholder values: compose refuses to render the file without them.
+      - name: The QA compose file and its nginx config are valid
+        env:
+          DJANGO_SECRET_KEY: ci-only
+          DJANGO_ALLOWED_HOSTS: localhost
+          POSTGRES_PASSWORD: ci-only
+        run: |
+          docker compose -f docker-compose.qa.yml config --quiet
+          docker run --rm -v "$PWD/deploy/nginx/qa.conf:/etc/nginx/conf.d/default.conf:ro" nginx:1.30-alpine nginx -t

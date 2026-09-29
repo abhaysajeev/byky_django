@@ -19,6 +19,7 @@ from django.utils import timezone
 from apps.monitoring import writer
 from apps.monitoring.redact import body_text
 from core import request_context
+from core.network import client_ip
 
 API_PREFIX = "/api/v1/"
 # Keys for the raw bodies a queued row carries until the writer finishes it.
@@ -75,7 +76,7 @@ def _row(request, response, body, started_at, elapsed):
         "url_name": (match.url_name or "")[:100] if match else "",
         "status": response.status_code,
         "duration_ms": round(elapsed * 1000),
-        "ip": request.META.get("REMOTE_ADDR") or None,
+        "ip": client_ip(request),
         "user_agent": request.META.get("HTTP_USER_AGENT", "")[:255],
         "device_id": session.device_id if session is not None else None,
         "user_id": user.pk if user is not None else None,
