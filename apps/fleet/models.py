@@ -121,6 +121,17 @@ class VehicleType(ApprovalMixin, TimeStampedModel):
     other_tax = models.DecimalField(
         "Other Tax", max_digits=5, decimal_places=2, null=True, blank=True
     )
+    # Direct rent: a fixed-time ride (the small kids' vehicles in an enclosed
+    # area) billed in full before handover -- no runtime fare, the vehicle is
+    # never tracked as out on rent. The app reads it from the vehicles
+    # download and bills accordingly.
+    #
+    # Legacy: ImsSubcategory.IsReturn, inverted (IsReturn=0 = direct), sent to
+    # the devices by SFA_GetAllcategoriesSubCategoriesAndStockItems. In the QA
+    # data exactly one type has IsReturn=0 -- DRIFT CAR -- and all 3,424 of its
+    # bill lines are DMSOrder.IsDirectBill=1; no other type has a direct bill.
+    # (IsCustomerNeeded, 0 for the same type, is not carried: not needed yet.)
+    is_direct_rent = models.BooleanField("Direct Rent", default=False)
 
     class Meta:
         db_table = "vehicle_type"

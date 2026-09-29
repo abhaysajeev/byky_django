@@ -46,7 +46,7 @@
     <div class="scr-toolbar">
       <div class="scr-search">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
-        <input type="text" placeholder="Search vehicle type, code, category or brand" />
+        <input type="text" placeholder="Search vehicle type, code, category, brand or direct rent" />
       </div>
 
       <span class="scr-toolbar-count">{{ vehicle_types|length }} vehicle types</span>
@@ -60,17 +60,19 @@
             <th>Code</th>
             <th>Category</th>
             <th>Brand</th>
+            <th>Direct Rent</th>
             <th>Status</th>
             <th>Actions</th>
           </tr>
         </thead>
         <tbody>
           {% for v in vehicle_types %}
-          <tr class="scr-row" data-search="{{ v.code|lower }} {{ v.name|lower }} {{ v.category|lower }} {{ v.brand|lower }}" data-record-id="{{ v.json_id }}" data-pk="{{ v.pk }}">
+          <tr class="scr-row" data-search="{{ v.code|lower }} {{ v.name|lower }} {{ v.category|lower }} {{ v.brand|lower }}{% if v.direct_rent %} direct rent{% endif %}" data-record-id="{{ v.json_id }}" data-pk="{{ v.pk }}">
             <td style="font-weight:600">{{ v.name }}</td>
             <td><span class="scr-code">{{ v.code|default:"—" }}</span></td>
             <td>{{ v.category }}</td>
             <td>{{ v.brand }}</td>
+            <td>{% if v.direct_rent %}<span class="scr-badge scr-badge-anytime"><i></i>Direct rent</span>{% else %}<span class="scr-rel-muted">—</span>{% endif %}</td>
             <td>{% if v.active %}<span class="scr-badge scr-badge-active"><i></i>Active</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Inactive</span>{% endif %}</td>
             <td>
               <div class="scr-row-actions">
@@ -81,7 +83,7 @@
           {{ v.fields_json|json_script:v.json_id }}
           {% empty %}
           <tr>
-            <td colspan="6" style="padding:0">
+            <td colspan="7" style="padding:0">
               <div class="scr-empty">
                 <span class="scr-empty-ico">
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"></path></svg>
