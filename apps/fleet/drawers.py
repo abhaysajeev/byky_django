@@ -162,6 +162,14 @@ VEHICLE_TYPE = {
                     "kind": "number",
                     "required": False,
                 },
+                {
+                    "id": "is_direct_rent",
+                    "label": "Direct Rent",
+                    "kind": "checkbox",
+                    "required": False,
+                    "width": 12,
+                    "placeholder": "Fixed-time ride, billed in full before handover (no runtime fare)",
+                },
             ],
         }
     ],

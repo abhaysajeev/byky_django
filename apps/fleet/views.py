@@ -180,6 +180,7 @@ class VehicleTypeListView(FleetScreenView):
                 "name": vehicle_type.vehicle_type_name,
                 "category": vehicle_type.category.category_name,
                 "brand": vehicle_type.brand.brand_name,
+                "direct_rent": vehicle_type.is_direct_rent,
                 "active": vehicle_type.is_active,
                 "pk": vehicle_type.pk,
                 "json_id": f"scr-record-vehicle-type-{i}",
@@ -197,6 +198,7 @@ class VehicleTypeListView(FleetScreenView):
                     "other_tax": (
                         str(vehicle_type.other_tax) if vehicle_type.other_tax is not None else ""
                     ),
+                    "is_direct_rent": vehicle_type.is_direct_rent,
                     "is_active": vehicle_type.is_active,
                 },
             })

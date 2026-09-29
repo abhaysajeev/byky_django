@@ -280,6 +280,41 @@ def test_another_companys_row_cannot_be_referenced(client_in, world, master, for
     assert master.model.objects.count() == before
 
 
+VEHICLE_TYPE = next(m for m in MASTERS if m.model is VehicleType)
+
+
+def test_direct_rent_is_off_unless_ticked_and_can_be_set_and_cleared(client_in, world):
+    payload = VEHICLE_TYPE.payload(world["our"])
+    plain = VehicleType.objects.get(pk=save(client_in, VEHICLE_TYPE, payload).json()["pk"])
+    assert plain.is_direct_rent is False
+
+    # The drawer posts the checkbox as JSON true / false.
+    ticked = save(client_in, VEHICLE_TYPE, {**payload, "vehicle_type_name": "Drift Car", "is_direct_rent": True})
+    assert ticked.status_code == 200, ticked.json()
+    drift = VehicleType.objects.get(pk=ticked.json()["pk"])
+    assert drift.is_direct_rent is True
+
+    save(client_in, VEHICLE_TYPE, {**payload, "pk": drift.pk, "vehicle_type_name": "Drift Car",
+                                   "is_direct_rent": False})
+    drift.refresh_from_db()
+    assert drift.is_direct_rent is False
+
+
+def test_the_list_shows_direct_rent_and_the_drawer_can_edit_it(client_in, world):
+    VehicleType.objects.create(company=world["ours"], category=world["our"]["category"],
+                               brand=world["our"]["brand"], vehicle_type_name="Drift Car", is_direct_rent=True)
+    VehicleType.objects.create(company=world["ours"], category=world["our"]["category"],
+                               brand=world["our"]["brand"], vehicle_type_name="Monaco Plain")
+
+    body = client_in.get("/fleet/vehicle-type/list/").content.decode()
+
+    assert "<th>Direct Rent</th>" in body
+    assert body.count("Direct rent</span>") == 1                         # the badge: Drift Car only
+    assert 'data-field="is_direct_rent"' in body                          # the drawer's checkbox
+    assert '"vehicle_type_name": "Drift Car"' in body and '"is_direct_rent": true' in body
+    assert '"is_direct_rent": false' in body                             # the edit value, for every row
+
+
 def test_a_vehicle_rfid_tag_is_unique_but_may_be_left_blank(client_in, world):
     vehicle = next(m for m in MASTERS if m.model is Vehicle)
     base = vehicle.payload(world["our"])

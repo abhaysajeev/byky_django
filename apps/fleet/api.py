@@ -19,27 +19,36 @@ from core.enums import Channel
 from core.schema import SERVER_ERROR, envelope_request, envelope_responses
 
 # The 200 example Swagger shows: a whole station, no filter -- one category,
-# two vehicle types in name order, vehicles in identifier order.
+# three vehicle types in name order (one of them direct rent), vehicles in
+# identifier order.
 _VEHICLES_SAMPLE = {
     "generated_at": "2026-09-24T06:00:12+04:00",
     "branch": {"id": 12, "code": "ADC1", "name": "Abu Dhabi Corniche 1"},
     "filters": {"vehicle_category_id": None, "vehicle_type_id": None},
-    "total_vehicles": 3,
+    "total_vehicles": 4,
     "categories": [
         {
-            "category_id": 1, "code": "BYKY", "name": "BYKY", "vehicle_count": 3,
+            "category_id": 1, "code": "BYKY", "name": "BYKY", "vehicle_count": 4,
             "vehicle_types": [
                 {
                     "vehicle_type_id": 4, "code": "BRG", "name": "Berg", "brand": "BERG", "tax_percentage": "5.00",
-                    "vehicle_count": 1,
+                    "is_direct_rent": False, "vehicle_count": 1,
                     "vehicles": [
                         {"vehicle_id": 2007, "vehicle_identifier": "VB0321", "vehicle_code": "BRG07",
                          "vehicle_name": "BRG 07", "rfid_epc": "35440575", "uom": "Number", "is_available": True},
                     ],
                 },
                 {
+                    "vehicle_type_id": 9, "code": "DRC", "name": "Drift Car", "brand": "BERG",
+                    "tax_percentage": "5.00", "is_direct_rent": True, "vehicle_count": 1,
+                    "vehicles": [
+                        {"vehicle_id": 3102, "vehicle_identifier": "VB0874", "vehicle_code": "DC02",
+                         "vehicle_name": "DC 02", "rfid_epc": "", "uom": "Number", "is_available": True},
+                    ],
+                },
+                {
                     "vehicle_type_id": 7, "code": "MON", "name": "Monaco", "brand": "BERG", "tax_percentage": "5.00",
-                    "vehicle_count": 2,
+                    "is_direct_rent": False, "vehicle_count": 2,
                     "vehicles": [
                         {"vehicle_id": 1041, "vehicle_identifier": "VB1241", "vehicle_code": "MO41",
                          "vehicle_name": "MO 41", "rfid_epc": "36543595", "uom": "Number", "is_available": True},
@@ -73,6 +82,9 @@ taken from the access token's session.
 - `vehicle_identifier` (`VB0042`) is the server's own number for the vehicle: unique, never
   edited, never reused. Vehicles are listed in its order within each type.
 - `vehicle_type_id` is the id `POST /api/v1/operator/fares` takes.
+- `is_direct_rent` (on the vehicle type): `true` = a fixed-time ride (the small kids' vehicles in
+  an enclosed area), billed in full **before handover** -- no runtime fare, and the vehicle is
+  not tracked as out on rent. `false` = the normal rental, charged on the time ridden.
 - `rfid_epc` may be `""` (no tag assigned yet): also allow lookup by `vehicle_code`.
 
 A category or vehicle type this station cannot use (another company's, inactive, not

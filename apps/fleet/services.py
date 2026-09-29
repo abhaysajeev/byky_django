@@ -26,8 +26,9 @@ def device_vehicles(branch, *, vehicle_category_id=None, vehicle_type_id=None, a
 
     Only active, approved vehicles whose type and category are active and
     approved too. `is_available` is sent as-is so the app can say why a
-    scanned vehicle cannot be rented. Categories and types with no vehicle
-    here are left out.
+    scanned vehicle cannot be rented; `is_direct_rent` (per vehicle type)
+    tells it to bill a fixed-time ride in full before handover. Categories
+    and types with no vehicle here are left out.
 
     `vehicle_category_id` and `vehicle_type_id` only narrow the answer, the
     same way as the fares download (apps/fare/services.py::device_fares): one
@@ -70,6 +71,7 @@ def device_vehicles(branch, *, vehicle_category_id=None, vehicle_type_id=None, a
             "name": vehicle_type.vehicle_type_name, "brand": vehicle_type.brand.brand_name,
             "tax_percentage": (str(vehicle_type.tax_percentage)
                                if vehicle_type.tax_percentage is not None else None),
+            "is_direct_rent": vehicle_type.is_direct_rent,
             "vehicle_count": 0, "vehicles": [],
         })
         type_entry["vehicles"].append({

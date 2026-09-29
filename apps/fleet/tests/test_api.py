@@ -58,6 +58,23 @@ def test_vehicles_come_nested_by_category_and_type(client, world, token, uom):
     assert fare_api.shape(data) == fare_api.shape(api._VEHICLES_SAMPLE)
 
 
+def test_each_vehicle_type_says_whether_it_is_direct_rent(client, world, token, uom):
+    drift = VehicleType.objects.create(company=world["company"], category=world["monaco"].category,
+                                       brand=world["monaco"].brand, vehicle_type_name="Drift Car",
+                                       is_direct_rent=True, approval_status=APPROVED)
+    vehicle(world, uom, "DC-1", drift, world["adc1"])
+    vehicle(world, uom, "MON-1", world["monaco"], world["adc1"])
+
+    [category] = call(client, URL, token=token).json()["data"]["categories"]
+
+    assert {t["name"]: t["is_direct_rent"] for t in category["vehicle_types"]} == {
+        "Drift Car": True, "Monaco": False,
+    }
+    # The Swagger example shows both values too.
+    sample = api._VEHICLES_SAMPLE["categories"][0]["vehicle_types"]
+    assert {t["is_direct_rent"] for t in sample} == {True, False}
+
+
 @pytest.fixture
 def fleet(world, uom):
     """Monaco and Berg (category BYKY) and a Kart type in a second category, all at ADC1."""
