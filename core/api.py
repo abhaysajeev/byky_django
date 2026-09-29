@@ -15,6 +15,7 @@ comes back in the envelope, so the app never has to parse an HTML error page.
 """
 
 import logging
+from decimal import Decimal
 
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -208,5 +209,66 @@ def date_field(**kwargs):
     return serializers.DateField(
         input_formats=["%Y-%m-%d"],
         error_messages={**REQUIRED, "invalid": "must be a date like 2026-09-30"},
+        **kwargs,
+    )
+
+
+class LocalDateTimeField(serializers.DateTimeField):
+    """A wall-clock time in the company's timezone, as the apps send it --
+    they set their clock from server/time and send no offset. Left naive
+    here; the view makes it aware with the company's zone, because only the
+    view knows the company."""
+
+    def enforce_timezone(self, value):
+        return value
+
+
+def datetime_field(**kwargs):
+    """`YYYY-MM-DD HH:MM:SS` (a `T` also accepted), company time, no offset."""
+    return LocalDateTimeField(
+        input_formats=["%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"],
+        error_messages={**REQUIRED, "invalid": "must be a date-time like 2026-09-30 17:05:00"},
+        **kwargs,
+    )
+
+
+class UUID7Field(serializers.UUIDField):
+    """A UUIDv7 made on the device -- time-ordered, so it is also a good key."""
+
+    def to_internal_value(self, data):
+        value = super().to_internal_value(data)
+        if value.version != 7:
+            self.fail("invalid")
+        return value
+
+
+def uuid7_field(**kwargs):
+    return UUID7Field(
+        error_messages={**REQUIRED, "invalid": "must be a UUIDv7"},
+        **kwargs,
+    )
+
+
+class CoordinateField(serializers.DecimalField):
+    """GPS degrees, rounded to 6 places (about 11 cm). Phones send more
+    places than that, and a precise reading is not a malformed one -- so the
+    extra places are rounded off, not refused."""
+
+    def validate_precision(self, value):
+        if abs(value) >= 1000:
+            self.fail("max_value" if value > 0 else "min_value")
+        return value
+
+
+def coordinate_field(*, limit, **kwargs):
+    """A latitude (limit 90) or longitude (limit 180)."""
+    return CoordinateField(
+        max_digits=9, decimal_places=6, min_value=Decimal(-limit), max_value=Decimal(limit),
+        error_messages={
+            **REQUIRED,
+            "invalid": "must be a number",
+            "min_value": f"must be -{limit} or more",
+            "max_value": f"must be {limit} or less",
+        },
         **kwargs,
     )

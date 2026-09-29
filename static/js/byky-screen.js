@@ -68,6 +68,27 @@
     });
   });
 
+  // A row that opens in place (Attendance: a day opening onto its punches).
+  // The [data-scr-expand] button, or a click anywhere on its row, shows or
+  // hides the row right after it. For server-paged lists only: the in-browser
+  // pager below counts every .scr-row, so these rows are not .scr-row.
+  root.querySelectorAll('[data-scr-expand]').forEach(function (button) {
+    var row = button.closest('tr');
+    var detail = row && row.nextElementSibling;
+    if (!detail) return;
+    function toggle() {
+      var open = button.getAttribute('aria-expanded') !== 'true';
+      button.setAttribute('aria-expanded', open ? 'true' : 'false');
+      detail.hidden = !open;
+      row.classList.toggle('is-expanded', open);
+    }
+    button.addEventListener('click', function (event) { event.stopPropagation(); toggle(); });
+    row.addEventListener('click', function (event) {
+      if (event.target.closest('a, button, input, select, label')) return;
+      toggle();
+    });
+  });
+
   /* ── KPI tiles as filter shortcuts (data-scr-kpi-filter) ───────────
      data-scr-kpi-filter="<filter key>:<value>" on a .scr-tile/.scr-doc-item
      button clicks the matching .scr-filter-opt for that key in the same

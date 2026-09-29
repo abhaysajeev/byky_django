@@ -1056,3 +1056,26 @@ textarea.scr-drawer-input { height: auto; min-height: 72px; padding: 10px 13px; 
 /* Dropdown filters in a server-filtered list's toolbar (Vehicle): the
    search box's height, sized to their longest option. */
 .scr-toolbar .scr-list-select { width: auto; min-width: 150px; max-width: 220px; height: 38px; }
+
+/* ── Rows that open in place (Attendance) ──────────────────────────────
+   A parent row's chevron (data-scr-expand, byky-screen.js) shows the hidden
+   row under it, which holds a small table in the records-modal style. Used on
+   server-paged lists, where the in-browser pager never counts these rows. */
+.scr th.scr-expand-col, .scr td.scr-expand-col { width: 44px; padding-inline-end: 0; }
+.scr-expand-row { cursor: pointer; }
+.scr-expand-btn { width: 28px; height: 28px; border: 0; border-radius: 8px; background: #f4f3f9; color: #6b6790; display: inline-grid; place-items: center; cursor: pointer; transition: background 0.14s, color 0.14s; }
+.scr-expand-btn svg { transition: transform 0.15s; }
+.scr-expand-btn[aria-expanded="true"] { background: #fdeced; color: #c2141a; }
+.scr-expand-btn[aria-expanded="true"] svg { transform: rotate(90deg); }
+.scr tbody tr.scr-expand-row.is-expanded, .scr tbody tr.scr-expand-detail, .scr tbody tr.scr-expand-detail:hover { background: #fbfaff; }
+.scr tbody tr.scr-expand-row.is-expanded { border-bottom-color: transparent; }
+.scr td.scr-expand-cell { padding: 2px 20px 18px 64px; text-align: left; }
+/* width 0 + min-width 100%: the detail table scrolls inside its own box
+   instead of widening the parent table and pushing its last columns off. */
+.scr-expand-cell .scr-records-table-wrap { max-height: none; background: #fff; width: 0; min-width: 100%; overflow-x: auto; }
+.scr-expand-cell .scr-records-table td { vertical-align: top; }
+.scr-expand-cell .scr-records-table td:last-child { text-align: left; }
+.scr-next-day { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 6px; background: #fdf3e3; color: #8a5300; font-size: 10px; font-weight: 600; vertical-align: 1px; }
+@media (max-width: 640px) {
+  .scr td.scr-expand-cell { padding-left: 20px; }
+}

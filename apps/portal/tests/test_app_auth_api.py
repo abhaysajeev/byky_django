@@ -193,9 +193,9 @@ def test_an_overlong_password_is_refused_before_hashing(client, app_user, device
     assert response.json()["code"] == "invalid_request"
 
 
-def test_the_manager_channel_is_refused_not_built_yet(client, app_user, device):
-    """operator now has its own login (test_operator_login_api.py); manager
-    doesn't exist yet and falls through LoginView's own channel dict."""
+def test_an_employee_account_is_refused_on_the_manager_endpoint(client, app_user, device):
+    """Manager login exists (apps/crew/tests/test_attendance.py); an account
+    without the manager channel is refused by check_account."""
     response = client.post(
         "/api/v1/manager/auth/login",
         {"credentials": {}, "request_data": login_data(device)},
@@ -203,11 +203,11 @@ def test_the_manager_channel_is_refused_not_built_yet(client, app_user, device):
     )
     assert response.status_code == 403
     assert response.json()["code"] == "wrong_channel"
+    assert response.json()["message"] == "You are not allowed to use this app."
 
 
 def test_an_employee_account_is_refused_on_the_operator_endpoint(client, app_user, device):
-    """A real, distinct code path from the manager case above: the app is
-    recognised (operator is built), but this account isn't allowed on it --
+    """The app is recognised, but this account isn't allowed on it --
     refused by check_account, not by LoginView's own channel guard."""
     response = client.post(
         "/api/v1/operator/auth/login",

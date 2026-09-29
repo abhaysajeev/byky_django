@@ -15,7 +15,6 @@ from apps.company.models import Branch, BranchType, Company, Country, Location, 
 from apps.crew import services
 from apps.crew.models import (
     AddressType,
-    AttendanceSource,
     BlockAction,
     Designation,
     Employee,
@@ -326,28 +325,7 @@ def test_an_employee_with_no_documents_counts_as_neither(world):
     assert summary["visa"]["total"] == 0
 
 
-# --- attendance ---------------------------------------------------------------
-
-def test_attendance_is_read_only(client_in, world):
-    """No Add button, for any role -- punches come from the apps."""
-    body = client_in.get("/crew/attendance/list/").content
-
-    assert b'data-scr-open="attendance:add"' not in body
-    assert b"No attendance recorded yet" in body
-
-
-def test_a_punch_carries_the_day_it_happened(world):
-    """00:20 in Dubai is the previous day in UTC; business_date must follow the
-    company, not the server."""
-    employee = make_employee(world)
-    moment = datetime.datetime(2026, 10, 2, 20, 20, tzinfo=datetime.UTC)
-
-    punch = services.record_punch(
-        employee, AttendanceSource.SELF, moment, world["company"]
-    )
-
-    assert punch.business_date == datetime.date(2026, 10, 3)
-    assert punch.punched_at == moment
+# Attendance has its own file: test_attendance.py.
 
 
 def test_an_employee_can_live_where_the_company_has_no_branch(client_in, world):
