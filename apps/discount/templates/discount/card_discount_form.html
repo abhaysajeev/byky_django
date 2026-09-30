@@ -1,0 +1,157 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}{% if is_edit %}Edit{% else %}Add{% endif %} Card Discount - Discount Card{% endblock title %}
+
+{% block vendor_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'vendor/libs/flatpickr/flatpickr.css' %}" />
+{% endblock vendor_css %}
+
+{% block vendor_js %}
+{{ block.super }}
+<script src="{% static 'vendor/libs/flatpickr/flatpickr.js' %}"></script>
+{% endblock vendor_js %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+<script src="{% static 'js/byky-datepicker.js' %}"></script>
+<script src="{% static 'js/byky-card-discount.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+{% comment %}
+One discount and its days, posted whole to writes.CardDiscountSave by
+byky-card-discount.js. Card Type only narrows the Card Grade list; the grade is
+what is saved.
+{% endcomment %}
+<div class="scr" data-card-discount data-save-url="{{ save_url }}" data-list-url="{{ list_url }}"
+     data-can-save="{% if can_save %}1{% endif %}">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Discount Card</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <a href="{{ list_url }}">Card Discount</a>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>{% if is_edit %}Edit{% else %}New{% endif %}</b>
+      </div>
+      <h1 class="scr-title">{% if is_edit %}{{ discount.card_grade }}{% else %}Add Card Discount{% endif %}</h1>
+    </div>
+    <div class="scr-head-actions">
+      <a href="{{ list_url }}" class="scr-btn-secondary" data-cd-cancel>{% if can_save %}Cancel{% else %}Back to list{% endif %}</a>
+      {% if can_save %}<button type="button" class="scr-btn-primary" data-cd-save>Save</button>{% endif %}
+    </div>
+  </div>
+
+  <div data-cd-banner aria-live="polite"></div>
+
+  <div class="scr-card">
+    <div class="scr-form-head">
+      <div><div class="scr-form-title-row"><h2 class="scr-form-title">Card</h2></div></div>
+    </div>
+    <div class="scr-form-body">
+      <div class="scr-grid scr-fare-grid-4">
+        {% if sees_every_company %}
+        <div class="scr-field">
+          <label class="scr-label" for="cd-company">Company<span class="scr-required">*</span></label>
+          <select id="cd-company" class="scr-input" data-cd-field="company" {% if is_edit %}disabled{% endif %}>
+            <option value="">Select company</option>
+            {% for c in companies %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+          </select>
+        </div>
+        {% endif %}
+        <div class="scr-field">
+          <label class="scr-label" for="cd-type">Card Type<span class="scr-required">*</span></label>
+          <select id="cd-type" class="scr-input" data-cd-field="card_type">
+            <option value="">Select card type</option>
+            {% for t in types %}<option value="{{ t.id }}" data-company="{{ t.company }}">{{ t.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="scr-field">
+          <label class="scr-label" for="cd-grade">Card Grade<span class="scr-required">*</span></label>
+          <select id="cd-grade" class="scr-input" data-cd-field="card_grade">
+            <option value="">Select card grade</option>
+            {% for g in grades %}<option value="{{ g.id }}" data-type="{{ g.type }}">{{ g.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="scr-field">
+          <label class="scr-label" for="cd-from">From Date<span class="scr-required">*</span></label>
+          <input id="cd-from" class="scr-input byky-date" data-cd-date="valid_from" placeholder="Select date" />
+        </div>
+        <div class="scr-field">
+          <label class="scr-label" for="cd-to">To Date<span class="scr-required">*</span></label>
+          <input id="cd-to" class="scr-input byky-date" data-cd-date="valid_to" placeholder="Select date" />
+        </div>
+        <div class="scr-field">
+          <label class="scr-label" for="cd-status">Status</label>
+          <select id="cd-status" class="scr-input" data-cd-field="is_active">
+            <option value="1">Active</option>
+            <option value="0">Inactive</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="scr-card">
+    <div class="scr-form-head">
+      <div><div class="scr-form-title-row"><h2 class="scr-form-title">Discount</h2></div></div>
+    </div>
+    <div class="scr-form-body">
+      <div class="scr-discount-grid">
+        <div class="scr-fieldset">
+          <div class="scr-fieldset-legend">Days</div>
+          <div class="scr-day-table">
+            <div class="scr-day-row scr-day-all">
+              <label class="scr-day-check"><input type="checkbox" data-cd-all /> All Days</label>
+              <input type="number" step="0.01" min="0.01" max="100" class="scr-drawer-input" placeholder="Discount %" data-cd-all-percent />
+            </div>
+            {% for d in days %}
+            <div class="scr-day-row">
+              <label class="scr-day-check"><input type="checkbox" data-cd-day="{{ d.value }}" /> {{ d.label }}</label>
+              <input type="number" step="0.01" min="0.01" max="100" class="scr-drawer-input" placeholder="Discount %" data-cd-day-percent="{{ d.value }}" />
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:16px">
+          <div class="scr-fieldset">
+            <div class="scr-fieldset-legend">Promotion Type</div>
+            {% for p in promotions %}
+            <div class="scr-radio-row">
+              <label class="scr-radio-label"><input type="radio" class="scr-radio" name="cd-promotion" value="{{ p.value }}" data-cd-promotion /> {{ p.label }}</label>
+            </div>
+            {% endfor %}
+          </div>
+          <div class="scr-fieldset">
+            <div class="scr-fieldset-legend">Usage Type</div>
+            {% for value, label in usages %}
+            <div class="scr-radio-row">
+              <label class="scr-radio-label">
+                <input type="radio" class="scr-radio" name="cd-usage" value="{{ value }}" data-cd-usage />
+                {% if value != "one_time" %}<input type="number" min="1" step="1" class="scr-drawer-input" placeholder="No" data-cd-usage-limit="{{ value }}" disabled />{% endif %}
+                {{ label }}
+              </label>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {{ initial|json_script:"cd-initial" }}
+</div>
+
+{% include "byky/partials/confirm_modal.html" %}
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}
