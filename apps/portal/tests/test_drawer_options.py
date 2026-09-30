@@ -24,6 +24,7 @@ from apps.company.models import (
     State,
 )
 from apps.crew.models import Designation, Employee
+from apps.discount.models import CardType
 from apps.portal.models import Role
 from apps.portal.services import grant_all
 from core.enums import Channel, UserScope
@@ -42,6 +43,7 @@ SCREENS = {
     "/crew/address/list/": ["drawer_address"],
     "/portal/role/list/": ["drawer_role"],
     "/portal/user/list/": ["drawer_user"],
+    "/discount/card-grade/list/": ["drawer_card_grade"],
 }
 
 
@@ -73,6 +75,7 @@ def world(db):
         company=company, employee_code="BYKY001", first_name="Anil", last_name="R",
         designation=designation,
     )
+    CardType.objects.create(company=company, code="CORP", name="Corporate")
     return company
 
 

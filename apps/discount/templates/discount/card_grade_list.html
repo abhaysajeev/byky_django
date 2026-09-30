@@ -1,0 +1,127 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Card Grade - Discount Card{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Discount Card</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Card Grade</b>
+      </div>
+      <h1 class="scr-title">Card Grade</h1>
+    </div>
+    <div class="scr-head-actions">
+      {% if perm.create %}
+      <button type="button" class="scr-btn-primary" data-scr-open="card_grade:add">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+        Add Card Grade
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="scr-card" data-scr-noun-singular="card grade" data-scr-noun-plural="card grades" data-scr-delete-url="{{ delete_url }}" data-scr-noun="Card grade">
+    <div class="scr-toolbar">
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="text" placeholder="Search name or code" />
+      </div>
+      <div class="scr-filter-wrap" data-filter-key="type">
+        <button type="button" class="scr-filter-btn">
+          <span class="scr-filter-label">All card types</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+        </button>
+        <div class="scr-filter-menu" hidden>
+          <button type="button" class="scr-filter-opt is-active" data-value="">All card types</button>
+          {% for name in type_names %}<button type="button" class="scr-filter-opt" data-value="{{ name }}">{{ name }}</button>{% endfor %}
+        </div>
+      </div>
+      <div class="scr-filter-wrap" data-filter-key="status">
+        <button type="button" class="scr-filter-btn">
+          <span class="scr-filter-label">All statuses</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+        </button>
+        <div class="scr-filter-menu" hidden>
+          <button type="button" class="scr-filter-opt is-active" data-value="">All statuses</button>
+          <button type="button" class="scr-filter-opt" data-value="Active">Active</button>
+          <button type="button" class="scr-filter-opt" data-value="Inactive">Inactive</button>
+        </div>
+      </div>
+      <span class="scr-toolbar-count">{{ rows|length }} card grades</span>
+    </div>
+
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Grade Name</th>
+            <th>Grade Code</th>
+            <th>Card Type</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr class="scr-row" data-search="{{ r.code|lower }} {{ r.name|lower }} {{ r.card_type|lower }}" data-type="{{ r.card_type }}" data-status="{% if r.active %}Active{% else %}Inactive{% endif %}" data-record-id="{{ r.json_id }}" data-pk="{{ r.pk }}">
+            <td style="font-weight:600">{{ r.name }}</td>
+            <td><span class="scr-code">{{ r.code }}</span></td>
+            <td class="scr-state">{{ r.card_type }}</td>
+            <td>{% if r.active %}<span class="scr-badge scr-badge-active"><i></i>Active</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Inactive</span>{% endif %}</td>
+            <td>
+              <div class="scr-row-actions">
+                {% include "byky/partials/row_actions.html" with edit_open="card_grade:edit" %}
+              </div>
+            </td>
+          </tr>
+          {{ r.fields_json|json_script:r.json_id }}
+          {% empty %}
+          <tr>
+            <td colspan="5" style="padding:0">
+              <div class="scr-empty">
+                <span class="scr-empty-ico">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 10h18M7 15h4"></path></svg>
+                </span>
+                <div><div class="scr-empty-title">No card grades yet</div></div>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="scr-pager">
+      <span class="scr-pager-info">Showing {{ rows|length }} of {{ rows|length }}</span>
+      <div class="scr-pager-nav">
+        <button type="button" class="scr-pager-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"></path></svg>
+        </button>
+        <span class="scr-pager-current">1</span>
+        <button type="button" class="scr-pager-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 6 6 6-6 6"></path></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% include "byky/partials/drawer.html" with save_url=save_url spec=drawer_card_grade module_label="Discount Card · Card Grade" %}
+{% include "byky/partials/confirm_modal.html" %}
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}

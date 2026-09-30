@@ -21,10 +21,21 @@ self-contained; a dedicated sanction/penalty history screen is future work,
 the same gap crew.EmployeeBlockLog fills for staff.
 """
 
+import re
+
 from django.db import models
 
 from core.ids import uuid7
 from core.models import ApprovalMixin, TimeStampedModel
+
+
+def full_number(country_code, mobile_no):
+    """The phone as one string of digits: country code, then number, with the
+    `+` and any spaces or dashes dropped -- `+971`, `50 123-4567` ->
+    `971501234567`. A customer's identity (Customer.mobile_full); the apps
+    send the same string as `full_number`. One implementation for the model,
+    the web form and the API."""
+    return re.sub(r"\D", "", country_code or "") + re.sub(r"\D", "", mobile_no or "")
 
 
 class Gender(models.TextChoices):
@@ -69,6 +80,10 @@ class Customer(ApprovalMixin, TimeStampedModel):
     # fixed list would need maintaining and the wireframe itself just types it.
     mobile_country_code = models.CharField("Country Code", max_length=10)
     mobile_no = models.CharField("Phone No", max_length=20)
+    # Set by save() from the two fields above, never typed: the digits of
+    # both, which is what makes a phone unique -- the same local number under
+    # two country codes is two people.
+    mobile_full = models.CharField("Full Number", max_length=30, editable=False)
     email = models.EmailField(blank=True)
     address = models.TextField(blank=True)
     remarks = models.TextField(blank=True)
@@ -78,6 +93,12 @@ class Customer(ApprovalMixin, TimeStampedModel):
     is_blocked = models.BooleanField(default=False)
     block_reason = models.CharField(max_length=255, blank=True)
 
+    # The app's own UUIDv7 for a customer it created (customers/create), resent
+    # unchanged on retry so an offline create is stored once. Sync checks
+    # only -- the integer id stays the key. Empty for customers made on the
+    # web; empty values never collide with each other.
+    sync_id = models.UUIDField(null=True, blank=True, unique=True, editable=False)
+
     class Meta:
         db_table = "customer"
         ordering = ["customer_code"]
@@ -86,19 +107,25 @@ class Customer(ApprovalMixin, TimeStampedModel):
                 fields=["company", "customer_code"], name="uniq_customer_code_per_company",
                 violation_error_message="A customer with this code already exists.",
             ),
-            # Global, not per-company: the device lookup API
-            # (apps/rental/api.py) matches on this alone, and one phone
-            # number is one person regardless of which company registered
-            # them.
+            # Global, not per-company: one phone is one person whichever
+            # company registered them. Its index is also what the device
+            # lookup (apps/rental/api.py) finds a customer by.
             models.UniqueConstraint(
-                fields=["mobile_no"], name="uniq_customer_mobile_no",
+                fields=["mobile_full"], name="uniq_customer_mobile_full",
                 violation_error_message="A customer with this phone number already exists.",
             ),
         ]
-        indexes = [models.Index(fields=["company"]), models.Index(fields=["mobile_no"])]
+        indexes = [models.Index(fields=["company"])]
 
     def __str__(self):
         return self.full_name
+
+    def save(self, *args, **kwargs):
+        self.mobile_full = full_number(self.mobile_country_code, self.mobile_no)
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None and {"mobile_country_code", "mobile_no"} & set(update_fields):
+            kwargs["update_fields"] = {*update_fields, "mobile_full"}
+        super().save(*args, **kwargs)
 
     @property
     def full_name(self):

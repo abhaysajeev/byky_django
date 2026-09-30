@@ -53,6 +53,22 @@ def test_save_creates_a_customer_with_a_generated_code(client_in, world):
     customer = Customer.objects.get(pk=body["pk"])
     assert customer.company == world["company"]
     assert customer.customer_code == "CU001"
+    assert customer.mobile_full == "919876543210"
+    assert customer.sync_id is None                       # web customers have none
+
+
+def test_a_posted_full_number_is_ignored(client_in, world):
+    """Read-only on the form: the server builds it, whatever arrives."""
+    body = post(client_in, SAVE, customer_data(world, mobile_full="000")).json()
+    assert Customer.objects.get(pk=body["pk"]).mobile_full == "919876543210"
+
+
+def test_the_drawer_shows_full_number_read_only(client_in, world):
+    body = client_in.get("/rental/customer/list/").content.decode()
+    assert 'id="mobile_full"' in body
+    tag = body[body.index('id="mobile_full"'):][:300]
+    assert "readonly" in tag
+    assert "js/byky-customer.js" in body
 
 
 def test_save_generates_the_next_code_per_company(client_in, world):
@@ -67,13 +83,26 @@ def test_document_no_is_not_mandatory(client_in, world):
 
 
 def test_save_refuses_a_duplicate_phone_number(client_in, world):
-    make_customer(world, customer_code="CU001", mobile_no="501234567")
-    response = post(client_in, SAVE, customer_data(world, mobile_no="501234567"))
+    make_customer(world, customer_code="CU001", mobile_country_code="+971", mobile_no="501234567")
+    # The same phone typed with spaces is still the same phone.
+    response = post(client_in, SAVE, customer_data(world, mobile_country_code="+971", mobile_no="50 123 4567"))
     assert response.status_code == 400
-    # A UniqueConstraint violation lands on __all__ (Django's own behaviour,
-    # not per-field), so the check is on the message, not e["field"].
-    messages = [e["message"] for e in response.json()["errors"]]
-    assert any("phone number already exists" in m for m in messages)
+    errors = response.json()["errors"]
+    assert {"field": "Phone No", "message": "A customer with this phone number already exists."} in [
+        {"field": e["field"], "message": e["message"]} for e in errors
+    ]
+
+
+def test_the_same_number_under_another_country_code_saves(client_in, world):
+    make_customer(world, customer_code="CU001", mobile_country_code="+971", mobile_no="9876543210")
+    body = post(client_in, SAVE, customer_data(world)).json()        # +91 9876543210
+    assert body["ok"] is True
+
+
+def test_editing_a_customer_keeps_its_own_phone(client_in, world):
+    customer = make_customer(world, customer_code="CU001", mobile_country_code="+91", mobile_no="9876543210")
+    body = post(client_in, SAVE, customer_data(world, pk=customer.pk, first_name="Renamed")).json()
+    assert body["ok"] is True
 
 
 def test_save_lists_every_problem(client_in, world):

@@ -1,7 +1,7 @@
 """Forms for the Rental Management screens."""
 
 from apps.company.forms import ScopedModelForm
-from apps.rental.models import Customer
+from apps.rental.models import Customer, full_number
 
 
 class CustomerForm(ScopedModelForm):
@@ -23,3 +23,17 @@ class CustomerForm(ScopedModelForm):
             "mobile_country_code": "Country Code", "mobile_no": "Phone No",
             "is_blocked": "Blocked", "block_reason": "Block Reason",
         }
+
+    def clean(self):
+        """The full number is not a form field (the model computes it), so
+        Django's own check of its unique rule never runs -- a duplicate would
+        reach the database and fail there. Checked here instead, on Phone No."""
+        cleaned = super().clean()
+        mobile_full = full_number(cleaned.get("mobile_country_code"), cleaned.get("mobile_no"))
+        if mobile_full and "mobile_no" not in self.errors:
+            taken = Customer.objects.filter(mobile_full=mobile_full)
+            if self.instance.pk:
+                taken = taken.exclude(pk=self.instance.pk)
+            if taken.exists():
+                self.add_error("mobile_no", "A customer with this phone number already exists.")
+        return cleaned
