@@ -1,5 +1,6 @@
-"""/api/v1/{app}/customers/... for the operator app. `{app}` is checked by the
-URL converter in config/urls.py; the views narrow it to `operator`."""
+"""/api/v1/{app}/customers/... and /api/v1/{app}/orders for the operator app.
+`{app}` is checked by the URL converter in config/urls.py; the views narrow it
+to `operator`."""
 
 from django.urls import path
 
@@ -8,4 +9,5 @@ from apps.rental import api
 urlpatterns = [
     path("customers/lookup", api.CustomerLookupView.as_view(), name="api-app-customer-lookup"),
     path("customers/create", api.CustomerCreateView.as_view(), name="api-app-customer-create"),
+    path("orders", api.OrderCreateView.as_view(), name="api-app-order-create"),
 ]

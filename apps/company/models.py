@@ -213,6 +213,33 @@ class Department(ApprovalMixin, TimeStampedModel):
         return self.name
 
 
+class PaymentMode(ApprovalMixin, TimeStampedModel):
+    """How a customer paid -- Cash, Card, Cheque, Creditor account.
+
+    Legacy SfaPaymentMode: 5 rows, but only Cash and Card are actually
+    IsActive=1 in the live data -- Cash On Delivery, Cheque and Creditor exist
+    switched off, not deleted. A real editable master with an active toggle,
+    matching that, rather than a hardcoded choices list.
+    """
+
+    company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name="payment_modes")
+    name = models.CharField("Payment Mode", max_length=50)
+
+    class Meta:
+        db_table = "payment_mode"
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "name"], name="uniq_payment_mode_name_per_company",
+                violation_error_message="A payment mode with this name already exists.",
+            ),
+        ]
+        indexes = [models.Index(fields=["company"])]
+
+    def __str__(self):
+        return self.name
+
+
 class Branch(ApprovalMixin, TimeStampedModel):
     """A station. Every rental, device and employee hangs off one."""
 

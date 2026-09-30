@@ -15,12 +15,46 @@ import zoneinfo
 
 from django.utils import timezone
 
-from apps.company.models import UAE_WEEK, BranchWorkingTime, WeekDay
+from apps.company.models import UAE_WEEK, BranchWorkingTime, PaymentMode, WeekDay
+from core.enums import ApprovalStatus
 
 OPEN, CLOSED, NOT_SET = "open", "closed", "not_set"
 
 MAX_SHIFTS = 4
 SHIFTS = range(1, MAX_SHIFTS + 1)
+
+
+def branch_details(branch):
+    """`branch`'s own details, for the operator app -- station name/address/
+    contact for the checkout screen and receipt header. Authenticated only
+    (apps/company/api.py::BranchDetailsView): the branch always comes from
+    the signed-in session, matching apps/devices/api.py::RegistrationView's
+    own rule that a branch is never revealed before login."""
+    return {
+        "id": branch.pk,
+        "code": branch.short_code,
+        "name": branch.name,
+        "branch_type": branch.branch_type,
+        "is_hotel": branch.is_hotel,
+        "accepts_app_payment": branch.accepts_app_payment,
+        "address": branch.address,
+        "latitude": branch.latitude,
+        "longitude": branch.longitude,
+        "contact_no": branch.contact_no,
+    }
+
+
+def device_payment_modes(company):
+    """This company's active, approved payment modes, for the operator app's
+    checkout screen. Legacy SfaPaymentMode: only 2 of its 5 rows are
+    IsActive -- Cash On Delivery, Cheque and Creditor exist switched off, not
+    deleted (apps/company/models.py::PaymentMode)."""
+    return list(
+        PaymentMode.objects
+        .filter(company=company, is_active=True, approval_status=ApprovalStatus.APPROVED)
+        .order_by("name")
+        .values("id", "name")
+    )
 
 
 def local_now(company, at=None):
