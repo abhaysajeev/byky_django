@@ -1,0 +1,118 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Card Discount Approval - Discount Card{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Discount Card</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Card Discount Approval</b>
+      </div>
+      <h1 class="scr-title">Card Discount Approval</h1>
+    </div>
+  </div>
+
+  <div class="scr-tiles">
+    {% for t in tabs %}
+    <a class="scr-tile" href="?tab={{ t.value }}" style="text-decoration:none; color:inherit">
+      <span class="scr-tile-ico {% if t.value == 'pending' %}scr-tile-ico-amber{% elif t.value == 'approved' %}scr-tile-ico-green{% else %}scr-tile-ico-red{% endif %}">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 10h18M7 15h4"></path></svg>
+      </span>
+      <div><div class="scr-tile-val">{{ t.count }}</div><div class="scr-tile-lab">{{ t.label }}</div></div>
+    </a>
+    {% endfor %}
+  </div>
+
+  <div class="scr-card" data-scr-noun-singular="request" data-scr-noun-plural="requests">
+    <div class="scr-content-tabs">
+      {% for t in tabs %}
+      <a class="scr-content-tab{% if t.value == tab %} is-on{% endif %}" href="?tab={{ t.value }}" style="text-decoration:none">{{ t.label }} <span class="scr-content-tab-count">{{ t.count }}</span></a>
+      {% endfor %}
+    </div>
+    <div class="scr-toolbar">
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="text" placeholder="Search customer, phone or card no" />
+      </div>
+      <div class="scr-filter-wrap" data-filter-key="type">
+        <button type="button" class="scr-filter-btn">
+          <span class="scr-filter-label">All card types</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+        </button>
+        <div class="scr-filter-menu" hidden>
+          <button type="button" class="scr-filter-opt is-active" data-value="">All card types</button>
+          {% for name in type_names %}<button type="button" class="scr-filter-opt" data-value="{{ name }}">{{ name }}</button>{% endfor %}
+        </div>
+      </div>
+      <span class="scr-toolbar-count">{{ rows|length }} requests</span>
+    </div>
+
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Requested</th>
+            <th>Customer</th>
+            <th>Card</th>
+            <th>Discount</th>
+            <th>Branch</th>
+            <th>Requested By</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr class="scr-row scr-mon-row" data-scr-href="{{ r.detail_url }}" data-search="{{ r.customer|lower }} {{ r.phone }} {{ r.card_number|lower }}" data-type="{{ r.card_type }}">
+            <td><a class="scr-mon-time" href="{{ r.detail_url }}">{{ r.requested_at|date:"d M Y" }}<span>{{ r.requested_at|date:"H:i" }}</span></a></td>
+            <td><div class="scr-co-name">{{ r.customer }}</div><div class="scr-co-city">{{ r.phone }}</div></td>
+            <td><div class="scr-contact">{{ r.card_type }} · {{ r.grade }}</div>{% if r.card_number %}<div class="scr-contact-sub">{{ r.card_number }}</div>{% endif %}</td>
+            <td class="scr-state">{{ r.percent }} · {{ r.fare_basis }}</td>
+            <td class="scr-state">{{ r.branch|default:"—" }}</td>
+            <td class="scr-state">{{ r.requested_by|default:"—" }}</td>
+            <td>
+              {% if r.status == "pending" %}<span class="scr-badge scr-badge-pending"><i></i>Pending</span>
+              {% elif r.status == "approved" %}<span class="scr-badge scr-badge-approved"><i></i>Approved</span>
+              {% else %}<span class="scr-badge scr-badge-mandatory"><i></i>Rejected</span>{% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="7" style="padding:0">
+              <div class="scr-empty"><div><div class="scr-empty-title">No {{ tab }} requests</div></div></div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="scr-pager">
+      <span class="scr-pager-info">Showing {{ rows|length }} of {{ rows|length }}</span>
+      <div class="scr-pager-nav">
+        <button type="button" class="scr-pager-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"></path></svg>
+        </button>
+        <span class="scr-pager-current">1</span>
+        <button type="button" class="scr-pager-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 6 6 6-6 6"></path></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

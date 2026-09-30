@@ -65,6 +65,7 @@ LOCAL_APPS = [
     "apps.fleet",
     "apps.fare",
     "apps.rental",
+    "apps.discount",
     "apps.monitoring",
 ]
 

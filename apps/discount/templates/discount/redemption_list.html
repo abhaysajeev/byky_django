@@ -1,0 +1,96 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Redemption History - Discount Card{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Discount Card</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Redemption History</b>
+      </div>
+      <h1 class="scr-title">Redemption History</h1>
+    </div>
+    <div class="scr-head-actions">
+      {% if perm.print %}
+      <a class="scr-btn" href="{{ export_url }}{% if query %}?{{ query }}{% endif %}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="m7 11 5 5 5-5"></path><path d="M4 20h16"></path></svg>
+        Export
+      </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="scr-card" data-scr-server-paged>
+    <form method="get" class="scr-toolbar scr-mon-toolbar" data-scr-autosubmit>
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="text" name="q" value="{{ params.q }}" placeholder="Customer, phone, card no or order" aria-label="Search" />
+      </div>
+      <div class="scr-mon-dates">
+        <input type="date" name="from" class="scr-input" value="{{ params.from }}" aria-label="From date" title="From" />
+        <span>to</span>
+        <input type="date" name="to" class="scr-input" value="{{ params.to }}" aria-label="To date" title="To" />
+      </div>
+      <select name="type" class="scr-input scr-list-select" aria-label="Card type">
+        <option value="">All card types</option>
+        {% for t in card_types_list %}<option value="{{ t.id }}"{% if params.type == t.id|stringformat:"s" %} selected{% endif %}>{{ t.name }}</option>{% endfor %}
+      </select>
+      <select name="branch" class="scr-input scr-list-select" aria-label="Branch">
+        <option value="">All branches</option>
+        {% for b in branches %}<option value="{{ b.id }}"{% if params.branch == b.id|stringformat:"s" %} selected{% endif %}>{{ b.name }}</option>{% endfor %}
+      </select>
+      <button type="submit" class="scr-btn">Filter</button>
+      {% if filtered %}<a href="{% url 'discount-redemption-list' %}" class="scr-btn-secondary">Clear</a>{% endif %}
+      <span class="scr-toolbar-count">{{ page.paginator.count }} redemption{{ page.paginator.count|pluralize }}</span>
+    </form>
+
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Redeemed</th>
+            <th>Customer</th>
+            <th>Card</th>
+            <th>Discount</th>
+            <th>Order</th>
+            <th>Branch</th>
+            <th>By</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr class="scr-mon-row" data-scr-href="{{ r.detail_url }}">
+            <td><a class="scr-mon-time" href="{{ r.detail_url }}">{{ r.redeemed_at|date:"d M Y" }}<span>{{ r.redeemed_at|date:"H:i" }}</span></a></td>
+            <td><div class="scr-co-name">{{ r.customer }}</div><div class="scr-co-city">{{ r.phone }}</div></td>
+            <td><div class="scr-contact">{{ r.card_type }} · {{ r.grade }}</div>{% if r.card_number %}<div class="scr-contact-sub">{{ r.card_number }}</div>{% endif %}</td>
+            <td class="scr-state">{{ r.percent }} · {{ r.fare_basis }}</td>
+            <td class="scr-state">{{ r.order_ref|default:"—" }}{% if r.bill_amount is not None %}<div class="scr-contact-sub">{{ r.bill_amount }}</div>{% endif %}</td>
+            <td class="scr-state">{{ r.branch|default:"—" }}</td>
+            <td class="scr-state">{{ r.requested_by|default:"—" }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7" style="padding:0"><div class="scr-empty"><div><div class="scr-empty-title">{% if filtered %}No redemptions match{% else %}No redemptions yet{% endif %}</div></div></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% include "byky/partials/server_pager.html" %}
+  </div>
+</div>
+{% endblock %}

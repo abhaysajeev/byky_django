@@ -1,0 +1,150 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Card Discount Request - Discount Card{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+<script src="{% static 'js/byky-card-approval.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr" data-card-approval data-approve-url="{{ approve_url }}" data-reject-url="{{ reject_url }}">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Discount Card</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <a href="{{ list_url }}">Card Discount Approval</a>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Request</b>
+      </div>
+      <h1 class="scr-title">{{ claim.customer }}</h1>
+    </div>
+    <div class="scr-head-actions">
+      <a href="{{ list_url }}{% if claim.status != 'pending' %}?tab={{ claim.status }}{% endif %}" class="scr-btn-secondary">Back</a>
+      {% if claim.status == "pending" and perm.approve %}
+      <button type="button" class="scr-btn-danger" data-scr-modal-open="claim-decision" data-decision="reject">Reject</button>
+      <button type="button" class="scr-btn-primary" data-scr-modal-open="claim-decision" data-decision="approve">Approve</button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="scr-mon-grid scr-mon-grid-wide">
+    <div class="scr-card">
+      <div class="scr-form-head">
+        <div class="scr-form-title-row">
+          <h2 class="scr-form-title">Request</h2>
+          {% if claim.status == "pending" %}<span class="scr-badge scr-badge-pending"><i></i>Pending</span>
+          {% elif claim.status == "approved" %}<span class="scr-badge scr-badge-approved"><i></i>Approved</span>
+          {% elif claim.status == "redeemed" %}<span class="scr-badge scr-badge-active"><i></i>Redeemed</span>
+          {% else %}<span class="scr-badge scr-badge-mandatory"><i></i>Rejected</span>{% endif %}
+        </div>
+      </div>
+      <div class="scr-form-body scr-mon-body">
+        <div class="scr-detail-rows">
+          <div class="scr-detail-row"><span class="scr-detail-label">Customer</span><span class="scr-detail-value">{{ claim.customer }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Phone</span><span class="scr-detail-value">{{ claim.phone }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Card</span><span class="scr-detail-value">{{ claim.card_type }} · {{ claim.grade }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Card No</span><span class="scr-detail-value">{{ claim.card_number|default:"—" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Discount</span><span class="scr-detail-value">{{ claim.percent }} · {{ claim.fare_basis }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Usage</span><span class="scr-detail-value">{{ usage }} · used {{ redeemed_count }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Order</span><span class="scr-detail-value">{{ claim.order_ref|default:"—" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Bill Amount</span><span class="scr-detail-value">{% if claim.bill_amount is not None %}{{ claim.bill_amount }}{% else %}—{% endif %}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Branch</span><span class="scr-detail-value">{{ claim.branch|default:"—" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Requested</span><span class="scr-detail-value">{{ claim.requested_at|date:"d M Y, H:i" }}{% if claim.requested_by %} · {{ claim.requested_by }}{% endif %}</span></div>
+          {% if claim.decided_at %}
+          <div class="scr-detail-row"><span class="scr-detail-label">Decided</span><span class="scr-detail-value">{{ claim.decided_at|date:"d M Y, H:i" }} · {{ claim.decided_by }}</span></div>
+          {% endif %}
+          {% if claim.remarks %}
+          <div class="scr-detail-row"><span class="scr-detail-label">Remarks</span><span class="scr-detail-value">{{ claim.remarks }}</span></div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="scr-card">
+      <div class="scr-form-head"><div class="scr-form-title-row"><h2 class="scr-form-title">Card Photo</h2></div></div>
+      <div class="scr-form-body scr-mon-body">
+        <div class="scr-empty">
+          <span class="scr-empty-ico">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7a2 2 0 0 1 2-2h2l1.5-2h5L16 5h2a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8"></path></svg>
+          </span>
+          <div><div class="scr-empty-title">No photo</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="scr-card" style="margin-top:20px">
+    <div class="scr-form-head"><div class="scr-form-title-row"><h2 class="scr-form-title">Customer History</h2></div></div>
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Requested</th>
+            <th>Card</th>
+            <th>Discount</th>
+            <th>Order</th>
+            <th>Branch</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for h in history %}
+          <tr class="scr-mon-row" data-scr-href="{{ h.detail_url }}">
+            <td><a class="scr-mon-time" href="{{ h.detail_url }}">{{ h.requested_at|date:"d M Y" }}<span>{{ h.requested_at|date:"H:i" }}</span></a></td>
+            <td class="scr-state">{{ h.card_type }} · {{ h.grade }}</td>
+            <td class="scr-state">{{ h.percent }} · {{ h.fare_basis }}</td>
+            <td class="scr-state">{{ h.order_ref|default:"—" }}</td>
+            <td class="scr-state">{{ h.branch|default:"—" }}</td>
+            <td>
+              {% if h.status == "pending" %}<span class="scr-badge scr-badge-pending"><i></i>Pending</span>
+              {% elif h.status == "approved" %}<span class="scr-badge scr-badge-approved"><i></i>Approved</span>
+              {% elif h.status == "redeemed" %}<span class="scr-badge scr-badge-active"><i></i>Redeemed</span>
+              {% else %}<span class="scr-badge scr-badge-mandatory"><i></i>Rejected</span>{% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="6" style="padding:0"><div class="scr-empty"><div><div class="scr-empty-title">No earlier requests</div></div></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {% if claim.status == "pending" and perm.approve %}
+  <div class="scr-modal-veil" data-scr-modal-veil="claim-decision" hidden></div>
+  <div class="scr-modal" data-scr-modal="claim-decision" hidden>
+    <div class="scr-modal-head">
+      <div>
+        <div class="scr-modal-title" data-decision-title>Approve request</div>
+        <p class="scr-modal-sub">{{ claim.customer }} · {{ claim.percent }}</p>
+      </div>
+      <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+      </button>
+    </div>
+    <div class="scr-modal-body">
+      <div class="scr-field">
+        <label class="scr-label" for="claim-remarks">Remarks</label>
+        <textarea id="claim-remarks" class="scr-input" rows="3" maxlength="255" style="height:auto; padding:10px 12px" data-decision-remarks></textarea>
+      </div>
+    </div>
+    <div class="scr-modal-foot">
+      <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+      <button type="button" class="scr-btn-primary" data-decision-go>Approve</button>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}

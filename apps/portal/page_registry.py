@@ -41,6 +41,8 @@ RENTAL_SVG = (
     "M9 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6M3 20a6 6 0 0 1 10-4.5"
     "M14 14h7a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1M16.5 18h2"
 )
+# A credit card -- the wireframe's own Discount Card icon, path unchanged.
+DISCOUNT_SVG = "M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 10h18M7 15h4"
 
 # code, name, menu header (blank = no divider), sort order, is_flat, svg, svg2
 MODULES = [
@@ -51,6 +53,7 @@ MODULES = [
     ("fleet", "Inventory", "Operations", 40, False, FLEET_SVG, ""),
     ("fare", "Fare & Offers", "Operations", 50, False, FARE_SVG, ""),
     ("rental", "Rental", "Operations", 60, False, RENTAL_SVG, ""),
+    ("discount", "Discount Card", "Operations", 65, False, DISCOUNT_SVG, ""),
     ("system", "Users & Roles", "System", 90, False, SYSTEM_SVG, ""),
     ("monitoring", "Logs", "System", 95, False, LOGS_SVG, ""),
 ]
@@ -123,6 +126,13 @@ PAGES = [
 
     ("rental.customer", "rental", "Customer", "rental-customer-list", CRUD_PRINT, 1, False),
     ("rental.privileges", "rental", "Privileges", "rental-privileges", ["read", "update"], 9, False),
+    ("discount.card_type", "discount", "Card Type", "discount-card-type-list", CRUD_PRINT, 1, False),
+    ("discount.card_grade", "discount", "Card Grade", "discount-card-grade-list", CRUD_PRINT, 2, False),
+    ("discount.card_discount", "discount", "Card Discount", "discount-card-discount-list", CRUD_PRINT, 3, False),
+    ("discount.approval", "discount", "Card Discount Approval", "discount-approval-list",
+     ["read", "approve", "print"], 4, False),
+    ("discount.redemption", "discount", "Redemption History", "discount-redemption-list", ["read", "print"], 5, False),
+    ("discount.privileges", "discount", "Privileges", "discount-privileges", ["read", "update"], 9, False),
 
     ("system.role", "system", "Roles", "portal-role-list", CRUD, 1, False),
     ("system.user", "system", "Users", "portal-user-list", CRUD, 2, False),

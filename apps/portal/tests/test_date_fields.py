@@ -26,6 +26,7 @@ from apps.company.models import Branch, BranchType, Company, Country, Location, 
 from apps.crew import drawers as crew_drawers
 from apps.crew.models import Designation
 from apps.devices import drawers as devices_drawers
+from apps.discount import drawers as discount_drawers
 from apps.portal import drawers as portal_drawers
 from apps.portal.models import Role
 from apps.portal.services import grant_all
@@ -39,6 +40,7 @@ ALL_SPECS = {
     **crew_drawers.SPECS,
     **portal_drawers.SPECS,
     **devices_drawers.SPECS,
+    **discount_drawers.SPECS,
 }
 
 DATE_KINDS = {"date", "datetime"}
