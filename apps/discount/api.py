@@ -9,6 +9,7 @@ redemptions of each discount usable today; the device applies the window.
 """
 
 from django.db.models import Prefetch
+from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
@@ -16,11 +17,12 @@ from rest_framework.views import APIView
 from apps.company.models import WeekDay
 from apps.discount import services
 from apps.discount.models import CardDiscount, CardGrade, CardType
-from apps.discount.serializers import CardDiscountsRequest, CardUsageRequest
+from apps.discount.serializers import ApprovalRequest, CardDiscountsRequest, CardUsageRequest
 from apps.portal.authentication import AppJWTAuthentication
 from core.api import envelope, request_parts, session_station
 from core.enums import Channel
 from core.schema import SERVER_ERROR, envelope_request, envelope_responses
+from core.timezones import zone_for
 
 
 def _days(percent_by_day):
@@ -215,7 +217,7 @@ class CardUsageView(APIView):
 
         try:
             customer, rows = services.card_usage(branch.company, form.validated_data["full_number"])
-        except services.CardUsageRefused as refusal:
+        except services.DiscountRefused as refusal:
             return envelope(refusal.code, refusal.message, http_status=refusal.status)
 
         return envelope("ok", "Card usage.", {
@@ -233,3 +235,85 @@ class CardUsageView(APIView):
                 for discount, times in rows
             ],
         })
+
+
+# -- Approval request --------------------------------------------------------------
+
+_APPROVAL_SAMPLE = {
+    "sync_id": "01923f8e-5b2a-7c3d-9e4f-a1b2c3d4e5f6", "status": "pending",
+    "order_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9", "card_discount_id": 12,
+}
+
+_APPROVAL_DESCRIPTION = """
+Ask the web to approve an approval-mode card discount on one order. It shows on
+the Card Discount Approval page as pending; ask its status later with the same
+`sync_id`.
+
+**sync_id** -- a **UUIDv7** made on the device for this request and resent
+**unchanged** on retry. A resend is answered `duplicate` with the request's
+current status and writes nothing.
+
+`order_id` is the order's own `sync_id`; the order must be this company's and
+have a customer. `full_number` is the card holder (country code then number,
+digits only). The bill figures -- `bill_amount`, `discount_percent`,
+`discount_amount`, `net_amount` -- are the device's own, stored as sent.
+`card_photo` is the link to the photo the device uploaded. `requested_at` is
+`YYYY-MM-DD HH:MM:SS`, company time.
+
+One pending request per order at a time.
+"""
+
+
+class ApprovalRequestView(APIView):
+    """POST /api/v1/{app}/card-discounts/approval -- operator app only."""
+
+    authentication_classes = [AppJWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Operator Discount Cards"],
+        summary="Ask for a card discount's approval",
+        description=_APPROVAL_DESCRIPTION,
+        request=envelope_request("ApprovalRequestEnvelope", ApprovalRequest),
+        responses=envelope_responses(
+            (200, "ok", "Approval requested.", _APPROVAL_SAMPLE),
+            (200, "duplicate", "Already requested.", {**_APPROVAL_SAMPLE, "status": "approved"}),
+            (400, "invalid_request", "sync_id must be a UUIDv7.", {"errors": {"sync_id": "must be a UUIDv7"}}),
+            (400, "order_has_no_customer", "This order has no customer.", {}),
+            (400, "approval_not_needed", "This card discount needs no approval.", {}),
+            (404, "unknown_order", "No order with that id.", {}),
+            (404, "unknown_customer", "No customer found.", {}),
+            (404, "unknown_card_discount", "No card discount with that id.", {}),
+            (403, "customer_blocked", "The customer is blocked.", {}),
+            (409, "request_pending", "This order already has a pending approval request.", {}),
+            (409, "sync_id_conflict", "That sync_id is already used.", {}),
+            (401, "not_authenticated", "Sign in first.", {}),
+            (403, "wrong_channel", "Not allowed on this app.", {}),
+            (409, "device_not_mapped", "This device has no station.", {}),
+            (409, "branch_inactive", "This station is closed.", {}),
+            SERVER_ERROR,
+        ),
+    )
+    def post(self, request, app):
+        if app != Channel.OPERATOR:
+            return envelope("wrong_channel", "Not allowed on this app.", http_status=403)
+        branch, refused = session_station(request)
+        if refused:
+            return refused
+
+        _, request_data = request_parts(request)
+        form = ApprovalRequest(data=request_data)
+        form.is_valid(raise_exception=True)
+        values = dict(form.validated_data)
+        values["requested_at"] = timezone.make_aware(values["requested_at"], zone_for(branch.company))
+
+        try:
+            claim, created = services.request_approval(request.auth, values)
+        except services.DiscountRefused as refusal:
+            return envelope(refusal.code, refusal.message, http_status=refusal.status)
+
+        data = {"sync_id": str(claim.pk), "status": claim.status, "order_id": str(claim.order_id),
+                "card_discount_id": claim.card_discount_id}
+        if not created:
+            return envelope("duplicate", "Already requested.", data)
+        return envelope("ok", "Approval requested.", data)

@@ -3,12 +3,16 @@ Reuses the fares API's world: operator OPR001 on till-1, mapped to ADC1."""
 
 import datetime
 import zoneinfo
+from decimal import Decimal
 
 import pytest
+from django.utils import timezone
 
+from apps.company.models import Branch, BranchType
 from apps.discount import api
 from apps.discount.models import (
     CardDiscount,
+    CardDiscountClaim,
     CardDiscountDay,
     CardGrade,
     CardType,
@@ -16,9 +20,10 @@ from apps.discount.models import (
     FareBasis,
     UsageType,
 )
-from apps.discount.tests.conftest import make_claim
+from apps.discount.tests.conftest import make_claim, make_order
 from apps.fare.tests import test_api as fare_api
-from apps.rental.models import Customer
+from apps.rental.models import Customer, Order
+from core.ids import uuid7
 from core.timezones import business_date_for
 
 # The signed-in till from the fare API tests, reused as fixtures here.
@@ -239,3 +244,140 @@ def test_usage_is_for_the_operator_app_only(client, world, token):
 
 def test_usage_is_in_the_docs(client, world):
     assert "/api/v1/{app}/card-discounts/usage" in client.get("/api/schema/").content.decode()
+
+
+# -- POST /card-discounts/approval ---------------------------------------------------
+
+APPROVAL = "/api/v1/operator/card-discounts/approval"
+
+
+@pytest.fixture
+def approval_world(usage_world):
+    customer = usage_world["customer"]
+    return {**usage_world, "order": make_order(customer, order_no="ORD-1001")}
+
+
+def approval_data(approval_world, **overrides):
+    data = {
+        "sync_id": str(uuid7()), "card_discount_id": approval_world["current"].pk,
+        "full_number": "971501234567", "order_id": str(approval_world["order"].pk),
+        "bill_amount": "120.00", "discount_percent": "15", "discount_amount": "18.00", "net_amount": "102.00",
+        "requested_at": "2026-09-30 17:05:00", "card_number": "4455",
+        "card_photo": "https://photos.example/cards/4455.jpg",
+    }
+    data.update(overrides)
+    return data
+
+
+def request_approval(client, token, data):
+    return call(client, APPROVAL, data, token=token)
+
+
+def test_a_request_creates_a_pending_claim_with_the_devices_figures(client, world, token, approval_world):
+    data = approval_data(approval_world)
+    body = request_approval(client, token, data).json()
+    assert body["code"] == "ok" and body["message"] == "Approval requested."
+    assert body["data"] == {"sync_id": data["sync_id"], "status": "pending",
+                            "order_id": data["order_id"], "card_discount_id": approval_world["current"].pk}
+    assert shape(body["data"]) == shape(api._APPROVAL_SAMPLE)
+
+    claim = CardDiscountClaim.objects.get(pk=data["sync_id"])
+    assert claim.status == ClaimStatus.PENDING and claim.requires_approval is True
+    assert claim.order == approval_world["order"] and claim.customer == approval_world["customer"]
+    assert (claim.bill_amount, claim.discount_percent, claim.discount_amount, claim.net_amount) == (
+        Decimal("120.00"), Decimal("15.00"), Decimal("18.00"), Decimal("102.00"))
+    assert claim.card_type.name == "Corporate" and claim.card_grade.name == "Gold" and claim.fare_basis == "base"
+    assert claim.card_number == "4455" and claim.card_photo.endswith("4455.jpg")
+    assert claim.branch == world["adc1"] and claim.requested_by.username == "opr001"
+    assert claim.rms_installation_id == "till-1"
+    assert claim.requested_at == datetime.datetime(2026, 9, 30, 13, 5, tzinfo=datetime.UTC)   # 17:05 Dubai
+
+
+def test_a_resent_sync_id_answers_with_the_current_status(client, world, token, approval_world):
+    data = approval_data(approval_world)
+    request_approval(client, token, data)
+    claim = CardDiscountClaim.objects.get(pk=data["sync_id"])
+    claim.status, claim.decided_at = ClaimStatus.APPROVED, claim.requested_at
+    claim.save(update_fields=["status", "decided_at"])
+
+    body = request_approval(client, token, data).json()
+    assert body["code"] == "duplicate" and body["data"]["status"] == "approved"
+    assert CardDiscountClaim.objects.count() == 1
+
+
+def test_one_pending_request_per_order(client, world, token, approval_world):
+    request_approval(client, token, approval_data(approval_world))
+    response = request_approval(client, token, approval_data(approval_world))
+    assert response.status_code == 409
+    assert response.json()["code"] == "request_pending"
+
+
+def test_a_decided_request_does_not_block_a_new_one(client, world, token, approval_world):
+    first = approval_data(approval_world)
+    request_approval(client, token, first)
+    CardDiscountClaim.objects.filter(pk=first["sync_id"]).update(status=ClaimStatus.REJECTED,
+                                                                 decided_at=timezone.now())
+    assert request_approval(client, token, approval_data(approval_world)).json()["code"] == "ok"
+
+
+@pytest.mark.parametrize("change, status, code", [
+    ({"order_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9"}, 404, "unknown_order"),
+    ({"full_number": "971500000000"}, 404, "unknown_customer"),
+    ({"card_discount_id": 999999}, 404, "unknown_card_discount"),
+])
+def test_unknown_references_are_refused(client, world, token, approval_world, change, status, code):
+    response = request_approval(client, token, approval_data(approval_world, **change))
+    assert response.status_code == status
+    assert response.json()["code"] == code
+    assert not CardDiscountClaim.objects.exists()
+
+
+def test_an_automatic_discount_needs_no_approval(client, world, token, approval_world):
+    response = request_approval(client, token, approval_data(approval_world,
+                                                             card_discount_id=approval_world["once"].pk))
+    assert response.status_code == 400
+    assert response.json()["code"] == "approval_not_needed"
+
+
+def test_a_blocked_customer_is_refused_a_request(client, world, token, approval_world):
+    Customer.objects.filter(pk=approval_world["customer"].pk).update(is_blocked=True)
+    assert request_approval(client, token, approval_data(approval_world)).json()["code"] == "customer_blocked"
+
+
+def test_an_order_without_a_customer_is_refused(client, world, token, approval_world):
+    Order.objects.filter(pk=approval_world["order"].pk).update(customer=None)
+    response = request_approval(client, token, approval_data(approval_world))
+    assert response.status_code == 400
+    assert response.json()["code"] == "order_has_no_customer"
+
+
+def test_another_companys_order_is_unknown(client, world, token, approval_world):
+    theirs = Customer.objects.create(company=world["other"], customer_code="CU009", first_name="Theirs",
+                                     mobile_country_code="+971", mobile_no="507777777")
+    Branch.objects.create(company=world["other"], location=world["adc1"].location, short_code="OT1",
+                          name="Their Station", branch_type=BranchType.STATION)
+    their_order = make_order(theirs)
+    response = request_approval(client, token, approval_data(approval_world, order_id=str(their_order.pk)))
+    assert response.json()["code"] == "unknown_order"
+
+
+@pytest.mark.parametrize("field, value, message", [
+    ("sync_id", "6f1c2b9e-3d4a-4b8c-9e2f-0a1b2c3d4e5f", "must be a UUIDv7"),
+    ("discount_percent", "0", "must be more than 0"),
+    ("net_amount", "-1", "must be 0 or more"),
+    ("requested_at", "30/09/2026 17:05", "must be a date-time like 2026-09-30 17:05:00"),
+])
+def test_bad_request_fields_are_refused(client, world, token, approval_world, field, value, message):
+    response = request_approval(client, token, approval_data(approval_world, **{field: value}))
+    assert response.status_code == 400
+    assert response.json()["data"]["errors"][field] == message
+
+
+def test_approval_is_for_the_operator_app_only(client, world, token, approval_world):
+    response = call(client, "/api/v1/manager/card-discounts/approval", approval_data(approval_world), token=token)
+    assert response.json()["code"] == "wrong_channel"
+    assert call(client, APPROVAL, approval_data(approval_world)).status_code == 401
+
+
+def test_approval_is_in_the_docs(client, world):
+    assert "/api/v1/{app}/card-discounts/approval" in client.get("/api/schema/").content.decode()

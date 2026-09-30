@@ -4,6 +4,7 @@ save_card_discount() -- the Card Discount page's one post: the discount and
 its day rows, checked together and written in one transaction.
 decide_claim() -- an approver's Approve / Reject on a pending claim.
 card_usage() -- a customer's redemptions of the discounts usable today (device API).
+request_approval() / cancel_pending_for_order() -- the approval request's life.
 """
 
 import datetime
@@ -23,7 +24,7 @@ from apps.discount.models import (
     UsageType,
 )
 from apps.discount.scoping import card_discounts_for, card_grades_for
-from apps.rental.models import Customer
+from apps.rental.models import Customer, Order
 from core.timezones import business_date_for, zone_for
 
 # The four options the screen shows (legacy RMSCardPromotionType), stored as
@@ -214,12 +215,23 @@ def decide_claim(user, claim, approve, remarks=""):
 # -- Customer card usage (apps/discount/api.py::CardUsageView) ---------------------
 
 
-class CardUsageRefused(Exception):
+class DiscountRefused(Exception):
     """code/message/status for the envelope."""
 
     def __init__(self, code, message, status):
         super().__init__(code)
         self.code, self.message, self.status = code, message, status
+
+
+def _customer_by_full_number(company, full_number):
+    """This company's customer with that full number, not blocked -- or the
+    refusal the device reads."""
+    customer = Customer.objects.filter(company=company, mobile_full=full_number).first()
+    if customer is None:
+        raise DiscountRefused("unknown_customer", "No customer found.", 404)
+    if customer.is_blocked:
+        raise DiscountRefused("customer_blocked", "The customer is blocked.", 403)
+    return customer
 
 
 def card_usage(company, full_number):
@@ -232,11 +244,7 @@ def card_usage(company, full_number):
     on a closed bill. Redemptions before a discount's From Date are its
     predecessor's business, not this one's.
     """
-    customer = Customer.objects.filter(company=company, mobile_full=full_number).first()
-    if customer is None:
-        raise CardUsageRefused("unknown_customer", "No customer found.", 404)
-    if customer.is_blocked:
-        raise CardUsageRefused("customer_blocked", "The customer is blocked.", 403)
+    customer = _customer_by_full_number(company, full_number)
 
     zone = zone_for(company)
     today = business_date_for(company)
@@ -269,3 +277,71 @@ def card_usage(company, full_number):
         times = [moment.astimezone(zone) for moment in redeemed[discount.pk] if moment >= start]
         rows.append((discount, times))
     return customer, rows
+
+
+# -- Approval request (apps/discount/api.py::ApprovalRequestView) ------------------
+
+
+def request_approval(session, values):
+    """A pending claim for an approval-mode card discount on one order.
+    Returns (claim, created): created is False when this sync_id was already
+    stored, and the claim carries its current status.
+
+    The bill figures are the device's, stored as sent. The only rule beyond
+    the lookups: one pending request per order at a time.
+    """
+    company = session.branch.company
+    sync_id = values["sync_id"]
+    existing = CardDiscountClaim.objects.filter(pk=sync_id).first()
+    if existing is not None:
+        if existing.company_id != company.pk:
+            raise DiscountRefused("sync_id_conflict", "That sync_id is already used.", 409)
+        return existing, False
+
+    order = Order.objects.filter(pk=values["order_id"], company=company).first()
+    if order is None:
+        raise DiscountRefused("unknown_order", "No order with that id.", 404)
+    if order.customer_id is None:
+        raise DiscountRefused("order_has_no_customer", "This order has no customer.", 400)
+    customer = _customer_by_full_number(company, values["full_number"])
+    discount = (CardDiscount.objects.select_related("card_grade__card_type")
+                .filter(pk=values["card_discount_id"], company=company).first())
+    if discount is None:
+        raise DiscountRefused("unknown_card_discount", "No card discount with that id.", 404)
+    if not discount.requires_approval:
+        raise DiscountRefused("approval_not_needed", "This card discount needs no approval.", 400)
+    if CardDiscountClaim.objects.filter(order=order, status=ClaimStatus.PENDING).exists():
+        raise DiscountRefused("request_pending", "This order already has a pending approval request.", 409)
+
+    claim = CardDiscountClaim(
+        id=sync_id, company=company, card_discount=discount,
+        card_type=discount.card_grade.card_type, card_grade=discount.card_grade,
+        fare_basis=discount.fare_basis, requires_approval=True,
+        customer=customer, customer_name=customer.full_name, mobile_full=customer.mobile_full,
+        card_number=values.get("card_number") or "", card_photo=values.get("card_photo") or "",
+        order=order, bill_amount=values["bill_amount"], discount_percent=values["discount_percent"],
+        discount_amount=values["discount_amount"], net_amount=values["net_amount"],
+        branch=session.branch, requested_by=session.user,
+        rms_installation_id=session.device.installation_id if session.device_id else "",
+        status=ClaimStatus.PENDING, requested_at=values["requested_at"],
+        created_by=session.user, modified_by=session.user,
+    )
+    try:
+        with transaction.atomic():
+            claim.save(force_insert=True)
+    except IntegrityError:
+        # Lost a race: the same sync_id, or another pending request for this order.
+        raced = CardDiscountClaim.objects.filter(pk=sync_id).first()
+        if raced is not None:
+            return raced, False
+        raise DiscountRefused("request_pending", "This order already has a pending approval request.", 409) \
+            from None
+    return claim, True
+
+
+def cancel_pending_for_order(order, now=None):
+    """The order was billed while its approval request was still pending: the
+    request is cancelled. For the order-close / billing API (not built yet)."""
+    return CardDiscountClaim.objects.filter(order=order, status=ClaimStatus.PENDING).update(
+        status=ClaimStatus.CANCELLED, decided_at=now or timezone.now(), modified_on=timezone.now(),
+    )

@@ -79,7 +79,7 @@
             <td><div class="scr-co-name">{{ r.customer }}</div><div class="scr-co-city">{{ r.phone }}</div></td>
             <td><div class="scr-contact">{{ r.card_type }} · {{ r.grade }}</div>{% if r.card_number %}<div class="scr-contact-sub">{{ r.card_number }}</div>{% endif %}</td>
             <td class="scr-state">{{ r.percent }} · {{ r.fare_basis }}</td>
-            <td class="scr-state">{{ r.order_ref|default:"—" }}{% if r.bill_amount is not None %}<div class="scr-contact-sub">{{ r.bill_amount }}</div>{% endif %}</td>
+            <td class="scr-state">{{ r.order_no }}{% if r.bill_amount is not None %}<div class="scr-contact-sub">{{ r.bill_amount }}</div>{% endif %}</td>
             <td class="scr-state">{{ r.branch|default:"—" }}</td>
             <td class="scr-state">{{ r.requested_by|default:"—" }}</td>
           </tr>

@@ -248,7 +248,12 @@ APPROVAL_TABS = [
     (ClaimStatus.PENDING, "Pending"),
     (ClaimStatus.APPROVED, "Approved"),
     (ClaimStatus.REJECTED, "Rejected"),
+    (ClaimStatus.CANCELLED, "Cancelled"),
 ]
+
+
+def _order_no(order):
+    return order.order_no or str(order.pk)
 
 
 def _claim_row(claim, zone):
@@ -260,7 +265,14 @@ def _claim_row(claim, zone):
         "fare_basis": claim.get_fare_basis_display(), "branch": claim.branch.name if claim.branch_id else "",
         "requested_by": claim.requested_by.display_name if claim.requested_by_id else "",
         "requested_at": requested, "status": claim.status, "status_label": claim.get_status_display(),
-        "order_ref": claim.order_ref, "bill_amount": claim.bill_amount,
+        "order_no": _order_no(claim.order),
+        "order_start": claim.order.start_time.astimezone(zone),
+        "order_vehicles": claim.order.number_of_vehicles,
+        "order_total": claim.order.total_amount, "order_net": claim.order.net_amount,
+        "order_status": claim.order.get_status_display(),
+        "bill_amount": claim.bill_amount, "discount_amount": claim.discount_amount,
+        "net_amount": claim.net_amount,
+        "photo": claim.card_photo, "photo_is_image": claim.card_photo.startswith(("http://", "https://")),
         "decided_at": claim.decided_at.astimezone(zone) if claim.decided_at else None,
         "decided_by": claim.decided_by.display_name if claim.decided_by_id else "",
         "remarks": claim.remarks,
@@ -277,7 +289,7 @@ class ApprovalListView(DiscountScreenView):
         context = super().get_context_data(**kwargs)
         zone = zone_for(getattr(self.request.user, "company", None))
         claims = (scoping.claims_for(self.request.user).filter(requires_approval=True)
-                  .select_related("card_type", "card_grade", "branch", "requested_by", "decided_by"))
+                  .select_related("card_type", "card_grade", "branch", "requested_by", "decided_by", "order"))
         tab = self.request.GET.get("tab", ClaimStatus.PENDING)
         if tab not in dict(APPROVAL_TABS):
             tab = ClaimStatus.PENDING
@@ -299,7 +311,7 @@ class ApprovalDetailView(DiscountScreenView):
         context = super().get_context_data(**kwargs)
         user = self.request.user
         zone = zone_for(getattr(user, "company", None))
-        related = ("card_type", "card_grade", "branch", "requested_by", "decided_by")
+        related = ("card_type", "card_grade", "branch", "requested_by", "decided_by", "order")
         claim = scoping.claims_for(user).select_related(*related).filter(pk=self.kwargs["pk"]).first()
         if claim is None:
             raise Http404("No such request.")
@@ -337,11 +349,11 @@ def _redemptions(request):
     params = request.GET
     zone = zone_for(getattr(request.user, "company", None))
     claims = (scoping.claims_for(request.user).filter(status=ClaimStatus.REDEEMED)
-              .select_related("card_type", "card_grade", "branch", "requested_by", "decided_by"))
+              .select_related("card_type", "card_grade", "branch", "requested_by", "decided_by", "order"))
     text = params.get("q", "").strip()
     if text:
         claims = claims.filter(Q(customer_name__icontains=text) | Q(mobile_full__icontains=text)
-                               | Q(card_number__icontains=text) | Q(order_ref__icontains=text))
+                               | Q(card_number__icontains=text) | Q(order__order_no__icontains=text))
     if params.get("type", "").isdigit():
         claims = claims.filter(card_type_id=int(params["type"]))
     if params.get("branch", "").isdigit():
@@ -402,7 +414,7 @@ class RedemptionExport(DiscountScreenView):
                 yield writer.writerow([
                     c.redeemed_at.astimezone(zone).strftime("%Y-%m-%d %H:%M"), c.customer_name, c.mobile_full,
                     c.card_type.name, c.card_grade.name, c.card_number, c.discount_percent,
-                    c.get_fare_basis_display(), c.order_ref, c.bill_amount if c.bill_amount is not None else "",
+                    c.get_fare_basis_display(), _order_no(c.order), c.bill_amount if c.bill_amount is not None else "",
                     c.branch.name if c.branch_id else "",
                     c.requested_by.display_name if c.requested_by_id else "",
                     c.decided_by.display_name if c.decided_by_id else "",
