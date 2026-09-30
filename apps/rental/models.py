@@ -23,6 +23,7 @@ the same gap crew.EmployeeBlockLog fills for staff.
 
 from django.db import models
 
+from core.ids import uuid7
 from core.models import ApprovalMixin, TimeStampedModel
 
 
@@ -120,13 +121,16 @@ class Customer(ApprovalMixin, TimeStampedModel):
 # check was a workaround for having no better idempotency key; sync_id
 # replaces the need for it, see design discussion).
 #
-# Deliberately not modelled yet, on separate migrations once Order exists to
+# Money: legacy's live rental data (DMSOrder.DepositAmount) has no separate
+# "advance" concept -- SfaOrder.AdvanceAmount exists only on the dead 0-row
+# SFA/FMCG family. The device API's advance is simply an early rental
+# payment, not a refundable security hold: Order.advance_amount is what was
+# asked for at booking (a snapshot of intent), and every payment -- whether
+# collected as the advance or later -- counts toward the same paid_amount
+# against net_amount. See Payment/PaymentKind below.
+#
+# Deliberately not modelled yet, on a separate migration once Order exists to
 # FK against:
-#   - Payment            legacy DMSPayment / DMSOrderPaymentRequest had two
-#                         divergent paths to "amount collected"; paid_amount
-#                         here is a placeholder cache, meant to become a
-#                         derived aggregate once Payment exists, never
-#                         hand-set by an API request.
 #   - CreditNoteRequest   legacy DMSCreditNoteRequest hard-deletes a rejected
 #                         request (after copying it to a history table) --
 #                         modelled as its own child table with a status field
@@ -136,6 +140,9 @@ class Customer(ApprovalMixin, TimeStampedModel):
 #     expiry subsystem (DMSCard, DMSCardPhone, RMSCardDiscount, the generic
 #     DMSRequests table), not a flat discount field. Not traced enough to
 #     model yet -- a real gap, not silently dropped.
+#   - Offer pricing/precedence -- OrderItem.offer below links to the scheme
+#     used, but apps.fare.pricing has no offer support yet; the FK is a
+#     placeholder for when it does.
 
 
 class OrderStatus(models.TextChoices):
@@ -159,9 +166,20 @@ class Order(TimeStampedModel):
     branch = models.ForeignKey("company.Branch", on_delete=models.PROTECT, related_name="orders")
     device = models.ForeignKey("devices.Device", on_delete=models.PROTECT, related_name="orders")
     customer = models.ForeignKey(Customer, null=True, blank=True, on_delete=models.PROTECT, related_name="orders")
+    # What the customer looked like at booking time, beside the FK -- same
+    # reasoning as Attendance.employee_code/employee_name: the customer's
+    # own record can change (name corrected, re-blocked) after the fact, and
+    # this is what was true when the order was placed.
+    customer_name = models.CharField(max_length=200, blank=True)
+    customer_mobile = models.CharField(max_length=20, blank=True)
 
     # Whatever the device sends -- not validated or enforced unique here.
     order_no = models.CharField(max_length=30, blank=True)
+    # Server-assigned, kept for later use -- not generated yet (see design
+    # discussion: distinct from order_no, the payload's InvoiceNumber implies
+    # a real persisted invoice identity this system doesn't derive live the
+    # way legacy's RMS_PRINT_INVOICE does).
+    invoice_no = models.CharField(max_length=30, blank=True)
 
     status = models.CharField(max_length=20, choices=OrderStatus.choices, default=OrderStatus.ACTIVE)
 
@@ -176,14 +194,19 @@ class Order(TimeStampedModel):
     tax_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     rounded_diff = models.DecimalField(max_digits=6, decimal_places=2, default=0)
     net_amount = models.DecimalField(max_digits=12, decimal_places=2)
-    deposit_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    # What was asked for at booking -- a snapshot of intent, not a running
+    # balance. Renamed from deposit_amount: legacy's live rental data has no
+    # separate refundable-security concept (see the module docstring above),
+    # so this is just the advance portion of the rental payment.
+    advance_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     payment_mode = models.ForeignKey("company.PaymentMode", on_delete=models.PROTECT, related_name="orders")
     is_direct_bill = models.BooleanField(default=False)
 
-    # Cache, not the source of truth -- set to the sum of this order's
-    # payments once the Payment model lands. Left plain (not a derived
-    # property) so it stays cheap to query/list without a join, the same
-    # trade Vehicle.identifier and Device.device_registration_id make.
+    # Cache, not the source of truth -- sum of this order's ADVANCE and
+    # RENTAL payments, less any REFUND (Payment/PaymentKind below). Left
+    # plain (not a derived property) so it stays cheap to query/list without
+    # a join, the same trade Vehicle.identifier and
+    # Device.device_registration_id make.
     paid_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
 
     is_hotel_order = models.BooleanField(default=False)
@@ -220,6 +243,10 @@ class OrderItem(models.Model):
     status = models.CharField(max_length=20, choices=OrderItemStatus.choices, default=OrderItemStatus.ACTIVE)
 
     start_time = models.DateTimeField()
+    # Scheduled, sent by the device at creation (start_time + package) --
+    # distinct from end_time, which is the actual return time, filled later.
+    # Lets the app flag an overdue rental before anyone touches this row.
+    expected_end_time = models.DateTimeField()
     end_time = models.DateTimeField(null=True, blank=True)
 
     # Traceability only -- the numbers below are the snapshot that actually
@@ -228,6 +255,10 @@ class OrderItem(models.Model):
     # but the column allows for a future on_delete change without a data
     # migration).
     fare = models.ForeignKey("fare.Fare", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    # Placeholder link only -- apps.fare.pricing has no offer/scheme support
+    # yet, so nothing here reads or applies this FK. Kept so the device's
+    # SchemeID has somewhere to land without inventing pricing logic early.
+    offer = models.ForeignKey("fare.Offer", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
     package_minutes = models.PositiveSmallIntegerField()
 
     rate = models.DecimalField(max_digits=10, decimal_places=2)
@@ -254,6 +285,10 @@ class OrderItem(models.Model):
                 name="order_item_end_after_start",
             ),
             models.CheckConstraint(
+                condition=models.Q(expected_end_time__gte=models.F("start_time")),
+                name="order_item_expected_end_after_start",
+            ),
+            models.CheckConstraint(
                 condition=models.Q(rate__gte=0, amount__gte=0, total_amount__gte=0),
                 name="order_item_amounts_not_negative",
             ),
@@ -270,3 +305,64 @@ class OrderItem(models.Model):
 
     def __str__(self):
         return f"{self.vehicle} on {self.order}"
+
+
+# --- Payment ---------------------------------------------------------------------
+#
+# One kind, one running total: an advance collected at booking and a rental
+# payment collected later both count toward the same Order.paid_amount --
+# legacy's DepositAmount/AdvanceAmount split doesn't survive in the live
+# rental data (see the Order docstring above), so there is no separate
+# refundable-hold balance to track. REFUND exists for the one real "money
+# goes back out" case: the advance collected turns out to be more than the
+# final bill.
+#
+# mode is a real FK to company.PaymentMode, not a second hardcoded enum --
+# legacy split "how it was paid" across DMSPayment.PaymentModeID and
+# DMSOrder.PaymentModeID with no shared master underneath either, which is
+# exactly the kind of two-sources-of-truth bug this avoids.
+
+
+class PaymentKind(models.TextChoices):
+    ADVANCE = "advance", "Advance"
+    RENTAL = "rental", "Rental"
+    REFUND = "refund", "Refund"
+
+
+class Payment(TimeStampedModel):
+    # Server-generated (unlike Order/OrderItem's device-sent sync_id): a
+    # Payment row is always created as a byproduct of another already-
+    # idempotent operation (order creation, keyed on Order.id), so it has no
+    # need yet for its own client-supplied identity.
+    id = models.UUIDField(primary_key=True, default=uuid7, editable=False)
+
+    order = models.ForeignKey(Order, on_delete=models.PROTECT, related_name="payments")
+    kind = models.CharField(max_length=10, choices=PaymentKind.choices)
+    mode = models.ForeignKey("company.PaymentMode", on_delete=models.PROTECT, related_name="payments")
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+
+    # Cheque no / card reference / gateway ref, one pair for all of them --
+    # legacy kept ChequeNo/ChequeDate and CardNumber/CardDate as separate
+    # columns on DMSPayment for what is structurally the same fact.
+    reference_no = models.CharField(max_length=50, blank=True)
+    reference_date = models.DateTimeField(null=True, blank=True)
+
+    device = models.ForeignKey(
+        "devices.Device", null=True, blank=True, on_delete=models.PROTECT, related_name="payments",
+    )
+    collected_by = models.ForeignKey(
+        "core.User", null=True, blank=True, on_delete=models.PROTECT, related_name="+",
+    )
+    collected_at = models.DateTimeField()
+    remarks = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "payment"
+        ordering = ["-collected_at"]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(amount__gt=0), name="payment_amount_positive"),
+        ]
+        indexes = [models.Index(fields=["order"])]
+
+    def __str__(self):
+        return f"{self.get_kind_display()} {self.amount} on {self.order}"

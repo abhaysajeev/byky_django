@@ -15,12 +15,26 @@ import zoneinfo
 
 from django.utils import timezone
 
-from apps.company.models import UAE_WEEK, BranchWorkingTime, WeekDay
+from apps.company.models import UAE_WEEK, BranchWorkingTime, PaymentMode, WeekDay
+from core.enums import ApprovalStatus
 
 OPEN, CLOSED, NOT_SET = "open", "closed", "not_set"
 
 MAX_SHIFTS = 4
 SHIFTS = range(1, MAX_SHIFTS + 1)
+
+
+def device_payment_modes(company):
+    """This company's active, approved payment modes, for the operator app's
+    checkout screen. Legacy SfaPaymentMode: only 2 of its 5 rows are
+    IsActive -- Cash On Delivery, Cheque and Creditor exist switched off, not
+    deleted (apps/company/models.py::PaymentMode)."""
+    return list(
+        PaymentMode.objects
+        .filter(company=company, is_active=True, approval_status=ApprovalStatus.APPROVED)
+        .order_by("name")
+        .values("id", "name")
+    )
 
 
 def local_now(company, at=None):
