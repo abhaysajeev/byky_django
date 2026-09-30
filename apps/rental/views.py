@@ -85,6 +85,7 @@ class CustomerListView(RentalScreenView):
             "id_no": customer.id_no,
             "mobile_country_code": customer.mobile_country_code,
             "mobile_no": customer.mobile_no,
+            "mobile_full": customer.mobile_full,
             "email": customer.email,
             "address": customer.address,
             "remarks": customer.remarks,

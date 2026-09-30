@@ -52,6 +52,10 @@ CUSTOMER = {
                     "required": True, "placeholder": "+971", "width": 4,
                 },
                 {"id": "mobile_no", "label": "Phone No", "kind": "text", "required": True, "width": 8},
+                # Shown, never typed: the model builds it from the two fields
+                # above, and byky-customer.js previews it as they are typed.
+                {"id": "mobile_full", "label": "Full Number", "kind": "text", "required": False, "readonly": True,
+                 "placeholder": "Country code and number, digits only"},
                 {"id": "email", "label": "Email", "kind": "text", "required": False},
                 {"id": "remarks", "label": "Remarks", "kind": "textarea", "required": False},
                 {"id": "address", "label": "Address", "kind": "textarea", "required": False, "width": 12},
