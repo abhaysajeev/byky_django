@@ -7,4 +7,5 @@ from apps.discount import api
 
 urlpatterns = [
     path("card-discounts", api.CardDiscountsView.as_view(), name="api-app-card-discounts"),
+    path("card-discounts/usage", api.CardUsageView.as_view(), name="api-app-card-usage"),
 ]

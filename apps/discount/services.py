@@ -3,6 +3,7 @@
 save_card_discount() -- the Card Discount page's one post: the discount and
 its day rows, checked together and written in one transaction.
 decide_claim() -- an approver's Approve / Reject on a pending claim.
+card_usage() -- a customer's redemptions of the discounts usable today (device API).
 """
 
 import datetime
@@ -15,12 +16,15 @@ from apps.company.models import WeekDay
 from apps.company.scoping import companies_for
 from apps.discount.models import (
     CardDiscount,
+    CardDiscountClaim,
     CardDiscountDay,
     ClaimStatus,
     FareBasis,
     UsageType,
 )
 from apps.discount.scoping import card_discounts_for, card_grades_for
+from apps.rental.models import Customer
+from core.timezones import business_date_for, zone_for
 
 # The four options the screen shows (legacy RMSCardPromotionType), stored as
 # two fields: (value, label, requires_approval, fare_basis).
@@ -205,3 +209,63 @@ def decide_claim(user, claim, approve, remarks=""):
         claim.modified_by = user
         claim.save(update_fields=["status", "decided_at", "decided_by", "remarks", "modified_by", "modified_on"])
     return claim
+
+
+# -- Customer card usage (apps/discount/api.py::CardUsageView) ---------------------
+
+
+class CardUsageRefused(Exception):
+    """code/message/status for the envelope."""
+
+    def __init__(self, code, message, status):
+        super().__init__(code)
+        self.code, self.message, self.status = code, message, status
+
+
+def card_usage(company, full_number):
+    """(customer, rows) -- one row per discount that can be used today, with the
+    customer's redemptions of it as they are: the device applies the usage
+    window (day, last 7 days, month, period), so nothing is counted here beyond
+    a total.
+
+    Only redeemed claims count -- approved where approval is needed, and applied
+    on a closed bill. Redemptions before a discount's From Date are its
+    predecessor's business, not this one's.
+    """
+    customer = Customer.objects.filter(company=company, mobile_full=full_number).first()
+    if customer is None:
+        raise CardUsageRefused("unknown_customer", "No customer found.", 404)
+    if customer.is_blocked:
+        raise CardUsageRefused("customer_blocked", "The customer is blocked.", 403)
+
+    zone = zone_for(company)
+    today = business_date_for(company)
+    discounts = list(
+        CardDiscount.objects
+        .filter(company=company, is_active=True, valid_from__lte=today, valid_to__gte=today,
+                card_grade__is_active=True, card_grade__card_type__is_active=True)
+        .select_related("card_grade__card_type")
+        .order_by("card_grade__card_type__name", "card_grade__name", "pk")
+    )
+
+    def day_start(day):
+        return datetime.datetime.combine(day, datetime.time.min, tzinfo=zone)
+
+    redeemed = {discount.pk: [] for discount in discounts}
+    if discounts:
+        claims = (
+            CardDiscountClaim.objects
+            .filter(customer=customer, status=ClaimStatus.REDEEMED, card_discount_id__in=list(redeemed),
+                    redeemed_at__gte=day_start(min(d.valid_from for d in discounts)))
+            .order_by("redeemed_at")
+            .values_list("card_discount_id", "redeemed_at")
+        )
+        for discount_id, redeemed_at in claims:
+            redeemed[discount_id].append(redeemed_at)
+
+    rows = []
+    for discount in discounts:
+        start = day_start(discount.valid_from)
+        times = [moment.astimezone(zone) for moment in redeemed[discount.pk] if moment >= start]
+        rows.append((discount, times))
+    return customer, rows

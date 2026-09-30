@@ -2,6 +2,9 @@
 Reuses the fares API's world: operator OPR001 on till-1, mapped to ADC1."""
 
 import datetime
+import zoneinfo
+
+import pytest
 
 from apps.discount import api
 from apps.discount.models import (
@@ -9,10 +12,14 @@ from apps.discount.models import (
     CardDiscountDay,
     CardGrade,
     CardType,
+    ClaimStatus,
     FareBasis,
     UsageType,
 )
+from apps.discount.tests.conftest import make_claim
 from apps.fare.tests import test_api as fare_api
+from apps.rental.models import Customer
+from core.timezones import business_date_for
 
 # The signed-in till from the fare API tests, reused as fixtures here.
 call, shape = fare_api.call, fare_api.shape
@@ -120,3 +127,115 @@ def test_an_inactive_station_is_refused(client, world, token):
 def test_the_endpoint_is_in_the_docs(client, world):
     schema = client.get("/api/schema/").content.decode()
     assert "/api/v1/{app}/card-discounts" in schema and "Operator Discount Cards" in schema
+
+
+# -- POST /card-discounts/usage ------------------------------------------------------
+
+USAGE = "/api/v1/operator/card-discounts/usage"
+DUBAI = zoneinfo.ZoneInfo("Asia/Dubai")
+
+
+def at(day, hh, mm=0):
+    """A company-local moment."""
+    return datetime.datetime.combine(day, datetime.time(hh, mm), tzinfo=DUBAI)
+
+
+def ago(today, days):
+    return today - datetime.timedelta(days=days)
+
+
+@pytest.fixture
+def usage_world(world):
+    company = world["company"]
+    today = business_date_for(company)
+    corp = CardType.objects.create(company=company, code="CORP", name="Corporate")
+    gold = CardGrade.objects.create(company=company, card_type=corp, code="GOLD", name="Gold")
+    silver = CardGrade.objects.create(company=company, card_type=corp, code="SILV", name="Silver")
+    retired = CardGrade.objects.create(company=company, card_type=corp, code="OLD", name="Old", is_active=False)
+    week = {day: "15" for day in range(7)}
+    current = discount(gold, ago(today, 30), ago(today, -30), week)
+    once = discount(silver, ago(today, 5), ago(today, -5), week, usage=UsageType.ONE_TIME, limit=None, approval=False)
+    # Not listed: one not valid today, one under an inactive grade, an inactive one.
+    discount(silver, ago(today, 90), ago(today, 60), week)
+    discount(retired, ago(today, 5), ago(today, -5), week)
+    discount(gold, ago(today, -40), ago(today, -60), week, active=False)
+    customer = Customer.objects.create(company=company, customer_code="CU001", first_name="Ahmed", last_name="Ali",
+                                       mobile_country_code="+971", mobile_no="501234567")
+    return {"today": today, "current": current, "once": once, "customer": customer}
+
+
+def usage(client, token, full_number="971501234567"):
+    return call(client, USAGE, {"full_number": full_number}, token=token)
+
+
+def stamp(moment):
+    return moment.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def test_usage_counts_only_redeemed_claims_since_the_discounts_start(client, world, token, usage_world):
+    today, current, customer = usage_world["today"], usage_world["current"], usage_world["customer"]
+    make_claim(current, customer, status=ClaimStatus.REDEEMED, when=at(ago(today, 2), 18, 30))
+    make_claim(current, customer, status=ClaimStatus.REDEEMED, when=at(ago(today, 9), 10, 4))
+    make_claim(current, customer, status=ClaimStatus.REDEEMED, when=at(ago(today, 40), 9))   # before valid_from
+    for status in (ClaimStatus.PENDING, ClaimStatus.APPROVED, ClaimStatus.REJECTED):         # never counted
+        make_claim(current, customer, status=status, when=at(today, 0, 5))
+    stranger = Customer.objects.create(company=world["company"], customer_code="CU002", first_name="Other",
+                                       mobile_country_code="+971", mobile_no="509999999")
+    make_claim(current, stranger, status=ClaimStatus.REDEEMED, when=at(today, 0, 5))
+
+    body = usage(client, token).json()
+    assert body["code"] == "ok" and body["message"] == "Card usage."
+    data = body["data"]
+    assert data["customer"] == {"customer_id": customer.pk, "customer_code": "CU001", "name": "Ahmed Ali"}
+    assert [(g["card_type_name"], g["card_grade_name"]) for g in data["grades"]] == [
+        ("Corporate", "Gold"), ("Corporate", "Silver")]
+
+    gold, silver = data["grades"]
+    assert gold["card_discount_id"] == current.pk and gold["card_grade_id"] == current.card_grade_id
+    assert gold["usage_type"] == "per_week" and gold["usage_limit"] == 2
+    assert gold["used"] == 2
+    assert gold["redemptions"] == [stamp(at(ago(today, 9), 10, 4)), stamp(at(ago(today, 2), 18, 30))]
+    assert silver["usage_type"] == "one_time" and silver["usage_limit"] is None
+    assert silver["used"] == 0 and silver["redemptions"] == []
+    assert shape(data) == shape(api._CARD_USAGE_SAMPLE)
+
+
+def test_an_unknown_number_is_no_customer(client, world, token, usage_world):
+    response = usage(client, token, "971500000000")
+    assert response.status_code == 404
+    assert response.json()["code"] == "unknown_customer"
+    assert response.json()["message"] == "No customer found."
+
+
+def test_another_companys_customer_is_no_customer(client, world, token, usage_world):
+    Customer.objects.create(company=world["other"], customer_code="CU001", first_name="Theirs",
+                            mobile_country_code="+971", mobile_no="508888888")
+    assert usage(client, token, "971508888888").json()["code"] == "unknown_customer"
+
+
+def test_a_blocked_customer_is_refused(client, world, token, usage_world):
+    Customer.objects.filter(pk=usage_world["customer"].pk).update(is_blocked=True)
+    response = usage(client, token)
+    assert response.status_code == 403
+    assert response.json() == {"code": "customer_blocked", "message": "The customer is blocked.", "data": {}}
+
+
+@pytest.mark.parametrize("request_data, message", [
+    ({}, "is required"),
+    ({"full_number": "+971501234567"}, "must be digits only"),
+])
+def test_the_full_number_is_checked(client, world, token, request_data, message):
+    response = call(client, USAGE, request_data, token=token)
+    assert response.status_code == 400
+    assert response.json()["data"]["errors"]["full_number"] == message
+
+
+def test_usage_is_for_the_operator_app_only(client, world, token):
+    response = call(client, "/api/v1/manager/card-discounts/usage", {"full_number": "971501234567"}, token=token)
+    assert response.status_code == 403
+    assert response.json()["code"] == "wrong_channel"
+    assert call(client, USAGE, {"full_number": "971501234567"}).status_code == 401
+
+
+def test_usage_is_in_the_docs(client, world):
+    assert "/api/v1/{app}/card-discounts/usage" in client.get("/api/schema/").content.decode()

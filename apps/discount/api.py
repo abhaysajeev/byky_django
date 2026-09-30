@@ -3,6 +3,9 @@
 POST /api/v1/{app}/card-discounts: every card type of the device's company,
 the grades under each, and each grade's discount configuration -- sent as it
 is (active or not, any validity); the device picks what applies.
+
+POST /api/v1/{app}/card-discounts/usage: a customer's (by full number)
+redemptions of each discount usable today; the device applies the window.
 """
 
 from django.db.models import Prefetch
@@ -11,8 +14,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
 from apps.company.models import WeekDay
+from apps.discount import services
 from apps.discount.models import CardDiscount, CardGrade, CardType
-from apps.discount.serializers import CardDiscountsRequest
+from apps.discount.serializers import CardDiscountsRequest, CardUsageRequest
 from apps.portal.authentication import AppJWTAuthentication
 from core.api import envelope, request_parts, session_station
 from core.enums import Channel
@@ -138,3 +142,94 @@ def _discount_json(discount):
         "usage_type": discount.usage_type, "usage_limit": discount.usage_limit,
         "days": _days((day.weekday, str(day.discount_percent)) for day in discount.days.all()),
     }
+
+
+# -- Customer card usage -----------------------------------------------------------
+
+_CARD_USAGE_SAMPLE = {
+    "customer": {"customer_id": 4021, "customer_code": "CU014", "name": "Ahmed Ali"},
+    "grades": [
+        {
+            "card_type_id": 3, "card_type_name": "Corporate", "card_grade_id": 7, "card_grade_name": "Gold",
+            "card_discount_id": 12, "usage_type": "per_week", "usage_limit": 2,
+            "used": 3, "redemptions": ["2026-09-12 11:20:05", "2026-09-27 10:04:00", "2026-09-29 18:30:12"],
+        },
+        {
+            "card_type_id": 3, "card_type_name": "Corporate", "card_grade_id": 8, "card_grade_name": "Silver",
+            "card_discount_id": 13, "usage_type": "one_time", "usage_limit": None,
+            "used": 0, "redemptions": [],
+        },
+    ],
+}
+
+_USAGE_DESCRIPTION = """
+How much a customer has used each card discount that can be used today.
+`request_data`: `full_number` -- country code then number, digits only
+(`971501234567`).
+
+One entry per discount that is active and valid today (its card type and grade
+active too), with `used` -- the customer's redemptions of it since its
+`valid_from` -- and `redemptions`, their times (`YYYY-MM-DD HH:MM:SS`, company
+time, oldest first). The device applies the usage window itself (today, last 7
+days, month, period) and compares with `usage_limit`.
+
+Only redeemed claims count: approved where approval is needed, and applied on a
+closed bill.
+"""
+
+
+class CardUsageView(APIView):
+    """POST /api/v1/{app}/card-discounts/usage -- operator app only."""
+
+    authentication_classes = [AppJWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Operator Discount Cards"],
+        summary="A customer's card discount usage",
+        description=_USAGE_DESCRIPTION,
+        request=envelope_request("CardUsageEnvelope", CardUsageRequest),
+        responses=envelope_responses(
+            (200, "ok", "Card usage.", _CARD_USAGE_SAMPLE),
+            (400, "invalid_request", "full_number must be digits only.",
+             {"errors": {"full_number": "must be digits only"}}),
+            (404, "unknown_customer", "No customer found.", {}),
+            (403, "customer_blocked", "The customer is blocked.", {}),
+            (401, "not_authenticated", "Sign in first.", {}),
+            (403, "wrong_channel", "Not allowed on this app.", {}),
+            (409, "device_not_mapped", "This device has no station.", {}),
+            (409, "branch_inactive", "This station is closed.", {}),
+            SERVER_ERROR,
+        ),
+    )
+    def post(self, request, app):
+        if app != Channel.OPERATOR:
+            return envelope("wrong_channel", "Not allowed on this app.", http_status=403)
+        branch, refused = session_station(request)
+        if refused:
+            return refused
+
+        _, request_data = request_parts(request)
+        form = CardUsageRequest(data=request_data)
+        form.is_valid(raise_exception=True)
+
+        try:
+            customer, rows = services.card_usage(branch.company, form.validated_data["full_number"])
+        except services.CardUsageRefused as refusal:
+            return envelope(refusal.code, refusal.message, http_status=refusal.status)
+
+        return envelope("ok", "Card usage.", {
+            "customer": {"customer_id": customer.pk, "customer_code": customer.customer_code,
+                         "name": customer.full_name},
+            "grades": [
+                {
+                    "card_type_id": discount.card_grade.card_type_id,
+                    "card_type_name": discount.card_grade.card_type.name,
+                    "card_grade_id": discount.card_grade_id, "card_grade_name": discount.card_grade.name,
+                    "card_discount_id": discount.pk,
+                    "usage_type": discount.usage_type, "usage_limit": discount.usage_limit,
+                    "used": len(times), "redemptions": [t.strftime("%Y-%m-%d %H:%M:%S") for t in times],
+                }
+                for discount, times in rows
+            ],
+        })
