@@ -24,6 +24,26 @@ MAX_SHIFTS = 4
 SHIFTS = range(1, MAX_SHIFTS + 1)
 
 
+def branch_details(branch):
+    """`branch`'s own details, for the operator app -- station name/address/
+    contact for the checkout screen and receipt header. Authenticated only
+    (apps/company/api.py::BranchDetailsView): the branch always comes from
+    the signed-in session, matching apps/devices/api.py::RegistrationView's
+    own rule that a branch is never revealed before login."""
+    return {
+        "id": branch.pk,
+        "code": branch.short_code,
+        "name": branch.name,
+        "branch_type": branch.branch_type,
+        "is_hotel": branch.is_hotel,
+        "accepts_app_payment": branch.accepts_app_payment,
+        "address": branch.address,
+        "latitude": branch.latitude,
+        "longitude": branch.longitude,
+        "contact_no": branch.contact_no,
+    }
+
+
 def device_payment_modes(company):
     """This company's active, approved payment modes, for the operator app's
     checkout screen. Legacy SfaPaymentMode: only 2 of its 5 rows are
