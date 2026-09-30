@@ -236,7 +236,11 @@ class Order(TimeStampedModel):
 
 
 class OrderItem(models.Model):
-    id = models.UUIDField(primary_key=True, editable=False)
+    # Server-generated, unlike Order's device-sent sync_id -- items arrive
+    # nested inside the order-create call, so the order's own id is the only
+    # identity the device needs to supply; a retry is already deduplicated at
+    # that level.
+    id = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="items")
     vehicle = models.ForeignKey("fleet.Vehicle", on_delete=models.PROTECT, related_name="order_items")
 
