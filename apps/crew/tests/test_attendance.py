@@ -334,11 +334,10 @@ def test_a_blocked_or_inactive_employee_is_refused(client, world, operator, chan
     assert response.json()["code"] == code
 
 
-def test_the_employee_app_has_no_attendance_endpoint(client, world, operator):
-    for url in (MARK.format("employee"), HISTORY.format("employee")):
-        response = call(client, url, {}, token=operator)
-        assert response.status_code == 403
-        assert response.json()["code"] == "wrong_channel"
+def test_the_employee_app_cannot_mark_attendance(client, world, operator):
+    response = call(client, MARK.format("employee"), {}, token=operator)
+    assert response.status_code == 403
+    assert response.json()["code"] == "wrong_channel"
 
 
 def test_no_token_is_refused(client, world):
@@ -404,7 +403,6 @@ def test_history_defaults_to_today(client, world, operator):
 
 
 @pytest.mark.parametrize("request_data, field", [
-    ({}, "employee_code"),
     ({"employee_code": "EMP001", "date": "2026-08-29", "from_date": "2026-08-29"}, "date"),
     ({"employee_code": "EMP001", "from_date": "2026-08-29"}, "to_date"),
     ({"employee_code": "EMP001", "from_date": "2026-08-29", "to_date": "2026-08-01"}, "to_date"),
@@ -421,10 +419,53 @@ def test_history_of_an_unknown_employee(client, world, operator):
     assert response.json()["code"] == "unknown_employee"
 
 
+# -- History for every app ---------------------------------------------------------
+
+
+@pytest.fixture
+def staff_app(client, world):
+    """EMP001 signed in on the employee app, on a phone with no station."""
+    User.objects.create_user("EMP001", PASSWORD, display_name="Anil", company=world["company"],
+                             role=world["role"], employee=world["staff"], allowed_channels=[Channel.EMPLOYEE])
+    Device.objects.create(company=world["company"], installation_id="phone-e", platform="android",
+                          channel=Channel.EMPLOYEE, status=DeviceStatus.APPROVED, approved_at=timezone.now())
+    return login(client, "employee", "EMP001", "phone-e")
+
+
+def history(client, token, app, **request_data):
+    return call(client, HISTORY.format(app), {"date": "2026-08-29", **request_data}, token=token)
+
+
+def test_the_employee_app_reads_its_own_attendance(client, world, operator, staff_app):
+    mark(client, operator, qr("punch_in", local(DAY, 9)))
+    mark(client, operator, qr("punch_out", local(DAY, 13)))
+
+    for request_data in ({}, {"employee_code": "EMP001"}):
+        body = history(client, staff_app, "employee", **request_data).json()
+        assert body["code"] == "ok", body
+        assert body["data"]["employee"]["employee_code"] == "EMP001"
+        [day] = body["data"]["days"]
+        assert day["sessions"][0]["status"] == "closed"
+
+
+def test_the_employee_app_cannot_read_a_colleague(client, world, staff_app):
+    response = history(client, staff_app, "employee", employee_code="MGR001")
+    assert response.status_code == 403
+    assert response.json() == {"code": "forbidden", "message": "You can only see your own attendance.", "data": {}}
+
+
+def test_manager_and_operator_read_their_own_by_default(client, world, operator, manager):
+    mark(client, manager, self_punch("punch_in", local(DAY, 8)), app="manager")
+    assert history(client, manager, "manager").json()["data"]["employee"]["employee_code"] == "MGR001"
+    assert history(client, operator, "operator").json()["data"]["employee"]["employee_code"] == "OPR001"
+    # ... or anyone in the company by code.
+    assert history(client, operator, "operator", employee_code="MGR001").json()["data"]["days"]
+
+
 def test_the_endpoints_are_in_the_docs(client, world):
     schema = client.get("/api/schema/").content.decode()
     assert "/api/v1/{app}/attendance/mark" in schema and "/api/v1/{app}/attendance/history" in schema
-    assert "Manager Attendance" in schema and "UUIDv7" in schema
+    assert "Manager Attendance" in schema and "Employee Attendance" in schema and "UUIDv7" in schema
 
 
 # -- Manager login ---------------------------------------------------------------------
