@@ -366,7 +366,8 @@ Customer ─┐                         ┌─ CardDiscountClaim (apps.discount,
 
 | Enum | Values |
 |---|---|
-| `OrderStatus` | `active`, `completed`, `cancelled` |
+| `OrderStatus` | `active`, `completed`, `cancelled` — the rental's life only |
+| `PaymentStatus` | `unpaid`, `partly_paid`, `paid` — computed, never set |
 | `OrderItemStatus` | `active`, `returned`, `replaced`, `cancelled` |
 | `PaymentKind` | `advance`, `balance` (money in) · `refund` (money out) |
 | `OrderAction` | `book`, `add`, `replace`, `remove`, `return`, `payment`, `settle`, `cancel_request`, `cancel_approved`, `cancel_rejected` |
@@ -402,8 +403,18 @@ Customer ─┐                         ┌─ CardDiscountClaim (apps.discount,
 | `amount_refunded` | money, default 0 | Refund entries; written only by the payment service |
 | `paid_amount` | **generated** | `amount_received − amount_refunded` |
 | `balance_due` | **generated** | `net_amount − paid_amount`; > 0 owed, 0 paid, < 0 refund owed |
+| `payment_status` | **generated** | `unpaid` if paid = 0 and net > 0 · `partly_paid` if 0 < paid < net · `paid` if paid ≥ net |
 
-Keys and indexes: unique (`company`, `order_no`); index (`branch`, `status`),
+Order status and payment status are separate, as in Shopify (`financial_status`)
+and ERPNext (status from `outstanding_amount`) — legacy mixed them
+(`OrderStatusID` 5 "Processing", `IsPaid`, `IsPaymentCompleted`). Edge cases:
+overpaid → `paid` (the negative `balance_due` shows the refund owed); a free
+order (net 0) → `paid`; a cancelled order refunded in full → `unpaid`, with
+`status = cancelled` telling the story. "Awaiting settlement" (every vehicle
+back, bill not settled) is shown on screens and in replies, derived from
+`active` + no active lines — not stored.
+
+Keys and indexes: unique (`company`, `order_no`); index (`branch`, `status`), (`payment_status`),
 (`customer`), (`device`), (`booked_at`).
 
 Removed from today's model: `payment_mode` (per payment entry now),
