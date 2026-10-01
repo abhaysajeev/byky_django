@@ -76,11 +76,11 @@ def test_a_vehicle_out_on_rent_says_so_until_it_is_back(client, world, token, uo
     order = Order.objects.create(
         id=uuid7(), company=world["company"], branch=world["adc1"],
         device=Device.objects.get(installation_id="till-1"), customer=customer, order_no="ADC0000231",
-        booked_at=start, start_time=start, total_amount=50, net_amount=50,
+        booked_at=start, start_time=start,
     )
     line = OrderItem.objects.create(
         id=uuid7(), order=order, vehicle=out, package_minutes=60, start_time=start,
-        expected_end_time=start + datetime.timedelta(hours=1), rate=50, amount=50, total_amount=50,
+        expected_end_time=start + datetime.timedelta(hours=1), base_fare=50,
     )
 
     def flags():

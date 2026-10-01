@@ -3,7 +3,6 @@ app sees them -- the booking in order_lifecycle_design.md 3.1, resent,
 conflicting and refused, and read back from another tablet."""
 
 import copy
-from decimal import Decimal
 
 import pytest
 from django.utils import timezone
@@ -79,10 +78,9 @@ def booking(world, shop, number=231, **overrides):
             {"sync_id": str(uuid7()), "vehicle_id": shop[code].pk, "fare_id": shop["fare"].pk,
              "package_minutes": 60,
              "start_time": "2026-10-02 16:00:00", "expected_end_time": "2026-10-02 17:00:00",
-             "rate": "50.00", "amount": "50.00", "tax_amount": "2.50", "total_amount": "50.00"}
+             "base_fare": "50.00"}
             for code in ("mo41", "dc02")
         ],
-        "total_amount": "100.00", "tax_percentage": "5.00", "total_tax": "5.00", "net_amount": "105.00",
         "payments": [
             {"sync_id": str(uuid7()), "kind": "advance", "payment_mode_id": shop["cash"].pk,
              "amount": "60.00", "paid_at": "2026-10-02 16:00:05"},
@@ -111,9 +109,12 @@ def test_a_booking_saves_the_order_its_vehicles_and_payments(client, world, toke
     data = body["data"]
     assert (data["sync_id"], data["order_no"], data["status"]) == (
         request_data["sync_id"], request_data["order_no"], "active")
-    assert (data["net_amount"], data["amount_received"], data["paid_amount"], data["balance_due"]) == (
-        "105.00", "100.00", "100.00", "5.00")
-    assert data["payment_status"] == PaymentStatus.PARTLY_PAID and data["items_out"] == 2
+    # No bill yet -- only the money taken.
+    assert (data["subtotal"], data["discount"], data["net_amount"], data["balance_due"]) == (None, None, None, None)
+    assert (data["amount_received"], data["paid_amount"]) == ("100.00", "100.00")
+    assert data["payment_status"] == PaymentStatus.PENDING and data["items_out"] == 2
+    assert [(item["base_fare"], item["overtime_amount"], item["total_amount"]) for item in data["items"]] == [
+        ("50.00", None, None), ("50.00", None, None)]
     assert data["customer"] == {"id": shop["ahmed"].pk, "name": "Ahmed Al Mansoori", "mobile": "971501234567"}
     assert data["booked_at"] == "2026-10-02 16:00:05"
     assert [item["sync_id"] for item in data["items"]] == [item["sync_id"] for item in request_data["items"]]
@@ -152,18 +153,18 @@ def test_the_same_sync_id_with_another_body_is_a_conflict(client, world, token, 
     call(client, BOOK, request_data, token=token)
 
     changed = copy.deepcopy(request_data)
-    changed["net_amount"] = "110.00"
+    changed["start_time"] = "2026-10-02 16:30:00"
     body = call(client, BOOK, changed, token=token).json()
 
     assert (body["code"], body["data"]) == ("sync_id_conflict", {"retry": False})
-    assert Order.objects.get().net_amount == Decimal("105.00")
+    assert Order.objects.get().start_time.minute == 0
 
 
 def test_a_booking_with_no_payment_is_unpaid(client, world, token, shop):
     body = call(client, BOOK, booking(world, shop, payments=[]), token=token).json()
 
     assert body["code"] == "ok"
-    assert (body["data"]["payment_status"], body["data"]["payments"]) == (PaymentStatus.UNPAID, [])
+    assert (body["data"]["payment_status"], body["data"]["payments"]) == (PaymentStatus.PENDING, [])
 
 
 def test_the_counter_only_moves_forward(client, world, token, shop):

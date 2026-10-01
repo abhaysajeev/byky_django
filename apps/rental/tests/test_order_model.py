@@ -18,6 +18,7 @@ from apps.rental.models import (
     OrderEvent,
     OrderItem,
     OrderItemStatus,
+    OrderStatus,
     PaymentKind,
     PaymentStatus,
 )
@@ -41,7 +42,7 @@ def make_order(world):
         values = {
             "id": uuid7(), "company": company or world["company"], "branch": world["adc1"], "device": device,
             "customer": customer, "order_no": order_no or f"C1-{uuid.uuid4().hex[:6]}",
-            "booked_at": now, "start_time": now, "total_amount": "100.00", "net_amount": "105.00",
+            "booked_at": now, "start_time": now,
         }
         values.update(fields)
         order = Order.objects.create(**values)
@@ -51,27 +52,35 @@ def make_order(world):
     return make
 
 
-@pytest.mark.parametrize(("received", "refunded", "net", "paid", "balance", "status"), [
-    ("0", "0", "105.00", "0.00", "105.00", PaymentStatus.UNPAID),
-    ("50", "0", "105.00", "50.00", "55.00", PaymentStatus.PARTLY_PAID),
-    ("105", "0", "105.00", "105.00", "0.00", PaymentStatus.PAID),
-    ("110", "5", "105.00", "105.00", "0.00", PaymentStatus.PAID),
-    ("110", "0", "105.00", "110.00", "-5.00", PaymentStatus.PAID),        # overpaid: refund owed
-    ("0", "0", "0.00", "0.00", "0.00", PaymentStatus.PAID),               # a free order
-    ("105", "105", "105.00", "0.00", "105.00", PaymentStatus.UNPAID),     # refunded in full
-], ids=["unpaid", "partly", "paid", "paid-after-refund", "overpaid", "free", "refunded"])
-def test_the_database_computes_paid_balance_and_payment_status(
-        make_order, received, refunded, net, paid, balance, status):
+def test_an_order_on_rent_has_no_bill_only_the_money_taken(make_order):
+    order = make_order(amount_received="60", amount_refunded="0")
+
+    assert (order.subtotal, order.net_amount, order.balance_due) == (None, None, None)
+    assert (order.paid_amount, order.payment_status) == (Decimal("60.00"), PaymentStatus.PENDING)
+
+
+@pytest.mark.parametrize(("received", "refunded", "net", "paid", "balance"), [
+    ("105", "0", "105.00", "105.00", "0.00"),
+    ("110", "5", "105.00", "105.00", "0.00"),           # overpaid, the difference refunded
+    ("100", "0", "105.00", "100.00", "5.00"),           # what a settle would refuse
+], ids=["paid", "refunded-difference", "short"])
+def test_once_billed_the_database_computes_the_balance(make_order, received, refunded, net, paid, balance):
     order = make_order(amount_received=received, amount_refunded=refunded, net_amount=net)
-    assert (order.paid_amount, order.balance_due, order.payment_status) == (
-        Decimal(paid), Decimal(balance), status)
+
+    assert (order.paid_amount, order.balance_due) == (Decimal(paid), Decimal(balance))
 
 
-def test_payment_status_follows_a_new_payment(make_order):
+@pytest.mark.parametrize(("status", "payment_status"), [
+    (OrderStatus.ACTIVE, PaymentStatus.PENDING),
+    (OrderStatus.COMPLETED, PaymentStatus.PAID),
+    (OrderStatus.CANCELLED, None),
+])
+def test_payment_status_follows_the_order(make_order, status, payment_status):
     order = make_order()
-    Order.objects.filter(pk=order.pk).update(amount_received=Decimal("105.00"))
+    Order.objects.filter(pk=order.pk).update(status=status)
     order.refresh_from_db()
-    assert (order.balance_due, order.payment_status) == (Decimal("0.00"), PaymentStatus.PAID)
+
+    assert order.payment_status == payment_status
 
 
 def test_the_order_number_is_unique_per_company(make_order, world):
@@ -94,12 +103,12 @@ def test_a_vehicle_is_on_one_active_line_at_a_time(make_order, world):
     def line(order, **fields):
         return OrderItem.objects.create(
             id=uuid7(), order=order, vehicle=bike, package_minutes=60, start_time=now, expected_end_time=now,
-            rate="50", amount="50", total_amount="50", **fields)
+            base_fare="50", **fields)
 
     first = line(make_order())
     with pytest.raises(IntegrityError), transaction.atomic():
         line(make_order())
-    first.status = OrderItemStatus.RETURNED
+    first.status, first.overtime_amount, first.total_amount = OrderItemStatus.RETURNED, 0, 50
     first.save()
     assert line(make_order()).created_on is not None                  # free again, and audited
 
@@ -110,7 +119,7 @@ def test_a_vehicle_is_on_one_active_line_at_a_time(make_order, world):
 def test_payment_entries_move_the_orders_totals(make_order, world):
     cash = PaymentMode.objects.create(company=world["company"], name="Cash")
     card = PaymentMode.objects.create(company=world["company"], name="Card")
-    order = make_order(net_amount="104.00")
+    order = make_order(net_amount="104.00")         # billed, to see the balance move
     tablet_time = timezone.now() - timezone.timedelta(hours=2)      # booked offline, synced later
 
     def pay(kind, mode, amount, **extra):
@@ -120,9 +129,9 @@ def test_payment_entries_move_the_orders_totals(make_order, world):
         return (order.amount_received, order.amount_refunded, order.paid_amount, order.balance_due,
                 order.payment_status)
 
-    assert pay(PaymentKind.ADVANCE, cash, "60") == (60, 0, 60, 44, PaymentStatus.PARTLY_PAID)
-    assert pay(PaymentKind.ADVANCE, card, "50", reference_no="4421") == (110, 0, 110, -6, PaymentStatus.PAID)
-    assert pay(PaymentKind.REFUND, cash, "6") == (110, 6, 104, 0, PaymentStatus.PAID)
+    assert pay(PaymentKind.ADVANCE, cash, "60") == (60, 0, 60, 44, PaymentStatus.PENDING)
+    assert pay(PaymentKind.ADVANCE, card, "50", reference_no="4421") == (110, 0, 110, -6, PaymentStatus.PENDING)
+    assert pay(PaymentKind.REFUND, cash, "6") == (110, 6, 104, 0, PaymentStatus.PENDING)
 
     entries = list(order.payments.order_by("created_on").values_list("kind", "mode__name", "amount", "paid_at"))
     assert entries == [

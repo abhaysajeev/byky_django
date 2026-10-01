@@ -98,11 +98,9 @@ class OrderItemRequest(serializers.Serializer):
     package_minutes = whole_number_field(min_value=1)
     start_time = datetime_field()
     expected_end_time = datetime_field()
-    rate = _money_field()
-    amount = _money_field()
-    discount = _money_field(required=False)
-    tax_amount = _money_field(required=False)
-    total_amount = _money_field()
+    # The package price agreed now. Everything else on the bill comes later:
+    # the line's final amount at return, the order's bill at settle.
+    base_fare = _money_field()
 
     def validate(self, values):
         if values["expected_end_time"] < values["start_time"]:
@@ -127,8 +125,8 @@ class OrderPaymentRequest(serializers.Serializer):
 
 class OrderCreateRequest(serializers.Serializer):
     """One rental booking, whole -- the order, its vehicle lines and any
-    advance payments, in one call. Device money figures are trusted as sent,
-    not recomputed (design 5, decision 4).
+    advance payments, in one call. No bill yet: each line carries its agreed
+    base fare, and the bill is made at settle (design 1 "Money").
 
     `sync_id` is the order's id and this call's, a UUIDv7 made on the tablet
     and resent unchanged on retry. The branch, device and user are never
@@ -147,19 +145,6 @@ class OrderCreateRequest(serializers.Serializer):
     is_direct_bill = serializers.BooleanField(required=False, default=False)
     is_hotel_order = serializers.BooleanField(required=False, default=False)
     hotel_commission = _money_field(required=False)
-
-    total_amount = _money_field()
-    total_discount = _money_field(required=False)
-    total_tax = _money_field(required=False)
-    tax_percentage = serializers.DecimalField(
-        max_digits=5, decimal_places=2, min_value=Decimal(0), required=False,
-        error_messages={**REQUIRED, "invalid": "must be a number", "min_value": "must be 0 or more"},
-    )
-    rounded_diff = serializers.DecimalField(
-        max_digits=6, decimal_places=2, required=False,
-        error_messages={**REQUIRED, "invalid": "must be a number"},
-    )
-    net_amount = _money_field()
 
     items = OrderItemRequest(many=True)
     payments = OrderPaymentRequest(many=True, required=False)

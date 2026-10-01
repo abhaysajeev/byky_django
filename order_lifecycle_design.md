@@ -73,6 +73,24 @@ part card.
   adds one mid-rental (e.g. an extra advance when the customer extends).
 - The invoice copies the payment breakdown by mode at settlement.
 
+**No bill before the ride ends.** Amounts are filled when they are known,
+never guessed; until then they are blank (`null`):
+
+| Amount | Filled when |
+|---|---|
+| line `package_minutes`, `base_fare` (the package price agreed) | booking |
+| line `overtime_amount`, `total_amount` (= base fare + overtime) | that vehicle is returned |
+| order `subtotal`, `discount_*`, `tax_percentage`, `tax_amount`, `rounding_adjustment`, `net_amount`; `balance_due` | settle |
+| order `amount_received`, `amount_refunded`, `paid_amount` | each payment entry, from booking on |
+
+The bill: `net_amount` = `subtotal` − `discount_amount` + `tax_amount` ±
+`rounding_adjustment`. No discount and no VAT on a line: the one discount (the
+card discount) and VAT (one rate per bill) are on the order.
+
+**Payment status** follows the order: `pending` while active, `paid` once
+settled, blank once cancelled. Settle refuses unless the bill is paid in full
+(`balance_not_settled`), so `paid` is always true.
+
 ### Invoice
 
 An invoice exists only for a **settled** order: settlement (or the one-step
@@ -85,7 +103,7 @@ cancelled order never gets one.
   cancel request. So `order_no` becomes **required and unique per company**.
 - **A frozen copy**, never edited after issue: `invoice` (number, issue time,
   company TRN, customer name and phone as at issue, station, tablet,
-  operator, gross / discount / tax / rounding / net) and `invoice_line` (one
+  operator, subtotal / discount / VAT / rounding / net) and `invoice_item` (one
   row per billed vehicle: package, start / end, amount, discount, tax).
   Replaced lines are not billed and not copied.
 - One invoice per order. A later correction is a **credit note** referencing
@@ -222,12 +240,11 @@ late; the bill settles with his approved discount card.
     "items": [
       { "sync_id": "L-1", "vehicle_id": 2041, "fare_id": 88, "package_minutes": 60,
         "start_time": "2026-10-02 16:00:00", "expected_end_time": "2026-10-02 17:00:00",
-        "rate": "50.00", "amount": "50.00", "total_amount": "50.00" },
+        "base_fare": "50.00" },
       { "sync_id": "L-2", "vehicle_id": 2007, "fare_id": 88, "package_minutes": 60,
         "start_time": "2026-10-02 16:00:00", "expected_end_time": "2026-10-02 17:00:00",
-        "rate": "50.00", "amount": "50.00", "total_amount": "50.00" }
+        "base_fare": "50.00" }
     ],
-    "total_amount": "100.00", "tax_percentage": "5.00", "total_tax": "5.00", "net_amount": "105.00",
     "payments": [
       { "sync_id": "P-1", "kind": "advance", "payment_mode_id": 1, "amount": "100.00",
         "paid_at": "2026-10-02 16:00:05" }
@@ -236,7 +253,8 @@ late; the bill settles with his approved discount card.
 }
 ```
 
-Cash and card together are two entries in `payments`, each with its own
+No bill at booking: each line carries its package and agreed `base_fare`
+only. Cash and card together are two entries in `payments`, each with its own
 `sync_id`; at booking only `advance`.
 
 Server checks (P1): customer, vehicles, fares and payment modes are this
@@ -244,22 +262,24 @@ company's; each vehicle is at this station, not in the order twice and not
 already rented; the receipt number and every id are new. Saves everything in
 one transaction with the call's history row and raises the tablet's receipt
 counter to 231. Still to come (decision 7): blocked customer, vehicle
-available, figures adding up.
+available.
 
 ```json
 { "code": "ok", "message": "Order created.",
   "data": { "sync_id": "O-1", "order_no": "DUBPP60182000231",
-            "status": "active", "payment_status": "partly_paid",
+            "status": "active", "payment_status": "pending",
             "booked_at": "2026-10-02 16:00:05", "start_time": "2026-10-02 16:00:00",
             "completed_at": null, "cancelled_at": null,
             "customer": { "id": 5512, "name": "Ahmed Al Mansoori", "mobile": "971501234567" },
-            "total_amount": "100.00", "total_tax": "5.00", "net_amount": "105.00",
+            "subtotal": null, "discount": null, "tax_percentage": null, "tax_amount": null,
+            "rounding_adjustment": null, "net_amount": null,
             "amount_received": "100.00", "amount_refunded": "0.00",
-            "paid_amount": "100.00", "balance_due": "5.00", "items_out": 2,
+            "paid_amount": "100.00", "balance_due": null, "items_out": 2,
             "items": [ { "sync_id": "L-1", "status": "active",
                          "vehicle": { "id": 2041, "name": "MO 41", "identifier": "VB1241" },
                          "start_time": "2026-10-02 16:00:00", "expected_end_time": "2026-10-02 17:00:00",
-                         "end_time": null, "total_amount": "50.00", "replaced_item_id": null, "...": "..." },
+                         "end_time": null, "base_fare": "50.00", "overtime_amount": null,
+                         "total_amount": null, "replaced_item_id": null, "...": "..." },
                        { "sync_id": "L-2", "...": "DC 02, the same fields" } ],
             "payments": [ { "sync_id": "P-1", "kind": "advance",
                             "payment_mode": { "id": 1, "name": "Cash" }, "amount": "100.00",
@@ -289,7 +309,7 @@ settlement.
     "reason": "Chain broken",
     "new_item": { "sync_id": "L-3", "vehicle_id": 2042, "fare_id": 88, "package_minutes": 60,
                   "start_time": "2026-10-02 16:20:00", "expected_end_time": "2026-10-02 17:00:00",
-                  "rate": "50.00", "amount": "50.00", "total_amount": "50.00" } } }
+                  "base_fare": "50.00" } } }
 ```
 
 ```json
@@ -361,8 +381,8 @@ balance        4.00   → collected now by card
 ```json
 { "request_data": {
     "sync_id": "S-1", "order_id": "O-1", "settled_at": "2026-10-02 17:13:30",
-    "total_amount": "110.00", "card_discount_amount": "11.00", "total_tax": "4.95",
-    "rounded_diff": "0.05", "net_amount": "104.00",
+    "subtotal": "110.00", "card_discount": { "claim_id": "C-1", "amount": "11.00" },
+    "tax_percentage": "5.00", "tax_amount": "4.95", "rounding_adjustment": "0.05", "net_amount": "104.00",
     "payments": [ { "sync_id": "P-2", "kind": "settlement", "payment_mode_id": 2, "amount": "4.00",
                     "reference_no": "4421", "paid_at": "2026-10-02 17:13:30" } ] } }
 ```
@@ -425,7 +445,7 @@ Customer ─┐                         ┌─ CardDiscountClaim (apps.discount,
           │  ├──< Payment >── PaymentMode
           │  ├──< OrderEvent
           │  ├──< CancelRequest
-          │  └──── Invoice ──< InvoiceLine
+          │  └──── Invoice ──< InvoiceItem
 ```
 
 ### 4.1 Enums
@@ -433,7 +453,7 @@ Customer ─┐                         ┌─ CardDiscountClaim (apps.discount,
 | Enum | Values |
 |---|---|
 | `OrderStatus` | `active`, `completed`, `cancelled` — the rental's life only |
-| `PaymentStatus` | `unpaid`, `partly_paid`, `paid` — computed, never set |
+| `PaymentStatus` | `pending` (active), `paid` (completed); blank when cancelled — computed from `status`, never set |
 | `OrderItemStatus` | `active`, `returned`, `replaced`, `cancelled` |
 | `PaymentKind` | `advance`, `settlement` (money in) · `refund` (money out) |
 | `OrderAction` | `book`, `add`, `replace`, `remove`, `return`, `payment`, `settle`, `cancel_request`, `cancel_approved`, `cancel_rejected` |
@@ -458,27 +478,27 @@ Customer ─┐                         ┌─ CardDiscountClaim (apps.discount,
 | `start_time` | datetime | rental start |
 | `completed_at` | datetime, null | tablet time of settlement (the settle call's `settled_at`) |
 | `cancelled_at` | datetime, null | when the cancel was approved |
-| `total_amount` | money | gross: sum of billed lines |
-| `total_discount` | money | other discounts |
-| `card_discount_amount` | money | from the redeemed card-discount claim |
-| `tax_percentage` | decimal(5, 2) | |
-| `total_tax` | money | |
-| `rounded_diff` | decimal(6, 2) | may be negative |
-| `net_amount` | money | the bill |
+| `subtotal` | money, null | **the bill, null until settle:** sum of billed line totals |
+| `discount_claim` | one-to-one CardDiscountClaim, null | the card-discount claim applied |
+| `discount_percentage` | decimal(5, 2), null | % applied, copied from the claim |
+| `discount_amount` | money, null | taken off the bill |
+| `tax_percentage` | decimal(5, 2), null | VAT % |
+| `tax_amount` | money, null | VAT on `subtotal − discount_amount` |
+| `rounding_adjustment` | decimal(6, 2), null | ± |
+| `net_amount` | money, null | what the customer pays |
 | `amount_received` | money, default 0 | Advance + Settlement entries; written only by the payment service |
 | `amount_refunded` | money, default 0 | Refund entries; written only by the payment service |
 | `paid_amount` | **generated** | `amount_received − amount_refunded` |
-| `balance_due` | **generated** | `net_amount − paid_amount`; > 0 owed, 0 paid, < 0 refund owed |
-| `payment_status` | **generated** | `unpaid` if paid = 0 and net > 0 · `partly_paid` if 0 < paid < net · `paid` if paid ≥ net |
+| `balance_due` | **generated** | `net_amount − paid_amount`; null until settle, then 0 |
+| `payment_status` | **generated** | from `status`: active → `pending`, completed → `paid`, cancelled → null |
 
-Order status and payment status are separate, as in Shopify (`financial_status`)
-and ERPNext (status from `outstanding_amount`) — legacy mixed them
-(`OrderStatusID` 5 "Processing", `IsPaid`, `IsPaymentCompleted`). Edge cases:
-overpaid → `paid` (the negative `balance_due` shows the refund owed); a free
-order (net 0) → `paid`; a cancelled order refunded in full → `unpaid`, with
-`status = cancelled` telling the story. "Awaiting settlement" (every vehicle
-back, bill not settled) is shown on screens and in replies, derived from
-`active` + no active lines — not stored.
+Field names follow the common shape (Shopify `subtotal_price` / `total_tax` /
+`total_price`, ERPNext `net_total` / `rounding_adjustment` /
+`outstanding_amount`, Square line `base_price_money`, Odoo Rental late fee into
+`amount_total`). Legacy mixed rental and payment state (`OrderStatusID` 5
+"Processing", `IsPaid`, `IsPaymentCompleted`); here payment status only
+follows the order. "Awaiting settlement" (every vehicle back, bill not
+settled) is derived from `active` + no active lines — not stored.
 
 Keys and indexes: unique (`company`, `order_no`); index (`branch`, `status`), (`payment_status`),
 (`customer`), (`device`), (`booked_at`).
@@ -502,12 +522,9 @@ Removed from today's model: `payment_mode` (per payment entry now),
 | `start_time` | datetime | |
 | `expected_end_time` | datetime | start + package |
 | `end_time` | datetime, null | returned / replaced / removed at (tablet time) |
-| `rate` | money | |
-| `amount` | money | package amount |
-| `overtime_amount` | money, default 0 | added at return |
-| `discount` | money, default 0 | |
-| `tax_amount` | money, default 0 | |
-| `total_amount` | money | what this line bills |
+| `base_fare` | money | the package price agreed at booking |
+| `overtime_amount` | money, null | extra-time charge; set at return (0 if on time) |
+| `total_amount` | money, null | `base_fare + overtime_amount`; set at return |
 | `replaced_item` | FK self, null | the old line this one replaced |
 | `reason` | text | replace / remove reason |
 
@@ -586,29 +603,30 @@ Created at settlement, never edited.
 | `company_name`, `company_trn` | char | as at issue (`Company.income_tax_number`) |
 | `branch_name` | char | as at issue |
 | `customer_name`, `customer_mobile` | char | as at issue |
-| `total_amount`, `total_discount`, `card_discount_amount`, `tax_percentage`, `total_tax`, `rounded_diff`, `net_amount` | money | copied from the order at issue |
+| `subtotal`, `discount_percentage`, `discount_amount`, `tax_percentage`, `tax_amount`, `rounding_adjustment`, `net_amount` | money | copied from the order at issue |
 | `payments` | JSON | breakdown at issue: `[{mode, kind, amount, reference_no}]` |
 
 Key: unique (`company`, `invoice_no`). Index (`branch`, `issued_at`).
 
-### 4.8 `InvoiceLine` — `invoice_line`
+### 4.8 `InvoiceItem` — `invoice_item`
 
 One row per billed line (replaced and removed lines are not billed).
 
 | Field | Type | Notes |
 |---|---|---|
 | `id` | UUID, PK | server-made |
-| `invoice` | FK Invoice | `related_name="lines"` |
+| `invoice` | FK Invoice | `related_name="items"` |
 | `order_item` | FK OrderItem | traceability |
 | `vehicle_identifier`, `vehicle_name`, `vehicle_type` | char | as at issue |
 | `package_minutes` | int | |
 | `start_time`, `end_time` | datetime | |
-| `rate`, `amount`, `overtime_amount`, `discount`, `tax_amount`, `total_amount` | money | copied from the line |
+| `base_fare`, `overtime_amount`, `total_amount` | money | copied from the line |
 
 ### 4.9 Links to existing models
 
-- `CardDiscountClaim.order` (exists) — settlement redeems an approved claim and
-  cancels a pending one; cancel approval cancels a pending one.
+- `CardDiscountClaim.order` (exists) lists every claim raised on the order;
+  `Order.discount_claim` is the one applied. Settlement redeems it and cancels
+  the others; cancel approval cancels a pending one.
 - `BillContinuity` (kind `order`) — each booking raises the tablet's
   `last_number` to the number in `order_no`.
 
@@ -630,10 +648,11 @@ One row per billed line (replaced and removed lines are not billed).
    must exist first). The tablet checks the request's status; once approved, the
    operator enters the discount from the request's details. At settle the
    tablet names the request it applied (`card_discount: {claim_id, amount}`):
-   that request becomes **redeemed** and the amount is stored on the order
-   (`card_discount_amount`). Every other request on the order still pending, or
-   approved but not applied, becomes **cancelled**. The link is the existing
-   `CardDiscountClaim.order`; the order needs no new field.
+   that request becomes **redeemed**, and the order stores it as
+   `discount_claim` with its `discount_percentage` and `discount_amount`. Every
+   other request on the order still pending, or approved but not applied,
+   becomes **cancelled**. An automatic discount (no approval) is sent as
+   `{card_discount_id, …}` and recorded as a new claim, redeemed at once.
 6. **"On rent" is derived, never stored.** A vehicle is on rent when it has an
    active order item (one per vehicle, enforced by the database). `/vehicles`
    returns `on_rent`, the `rental` it is on (order no., expected end) and
@@ -646,7 +665,8 @@ One row per billed line (replaced and removed lines are not billed).
    checks, settling with money owed, …). Only the guards that keep the data
    consistent are in from the start: an item must be active to be returned or
    replaced; a completed or cancelled order takes no changes (except a refund
-   on a cancelled one); settle needs every vehicle back.
+   on a cancelled one); settle needs every vehicle back and the bill paid in
+   full (`balance_not_settled`), so `paid` is always true.
 8. **Every order has a customer.** **No auto-block on a low rating** (legacy
    `Service_Save_SubmitExit_Order` blocked customers rated below 2).
 9. **Order number required and unique** per company; each booking raises the

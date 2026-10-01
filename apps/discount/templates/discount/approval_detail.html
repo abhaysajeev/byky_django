@@ -50,7 +50,7 @@
           <div class="scr-detail-row"><span class="scr-detail-label">Order</span><span class="scr-detail-value">{{ claim.order_no }} · {{ claim.order_status }}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Order Start</span><span class="scr-detail-value">{{ claim.order_start|date:"d M Y, H:i" }}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Vehicles</span><span class="scr-detail-value">{{ claim.order_vehicles }}</span></div>
-          <div class="scr-detail-row"><span class="scr-detail-label">Order Total</span><span class="scr-detail-value">{{ claim.order_total }} · net {{ claim.order_net }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Order Total</span><span class="scr-detail-value">{% if claim.order_net is not None %}{{ claim.order_total }} · net {{ claim.order_net }}{% else %}Not billed yet{% endif %}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Branch</span><span class="scr-detail-value">{{ claim.branch|default:"—" }}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Customer</span><span class="scr-detail-value">{{ claim.customer }}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Phone</span><span class="scr-detail-value">{{ claim.phone }}</span></div>

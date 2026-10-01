@@ -270,7 +270,7 @@ def _claim_row(claim, zone):
         "order_no": _order_no(claim.order),
         "order_start": claim.order.start_time.astimezone(zone),
         "order_vehicles": claim.order.items.exclude(status=OrderItemStatus.REPLACED).count(),
-        "order_total": claim.order.total_amount, "order_net": claim.order.net_amount,
+        "order_total": claim.order.subtotal, "order_net": claim.order.net_amount,       # blank until settled
         "order_status": claim.order.get_status_display(),
         "bill_amount": claim.bill_amount, "discount_amount": claim.discount_amount,
         "net_amount": claim.net_amount,

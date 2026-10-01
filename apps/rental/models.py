@@ -24,7 +24,7 @@ the same gap crew.EmployeeBlockLog fills for staff.
 import re
 
 from django.db import models
-from django.db.models import Case, F, Q, Value, When
+from django.db.models import Case, F, Value, When
 
 from core.models import ApprovalMixin, TimeStampedModel
 
@@ -145,16 +145,18 @@ class Customer(ApprovalMixin, TimeStampedModel):
 # server has ever replied. order_no is the tablet's receipt number -- unique
 # per company, and also the invoice number.
 #
-# Two separate statuses, as in Shopify (financial_status) and ERPNext (status
-# from outstanding_amount): `status` is the rental's life, `payment_status`
-# the money, computed by the database and never set. Legacy mixed them
-# (OrderStatusID 5 "Processing", IsPaid, IsPaymentCompleted).
+# No bill before the ride ends (order_lifecycle_design.md 1 "Money"):
+#   booking  -- a line's package and agreed base_fare; any advance paid;
+#   return   -- that line's overtime_amount and total_amount;
+#   settle   -- the order's bill: subtotal, discount, VAT, rounding, net_amount.
+# Until then those fields are blank (NULL), never a guess.
 #
-# Money: amount_received / amount_refunded are running totals of the order's
-# payment entries, written only by the payment service in the same transaction
-# as the entry. paid_amount, balance_due and payment_status follow from them
-# in the database, so none of the three can drift from the payments (legacy's
-# DMSOrder.PaidAmount vs SUM(DMSPayment.Amount)).
+# Money collected: amount_received / amount_refunded are running totals of the
+# order's payment entries, written only by the payment service in the same
+# transaction as the entry. paid_amount and balance_due follow from them in the
+# database, so neither can drift from the payments (legacy's DMSOrder.PaidAmount
+# vs SUM(DMSPayment.Amount)). payment_status follows `status`: pending while on
+# rent, paid once settled -- settle needs the bill paid in full.
 
 
 class OrderStatus(models.TextChoices):
@@ -164,9 +166,8 @@ class OrderStatus(models.TextChoices):
 
 
 class PaymentStatus(models.TextChoices):
-    UNPAID = "unpaid", "Unpaid"
-    PARTLY_PAID = "partly_paid", "Partly Paid"
-    PAID = "paid", "Paid"
+    PENDING = "pending", "Pending"      # on rent: the bill is not made yet
+    PAID = "paid", "Paid"               # settled, paid in full
 
 
 class OrderItemStatus(models.TextChoices):
@@ -206,33 +207,39 @@ class Order(TimeStampedModel):
     completed_at = models.DateTimeField(null=True, blank=True)
     cancelled_at = models.DateTimeField(null=True, blank=True)
 
-    total_amount = models.DecimalField(**MONEY)
-    total_discount = models.DecimalField(**MONEY, default=0)
-    card_discount_amount = models.DecimalField(**MONEY, default=0)
-    tax_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    total_tax = models.DecimalField(**MONEY, default=0)
-    rounded_diff = models.DecimalField(max_digits=6, decimal_places=2, default=0)
-    net_amount = models.DecimalField(**MONEY)
+    # The bill -- blank until settle. net_amount = subtotal - discount_amount
+    # + tax_amount + rounding_adjustment: what the customer pays.
+    subtotal = models.DecimalField(**MONEY, null=True, blank=True)            # billed line totals
+    # The one discount is a card discount, on the whole bill; discount_claim is
+    # the claim applied (CardDiscountClaim.order lists every claim raised).
+    discount_claim = models.OneToOneField(
+        "discount.CardDiscountClaim", null=True, blank=True, on_delete=models.PROTECT,
+        related_name="applied_to_order",
+    )
+    discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    discount_amount = models.DecimalField(**MONEY, null=True, blank=True)
+    tax_percentage = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)   # VAT %
+    tax_amount = models.DecimalField(**MONEY, null=True, blank=True)          # VAT on subtotal - discount
+    rounding_adjustment = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    net_amount = models.DecimalField(**MONEY, null=True, blank=True)
 
+    # Money collected, from booking on.
     amount_received = models.DecimalField(**MONEY, default=0)
     amount_refunded = models.DecimalField(**MONEY, default=0)
     paid_amount = models.GeneratedField(
         expression=PAID, output_field=models.DecimalField(**MONEY), db_persist=True,
     )
-    # > 0 the customer owes, 0 paid, < 0 a refund is owed.
+    # Blank until settle (no bill yet); then 0 -- settle needs the bill paid.
     balance_due = models.GeneratedField(
         expression=F("net_amount") - PAID, output_field=models.DecimalField(**MONEY), db_persist=True,
     )
-    # Overpaid reads `paid` (balance_due shows the refund owed); a free order
-    # (net 0) is `paid`; a cancelled order refunded in full is `unpaid`, its
-    # `status` telling the rest.
     payment_status = models.GeneratedField(
         expression=Case(
-            When(Q(amount_received__lte=F("amount_refunded"), net_amount__gt=0), then=Value(PaymentStatus.UNPAID)),
-            When(Q(net_amount__gt=PAID), then=Value(PaymentStatus.PARTLY_PAID)),
-            default=Value(PaymentStatus.PAID),
+            When(status=OrderStatus.ACTIVE, then=Value(PaymentStatus.PENDING)),
+            When(status=OrderStatus.COMPLETED, then=Value(PaymentStatus.PAID)),
+            default=None,
         ),
-        output_field=models.CharField(max_length=20, choices=PaymentStatus.choices),
+        output_field=models.CharField(max_length=20, choices=PaymentStatus.choices, null=True),
         db_persist=True,
     )
 
@@ -246,7 +253,8 @@ class Order(TimeStampedModel):
             ),
             models.CheckConstraint(
                 condition=models.Q(
-                    total_amount__gte=0, net_amount__gte=0, amount_received__gte=0, amount_refunded__gte=0,
+                    subtotal__gte=0, discount_amount__gte=0, net_amount__gte=0,
+                    amount_received__gte=0, amount_refunded__gte=0,
                 ),
                 name="order_amounts_not_negative",
             ),
@@ -284,12 +292,11 @@ class OrderItem(TimeStampedModel):
     expected_end_time = models.DateTimeField()      # start + package
     end_time = models.DateTimeField(null=True, blank=True)   # returned / replaced / removed (tablet time)
 
-    rate = models.DecimalField(**MONEY)
-    amount = models.DecimalField(**MONEY)
-    overtime_amount = models.DecimalField(**MONEY, default=0)
-    discount = models.DecimalField(**MONEY, default=0)
-    tax_amount = models.DecimalField(**MONEY, default=0)
-    total_amount = models.DecimalField(**MONEY)
+    base_fare = models.DecimalField(**MONEY)        # the package price agreed at booking
+    # Blank until the vehicle is returned. No discount and no VAT here: both
+    # are on the order's bill.
+    overtime_amount = models.DecimalField(**MONEY, null=True, blank=True)
+    total_amount = models.DecimalField(**MONEY, null=True, blank=True)   # base_fare + overtime
 
     # The old line this one replaced -- legacy DMSReplacedOrders.
     replaced_item = models.ForeignKey(
@@ -309,7 +316,7 @@ class OrderItem(TimeStampedModel):
                 name="order_item_expected_end_after_start",
             ),
             models.CheckConstraint(
-                condition=models.Q(rate__gte=0, amount__gte=0, overtime_amount__gte=0, total_amount__gte=0),
+                condition=models.Q(base_fare__gte=0, overtime_amount__gte=0, total_amount__gte=0),
                 name="order_item_amounts_not_negative",
             ),
             # A vehicle is on one active line at a time -- legacy trusted the

@@ -241,10 +241,15 @@ def order_json(order, *, zone, next_order_number):
         "is_direct_bill": order.is_direct_bill, "is_hotel_order": order.is_hotel_order,
         "hotel_commission": _money(order.hotel_commission),
         "customer": {"id": order.customer_id, "name": order.customer_name, "mobile": order.customer_mobile},
-        "total_amount": _money(order.total_amount), "total_discount": _money(order.total_discount),
-        "card_discount_amount": _money(order.card_discount_amount),
-        "tax_percentage": _money(order.tax_percentage), "total_tax": _money(order.total_tax),
-        "rounded_diff": _money(order.rounded_diff), "net_amount": _money(order.net_amount),
+        # The bill: null until settle.
+        "subtotal": _money(order.subtotal),
+        "discount": {
+            "claim_id": str(order.discount_claim_id), "percentage": _money(order.discount_percentage),
+            "amount": _money(order.discount_amount),
+        } if order.discount_claim_id else None,
+        "tax_percentage": _money(order.tax_percentage), "tax_amount": _money(order.tax_amount),
+        "rounding_adjustment": _money(order.rounding_adjustment), "net_amount": _money(order.net_amount),
+        # Money collected, from booking on; balance_due null until settle.
         "amount_received": _money(order.amount_received), "amount_refunded": _money(order.amount_refunded),
         "paid_amount": _money(order.paid_amount), "balance_due": _money(order.balance_due),
         "items_out": sum(1 for item in items if item.status == OrderItemStatus.ACTIVE),
@@ -257,9 +262,9 @@ def order_json(order, *, zone, next_order_number):
                 "start_time": _local(item.start_time, zone),
                 "expected_end_time": _local(item.expected_end_time, zone),
                 "end_time": _local(item.end_time, zone),
-                "rate": _money(item.rate), "amount": _money(item.amount),
-                "overtime_amount": _money(item.overtime_amount), "discount": _money(item.discount),
-                "tax_amount": _money(item.tax_amount), "total_amount": _money(item.total_amount),
+                "base_fare": _money(item.base_fare),
+                "overtime_amount": _money(item.overtime_amount),       # null until returned
+                "total_amount": _money(item.total_amount),             # null until returned
                 "replaced_item_id": str(item.replaced_item_id) if item.replaced_item_id else None,
                 "reason": item.reason,
             }
@@ -308,28 +313,28 @@ def _counter_number(session):
 
 _ORDER_SAMPLE = {
     "sync_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9", "order_no": "DUBPP60182000231",
-    "status": "active", "payment_status": "partly_paid",
+    "status": "active", "payment_status": "pending",
     "booked_at": "2026-10-02 16:00:05", "start_time": "2026-10-02 16:00:00",
     "completed_at": None, "cancelled_at": None,
     "is_direct_bill": False, "is_hotel_order": False, "hotel_commission": "0.00",
     "customer": {"id": 5512, "name": "Ahmed Al Mansoori", "mobile": "971501234567"},
-    "total_amount": "100.00", "total_discount": "0.00", "card_discount_amount": "0.00",
-    "tax_percentage": "5.00", "total_tax": "5.00", "rounded_diff": "0.00", "net_amount": "105.00",
-    "amount_received": "100.00", "amount_refunded": "0.00", "paid_amount": "100.00", "balance_due": "5.00",
+    "subtotal": None, "discount": None, "tax_percentage": None, "tax_amount": None,
+    "rounding_adjustment": None, "net_amount": None,
+    "amount_received": "100.00", "amount_refunded": "0.00", "paid_amount": "100.00", "balance_due": None,
     "items_out": 2,
     "items": [
         {"sync_id": "01923e1c-0a12-7b22-8c33-d4e5f6a7b8c9", "status": "active",
          "vehicle": {"id": 1041, "name": "MO 41", "identifier": "VB1241"},
          "fare_id": 88, "offer_id": None, "package_minutes": 60,
          "start_time": "2026-10-02 16:00:00", "expected_end_time": "2026-10-02 17:00:00", "end_time": None,
-         "rate": "50.00", "amount": "50.00", "overtime_amount": "0.00", "discount": "0.00",
-         "tax_amount": "2.50", "total_amount": "50.00", "replaced_item_id": None, "reason": ""},
+         "base_fare": "50.00", "overtime_amount": None, "total_amount": None,
+         "replaced_item_id": None, "reason": ""},
         {"sync_id": "01923e1c-0a13-7b22-8c33-d4e5f6a7b8c9", "status": "active",
          "vehicle": {"id": 3102, "name": "DC 02", "identifier": "VB0874"},
          "fare_id": 88, "offer_id": None, "package_minutes": 60,
          "start_time": "2026-10-02 16:00:00", "expected_end_time": "2026-10-02 17:00:00", "end_time": None,
-         "rate": "50.00", "amount": "50.00", "overtime_amount": "0.00", "discount": "0.00",
-         "tax_amount": "2.50", "total_amount": "50.00", "replaced_item_id": None, "reason": ""},
+         "base_fare": "50.00", "overtime_amount": None, "total_amount": None,
+         "replaced_item_id": None, "reason": ""},
     ],
     "payments": [
         {"sync_id": "01923e1c-0a14-7b22-8c33-d4e5f6a7b8c9", "kind": "advance",
@@ -378,10 +383,22 @@ one entry per payment mode (cash and card are two entries). Only `advance`
 at booking. `amount` more than 0; `reference_no` / `reference_date` for a
 card slip or cheque.
 
-**Money** is stored as sent, not recomputed. **Times** are
-`YYYY-MM-DD HH:MM:SS` in company time, no offset: `booked_at` is when the
-booking happened on the tablet (earlier if it was offline), `start_time`
-the rental's own start.
+**No bill yet.** Each item carries only its `package_minutes` and the
+`base_fare` agreed for it. The rest is filled later, never guessed:
+
+| Amount | Filled when |
+|---|---|
+| item `base_fare` | booking |
+| item `overtime_amount`, `total_amount` (= base fare + overtime) | that vehicle is returned |
+| order `subtotal`, `discount`, `tax_percentage`, `tax_amount`, `rounding_adjustment`, `net_amount`, `balance_due` | the order is settled |
+| order `amount_received`, `amount_refunded`, `paid_amount` | each payment, from booking on |
+
+Until then they are `null`. `payment_status` is `pending` while the order is
+active and `paid` once it is settled (blank for a cancelled order).
+
+**Times** are `YYYY-MM-DD HH:MM:SS` in company time, no offset: `booked_at`
+is when the booking happened on the tablet (earlier if it was offline),
+`start_time` the rental's own start.
 
 **Errors** carry `data.retry`: `true` -- keep the call queued and send it
 again; `false` -- stop and show the operator.

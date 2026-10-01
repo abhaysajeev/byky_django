@@ -250,9 +250,10 @@ def create_rental_order(session, values, request_data, reply_for):
     The tablet makes every id -- order, lines, payments -- so it can act on
     them before the server has replied (design 2).
 
-    Money figures are trusted as sent, not recomputed; the business checks
-    (totals adding up, blocked customer, available vehicle, ...) come later
-    (design 5, decision 7). Ported from: Save_Order_Booking.
+    No bill is made here: each line keeps its agreed base fare, the line's
+    final amount comes at return and the order's bill at settle (design 1
+    "Money"). The business checks (blocked customer, available vehicle, ...)
+    come later (design 5, decision 7). Ported from: Save_Order_Booking.
     """
     sync_id = values["sync_id"]
     try:
@@ -328,9 +329,6 @@ def _book(session, values, reply_for):
         id=values["sync_id"], company=company, branch=branch, device=device,
         customer=customer, customer_name=customer.full_name, customer_mobile=customer.mobile_full,
         order_no=values["order_no"], booked_at=values["booked_at"], start_time=values["start_time"],
-        total_amount=values["total_amount"], total_discount=values.get("total_discount") or 0,
-        total_tax=values.get("total_tax") or 0, tax_percentage=values.get("tax_percentage") or 0,
-        rounded_diff=values.get("rounded_diff") or 0, net_amount=values["net_amount"],
         is_direct_bill=values.get("is_direct_bill", False),
         is_hotel_order=values.get("is_hotel_order", False), hotel_commission=values.get("hotel_commission") or 0,
         created_by=user, modified_by=user,
@@ -340,9 +338,8 @@ def _book(session, values, reply_for):
             id=item["sync_id"], order=order, vehicle=vehicles[item["vehicle_id"]],
             fare=fares.get(item.get("fare_id")), offer=offers.get(item.get("offer_id")),
             package_minutes=item["package_minutes"], start_time=item["start_time"],
-            expected_end_time=item["expected_end_time"], rate=item["rate"], amount=item["amount"],
-            discount=item.get("discount") or 0, tax_amount=item.get("tax_amount") or 0,
-            total_amount=item["total_amount"], created_by=user, modified_by=user,
+            expected_end_time=item["expected_end_time"], base_fare=item["base_fare"],
+            created_by=user, modified_by=user,
         )
         for item in items_input
     ])

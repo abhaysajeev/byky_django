@@ -103,7 +103,7 @@ def make_order(customer, *, branch=None, order_no="", **fields):
         "id": uuid.uuid4(), "company": company, "branch": branch, "device": device, "customer": customer,
         "customer_name": customer.full_name, "customer_mobile": customer.mobile_full,
         "order_no": order_no or f"ORD-{uuid.uuid4().hex[:6]}", "booked_at": timezone.now(),
-        "start_time": timezone.now(), "total_amount": "100.00", "net_amount": "100.00",
+        "start_time": timezone.now(),
     }
     values.update(fields)
     return Order.objects.create(**values)
