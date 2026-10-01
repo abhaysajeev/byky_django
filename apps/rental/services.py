@@ -1,22 +1,28 @@
 """Rental Management services."""
 
+import hashlib
+import json
+
 from django.db import IntegrityError, transaction
 from django.db.models import F
 from django.utils import timezone
 
 from apps.company.models import PaymentMode
+from apps.devices import services as devices_services
+from apps.devices.models import BillKind
 from apps.fare.models import Fare, Offer
 from apps.fleet.models import Vehicle
 from apps.rental.models import (
     MONEY_IN,
     Customer,
     Order,
+    OrderAction,
+    OrderEvent,
     OrderItem,
+    OrderItemStatus,
     Payment,
-    PaymentKind,
     full_number,
 )
-from core.ids import uuid7
 
 
 def next_customer_code(company):
@@ -60,7 +66,7 @@ def record_payment(order, *, payment_id, kind, mode, amount, paid_at, device=Non
     """One payment entry on an order -- the only way one is written.
 
     Adds the entry and moves the order's running total in the same
-    transaction: amount_received for money in (advance, balance),
+    transaction: amount_received for money in (advance, settlement),
     amount_refunded for money out (refund). The increment happens in the
     database (F), so two payments on one order at the same moment cannot
     miscount. paid_amount, balance_due and payment_status follow on their
@@ -81,128 +87,271 @@ def record_payment(order, *, payment_id, kind, mode, amount, paid_at, device=Non
     return payment
 
 
+# -- Orders: refusals ---------------------------------------------------------
+#
+# Every code an order call can answer with, once: HTTP status, message, and
+# whether the tablet should keep the call queued and retry (True) or stop and
+# show the operator (False) -- order_lifecycle_design.md 2 "Reliability rules".
+# The views build their Swagger rows and table from this, so the docs cannot
+# drift from what is sent.
+
+ORDER_ERRORS = {
+    "order_not_synced": (409, "That order has not reached the server yet.", True),
+    "sync_id_conflict": (409, "That sync_id is already used for something else.", False),
+    "order_no_used": (409, "That order number is already used.", False),
+    "vehicle_already_rented": (409, "A vehicle in this order is already on an active rental.", False),
+    "vehicle_repeated": (400, "The same vehicle is in this order twice.", False),
+    "item_id_used": (409, "An item sync_id is already used.", False),
+    "payment_id_used": (409, "A payment sync_id is already used.", False),
+    "unknown_customer": (400, "No customer with that id.", False),
+    "unknown_payment_mode": (400, "No payment mode with that id.", False),
+    "unknown_vehicle": (400, "No vehicle with that id.", False),
+    "vehicle_not_at_station": (400, "That vehicle is not at this station.", False),
+    "unknown_fare": (400, "No fare with that id.", False),
+    "unknown_offer": (400, "No offer with that id.", False),
+    "unknown_order": (404, "No order with that id at this station.", False),
+}
+
+
 class OrderRefused(Exception):
-    """code/message/status for the envelope, same shape as
-    apps.crew.services.AttendanceRefused."""
+    """One of ORDER_ERRORS. `message` overrides the catalogue's when the
+    refusal can say which id it was about."""
 
-    def __init__(self, code, message, status=400):
-        self.code, self.message, self.status = code, message, status
-        super().__init__(message)
+    def __init__(self, code, message=None):
+        self.status, default, self.retry = ORDER_ERRORS[code]
+        self.code, self.message = code, message or default
+        super().__init__(self.message)
 
 
-def create_rental_order(session, values):
-    """One rental booking -- order header, its vehicle lines, and (if money
-    was collected) the first payment, in one call. Returns (order, created);
-    created is False when sync_id was already stored, which the app treats
-    as success (apps.crew.services.mark_attendance is the same contract).
+# Which database constraint means which refusal -- for the race the checks
+# before a write cannot close (two tablets, one vehicle, the same instant).
+_CONSTRAINT_REFUSALS = {
+    "uniq_active_order_item_per_vehicle": "vehicle_already_rented",
+    "uniq_order_no_per_company": "order_no_used",
+    "order_pkey": "sync_id_conflict",
+    "order_item_pkey": "item_id_used",
+    "payment_pkey": "payment_id_used",
+}
+
+
+def _refusal_for(error):
+    diag = getattr(error.__cause__, "diag", None)
+    code = _CONSTRAINT_REFUSALS.get(getattr(diag, "constraint_name", None))
+    return OrderRefused(code) if code else None
+
+
+# -- Orders: one call, once ------------------------------------------------------
+
+
+def request_hash(request_data):
+    """SHA-256 of the call's request_data, keys sorted -- the same body sent
+    with its keys in another order is the same call."""
+    body = json.dumps(request_data, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(body.encode()).hexdigest()
+
+
+def _stored_reply(event_id, company, fingerprint):
+    """The reply already given to call `event_id`, or None if there is no
+    such call. The same id with another body, or another company's, is a
+    conflict -- never silently one version or the other."""
+    event = OrderEvent.objects.filter(pk=event_id).select_related("order").first()
+    if event is None:
+        return None
+    if event.order.company_id != company.pk or event.request_hash != fingerprint:
+        raise OrderRefused("sync_id_conflict")
+    return event.response
+
+
+def run_once(*, event_id, company, request_data, apply):
+    """Run one order call exactly once. Returns (reply data, done_now).
+
+    A call is identified by its own sync_id (`event_id`). Already stored with
+    the same body: its stored reply, done_now False (the app's `duplicate`),
+    nothing written. Stored with a different body: sync_id_conflict.
+    Otherwise `apply()` runs inside one transaction and returns
+    (order, event fields, reply data); the OrderEvent holding that reply is
+    written in the same transaction, so a call is either wholly done and
+    recorded or not done at all (order_lifecycle_design.md 2).
+
+    Two identical calls at once: the second one's insert waits on the
+    first's, fails, and finds the first's event -- answered duplicate. Any
+    other constraint failure becomes its own refusal (_CONSTRAINT_REFUSALS).
+    """
+    fingerprint = request_hash(request_data)
+    stored = _stored_reply(event_id, company, fingerprint)
+    if stored is not None:
+        return stored, False
+    try:
+        with transaction.atomic():
+            order, event, reply = apply()
+            OrderEvent.objects.create(
+                id=event_id, order=order, request_hash=fingerprint, response=reply, **event,
+            )
+    except IntegrityError as error:
+        stored = _stored_reply(event_id, company, fingerprint)
+        if stored is not None:
+            return stored, False
+        refusal = _refusal_for(error)
+        if refusal is None:
+            raise
+        raise refusal from None
+    return reply, True
+
+
+def lock_order(order_id, branch):
+    """The order `order_id` at `branch`, row-locked until the transaction
+    ends -- so two tablets acting on one order take turns. Every change after
+    booking goes through it. An order the server has not got yet is
+    order_not_synced (retry: the booking is still in the tablet's queue)."""
+    order = Order.objects.select_for_update().filter(pk=order_id, branch=branch).first()
+    if order is None:
+        raise OrderRefused("order_not_synced")
+    return order
+
+
+def order_at_station(branch, *, sync_id=None, order_no=None):
+    """One order at `branch`, by its sync_id or its order number -- any
+    tablet at the order's station may read it (design 5, decision 3). An
+    order elsewhere is unknown_order, the same as one that does not exist."""
+    orders = Order.objects.filter(branch=branch)
+    order = (orders.filter(pk=sync_id) if sync_id else orders.filter(order_no=order_no)).first()
+    if order is None:
+        raise OrderRefused("unknown_order")
+    return order
+
+
+def active_rentals(vehicle_ids):
+    """{vehicle_id: (order_no, expected_end_time)} for the vehicles in
+    `vehicle_ids` that are out on rent now -- on an active order item (one
+    per vehicle, enforced by the database). "On rent" is never stored
+    (design 5, decision 6)."""
+    rows = OrderItem.objects.filter(vehicle_id__in=vehicle_ids, status=OrderItemStatus.ACTIVE).values_list(
+        "vehicle_id", "order__order_no", "expected_end_time",
+    )
+    return {vehicle_id: (order_no, end) for vehicle_id, order_no, end in rows}
+
+
+# -- Orders: booking -------------------------------------------------------------
+
+
+def create_rental_order(session, values, request_data, reply_for):
+    """One rental booking -- the order, its vehicle lines and any advance
+    payments, in one call. Returns (reply data, created); created is False for
+    a resend of a call already done, which the app treats as success.
 
     `session` is the AppSession (apps/portal/session_models.py) the request
     authenticated as -- branch, device and user all come from it, never from
-    `values`. `values` is the create-order serializer's validated data, with
-    every datetime already made timezone-aware by the view.
+    `values`. `values` is the booking serializer's validated data, every
+    datetime already made timezone-aware by the view; `request_data` is the
+    raw body, fingerprinted by run_once. `reply_for(order)` builds the reply,
+    which is stored with the call and replayed on a resend.
 
-    Device-sent money figures (rates, totals, tax, discount) are trusted as
-    sent, not recomputed against apps.fare.pricing -- a deliberate decision,
-    not an oversight (design discussion).
+    The order's sync_id is also the call's: a booking happens once per order.
+    The tablet makes every id -- order, lines, payments -- so it can act on
+    them before the server has replied (design 2).
+
+    Money figures are trusted as sent, not recomputed; the business checks
+    (totals adding up, blocked customer, available vehicle, ...) come later
+    (design 5, decision 7). Ported from: Save_Order_Booking.
     """
-    branch = session.branch
-    if branch is None:
-        raise OrderRefused("device_not_mapped", "This device has no station.", 409)
-    if not branch.is_active:
-        raise OrderRefused("branch_inactive", "This station is closed.", 409)
-    company = branch.company
     sync_id = values["sync_id"]
+    if not OrderEvent.objects.filter(pk=sync_id).exists() and Order.objects.filter(pk=sync_id).exists():
+        # An order stored before order events existed: not this call.
+        raise OrderRefused("sync_id_conflict")
+    return run_once(
+        event_id=sync_id, company=session.branch.company, request_data=request_data,
+        apply=lambda: _book(session, values, reply_for),
+    )
 
-    existing = Order.objects.filter(pk=sync_id).first()
-    if existing is not None:
-        if existing.company_id != company.pk:
-            raise OrderRefused("sync_id_conflict", "That sync_id is already used.", 409)
-        return existing, False
+
+def _book(session, values, reply_for):
+    branch, user, device = session.branch, session.user, session.device
+    company = branch.company
+    items_input, payments_input = values["items"], values.get("payments") or []
 
     if Order.objects.filter(company=company, order_no=values["order_no"]).exists():
-        raise OrderRefused("order_no_used", "That order number is already used.", 409)
+        raise OrderRefused("order_no_used")
 
     customer = Customer.objects.filter(pk=values["customer_id"], company=company).first()
     if customer is None:
-        raise OrderRefused("unknown_customer", "No customer with that id.")
+        raise OrderRefused("unknown_customer")
 
-    payment_mode = PaymentMode.objects.filter(
-        pk=values["payment_mode_id"], company=company, is_active=True,
-    ).first()
-    if payment_mode is None:
-        raise OrderRefused("unknown_payment_mode", "No payment mode with that id.")
-
-    items_input = values["items"]
-    vehicle_ids = {item["vehicle_id"] for item in items_input}
-    vehicles = {v.pk: v for v in Vehicle.objects.filter(pk__in=vehicle_ids, company=company)}
-    missing = vehicle_ids - set(vehicles)
+    vehicle_list = [item["vehicle_id"] for item in items_input]
+    if len(set(vehicle_list)) != len(vehicle_list):
+        raise OrderRefused("vehicle_repeated")
+    vehicles = {v.pk: v for v in Vehicle.objects.filter(pk__in=vehicle_list, company=company)}
+    missing = set(vehicle_list) - set(vehicles)
     if missing:
         raise OrderRefused("unknown_vehicle", f"No vehicle with id {sorted(missing)[0]}.")
-    off_station = [v.pk for v in vehicles.values() if v.current_branch_id != branch.pk]
+    off_station = sorted(v.pk for v in vehicles.values() if v.current_branch_id != branch.pk)
     if off_station:
         raise OrderRefused("vehicle_not_at_station", f"Vehicle {off_station[0]} is not at this station.")
+    rented = active_rentals(vehicle_list)
+    if rented:
+        raise OrderRefused("vehicle_already_rented", f"Vehicle {min(rented)} is already on an active rental.")
 
-    fare_ids = {item["fare_id"] for item in items_input if item.get("fare_id")}
-    fares = {f.pk: f for f in Fare.objects.filter(pk__in=fare_ids, company=company)} if fare_ids else {}
-    missing_fares = fare_ids - set(fares)
-    if missing_fares:
-        raise OrderRefused("unknown_fare", f"No fare with id {sorted(missing_fares)[0]}.")
+    fares = _by_id(Fare, company, {item["fare_id"] for item in items_input if item.get("fare_id")},
+                   "unknown_fare", "fare")
+    offers = _by_id(Offer, company, {item["offer_id"] for item in items_input if item.get("offer_id")},
+                    "unknown_offer", "offer")
+    modes = {
+        mode.pk: mode for mode in PaymentMode.objects.filter(
+            pk__in={p["payment_mode_id"] for p in payments_input}, company=company, is_active=True,
+        )
+    }
+    for payment in payments_input:
+        if payment["payment_mode_id"] not in modes:
+            raise OrderRefused("unknown_payment_mode", f"No payment mode with id {payment['payment_mode_id']}.")
 
-    offer_ids = {item["offer_id"] for item in items_input if item.get("offer_id")}
-    offers = {o.pk: o for o in Offer.objects.filter(pk__in=offer_ids, company=company)} if offer_ids else {}
-    missing_offers = offer_ids - set(offers)
-    if missing_offers:
-        raise OrderRefused("unknown_offer", f"No offer with id {sorted(missing_offers)[0]}.")
+    if OrderItem.objects.filter(pk__in=[item["sync_id"] for item in items_input]).exists():
+        raise OrderRefused("item_id_used")
+    if Payment.objects.filter(pk__in=[p["sync_id"] for p in payments_input]).exists():
+        raise OrderRefused("payment_id_used")
 
-    order = Order(
-        id=sync_id, company=company, branch=branch, device=session.device,
+    order = Order.objects.create(
+        id=values["sync_id"], company=company, branch=branch, device=device,
         customer=customer, customer_name=customer.full_name, customer_mobile=customer.mobile_full,
-        order_no=values["order_no"], booked_at=values["device_created_at"], start_time=values["start_time"],
+        order_no=values["order_no"], booked_at=values["booked_at"], start_time=values["start_time"],
         total_amount=values["total_amount"], total_discount=values.get("total_discount") or 0,
         total_tax=values.get("total_tax") or 0, tax_percentage=values.get("tax_percentage") or 0,
         rounded_diff=values.get("rounded_diff") or 0, net_amount=values["net_amount"],
         is_direct_bill=values.get("is_direct_bill", False),
         is_hotel_order=values.get("is_hotel_order", False), hotel_commission=values.get("hotel_commission") or 0,
-        created_by=session.user, modified_by=session.user,
+        created_by=user, modified_by=user,
     )
-    item_rows = [
+    OrderItem.objects.bulk_create([
         OrderItem(
-            id=uuid7(), order_id=sync_id, vehicle=vehicles[item["vehicle_id"]],
+            id=item["sync_id"], order=order, vehicle=vehicles[item["vehicle_id"]],
             fare=fares.get(item.get("fare_id")), offer=offers.get(item.get("offer_id")),
             package_minutes=item["package_minutes"], start_time=item["start_time"],
             expected_end_time=item["expected_end_time"], rate=item["rate"], amount=item["amount"],
             discount=item.get("discount") or 0, tax_amount=item.get("tax_amount") or 0,
-            total_amount=item["total_amount"], reason=item.get("remarks") or "",
-            created_by=session.user, modified_by=session.user,
+            total_amount=item["total_amount"], created_by=user, modified_by=user,
         )
         for item in items_input
-    ]
-    collected = values.get("collected_amount") or 0
-
-    try:
-        with transaction.atomic():
-            order.save(force_insert=True)
-            OrderItem.objects.bulk_create(item_rows)
-            if collected > 0:
-                record_payment(
-                    order, payment_id=uuid7(), kind=PaymentKind.ADVANCE, mode=payment_mode, amount=collected,
-                    paid_at=values["device_created_at"], device=session.device, user=session.user,
-                )
-    except IntegrityError:
-        # Either a concurrent call with the same sync_id already won (the
-        # order row exists -- answer duplicate, the same race
-        # mark_attendance handles), or a vehicle in this order was claimed by
-        # another order in between the check above and this insert (the
-        # order row is gone too, this whole block having rolled back).
-        raced = Order.objects.filter(pk=sync_id).first()
-        if raced is not None:
-            return raced, False
-        raise OrderRefused(
-            "vehicle_already_rented", "A vehicle in this order is already on an active rental.", 409,
-        ) from None
+    ])
+    for payment in payments_input:
+        record_payment(
+            order, payment_id=payment["sync_id"], kind=payment["kind"], mode=modes[payment["payment_mode_id"]],
+            amount=payment["amount"], paid_at=payment["paid_at"], device=device, user=user,
+            reference_no=payment.get("reference_no") or "", reference_date=payment.get("reference_date"),
+        )
+    devices_services.raise_counter_from(device, branch, BillKind.ORDER, order.order_no)
 
     order.refresh_from_db()        # paid_amount, balance_due, payment_status: computed by the database
-    return order, True
+    event = {
+        "action": OrderAction.BOOK, "happened_at": values["booked_at"], "device": device, "user": user,
+        "detail": {"items": len(items_input), "advance": str(sum(p["amount"] for p in payments_input))},
+    }
+    return order, event, reply_for(order)
+
+
+def _by_id(model, company, ids, code, noun):
+    rows = {row.pk: row for row in model.objects.filter(pk__in=ids, company=company)} if ids else {}
+    missing = ids - set(rows)
+    if missing:
+        raise OrderRefused(code, f"No {noun} with id {sorted(missing)[0]}.")
+    return rows
 
 
 class CustomerExists(Exception):

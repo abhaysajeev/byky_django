@@ -9,8 +9,10 @@ instead of retyping their details.
 POST /api/v1/{app}/customers/create: register a new customer from the till,
 online or from an offline queue.
 
-POST /api/v1/{app}/orders: create one rental booking -- header, vehicle
-lines, and the first payment if any, in one call.
+POST /api/v1/{app}/orders: book one rental -- the order, its vehicle lines
+and any advance payments, in one call.
+
+POST /api/v1/{app}/orders/detail: one order, by sync_id or order number.
 """
 
 from django.utils import timezone
@@ -18,9 +20,17 @@ from drf_spectacular.utils import extend_schema
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
+from apps.devices import services as devices_services
+from apps.devices.models import BillKind
 from apps.portal.authentication import AppJWTAuthentication
 from apps.rental import services
-from apps.rental.serializers import CustomerCreateRequest, CustomerLookupRequest, OrderCreateRequest
+from apps.rental.models import OrderItemStatus
+from apps.rental.serializers import (
+    CustomerCreateRequest,
+    CustomerLookupRequest,
+    OrderCreateRequest,
+    OrderDetailRequest,
+)
 from core.api import envelope, request_parts, session_station
 from core.enums import Channel
 from core.schema import SERVER_ERROR, envelope_request, envelope_responses
@@ -204,123 +214,267 @@ class CustomerCreateView(_OperatorView):
         return envelope("ok", "Customer created.", _customer_json(customer))
 
 
-_ORDER_ITEM_SAMPLE = {
-    "item_id": "01923f8e-5b2a-7c3d-9e4f-a1b2c3d4e5f6", "vehicle_id": 2007, "status": "active",
-}
+TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+
+def _local(moment, zone):
+    return timezone.localtime(moment, zone).strftime(TIME_FORMAT) if moment else None
+
+
+def _money(value):
+    return str(value) if value is not None else None
+
+
+def order_json(order, *, zone, next_order_number):
+    """The one shape every order call answers with (order_lifecycle_design.md
+    3): the order, its customer, its totals, every item and every payment.
+    Times are company time, `YYYY-MM-DD HH:MM:SS`, as the tablet sends them.
+    `next_order_number` is the asking tablet's receipt counter after the call."""
+    items = list(order.items.select_related("vehicle").order_by("start_time", "created_on"))
+    payments = list(order.payments.select_related("mode").order_by("paid_at", "created_on"))
+    return {
+        "sync_id": str(order.pk), "order_no": order.order_no,
+        "status": order.status, "payment_status": order.payment_status,
+        "booked_at": _local(order.booked_at, zone), "start_time": _local(order.start_time, zone),
+        "completed_at": _local(order.completed_at, zone), "cancelled_at": _local(order.cancelled_at, zone),
+        "is_direct_bill": order.is_direct_bill, "is_hotel_order": order.is_hotel_order,
+        "hotel_commission": _money(order.hotel_commission),
+        "customer": {"id": order.customer_id, "name": order.customer_name, "mobile": order.customer_mobile},
+        "total_amount": _money(order.total_amount), "total_discount": _money(order.total_discount),
+        "card_discount_amount": _money(order.card_discount_amount),
+        "tax_percentage": _money(order.tax_percentage), "total_tax": _money(order.total_tax),
+        "rounded_diff": _money(order.rounded_diff), "net_amount": _money(order.net_amount),
+        "amount_received": _money(order.amount_received), "amount_refunded": _money(order.amount_refunded),
+        "paid_amount": _money(order.paid_amount), "balance_due": _money(order.balance_due),
+        "items_out": sum(1 for item in items if item.status == OrderItemStatus.ACTIVE),
+        "items": [
+            {
+                "sync_id": str(item.pk), "status": item.status,
+                "vehicle": {"id": item.vehicle_id, "name": item.vehicle.vehicle_name,
+                            "identifier": item.vehicle.identifier},
+                "fare_id": item.fare_id, "offer_id": item.offer_id, "package_minutes": item.package_minutes,
+                "start_time": _local(item.start_time, zone),
+                "expected_end_time": _local(item.expected_end_time, zone),
+                "end_time": _local(item.end_time, zone),
+                "rate": _money(item.rate), "amount": _money(item.amount),
+                "overtime_amount": _money(item.overtime_amount), "discount": _money(item.discount),
+                "tax_amount": _money(item.tax_amount), "total_amount": _money(item.total_amount),
+                "replaced_item_id": str(item.replaced_item_id) if item.replaced_item_id else None,
+                "reason": item.reason,
+            }
+            for item in items
+        ],
+        "payments": [
+            {
+                "sync_id": str(payment.pk), "kind": payment.kind,
+                "payment_mode": {"id": payment.mode_id, "name": payment.mode.name},
+                "amount": _money(payment.amount), "reference_no": payment.reference_no,
+                "reference_date": payment.reference_date.isoformat() if payment.reference_date else None,
+                "paid_at": _local(payment.paid_at, zone),
+            }
+            for payment in payments
+        ],
+        "next_order_number": next_order_number,
+    }
+
+
+def _refused(refusal):
+    return envelope(refusal.code, refusal.message, {"retry": refusal.retry}, http_status=refusal.status)
+
+
+def _error_rows(*codes):
+    """Swagger rows for these ORDER_ERRORS codes -- status, message and the
+    retry flag exactly as sent."""
+    return tuple(
+        (status, code, message, {"retry": retry})
+        for code in codes
+        for status, message, retry in [services.ORDER_ERRORS[code]]
+    )
+
+
+def _error_table(*codes):
+    rows = "\n".join(
+        f"| `{code}` | {services.ORDER_ERRORS[code][0]} | "
+        f"{'retry' if services.ORDER_ERRORS[code][2] else 'final'} | {services.ORDER_ERRORS[code][1]} |"
+        for code in codes
+    )
+    return "| Code | HTTP | Retry or final | Meaning |\n|---|---|---|---|\n" + rows
+
+
+def _counter_number(session):
+    return devices_services.counter_for(session.device, session.branch, BillKind.ORDER).next_number
+
 
 _ORDER_SAMPLE = {
-    "sync_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9", "order_no": "BR01-856475", "status": "active",
-    "net_amount": "52.50", "paid_amount": "52.50", "balance_due": "0.00", "payment_status": "paid",
-    "items": [_ORDER_ITEM_SAMPLE],
+    "sync_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9", "order_no": "DUBPP60182000231",
+    "status": "active", "payment_status": "partly_paid",
+    "booked_at": "2026-10-02 16:00:05", "start_time": "2026-10-02 16:00:00",
+    "completed_at": None, "cancelled_at": None,
+    "is_direct_bill": False, "is_hotel_order": False, "hotel_commission": "0.00",
+    "customer": {"id": 5512, "name": "Ahmed Al Mansoori", "mobile": "971501234567"},
+    "total_amount": "100.00", "total_discount": "0.00", "card_discount_amount": "0.00",
+    "tax_percentage": "5.00", "total_tax": "5.00", "rounded_diff": "0.00", "net_amount": "105.00",
+    "amount_received": "100.00", "amount_refunded": "0.00", "paid_amount": "100.00", "balance_due": "5.00",
+    "items_out": 2,
+    "items": [
+        {"sync_id": "01923e1c-0a12-7b22-8c33-d4e5f6a7b8c9", "status": "active",
+         "vehicle": {"id": 1041, "name": "MO 41", "identifier": "VB1241"},
+         "fare_id": 88, "offer_id": None, "package_minutes": 60,
+         "start_time": "2026-10-02 16:00:00", "expected_end_time": "2026-10-02 17:00:00", "end_time": None,
+         "rate": "50.00", "amount": "50.00", "overtime_amount": "0.00", "discount": "0.00",
+         "tax_amount": "2.50", "total_amount": "50.00", "replaced_item_id": None, "reason": ""},
+        {"sync_id": "01923e1c-0a13-7b22-8c33-d4e5f6a7b8c9", "status": "active",
+         "vehicle": {"id": 3102, "name": "DC 02", "identifier": "VB0874"},
+         "fare_id": 88, "offer_id": None, "package_minutes": 60,
+         "start_time": "2026-10-02 16:00:00", "expected_end_time": "2026-10-02 17:00:00", "end_time": None,
+         "rate": "50.00", "amount": "50.00", "overtime_amount": "0.00", "discount": "0.00",
+         "tax_amount": "2.50", "total_amount": "50.00", "replaced_item_id": None, "reason": ""},
+    ],
+    "payments": [
+        {"sync_id": "01923e1c-0a14-7b22-8c33-d4e5f6a7b8c9", "kind": "advance",
+         "payment_mode": {"id": 1, "name": "Cash"}, "amount": "60.00", "reference_no": "",
+         "reference_date": None, "paid_at": "2026-10-02 16:00:05"},
+        {"sync_id": "01923e1c-0a15-7b22-8c33-d4e5f6a7b8c9", "kind": "advance",
+         "payment_mode": {"id": 2, "name": "Card"}, "amount": "40.00", "reference_no": "448812",
+         "reference_date": "2026-10-02", "paid_at": "2026-10-02 16:00:05"},
+    ],
+    "next_order_number": 232,
 }
 
+_BOOK_ERRORS = (
+    "sync_id_conflict", "order_no_used", "vehicle_already_rented", "vehicle_repeated", "item_id_used",
+    "payment_id_used", "unknown_customer", "unknown_payment_mode", "unknown_vehicle",
+    "vehicle_not_at_station", "unknown_fare", "unknown_offer",
+)
+
 _ORDER_DESCRIPTION = """
-One rental booking -- header, vehicle lines, and the first payment if any, in
-one call.
+One rental booking -- the order, its vehicles and any advance payments, in one
+call (order_lifecycle_design.md 3.1).
 
-**`sync_id`** -- a UUIDv7 made on the device for this order and resent
-**unchanged** on every retry. It becomes the order's id; a second call with
-the same sync_id is answered `duplicate` with the stored order and writes
-nothing, so an offline queue can resend safely -- the same contract as the
-attendance mark call.
+**Ids -- all UUIDv7, all made on the tablet, all resent unchanged on a retry:**
+- `sync_id` -- the order's id, and this call's;
+- `items[].sync_id` -- each vehicle line's id, used later to return or replace it;
+- `payments[].sync_id` -- each payment's id.
 
-**`customer_id`**, **`items[].vehicle_id`**, **`items[].fare_id`**,
-**`items[].offer_id`** and **`payment_mode_id`** are ids the device already
-holds from `/customers/lookup` (or the customer registration call),
-`/vehicles`, `/fares` and `/payment-modes` -- never a code or name to resolve
-here.
+**Resending is safe.** The same call again (same `sync_id`, same body) is
+answered `duplicate` with the reply first given, and writes nothing. The same
+`sync_id` with a *different* body is `sync_id_conflict` -- a bug in the app,
+never silently one version or the other. Keys may come in any order.
 
-**Money** (`total_amount`, `net_amount`, item `rate`/`amount`/...) is trusted
-as sent, not recomputed against the server's own fare engine.
+**`customer_id`, `vehicle_id`, `fare_id`, `offer_id`, `payment_mode_id`** are
+ids the tablet already holds from `/customers/lookup`, `/vehicles`, `/fares`
+and `/payment-modes`.
 
-**Times** -- `YYYY-MM-DD HH:MM:SS` in company time, no offset. `start_time`
-is the rental's own start; `device_created_at` is when the booking happened
-on the device, which can be earlier if it was made offline.
+**`order_no`** is the printed receipt number, unique in the company. The
+server reads the running number back out of it (this tablet's prefix and
+registration id, then the digits) and raises the tablet's receipt counter to
+it; `next_order_number` in the reply is the counter after that.
 
-`collected_amount`, if sent and greater than 0, records the order's first
-payment (kind `advance`) in the given `payment_mode`.
+**`payments`** (may be empty or left out) -- the money taken at booking,
+one entry per payment mode (cash and card are two entries). Only `advance`
+at booking. `amount` more than 0; `reference_no` / `reference_date` for a
+card slip or cheque.
 
-| Refusal | When |
-|---|---|
-| `unknown_customer` | no customer with that id, for this company |
-| `unknown_payment_mode` | no active payment mode with that id |
-| `unknown_vehicle` | a vehicle id is not this company's |
-| `vehicle_not_at_station` | a vehicle is not at this device's own station |
-| `unknown_fare` / `unknown_offer` | not this company's |
-| `order_no_used` | that order number is already used in this company |
-| `vehicle_already_rented` | a vehicle in this order is already on an active rental elsewhere |
-| `sync_id_conflict` | that sync_id was already used by a different company |
-"""
+**Money** is stored as sent, not recomputed. **Times** are
+`YYYY-MM-DD HH:MM:SS` in company time, no offset: `booked_at` is when the
+booking happened on the tablet (earlier if it was offline), `start_time`
+the rental's own start.
+
+**Errors** carry `data.retry`: `true` -- keep the call queued and send it
+again; `false` -- stop and show the operator.
+
+""" + _error_table(*_BOOK_ERRORS)
 
 
-class OrderCreateView(APIView):
+class OrderCreateView(_OperatorView):
     """POST /api/v1/{app}/orders -- operator app only."""
-
-    authentication_classes = [AppJWTAuthentication]
-    permission_classes = [IsAuthenticated]
 
     @extend_schema(
         tags=["Operator Orders"],
-        summary="Create one rental booking",
+        summary="Book a rental",
         description=_ORDER_DESCRIPTION,
         request=envelope_request("OrderCreateEnvelope", OrderCreateRequest),
         responses=envelope_responses(
             (200, "ok", "Order created.", _ORDER_SAMPLE),
             (200, "duplicate", "Already recorded.", _ORDER_SAMPLE),
             (400, "invalid_request", "sync_id must be a UUIDv7.", {"errors": {"sync_id": "must be a UUIDv7"}}),
-            (400, "unknown_customer", "No customer with that id.", {}),
-            (400, "unknown_payment_mode", "No payment mode with that id.", {}),
-            (400, "unknown_vehicle", "No vehicle with that id.", {}),
-            (400, "vehicle_not_at_station", "That vehicle is not at this station.", {}),
-            (400, "unknown_fare", "No fare with that id.", {}),
-            (400, "unknown_offer", "No offer with that id.", {}),
-            (401, "not_authenticated", "Sign in first.", {}),
-            (403, "wrong_channel", "Not allowed on this app.", {}),
-            (409, "device_not_mapped", "This device has no station.", {}),
-            (409, "branch_inactive", "This station is closed.", {}),
-            (409, "order_no_used", "That order number is already used.", {}),
-            (409, "vehicle_already_rented", "A vehicle in this order is already on an active rental.", {}),
-            (409, "sync_id_conflict", "That sync_id is already used.", {}),
-            SERVER_ERROR,
+            *_error_rows(*_BOOK_ERRORS),
+            *_COMMON,
         ),
     )
     def post(self, request, app):
-        if app != Channel.OPERATOR:
-            return envelope("wrong_channel", "Not allowed on this app.", http_status=403)
-        branch, refused = session_station(request)
+        branch, refused = self.station(request, app)
         if refused:
             return refused
 
         _, request_data = request_parts(request)
         form = OrderCreateRequest(data=request_data)
         form.is_valid(raise_exception=True)
-        values = dict(form.validated_data)
+        values = form.validated_data
 
         zone = zone_for(branch.company)
-        for key in ("device_created_at", "start_time"):
+        for key in ("booked_at", "start_time"):
             values[key] = timezone.make_aware(values[key], zone)
         for item in values["items"]:
             for key in ("start_time", "expected_end_time"):
                 item[key] = timezone.make_aware(item[key], zone)
+        for payment in values.get("payments") or []:
+            payment["paid_at"] = timezone.make_aware(payment["paid_at"], zone)
 
+        session = request.auth
         try:
-            order, created = services.create_rental_order(request.auth, values)
+            data, created = services.create_rental_order(
+                session, values, request_data,
+                lambda order: order_json(order, zone=zone, next_order_number=_counter_number(session)),
+            )
         except services.OrderRefused as refusal:
-            return envelope(refusal.code, refusal.message, http_status=refusal.status)
+            return _refused(refusal)
 
-        data = _order_json(order)
         if not created:
             return envelope("duplicate", "Already recorded.", data)
         return envelope("ok", "Order created.", data)
 
 
-def _order_json(order):
-    return {
-        "sync_id": str(order.pk), "order_no": order.order_no, "status": order.status,
-        "net_amount": str(order.net_amount), "paid_amount": str(order.paid_amount),
-        "balance_due": str(order.balance_due), "payment_status": order.payment_status,
-        "items": [
-            {"item_id": str(item.pk), "vehicle_id": item.vehicle_id, "status": item.status}
-            for item in order.items.all()
-        ],
-    }
+_DETAIL_DESCRIPTION = """
+One order, whole -- in the same shape every order call answers with. Look it
+up by `sync_id` **or** `order_no`, not both.
+
+Any tablet at the order's station can read it, so a rental is never stuck on
+a dead tablet. An order at another station is `unknown_order`, the same as
+one that does not exist.
+"""
+
+
+class OrderDetailView(_OperatorView):
+    """POST /api/v1/{app}/orders/detail -- operator app only."""
+
+    @extend_schema(
+        tags=["Operator Orders"],
+        summary="One order, with its items and payments",
+        description=_DETAIL_DESCRIPTION,
+        request=envelope_request("OrderDetailEnvelope", OrderDetailRequest),
+        responses=envelope_responses(
+            (200, "ok", "Order.", _ORDER_SAMPLE),
+            (400, "invalid_request", "sync_id or order_no is required.",
+             {"errors": {"sync_id": "or order_no is required"}}),
+            *_error_rows("unknown_order"),
+            *_COMMON,
+        ),
+    )
+    def post(self, request, app):
+        branch, refused = self.station(request, app)
+        if refused:
+            return refused
+
+        _, request_data = request_parts(request)
+        form = OrderDetailRequest(data=request_data)
+        form.is_valid(raise_exception=True)
+
+        try:
+            order = services.order_at_station(
+                branch, sync_id=form.validated_data.get("sync_id"), order_no=form.validated_data.get("order_no"),
+            )
+        except services.OrderRefused as refusal:
+            return _refused(refusal)
+        data = order_json(order, zone=zone_for(branch.company), next_order_number=_counter_number(request.auth))
+        return envelope("ok", "Order.", data)

@@ -1,14 +1,14 @@
 """Type checks for the rental APIs' `request_data`. Same pattern as
 apps/fare/serializers.py and apps/fleet/serializers.py -- types only; the
-lookup, the customer create and the order create themselves are
+lookup, the customer create and the order calls themselves are
 apps/rental/services.py (customer_by_phone, create_customer,
-create_rental_order)."""
+create_rental_order, order_at_station)."""
 
 from decimal import Decimal
 
 from rest_framework import serializers
 
-from apps.rental.models import Gender, IdType, full_number
+from apps.rental.models import Gender, IdType, PaymentKind, full_number
 from core.api import (
     REQUIRED,
     date_field,
@@ -76,20 +76,22 @@ class CustomerCreateRequest(PhoneFields):
     remarks = _optional_text()
 
 
-def _money_field(**kwargs):
+def _money_field(min_value=Decimal(0), **kwargs):
     return serializers.DecimalField(
-        max_digits=12, decimal_places=2, min_value=Decimal(0),
-        error_messages={**REQUIRED, "invalid": "must be a number", "min_value": "must be 0 or more"},
+        max_digits=12, decimal_places=2, min_value=min_value,
+        error_messages={**REQUIRED, "invalid": "must be a number", "min_value": f"must be {min_value} or more"},
         **kwargs,
     )
 
 
 class OrderItemRequest(serializers.Serializer):
-    """One vehicle line. vehicle_id, fare_id and offer_id are ids the device
-    already holds from /vehicles, /fares and (once it exists) an offers
-    download -- never a code to resolve here, the same as every other
-    lookup-by-download field in this project."""
+    """One vehicle line. `sync_id` is the line's own id, made on the tablet so
+    it can return or replace the line before the server has replied
+    (order_lifecycle_design.md 2). vehicle_id, fare_id and offer_id are ids
+    the device already holds from /vehicles and /fares -- never a code to
+    resolve here."""
 
+    sync_id = uuid7_field()
     vehicle_id = whole_number_field()
     fare_id = whole_number_field(required=False, allow_null=True)
     offer_id = whole_number_field(required=False, allow_null=True)
@@ -101,45 +103,57 @@ class OrderItemRequest(serializers.Serializer):
     discount = _money_field(required=False)
     tax_amount = _money_field(required=False)
     total_amount = _money_field()
-    remarks = text_field(max_length=500, required=False, allow_blank=True)
+
+    def validate(self, values):
+        if values["expected_end_time"] < values["start_time"]:
+            raise serializers.ValidationError({"expected_end_time": "must not be before start_time"})
+        return values
+
+
+class OrderPaymentRequest(serializers.Serializer):
+    """One payment entry (design 4.4). At booking only an `advance`; the rest
+    of the kinds arrive with their own calls (settle, payments)."""
+
+    sync_id = uuid7_field()
+    kind = serializers.ChoiceField(
+        choices=[PaymentKind.ADVANCE], error_messages={**REQUIRED, "invalid_choice": "must be advance"},
+    )
+    payment_mode_id = whole_number_field()
+    amount = _money_field(min_value=Decimal("0.01"))
+    reference_no = text_field(max_length=50, required=False, allow_blank=True)
+    reference_date = date_field(required=False, allow_null=True)
+    paid_at = datetime_field()
 
 
 class OrderCreateRequest(serializers.Serializer):
-    """One rental booking, whole -- order header, its vehicle lines, and (if
-    money was collected) the first payment, in one call. Device money
-    figures (total/tax/net/rate/amount/...) are trusted as sent, not
-    recomputed server-side against apps.fare.pricing (design decision).
+    """One rental booking, whole -- the order, its vehicle lines and any
+    advance payments, in one call. Device money figures are trusted as sent,
+    not recomputed (design 5, decision 4).
 
-    `sync_id` is a UUIDv7 made on the device and resent unchanged on retry;
-    it becomes the order's id. A resend answers `duplicate` and writes
-    nothing new, the same contract as apps.crew.api's attendance mark.
-
-    The branch, device and creating user are never sent -- they are the
-    signed-in session's own (session_station / request.auth), the same rule
-    apps/devices/api.py::RegistrationView documents for a branch: never
-    revealed or accepted before or outside the session that owns it.
+    `sync_id` is the order's id and this call's, a UUIDv7 made on the tablet
+    and resent unchanged on retry. The branch, device and user are never
+    sent -- they are the signed-in session's own.
     """
 
     sync_id = uuid7_field()
     order_no = text_field(max_length=30)                # the receipt number, unique per company
     customer_id = whole_number_field()
 
-    # device_created_at is when the booking happened on the device, possibly
-    # offline, well before this call reaches the server; start_time is the
-    # rental's own start, which can differ (a scheduled booking).
-    device_created_at = datetime_field()
+    # booked_at is when the booking happened on the tablet, possibly offline,
+    # well before this call reaches the server; start_time is the rental's own.
+    booked_at = datetime_field()
     start_time = datetime_field()
 
-    payment_mode_id = whole_number_field()
     is_direct_bill = serializers.BooleanField(required=False, default=False)
-    collected_amount = _money_field(required=False)          # first Payment, if any
+    is_hotel_order = serializers.BooleanField(required=False, default=False)
+    hotel_commission = _money_field(required=False)
 
     total_amount = _money_field()
     total_discount = _money_field(required=False)
     total_tax = _money_field(required=False)
     tax_percentage = serializers.DecimalField(
         max_digits=5, decimal_places=2, min_value=Decimal(0), required=False,
-        error_messages={**REQUIRED, "invalid": "must be a number"},
+        error_messages={**REQUIRED, "invalid": "must be a number", "min_value": "must be 0 or more"},
     )
     rounded_diff = serializers.DecimalField(
         max_digits=6, decimal_places=2, required=False,
@@ -147,12 +161,37 @@ class OrderCreateRequest(serializers.Serializer):
     )
     net_amount = _money_field()
 
-    is_hotel_order = serializers.BooleanField(required=False, default=False)
-    hotel_commission = _money_field(required=False)
-
     items = OrderItemRequest(many=True)
+    payments = OrderPaymentRequest(many=True, required=False)
 
     def validate_items(self, items):
         if not items:
             raise serializers.ValidationError("An order needs at least one vehicle.")
+        if _repeated(item["sync_id"] for item in items):
+            raise serializers.ValidationError("Each item needs its own sync_id.")
         return items
+
+    def validate_payments(self, payments):
+        if _repeated(payment["sync_id"] for payment in payments):
+            raise serializers.ValidationError("Each payment needs its own sync_id.")
+        return payments
+
+
+def _repeated(values):
+    values = list(values)
+    return len(set(values)) != len(values)
+
+
+class OrderDetailRequest(serializers.Serializer):
+    """One order, by its sync_id or its order number -- exactly one."""
+
+    sync_id = serializers.UUIDField(required=False, allow_null=True,
+                                    error_messages={"invalid": "must be a UUID"})
+    order_no = text_field(max_length=30, required=False, allow_blank=True)
+
+    def validate(self, values):
+        if values.get("sync_id") and values.get("order_no"):
+            raise serializers.ValidationError({"order_no": "must not be sent with sync_id"})
+        if not values.get("sync_id") and not values.get("order_no"):
+            raise serializers.ValidationError({"sync_id": "or order_no is required"})
+        return values

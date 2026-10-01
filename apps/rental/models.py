@@ -390,3 +390,57 @@ class Payment(TimeStampedModel):
 
     def __str__(self):
         return f"{self.get_kind_display()} {self.amount} on {self.order}"
+
+
+class OrderAction(models.TextChoices):
+    BOOK = "book", "Booked"
+    ADD = "add", "Vehicle added"
+    REPLACE = "replace", "Vehicle replaced"
+    REMOVE = "remove", "Vehicle removed"
+    RETURN = "return", "Vehicle returned"
+    PAYMENT = "payment", "Payment"
+    SETTLE = "settle", "Settled"
+    CANCEL_REQUEST = "cancel_request", "Cancel requested"
+    CANCEL_APPROVED = "cancel_approved", "Cancel approved"
+    CANCEL_REJECTED = "cancel_rejected", "Cancel rejected"
+
+
+class OrderEvent(models.Model):
+    """One call that changed an order -- its history, and what makes a resent
+    call safe (order_lifecycle_design.md 2, 4.5).
+
+    `id` is the call's own sync_id. A resend with the same body is answered
+    with `response` again and writes nothing; the same id with a different
+    body (`request_hash`) is a conflict. Append-only: never edited, so it
+    carries no modified_* fields.
+    """
+
+    id = models.UUIDField(primary_key=True, editable=False)      # the call's sync_id
+
+    order = models.ForeignKey(Order, on_delete=models.PROTECT, related_name="events")
+    action = models.CharField(max_length=20, choices=OrderAction.choices)
+    item = models.ForeignKey(
+        OrderItem, null=True, blank=True, on_delete=models.PROTECT, related_name="+",
+    )
+    new_item = models.ForeignKey(
+        OrderItem, null=True, blank=True, on_delete=models.PROTECT, related_name="+",
+    )
+    detail = models.JSONField(default=dict, blank=True)
+
+    request_hash = models.CharField(max_length=64)               # SHA-256 of request_data
+    response = models.JSONField(default=dict)                    # the reply's data, replayed as-is
+
+    happened_at = models.DateTimeField()                         # tablet time
+    received_at = models.DateTimeField(auto_now_add=True)        # server time
+    device = models.ForeignKey(
+        "devices.Device", null=True, blank=True, on_delete=models.PROTECT, related_name="order_events",
+    )
+    user = models.ForeignKey("core.User", on_delete=models.PROTECT, related_name="+")
+
+    class Meta:
+        db_table = "order_event"
+        ordering = ["happened_at"]
+        indexes = [models.Index(fields=["order", "happened_at"])]
+
+    def __str__(self):
+        return f"{self.get_action_display()} on {self.order}"
