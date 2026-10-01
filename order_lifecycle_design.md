@@ -52,6 +52,28 @@ reference no., tablet, operator, and the **tablet's** time. The order's paid
 amount is always the sum of these rows; there is no second copy to disagree
 with it (legacy's `DMSOrder.PaidAmount` vs `SUM(DMSPayment.Amount)` bug).
 
+### Invoice
+
+An invoice exists only for a **settled** order: settlement (or the one-step
+direct return) creates it in the same transaction, after full payment. A
+cancelled order never gets one.
+
+- **Number = the order number** (as BYKY works today). The tablet sends
+  nothing extra at settlement. A cancelled order's number is simply never
+  invoiced; the gap is explained by that cancelled order and its approved
+  cancel request. So `order_no` becomes **required and unique per company**.
+- **A frozen copy**, never edited after issue: `invoice` (number, issue time,
+  company TRN, customer name and phone as at issue, station, tablet,
+  operator, gross / discount / tax / rounding / net) and `invoice_line` (one
+  row per billed vehicle: package, start / end, amount, discount, tax).
+  Replaced lines are not billed and not copied.
+- One invoice per order. A later correction is a **credit note** referencing
+  the invoice — never an edit (legacy's credit note overwrote `DMSOrder` in
+  place). Credit notes are not in this build; the tables leave room for them.
+
+Legacy had no invoice table: `RMS_PRINT_INVOICE` rebuilt it from the order at
+print time, so editing the order changed an invoice already issued.
+
 ---
 
 ## 2. Ids and idempotency
@@ -261,13 +283,16 @@ balance        4.00   → collected now by card
 
 Server checks the figures add up and every line is back; then in one
 transaction: order Completed, payment P-2 saved, the card-discount claim
-marked Redeemed with AED 11.00. Had the claim still been pending, it would be
+marked Redeemed with AED 11.00, and invoice `C1-0007-000231` issued (the order
+number). Had the claim still been pending, it would be
 Cancelled and the tablet would have billed without it.
 
 ```json
 { "code": "ok", "message": "Order settled.",
   "data": { "sync_id": "O-1", "status": "completed", "net_amount": "104.00",
-            "paid_amount": "104.00", "balance_due": "0.00", "card_discount": "redeemed" } }
+            "paid_amount": "104.00", "balance_due": "0.00", "card_discount": "redeemed",
+            "invoice": { "invoice_no": "C1-0007-000231", "issued_at": "2026-10-02 17:13:30",
+                         "net_amount": "104.00" } } }
 ```
 
 Overpaid instead (advance 110): the payment is `{"kind": "refund", "amount": "6.00"}`
@@ -291,7 +316,7 @@ and `paid_amount` still comes to 104.00.
 | 16:20:00 | R-1 | MO 41 → MO 42, "Chain broken" | L-1 → L-3 | operator on TAB-07 |
 | 17:00:00 | T-1 | DC 02 returned | L-2 | operator on TAB-07 |
 | 17:12:00 | T-2 | MO 42 returned, overtime 10.00 | L-3 | operator on TAB-07 |
-| 17:13:30 | S-1 | settled 104.00, card discount 11.00, balance 4.00 card | — | operator on TAB-07 |
+| 17:13:30 | S-1 | settled 104.00, card discount 11.00, balance 4.00 card, invoice issued | — | operator on TAB-07 |
 
 Each row also stores the request fingerprint and the reply sent.
 
