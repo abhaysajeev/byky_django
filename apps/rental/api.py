@@ -17,6 +17,7 @@ POST /api/v1/{app}/orders/detail: one order, by sync_id or order number.
 
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
@@ -365,10 +366,12 @@ never silently one version or the other. Keys may come in any order.
 ids the tablet already holds from `/customers/lookup`, `/vehicles`, `/fares`
 and `/payment-modes`.
 
-**`order_no`** is the printed receipt number, unique in the company. The
-server reads the running number back out of it (this tablet's prefix and
+**`order_no`** is the printed receipt number, unique in the company, built
+from the top-level `order_no_prefix` that login and `/device/settings` give.
+The server reads the running number back out of it (this tablet's prefix and
 registration id, then the digits) and raises the tablet's receipt counter to
-it; `next_order_number` in the reply is the counter after that.
+it -- **even when the booking is refused**, because the receipt was already
+printed. `next_order_number` in the reply is the counter after that.
 
 **`payments`** (may be empty or left out) -- the money taken at booking,
 one entry per payment mode (cash and card are two entries). Only `advance`
@@ -409,7 +412,10 @@ class OrderCreateView(_OperatorView):
 
         _, request_data = request_parts(request)
         form = OrderCreateRequest(data=request_data)
-        form.is_valid(raise_exception=True)
+        if not form.is_valid():
+            # Refused, but the receipt was printed: its number still counts.
+            services.count_receipt(request.auth, request_data.get("order_no"))
+            raise ValidationError(form.errors)
         values = form.validated_data
 
         zone = zone_for(branch.company)

@@ -257,7 +257,7 @@ class RegistrationView(PublicAPIView):
 
 _SETTINGS_SAMPLE = {
     "device_settings": {
-        "settings_code": "S01", "station": "Dubai Parks", "order_no_prefix": "DUBPP",
+        "settings_code": "S01", "station": "Dubai Parks",
         "logo_changed_at": "2026-09-20T09:12:00+04:00", "logo": "",
     },
     "order_no_prefix": "DUBPP",
@@ -272,7 +272,9 @@ operator login returns, on its own, so the app can refresh it without signing
 in again (on opening, after its offline queue has uploaded, or from a refresh
 button).
 
-**Receipt numbering:** `last_order_no` is the last receipt number the server has
+**Receipt numbering:** build every receipt number from the top-level
+`order_no_prefix` -- this tablet's own, kept even if the station's prefix is
+changed later. `last_order_no` is the last receipt number the server has
 seen from this tablet at this station (`null` before its first);
 `next_order_number` is the one after it. Bookings still waiting in the
 tablet's queue have not moved it yet, so the tablet carries on from whichever

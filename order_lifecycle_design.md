@@ -183,7 +183,17 @@ queue in one request, with the same `sync_id`s and the same rules.
   six or more digits (`DUBPP` + `60182` + `000231`). Each booking raises the
   tablet's `BillContinuity.last_number` to the number inside its `order_no`
   (never lowers it; a number not in this tablet's shape is stored and counts
-  nothing). Every order reply carries `next_order_number`.
+  nothing) — **a refused booking too**, since its receipt was already
+  printed. Every order reply carries `next_order_number`.
+- **One prefix.** The tablet builds receipt numbers from the top-level
+  `order_no_prefix` (its counter's own, kept if the station's is changed).
+  `device_settings` carries no prefix of its own.
+- **App rules for offline queues:** at login continue from the *higher* of
+  the tablet's own number and the server's (queued bookings have not raised
+  the server's yet — taking the server's blindly reissues them, and their
+  uploads are refused `order_no_used`); upload the whole queue before logging
+  out (a tablet moved to another station would upload its old station's
+  bookings under the new one).
 
 ---
 

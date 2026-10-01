@@ -255,13 +255,29 @@ def create_rental_order(session, values, request_data, reply_for):
     (design 5, decision 7). Ported from: Save_Order_Booking.
     """
     sync_id = values["sync_id"]
-    if not OrderEvent.objects.filter(pk=sync_id).exists() and Order.objects.filter(pk=sync_id).exists():
-        # An order stored before order events existed: not this call.
-        raise OrderRefused("sync_id_conflict")
-    return run_once(
-        event_id=sync_id, company=session.branch.company, request_data=request_data,
-        apply=lambda: _book(session, values, reply_for),
-    )
+    try:
+        if not OrderEvent.objects.filter(pk=sync_id).exists() and Order.objects.filter(pk=sync_id).exists():
+            # An order stored before order events existed: not this call.
+            raise OrderRefused("sync_id_conflict")
+        return run_once(
+            event_id=sync_id, company=session.branch.company, request_data=request_data,
+            apply=lambda: _book(session, values, reply_for),
+        )
+    except OrderRefused:
+        count_receipt(session, values["order_no"])
+        raise
+
+
+def count_receipt(session, order_no):
+    """Raise the tablet's receipt counter for a booking that was refused.
+
+    The receipt was printed and handed over before the upload, so its number
+    is used whether or not the server keeps the order. Counted outside the
+    refused booking's transaction, which rolled back; otherwise a tablet
+    reinstalled afterwards would be handed that number again at login.
+    """
+    if isinstance(order_no, str) and order_no:
+        devices_services.raise_counter_from(session.device, session.branch, BillKind.ORDER, order_no)
 
 
 def _book(session, values, reply_for):

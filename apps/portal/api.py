@@ -205,8 +205,7 @@ _OPERATOR_LOGIN_SUCCESS_DATA = {
         "is_multi_device": False, "allows_test_ride": True,
     },
     "device_settings": {
-        "settings_code": "S01", "station": "Creek Park 1",
-        "order_no_prefix": "AUH01", "logo": "iVBORw0KGgoAAAANSUhEUgAA...",
+        "settings_code": "S01", "station": "Creek Park 1", "logo": "iVBORw0KGgoAAAANSUhEUgAA...",
     },
     "order_no_prefix": "AUH01", "last_order_no": "AUH0160182000334", "next_order_number": 335, "next_test_number": 6,
 }

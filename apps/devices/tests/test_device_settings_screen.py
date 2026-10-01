@@ -216,7 +216,7 @@ def test_the_payload_carries_the_logo_so_a_station_can_print_offline(rows, stati
     payload = services.settings_payload(branch)
 
     assert base64.b64decode(payload["logo"]) == raw
-    assert payload["order_no_prefix"] == "AZP01"
+    assert "order_no_prefix" not in payload            # the tablet's counter carries the prefix
     assert payload["header_1"] == "AL ZAKHER PARK"
     assert (payload["tax_type"], payload["discount_type"]) == (company.tax_type, company.discount_type)
 

@@ -45,6 +45,18 @@ def test_it_returns_the_same_block_as_login(client, app_user, device, world):
     assert set(api._SETTINGS_SAMPLE["device_settings"]) <= set(body["data"]["device_settings"])
 
 
+def test_the_prefix_to_number_with_is_the_tablets_own_and_only_one(client, token, world):
+    """Changed at the station after this tablet started counting: the tablet
+    keeps numbering with the prefix its counter started with, and is not
+    handed the new one anywhere it could pick up by mistake."""
+    DeviceSettings.objects.filter(branch=world["branch"]).update(order_no_prefix="NEWPX")
+
+    data = settings(client, token)["data"]
+
+    assert data["order_no_prefix"] == "CREEK"
+    assert "order_no_prefix" not in data["device_settings"]
+
+
 def test_it_tells_the_last_receipt_the_server_has_seen(client, token, device, world):
     BillContinuity.objects.filter(device=device, kind="order").update(last_number=334)
 

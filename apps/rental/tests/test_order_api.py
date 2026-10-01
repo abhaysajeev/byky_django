@@ -210,6 +210,19 @@ def test_a_vehicle_already_out_is_refused(client, world, token, shop):
     assert Order.objects.count() == 1
 
 
+def test_a_refused_booking_still_counts_its_printed_receipt(client, world, token, shop):
+    """Printed and handed over before the upload: if the counter forgot it,
+    a tablet reinstalled afterwards would be handed the same number again."""
+    call(client, BOOK, booking(world, shop, number=231), token=token)
+
+    assert refusal(client, token, booking(world, shop, number=240))[0] == "vehicle_already_rented"
+    assert counter(world, shop) == 240
+
+    invalid = booking(world, shop, number=245, items=[])
+    assert refusal(client, token, invalid)[0] == "invalid_request"
+    assert counter(world, shop) == 245
+
+
 def test_the_same_vehicle_twice_is_refused(client, world, token, shop):
     request_data = booking(world, shop)
     request_data["items"][1]["vehicle_id"] = shop["mo41"].pk
@@ -252,7 +265,9 @@ def test_unknown_ids_are_refused_and_nothing_is_written(client, world, token, sh
     body = call(client, BOOK, request_data, token=token).json()
 
     assert (body["code"], body["data"]) == (code, {"retry": False})
-    assert (Order.objects.count(), OrderEvent.objects.count(), counter(world, shop)) == (0, 0, 0)
+    assert (Order.objects.count(), OrderEvent.objects.count(), Payment.objects.count()) == (0, 0, 0)
+    # The receipt was printed all the same: its number counts.
+    assert counter(world, shop) == 231
 
 
 @pytest.mark.parametrize(("change", "field"), [

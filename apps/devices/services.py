@@ -1465,7 +1465,10 @@ def settings_payload(branch, *, since=None):
         "print_logo": row.print_logo,
         "receipt_copies": row.receipt_copies,
         "share_on_whatsapp": row.share_on_whatsapp,
-        "order_no_prefix": row.order_no_prefix,
+        # No order_no_prefix here: the tablet builds its receipt numbers from
+        # its own counter's prefix (operator_settings' top-level
+        # order_no_prefix), a snapshot that a later change to this one does
+        # not move. Two prefixes in one reply invite using the wrong one.
         "customer_test_minutes": row.customer_test_minutes,
         "cashier_test_minutes": row.cashier_test_minutes,
         "round_off_mode": row.round_off_mode,
