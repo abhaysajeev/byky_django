@@ -342,7 +342,202 @@ Each row also stores the request fingerprint and the reply sent.
 
 ---
 
-## 4. Assumptions (to confirm)
+## 4. Models
+
+All in `apps/rental`. Structure only: the business validations (settlement
+refusals, totals adding up, vehicle availability, …) are specified later.
+Every model inherits `TimeStampedModel` (`created_by/on`, `modified_by/on`).
+Money is `DecimalField(12, 2)` throughout. Times are timezone-aware;
+"tablet time" fields hold when it happened on the device, `created_on` when the
+server stored it.
+
+```
+Customer ─┐                         ┌─ CardDiscountClaim (apps.discount, existing)
+          │                         │
+        Order ──< OrderItem >── Vehicle
+          │  │        └── replaced_item → OrderItem (self)
+          │  ├──< Payment >── PaymentMode
+          │  ├──< OrderEvent
+          │  ├──< CancelRequest
+          │  └──── Invoice ──< InvoiceLine
+```
+
+### 4.1 Enums
+
+| Enum | Values |
+|---|---|
+| `OrderStatus` | `active`, `completed`, `cancelled` |
+| `OrderItemStatus` | `active`, `returned`, `replaced`, `cancelled` |
+| `PaymentKind` | `advance`, `balance` (money in) · `refund` (money out) |
+| `OrderAction` | `book`, `add`, `replace`, `remove`, `return`, `payment`, `settle`, `cancel_request`, `cancel_approved`, `cancel_rejected` |
+| `CancelStatus` | `pending`, `approved`, `rejected` |
+
+### 4.2 `Order` — `order`
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | UUID, PK | the tablet's order `sync_id` |
+| `company` | FK Company | |
+| `branch` | FK Branch | the session's station |
+| `device` | FK Device | the booking tablet |
+| `customer` | FK Customer | |
+| `customer_name`, `customer_mobile` | char | as at booking; `customer_mobile` is the full number |
+| `order_no` | char(30) | the tablet's receipt number; also the invoice number |
+| `status` | `OrderStatus` | default `active` |
+| `is_direct_bill` | bool | return settles in one step |
+| `is_hotel_order` | bool | |
+| `hotel_commission` | money | |
+| `booked_at` | datetime | tablet time of booking |
+| `start_time` | datetime | rental start |
+| `settled_at` | datetime, null | tablet time of settlement |
+| `cancelled_at` | datetime, null | when the cancel was approved |
+| `total_amount` | money | gross: sum of billed lines |
+| `total_discount` | money | other discounts |
+| `card_discount_amount` | money | from the redeemed card-discount claim |
+| `tax_percentage` | decimal(5, 2) | |
+| `total_tax` | money | |
+| `rounded_diff` | decimal(6, 2) | may be negative |
+| `net_amount` | money | the bill |
+| `amount_received` | money, default 0 | Advance + Balance entries; written only by the payment service |
+| `amount_refunded` | money, default 0 | Refund entries; written only by the payment service |
+| `paid_amount` | **generated** | `amount_received − amount_refunded` |
+| `balance_due` | **generated** | `net_amount − paid_amount`; > 0 owed, 0 paid, < 0 refund owed |
+
+Keys and indexes: unique (`company`, `order_no`); index (`branch`, `status`),
+(`customer`), (`device`), (`booked_at`).
+
+Removed from today's model: `payment_mode` (per payment entry now),
+`invoice_no` (the `Invoice` row), `advance_amount` (Advance entries),
+`number_of_vehicles` (count of lines), `device_created_at` → `booked_at`,
+`synced_at` → `created_on`.
+
+### 4.3 `OrderItem` — `order_item` (a vehicle line)
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | UUID, PK | the tablet's line `sync_id` |
+| `order` | FK Order | `related_name="items"` |
+| `vehicle` | FK Vehicle | |
+| `status` | `OrderItemStatus` | default `active` |
+| `fare` | FK Fare, null | |
+| `offer` | FK Offer, null | |
+| `package_minutes` | int | |
+| `start_time` | datetime | |
+| `expected_end_time` | datetime | start + package |
+| `end_time` | datetime, null | returned / replaced / removed at (tablet time) |
+| `rate` | money | |
+| `amount` | money | package amount |
+| `overtime_amount` | money, default 0 | added at return |
+| `discount` | money, default 0 | |
+| `tax_amount` | money, default 0 | |
+| `total_amount` | money | what this line bills |
+| `replaced_item` | FK self, null | the old line this one replaced |
+| `reason` | text | replace / remove reason |
+
+Key: unique (`vehicle`) where `status = active` — a vehicle is on one active
+line at a time (exists today). Index (`order`), (`vehicle`, `status`).
+
+### 4.4 `Payment` — `payment` (payment entry)
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | UUID, PK | the tablet's payment `sync_id` |
+| `order` | FK Order | `related_name="payments"`; one order per entry |
+| `kind` | `PaymentKind` | |
+| `mode` | FK PaymentMode | |
+| `amount` | money | always > 0; `kind` gives the direction |
+| `reference_no` | char(50) | card slip, cheque |
+| `reference_date` | date, null | |
+| `paid_at` | datetime | tablet time |
+| `device` | FK Device | |
+| `collected_by` | FK User | |
+| `remarks` | text | |
+
+Never edited or deleted: a mistake is corrected by a reversing `refund`
+entry. Index (`order`), (`paid_at`), (`mode`).
+
+### 4.5 `OrderEvent` — `order_event` (history + idempotency)
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | UUID, PK | the call's `sync_id` |
+| `order` | FK Order | `related_name="events"` |
+| `action` | `OrderAction` | |
+| `item` | FK OrderItem, null | the line acted on (return, replace's old line, remove) |
+| `new_item` | FK OrderItem, null | replace / add: the line created |
+| `detail` | JSON | short summary for the history view (amounts, reason, …) |
+| `request_hash` | char(64) | SHA-256 of the request body — same id, different body → conflict |
+| `response` | JSON | the reply sent; replayed as-is on a duplicate |
+| `happened_at` | datetime | tablet time |
+| `device` | FK Device, null | null for web actions (a manager's approval) |
+| `user` | FK User | |
+
+Index (`order`, `happened_at`). Append-only.
+
+### 4.6 `CancelRequest` — `order_cancel_request`
+
+Same shape as `CardDiscountClaim`.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | UUID, PK | the request's `sync_id` |
+| `order` | FK Order | `related_name="cancel_requests"` |
+| `status` | `CancelStatus` | default `pending` |
+| `reason` | text | |
+| `requested_at` | datetime | tablet time |
+| `device` | FK Device | |
+| `requested_by` | FK User | |
+| `decided_at` | datetime, null | |
+| `decided_by` | FK User, null | |
+| `decision_remarks` | text | |
+
+Key: at most one `pending` request per order (partial unique). Index
+(`status`).
+
+### 4.7 `Invoice` — `invoice`
+
+Created at settlement, never edited.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | UUID, PK | server-made (uuid7) |
+| `order` | **one-to-one** Order | `related_name="invoice"` |
+| `company`, `branch`, `device` | FK | as on the order |
+| `invoice_no` | char(30) | = `order.order_no` |
+| `issued_at` | datetime | = settlement time |
+| `issued_by` | FK User | |
+| `company_name`, `company_trn` | char | as at issue (`Company.income_tax_number`) |
+| `branch_name` | char | as at issue |
+| `customer_name`, `customer_mobile` | char | as at issue |
+| `total_amount`, `total_discount`, `card_discount_amount`, `tax_percentage`, `total_tax`, `rounded_diff`, `net_amount` | money | copied from the order at issue |
+| `payments` | JSON | breakdown at issue: `[{mode, kind, amount, reference_no}]` |
+
+Key: unique (`company`, `invoice_no`). Index (`branch`, `issued_at`).
+
+### 4.8 `InvoiceLine` — `invoice_line`
+
+One row per billed line (replaced and removed lines are not billed).
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | UUID, PK | server-made |
+| `invoice` | FK Invoice | `related_name="lines"` |
+| `order_item` | FK OrderItem | traceability |
+| `vehicle_identifier`, `vehicle_name`, `vehicle_type` | char | as at issue |
+| `package_minutes` | int | |
+| `start_time`, `end_time` | datetime | |
+| `rate`, `amount`, `overtime_amount`, `discount`, `tax_amount`, `total_amount` | money | copied from the line |
+
+### 4.9 Links to existing models
+
+- `CardDiscountClaim.order` (exists) — settlement redeems an approved claim and
+  cancels a pending one; cancel approval cancels a pending one.
+- `BillContinuity` (kind `order`) — each booking raises the tablet's
+  `last_number` to the number in `order_no`.
+
+---
+
+## 5. Assumptions (to confirm)
 
 1. **Cancel needs manager approval** (as the card discount does); operators do
    not cancel on their own. Legacy: 900 approved cancel requests
@@ -359,7 +554,7 @@ Each row also stores the request fingerprint and the reply sent.
 
 ---
 
-## 5. Legacy reference
+## 6. Legacy reference
 
 Device calls were queued as JSON in a temp table and replayed by
 `RmsTempToDBService` (`TempServiceDB.cs`): SaveOrderDetails, ExitOrder,
