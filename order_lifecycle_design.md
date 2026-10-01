@@ -46,11 +46,29 @@ kept, its bugs are not. Legacy sources are cited as proc names
 
 ### Money
 
-One payment table. Every movement of money is one row: **Advance** (booking),
-**Balance** (settlement), **Refund** (money back) — amount, payment mode,
-reference no., tablet, operator, and the **tablet's** time. The order's paid
-amount is always the sum of these rows; there is no second copy to disagree
-with it (legacy's `DMSOrder.PaidAmount` vs `SUM(DMSPayment.Amount)` bug).
+**Payment entries**, in the manner of ERPNext's Payment Entry: every movement
+of money is one record, and an order can have any number of them — part cash,
+part card.
+
+| Field | Meaning |
+|---|---|
+| `sync_id` | the entry's id, made on the tablet; makes a resend safe |
+| `order` | the one order it belongs to (no splitting a payment across orders) |
+| `kind` | **Advance** (booking or mid-rental), **Balance** (settlement) — money in; **Refund** — money out |
+| `payment_mode` | Cash, Card, … — per entry |
+| `amount` | always positive; `kind` gives the direction |
+| `reference_no` / `reference_date` | card slip, cheque |
+| `paid_at` | the **tablet's** time |
+| tablet, operator | who took it |
+
+- **The order carries no payment mode.** Its `paid_amount` is money in − refunds,
+  computed from its entries — never a second copy to disagree with them
+  (legacy's `DMSOrder.PaidAmount` vs `SUM(DMSPayment.Amount)` bug).
+- **Entries are never edited or deleted.** A mistake is corrected by a
+  reversing Refund entry, so the trail stays complete.
+- Booking and settlement take a **list** of entries; `POST /orders/payments`
+  adds one mid-rental (e.g. an extra advance when the customer extends).
+- The invoice copies the payment breakdown by mode at settlement.
 
 ### Invoice
 
@@ -161,8 +179,10 @@ late; the bill settles with his approved discount card.
         "rate": "50.00", "amount": "50.00", "total_amount": "50.00" }
     ],
     "total_amount": "100.00", "tax_percentage": "5.00", "total_tax": "5.00", "net_amount": "105.00",
-    "payment": { "sync_id": "P-1", "kind": "advance", "payment_mode_id": 1, "amount": "100.00",
-                 "paid_at": "2026-10-02 16:00:05" }
+    "payments": [
+      { "sync_id": "P-1", "kind": "advance", "payment_mode_id": 1, "amount": "100.00",
+        "paid_at": "2026-10-02 16:00:05" }
+    ]
   }
 }
 ```
