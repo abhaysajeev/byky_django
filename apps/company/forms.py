@@ -50,6 +50,13 @@ class ScopedModelForm(forms.ModelForm):
         instance = super().save(commit=False)
         if hasattr(instance, "company_id") and not instance.company_id:
             instance.company = self.user.company
+        # Who wrote it. A form built without a user (a script, a test) leaves
+        # the stamps as they were rather than blanking them.
+        if self.user is not None and self.user.is_authenticated:
+            if instance.pk is None and hasattr(instance, "created_by_id"):
+                instance.created_by = self.user
+            if hasattr(instance, "modified_by_id"):
+                instance.modified_by = self.user
         if instance.pk is None and hasattr(instance, "apply_approval_defaults"):
             # Everything saves approved and active for now; the approval flow
             # is wired per screen later (design/02-company.md 3.0). A User

@@ -1,13 +1,14 @@
-"""Rental Management screens: the Customer list + drawer."""
+"""Rental Management screens: the Customer and Payment Mode lists + drawers."""
 
 from django.urls import reverse
 
 from apps.company import writes as company_writes
-from apps.company.scoping import companies_for
+from apps.company.models import PaymentMode
+from apps.company.scoping import companies_for, payment_modes_for
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
-from apps.rental import drawers, scoping
+from apps.rental import drawers, forms, scoping
 from apps.rental.models import Customer, Gender, IdType
 from core.ordering import recent_first
 from theme import drawers as theme_drawers
@@ -100,6 +101,59 @@ class CustomerDelete(company_writes.EntityDeleteView):
     model = Customer
     page_code = "rental.customer"
     noun = "Customer"
+
+
+class PaymentModeListView(RentalScreenView):
+    """How a customer may pay. The operator app offers the active ones at
+    checkout (POST /api/v1/{app}/payment-modes)."""
+
+    template_name = "rental/payment_mode_list.html"
+    page_code = "rental.payment_mode"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        modes = recent_first(payment_modes_for(self.request.user)).select_related("company")
+
+        rows = []
+        for i, mode in enumerate(modes):
+            rows.append({
+                "pk": mode.pk,
+                "name": mode.name,
+                "company": mode.company.name,
+                "active": mode.is_active,
+                "json_id": f"scr-record-payment-mode-{i}",
+                "fields_json": {
+                    "pk": mode.pk,
+                    "company": mode.company_id,
+                    "name": mode.name,
+                    "is_active": mode.is_active,
+                },
+            })
+
+        context.update({
+            "payment_modes": rows,
+            "show_company": self.request.user.sees_every_company,
+            "save_url_payment_mode": reverse("rental-payment-mode-save"),
+            "delete_url_payment_mode": reverse("rental-payment-mode-delete", args=[0]),
+            "noun_payment_mode": "Payment Mode",
+        })
+        return context
+
+
+class PaymentModeSave(company_writes.EntitySaveView):
+    model = PaymentMode
+    form_class = forms.PaymentModeForm
+    page_code = "rental.payment_mode"
+    noun = "Payment Mode"
+
+
+class PaymentModeDelete(company_writes.EntityDeleteView):
+    """Orders and payments point at a mode (PROTECT), so a used one is
+    switched off rather than removed."""
+
+    model = PaymentMode
+    page_code = "rental.payment_mode"
+    noun = "Payment Mode"
 
 
 class RentalPrivilegeView(PrivilegeScreenView):
