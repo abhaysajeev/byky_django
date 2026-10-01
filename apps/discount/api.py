@@ -17,7 +17,12 @@ from rest_framework.views import APIView
 from apps.company.models import WeekDay
 from apps.discount import services
 from apps.discount.models import CardDiscount, CardGrade, CardType
-from apps.discount.serializers import ApprovalRequest, CardDiscountsRequest, CardUsageRequest
+from apps.discount.serializers import (
+    ApprovalRequest,
+    ApprovalStatusRequest,
+    CardDiscountsRequest,
+    CardUsageRequest,
+)
 from apps.portal.authentication import AppJWTAuthentication
 from core.api import envelope, request_parts, session_station
 from core.enums import Channel
@@ -317,3 +322,86 @@ class ApprovalRequestView(APIView):
         if not created:
             return envelope("duplicate", "Already requested.", data)
         return envelope("ok", "Approval requested.", data)
+
+
+# -- Approval status ---------------------------------------------------------------
+
+_STATUS_SAMPLE = {
+    "sync_id": "01923f8e-5b2a-7c3d-9e4f-a1b2c3d4e5f6", "order_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9",
+    "status": "approved",
+    "card_discount_id": 12, "card_type_name": "Corporate", "card_grade_name": "Gold",
+    "bill_amount": "120.00", "discount_percent": "15.00", "discount_amount": "18.00", "net_amount": "102.00",
+    "requested_at": "2026-09-30 17:05:00", "decided_at": "2026-09-30 17:09:42", "remarks": "Card checked",
+}
+
+_STATUS_DESCRIPTION = """
+Where one approval request stands. `request_data`: the request's own `sync_id`
+and the `order_id` it was made for -- both required, and they must agree.
+
+* `pending` -- not decided yet; ask again later.
+* `approved` -- bill with the discount (the figures are the ones sent).
+* `rejected` -- bill without it; `remarks` may say why.
+* `cancelled` -- the order was billed while the request was still pending.
+* `redeemed` -- the discount was used on the closed bill.
+
+`decided_at` is null while pending (for a cancelled request, when it was
+cancelled); `remarks` is "" when none. Times `YYYY-MM-DD HH:MM:SS`, company time.
+"""
+
+
+def _amount(value):
+    return None if value is None else f"{value:.2f}"
+
+
+class ApprovalStatusView(APIView):
+    """POST /api/v1/{app}/card-discounts/approval/status -- operator app only."""
+
+    authentication_classes = [AppJWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Operator Discount Cards"],
+        summary="Where an approval request stands",
+        description=_STATUS_DESCRIPTION,
+        request=envelope_request("ApprovalStatusEnvelope", ApprovalStatusRequest),
+        responses=envelope_responses(
+            (200, "ok", "Approval status.", _STATUS_SAMPLE),
+            (400, "invalid_request", "sync_id is required.", {"errors": {"sync_id": "is required"}}),
+            (404, "request_not_found", "No approval request found.", {}),
+            (401, "not_authenticated", "Sign in first.", {}),
+            (403, "wrong_channel", "Not allowed on this app.", {}),
+            (409, "device_not_mapped", "This device has no station.", {}),
+            (409, "branch_inactive", "This station is closed.", {}),
+            SERVER_ERROR,
+        ),
+    )
+    def post(self, request, app):
+        if app != Channel.OPERATOR:
+            return envelope("wrong_channel", "Not allowed on this app.", http_status=403)
+        branch, refused = session_station(request)
+        if refused:
+            return refused
+
+        _, request_data = request_parts(request)
+        form = ApprovalStatusRequest(data=request_data)
+        form.is_valid(raise_exception=True)
+
+        company = branch.company
+        try:
+            claim = services.approval_status(company, form.validated_data["order_id"],
+                                             form.validated_data["sync_id"])
+        except services.DiscountRefused as refusal:
+            return envelope(refusal.code, refusal.message, http_status=refusal.status)
+
+        zone = zone_for(company)
+        return envelope("ok", "Approval status.", {
+            "sync_id": str(claim.pk), "order_id": str(claim.order_id), "status": claim.status,
+            "card_discount_id": claim.card_discount_id,
+            "card_type_name": claim.card_type.name, "card_grade_name": claim.card_grade.name,
+            "bill_amount": _amount(claim.bill_amount), "discount_percent": _amount(claim.discount_percent),
+            "discount_amount": _amount(claim.discount_amount), "net_amount": _amount(claim.net_amount),
+            "requested_at": claim.requested_at.astimezone(zone).strftime("%Y-%m-%d %H:%M:%S"),
+            "decided_at": claim.decided_at.astimezone(zone).strftime("%Y-%m-%d %H:%M:%S")
+            if claim.decided_at else None,
+            "remarks": claim.remarks,
+        })

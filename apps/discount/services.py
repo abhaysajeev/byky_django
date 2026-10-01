@@ -345,3 +345,13 @@ def cancel_pending_for_order(order, now=None):
     return CardDiscountClaim.objects.filter(order=order, status=ClaimStatus.PENDING).update(
         status=ClaimStatus.CANCELLED, decided_at=now or timezone.now(), modified_on=timezone.now(),
     )
+
+
+def approval_status(company, order_id, sync_id):
+    """The one approval request with this sync_id, on this order, of this
+    company -- or request_not_found, whichever of the three does not match."""
+    claim = (CardDiscountClaim.objects.select_related("card_type", "card_grade")
+             .filter(pk=sync_id, order_id=order_id, company=company).first())
+    if claim is None:
+        raise DiscountRefused("request_not_found", "No approval request found.", 404)
+    return claim

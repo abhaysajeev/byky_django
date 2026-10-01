@@ -9,4 +9,5 @@ urlpatterns = [
     path("card-discounts", api.CardDiscountsView.as_view(), name="api-app-card-discounts"),
     path("card-discounts/usage", api.CardUsageView.as_view(), name="api-app-card-usage"),
     path("card-discounts/approval", api.ApprovalRequestView.as_view(), name="api-app-card-approval"),
+    path("card-discounts/approval/status", api.ApprovalStatusView.as_view(), name="api-app-card-approval-status"),
 ]

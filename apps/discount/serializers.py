@@ -58,3 +58,11 @@ class ApprovalRequest(serializers.Serializer):
     requested_at = datetime_field()
     card_number = text_field(max_length=50, required=False, allow_blank=True)
     card_photo = text_field(max_length=500, required=False, allow_blank=True)
+
+
+class ApprovalStatusRequest(serializers.Serializer):
+    """One approval request, by its own sync_id and the order it is for --
+    both must agree."""
+
+    order_id = serializers.UUIDField(error_messages={**REQUIRED, "invalid": "must be an order's sync_id"})
+    sync_id = serializers.UUIDField(error_messages={**REQUIRED, "invalid": "must be a UUID"})
