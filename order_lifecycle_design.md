@@ -390,7 +390,7 @@ Customer ─┐                         ┌─ CardDiscountClaim (apps.discount,
 | `hotel_commission` | money | |
 | `booked_at` | datetime | tablet time of booking |
 | `start_time` | datetime | rental start |
-| `settled_at` | datetime, null | tablet time of settlement |
+| `completed_at` | datetime, null | tablet time of settlement (the settle call's `settled_at`) |
 | `cancelled_at` | datetime, null | when the cancel was approved |
 | `total_amount` | money | gross: sum of billed lines |
 | `total_discount` | money | other discounts |
