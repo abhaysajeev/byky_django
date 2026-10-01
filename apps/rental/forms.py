@@ -1,6 +1,7 @@
 """Forms for the Rental Management screens."""
 
 from apps.company.forms import ScopedModelForm
+from apps.company.models import PaymentMode
 from apps.rental.models import Customer, full_number
 
 
@@ -37,3 +38,10 @@ class CustomerForm(ScopedModelForm):
             if taken.exists():
                 self.add_error("mobile_no", "A customer with this phone number already exists.")
         return cleaned
+
+
+class PaymentModeForm(ScopedModelForm):
+    class Meta:
+        model = PaymentMode
+        fields = ["company", "name", "is_active"]
+        labels = {"name": "Payment Mode"}

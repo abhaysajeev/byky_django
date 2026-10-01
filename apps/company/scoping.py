@@ -15,7 +15,7 @@ A system user sees all of them.
 
 from django.db.models import Q
 
-from apps.company.models import Branch, Company, Country, Department, Location, State
+from apps.company.models import Branch, Company, Country, Department, Location, PaymentMode, State
 from core.enums import UserScope
 from core.scoping import scoped_to
 
@@ -34,6 +34,10 @@ def branches_for(user):
 
 def departments_for(user):
     return scoped_to(Department.objects.all(), user)
+
+
+def payment_modes_for(user):
+    return scoped_to(PaymentMode.objects.all(), user)
 
 
 def countries_for(user):

@@ -77,4 +77,25 @@ CUSTOMER = {
     ],
 }
 
-SPECS = {"drawer_customer": CUSTOMER}
+PAYMENT_MODE = {
+    "drawer_id": "drawerPaymentMode",
+    "scr_name": "payment_mode",
+    "model": "company.PaymentMode",
+    "add_label": "Add Payment Mode",
+    "title_field": "name",
+    "sections": [
+        {
+            "title": "",
+            "fields": [
+                {
+                    "id": "company", "label": "Company", "kind": "select",
+                    "required": True, "options_from": "companies_list",
+                    "option_key": "name", "system_only": True,
+                },
+                {"id": "name", "label": "Payment Mode", "kind": "text", "required": True},
+            ],
+        }
+    ],
+}
+
+SPECS = {"drawer_customer": CUSTOMER, "drawer_payment_mode": PAYMENT_MODE}
