@@ -33,6 +33,9 @@ _SOURCES = {
     Channel.MANAGER: (AttendanceSource.SELF, SelfAttendanceRequest),
 }
 
+# History is read by every app; only the operator and manager apps mark.
+_HISTORY_APPS = (Channel.OPERATOR, Channel.MANAGER, Channel.EMPLOYEE)
+
 TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
@@ -187,7 +190,9 @@ _HISTORY_SAMPLE = {
 }
 
 _HISTORY_DESCRIPTION = """
-One employee's punches. `request_data`: `employee_code` required, then one of
+One employee's punches. `request_data`: `employee_code` -- optional, the
+signed-in user's own by default. The employee app sees only its own; the
+operator and manager apps may name any employee of the company. Then one of
 
 * `date` -- one day;
 * `from_date` + `to_date` -- a range, at most 31 days;
@@ -202,21 +207,24 @@ fell the next day** (a 17:00 to 01:00 shift stays on the day it started).
 
 
 class AttendanceHistoryView(APIView):
-    """POST /api/v1/{app}/attendance/history -- operator and manager apps."""
+    """POST /api/v1/{app}/attendance/history -- all three apps; the employee
+    app only for the signed-in employee."""
 
     authentication_classes = [AppJWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
-        tags=["Operator Attendance", "Manager Attendance"],
+        tags=["Operator Attendance", "Manager Attendance", "Employee Attendance"],
         summary="An employee's punches for a day or a date range",
         description=_HISTORY_DESCRIPTION,
         request=envelope_request("AttendanceHistoryEnvelope", AttendanceHistoryRequest),
         responses=envelope_responses(
             (200, "ok", "Attendance.", _HISTORY_SAMPLE),
-            (400, "invalid_request", "employee_code is required.", {"errors": {"employee_code": "is required"}}),
+            (400, "invalid_request", "to_date is required with from_date.",
+             {"errors": {"to_date": "is required with from_date"}}),
             (400, "unknown_employee", "No employee with that code.", {}),
             (401, "not_authenticated", "Sign in first.", {}),
+            (403, "forbidden", "You can only see your own attendance.", {}, "forbidden (employee app)"),
             (403, "wrong_channel", "Not allowed on this app.", {}),
             (409, "device_not_mapped", "This device has no station.", {}, "device_not_mapped (operator)"),
             (409, "branch_inactive", "This station is closed.", {}, "branch_inactive (operator)"),
@@ -224,7 +232,7 @@ class AttendanceHistoryView(APIView):
         ),
     )
     def post(self, request, app):
-        if app not in _SOURCES:
+        if app not in _HISTORY_APPS:
             return envelope("wrong_channel", "Not allowed on this app.", http_status=403)
         refused = _station_or_refusal(request, app)
         if refused:
@@ -235,13 +243,18 @@ class AttendanceHistoryView(APIView):
         form.is_valid(raise_exception=True)
         values = form.validated_data
 
-        company = request.user.employee.company
+        own = request.user.employee
+        code = values.get("employee_code") or own.employee_code
+        if app == Channel.EMPLOYEE and code != own.employee_code:
+            return envelope("forbidden", "You can only see your own attendance.", http_status=403)
+
+        company = own.company
         today = business_date_for(company)
         from_date = values.get("date") or values.get("from_date") or today
         to_date = values.get("date") or values.get("to_date") or today
 
         try:
-            employee, days = services.attendance_history(company, values["employee_code"], from_date, to_date)
+            employee, days = services.attendance_history(company, code, from_date, to_date)
         except services.AttendanceRefused as refusal:
             return envelope(refusal.code, refusal.message, http_status=refusal.status)
 

@@ -65,10 +65,10 @@ class QrAttendanceRequest(SelfAttendanceRequest):
 
 
 class AttendanceHistoryRequest(serializers.Serializer):
-    """One employee; one day (`date`), a range (`from_date` + `to_date`), or
-    neither for today."""
+    """One employee -- the caller by default; one day (`date`), a range
+    (`from_date` + `to_date`), or neither for today."""
 
-    employee_code = text_field(max_length=20)
+    employee_code = text_field(max_length=20, required=False, allow_blank=True)
     date = date_field(required=False)
     from_date = date_field(required=False)
     to_date = date_field(required=False)
