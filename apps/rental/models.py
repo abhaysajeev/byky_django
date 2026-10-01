@@ -24,6 +24,7 @@ the same gap crew.EmployeeBlockLog fills for staff.
 import re
 
 from django.db import models
+from django.db.models import Case, F, Q, Value, When
 
 from core.ids import uuid7
 from core.models import ApprovalMixin, TimeStampedModel
@@ -134,56 +135,51 @@ class Customer(ApprovalMixin, TimeStampedModel):
 
 # --- Order ---------------------------------------------------------------------
 #
-# Traced against the legacy DMS/RMS order tables (DMSOrder 164,019 rows,
-# DMSOrderItems 266,310, DmsExitOrder, DMSReplacedOrders) -- "DMS" is FMCG
-# lineage naming, but this is the vehicle-rental booking flow: DMSOrderItems
-# .StockID points at ImsStockItem (vehicles), pricing at RmsFareDetails.
+# The design is order_lifecycle_design.md (section 4). Traced against the
+# legacy DMS/RMS order tables (DMSOrder 164,019 rows, DMSOrderItems 266,310,
+# DmsExitOrder, DMSReplacedOrders) -- "DMS" is FMCG lineage naming, but this is
+# the vehicle-rental booking flow: DMSOrderItems.StockID points at
+# ImsStockItem (vehicles), pricing at RmsFareDetails.
 #
-# id is the device's sync_id -- a UUIDv7 made offline and resent unchanged on
-# retry, same pattern as crew.models.Attendance. It is the order's real
-# identity: the whole Order + OrderItem graph is built on the device before
-# any network round trip, so items can reference their parent immediately.
-# order_no is a second, separate field -- whatever string the device sends,
-# unvalidated and unenforced server-side (legacy's own OrderNo uniqueness
-# check was a workaround for having no better idempotency key; sync_id
-# replaces the need for it, see design discussion).
+# Ids come from the tablet: Order.id and OrderItem.id are the UUIDv7 sync_ids
+# the device makes offline, so it can return or replace a line before the
+# server has ever replied. order_no is the tablet's receipt number -- unique
+# per company, and also the invoice number.
 #
-# Money: legacy's live rental data (DMSOrder.DepositAmount) has no separate
-# "advance" concept -- SfaOrder.AdvanceAmount exists only on the dead 0-row
-# SFA/FMCG family. The device API's advance is simply an early rental
-# payment, not a refundable security hold: Order.advance_amount is what was
-# asked for at booking (a snapshot of intent), and every payment -- whether
-# collected as the advance or later -- counts toward the same paid_amount
-# against net_amount. See Payment/PaymentKind below.
+# Two separate statuses, as in Shopify (financial_status) and ERPNext (status
+# from outstanding_amount): `status` is the rental's life, `payment_status`
+# the money, computed by the database and never set. Legacy mixed them
+# (OrderStatusID 5 "Processing", IsPaid, IsPaymentCompleted).
 #
-# Deliberately not modelled yet, on a separate migration once Order exists to
-# FK against:
-#   - CreditNoteRequest   legacy DMSCreditNoteRequest hard-deletes a rejected
-#                         request (after copying it to a history table) --
-#                         modelled as its own child table with a status field
-#                         instead, so nothing is ever lost.
-#   - card_discount / membership-card promotions -- legacy's
-#     Service_Save_RequestApproval_CardDiscount is a whole card + SMS-OTP +
-#     expiry subsystem (DMSCard, DMSCardPhone, RMSCardDiscount, the generic
-#     DMSRequests table), not a flat discount field. Not traced enough to
-#     model yet -- a real gap, not silently dropped.
-#   - Offer pricing/precedence -- OrderItem.offer below links to the scheme
-#     used, but apps.fare.pricing has no offer support yet; the FK is a
-#     placeholder for when it does.
+# Money: amount_received / amount_refunded are running totals of the order's
+# payment entries, written only by the payment service in the same transaction
+# as the entry. paid_amount, balance_due and payment_status follow from them
+# in the database, so none of the three can drift from the payments (legacy's
+# DMSOrder.PaidAmount vs SUM(DMSPayment.Amount)).
 
 
 class OrderStatus(models.TextChoices):
     ACTIVE = "active", "Active"                    # legacy OrderStatusID=1 Running
-    PAYMENT_PENDING = "payment_pending", "Payment Pending"   # legacy =5 Processing
-    COMPLETED = "completed", "Completed"            # every item returned
+    COMPLETED = "completed", "Completed"            # settled -- legacy =2 Received
     CANCELLED = "cancelled", "Cancelled"             # legacy =3
+
+
+class PaymentStatus(models.TextChoices):
+    UNPAID = "unpaid", "Unpaid"
+    PARTLY_PAID = "partly_paid", "Partly Paid"
+    PAID = "paid", "Paid"
 
 
 class OrderItemStatus(models.TextChoices):
     ACTIVE = "active", "Active"        # legacy =1 Running
     RETURNED = "returned", "Returned"   # legacy =2 Received
-    CANCELLED = "cancelled", "Cancelled"  # legacy =3
     REPLACED = "replaced", "Replaced"    # legacy =4
+    CANCELLED = "cancelled", "Cancelled"  # removed from the order -- legacy =3
+
+
+MONEY = {"max_digits": 12, "decimal_places": 2}
+
+PAID = F("amount_received") - F("amount_refunded")
 
 
 class Order(TimeStampedModel):
@@ -192,121 +188,115 @@ class Order(TimeStampedModel):
     company = models.ForeignKey("company.Company", on_delete=models.PROTECT, related_name="orders")
     branch = models.ForeignKey("company.Branch", on_delete=models.PROTECT, related_name="orders")
     device = models.ForeignKey("devices.Device", on_delete=models.PROTECT, related_name="orders")
-    customer = models.ForeignKey(Customer, null=True, blank=True, on_delete=models.PROTECT, related_name="orders")
-    # What the customer looked like at booking time, beside the FK -- same
-    # reasoning as Attendance.employee_code/employee_name: the customer's
-    # own record can change (name corrected, re-blocked) after the fact, and
-    # this is what was true when the order was placed.
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name="orders")
+    # The customer as at booking, beside the FK: the customer's own record can
+    # change afterwards. customer_mobile is the full number (Customer.mobile_full).
     customer_name = models.CharField(max_length=200, blank=True)
     customer_mobile = models.CharField(max_length=20, blank=True)
 
-    # Whatever the device sends -- not validated or enforced unique here.
-    order_no = models.CharField(max_length=30, blank=True)
-    # Server-assigned, kept for later use -- not generated yet (see design
-    # discussion: distinct from order_no, the payload's InvoiceNumber implies
-    # a real persisted invoice identity this system doesn't derive live the
-    # way legacy's RMS_PRINT_INVOICE does).
-    invoice_no = models.CharField(max_length=30, blank=True)
+    order_no = models.CharField(max_length=30)
 
     status = models.CharField(max_length=20, choices=OrderStatus.choices, default=OrderStatus.ACTIVE)
-
-    device_created_at = models.DateTimeField()
-    synced_at = models.DateTimeField(null=True, blank=True)
-    start_time = models.DateTimeField()
-    number_of_vehicles = models.PositiveSmallIntegerField()
-
-    total_amount = models.DecimalField(max_digits=12, decimal_places=2)
-    total_discount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
-    total_tax = models.DecimalField(max_digits=12, decimal_places=2, default=0)
-    tax_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    rounded_diff = models.DecimalField(max_digits=6, decimal_places=2, default=0)
-    net_amount = models.DecimalField(max_digits=12, decimal_places=2)
-    # What was asked for at booking -- a snapshot of intent, not a running
-    # balance. Renamed from deposit_amount: legacy's live rental data has no
-    # separate refundable-security concept (see the module docstring above),
-    # so this is just the advance portion of the rental payment.
-    advance_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
-    payment_mode = models.ForeignKey("company.PaymentMode", on_delete=models.PROTECT, related_name="orders")
     is_direct_bill = models.BooleanField(default=False)
-
-    # Cache, not the source of truth -- sum of this order's ADVANCE and
-    # RENTAL payments, less any REFUND (Payment/PaymentKind below). Left
-    # plain (not a derived property) so it stays cheap to query/list without
-    # a join, the same trade Vehicle.identifier and
-    # Device.device_registration_id make.
-    paid_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
-
     is_hotel_order = models.BooleanField(default=False)
-    hotel_commission = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    hotel_commission = models.DecimalField(**MONEY, default=0)
+
+    # Tablet times. created_on is when the server stored the booking.
+    booked_at = models.DateTimeField()
+    start_time = models.DateTimeField()
+    completed_at = models.DateTimeField(null=True, blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+
+    total_amount = models.DecimalField(**MONEY)
+    total_discount = models.DecimalField(**MONEY, default=0)
+    card_discount_amount = models.DecimalField(**MONEY, default=0)
+    tax_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    total_tax = models.DecimalField(**MONEY, default=0)
+    rounded_diff = models.DecimalField(max_digits=6, decimal_places=2, default=0)
+    net_amount = models.DecimalField(**MONEY)
+
+    amount_received = models.DecimalField(**MONEY, default=0)
+    amount_refunded = models.DecimalField(**MONEY, default=0)
+    paid_amount = models.GeneratedField(
+        expression=PAID, output_field=models.DecimalField(**MONEY), db_persist=True,
+    )
+    # > 0 the customer owes, 0 paid, < 0 a refund is owed.
+    balance_due = models.GeneratedField(
+        expression=F("net_amount") - PAID, output_field=models.DecimalField(**MONEY), db_persist=True,
+    )
+    # Overpaid reads `paid` (balance_due shows the refund owed); a free order
+    # (net 0) is `paid`; a cancelled order refunded in full is `unpaid`, its
+    # `status` telling the rest.
+    payment_status = models.GeneratedField(
+        expression=Case(
+            When(Q(amount_received__lte=F("amount_refunded"), net_amount__gt=0), then=Value(PaymentStatus.UNPAID)),
+            When(Q(net_amount__gt=PAID), then=Value(PaymentStatus.PARTLY_PAID)),
+            default=Value(PaymentStatus.PAID),
+        ),
+        output_field=models.CharField(max_length=20, choices=PaymentStatus.choices),
+        db_persist=True,
+    )
 
     class Meta:
         db_table = "order"
-        ordering = ["-device_created_at"]
+        ordering = ["-booked_at"]
         constraints = [
+            models.UniqueConstraint(
+                fields=["company", "order_no"], name="uniq_order_no_per_company",
+                violation_error_message="That order number is already used.",
+            ),
             models.CheckConstraint(
-                condition=models.Q(total_amount__gte=0, net_amount__gte=0, paid_amount__gte=0),
+                condition=models.Q(
+                    total_amount__gte=0, net_amount__gte=0, amount_received__gte=0, amount_refunded__gte=0,
+                ),
                 name="order_amounts_not_negative",
             ),
         ]
         indexes = [
             models.Index(fields=["branch", "status"]),
+            models.Index(fields=["payment_status"]),
             models.Index(fields=["customer"]),
             models.Index(fields=["device"]),
+            models.Index(fields=["booked_at"]),
         ]
 
     def __str__(self):
-        return self.order_no or str(self.id)
-
-    @property
-    def is_paid(self):
-        return self.paid_amount >= self.net_amount
+        return self.order_no
 
 
-class OrderItem(models.Model):
-    # Server-generated, unlike Order's device-sent sync_id -- items arrive
-    # nested inside the order-create call, so the order's own id is the only
-    # identity the device needs to supply; a retry is already deduplicated at
-    # that level.
-    id = models.UUIDField(primary_key=True, default=uuid7, editable=False)
+class OrderItem(TimeStampedModel):
+    """One vehicle on an order. Replacing a vehicle closes this line as
+    REPLACED and starts a new one pointing back at it (replaced_item); only
+    the current line bills."""
+
+    id = models.UUIDField(primary_key=True, editable=False)
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="items")
     vehicle = models.ForeignKey("fleet.Vehicle", on_delete=models.PROTECT, related_name="order_items")
 
     status = models.CharField(max_length=20, choices=OrderItemStatus.choices, default=OrderItemStatus.ACTIVE)
 
-    start_time = models.DateTimeField()
-    # Scheduled, sent by the device at creation (start_time + package) --
-    # distinct from end_time, which is the actual return time, filled later.
-    # Lets the app flag an overdue rental before anyone touches this row.
-    expected_end_time = models.DateTimeField()
-    end_time = models.DateTimeField(null=True, blank=True)
-
-    # Traceability only -- the numbers below are the snapshot that actually
-    # bills, and stay correct even if the fare rule is edited or deactivated
-    # later. Nullable: a fare can be deleted (PROTECT stops that in practice,
-    # but the column allows for a future on_delete change without a data
-    # migration).
+    # Traceability only -- the amounts below are what bills, and stay right if
+    # the fare or offer is edited later.
     fare = models.ForeignKey("fare.Fare", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
-    # Placeholder link only -- apps.fare.pricing has no offer/scheme support
-    # yet, so nothing here reads or applies this FK. Kept so the device's
-    # SchemeID has somewhere to land without inventing pricing logic early.
     offer = models.ForeignKey("fare.Offer", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
     package_minutes = models.PositiveSmallIntegerField()
 
-    rate = models.DecimalField(max_digits=10, decimal_places=2)
-    amount = models.DecimalField(max_digits=10, decimal_places=2)
-    discount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    total_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    start_time = models.DateTimeField()
+    expected_end_time = models.DateTimeField()      # start + package
+    end_time = models.DateTimeField(null=True, blank=True)   # returned / replaced / removed (tablet time)
 
-    # Points at the OLD line this one supersedes, set by the replace flow
-    # (legacy Service_Save_Replace / DMSReplacedOrders). The old line's own
-    # status moves to REPLACED; nothing here points forward from old to new,
-    # only backward from new to old -- same direction as
-    # Device.replaced_device.
+    rate = models.DecimalField(**MONEY)
+    amount = models.DecimalField(**MONEY)
+    overtime_amount = models.DecimalField(**MONEY, default=0)
+    discount = models.DecimalField(**MONEY, default=0)
+    tax_amount = models.DecimalField(**MONEY, default=0)
+    total_amount = models.DecimalField(**MONEY)
+
+    # The old line this one replaced -- legacy DMSReplacedOrders.
     replaced_item = models.ForeignKey(
         "self", null=True, blank=True, on_delete=models.PROTECT, related_name="replacement",
     )
-    remarks = models.TextField(blank=True)
+    reason = models.TextField(blank=True)      # why it was replaced or removed
 
     class Meta:
         db_table = "order_item"
@@ -320,12 +310,11 @@ class OrderItem(models.Model):
                 name="order_item_expected_end_after_start",
             ),
             models.CheckConstraint(
-                condition=models.Q(rate__gte=0, amount__gte=0, total_amount__gte=0),
+                condition=models.Q(rate__gte=0, amount__gte=0, overtime_amount__gte=0, total_amount__gte=0),
                 name="order_item_amounts_not_negative",
             ),
-            # A vehicle can only be on one active rental line at a time --
-            # legacy had no such rule at the database level (Save_Order_Booking
-            # trusts the device's own state), this closes that gap.
+            # A vehicle is on one active line at a time -- legacy trusted the
+            # device's own state and had no such rule.
             models.UniqueConstraint(
                 fields=["vehicle"], condition=models.Q(status=OrderItemStatus.ACTIVE),
                 name="uniq_active_order_item_per_vehicle",

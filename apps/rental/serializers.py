@@ -121,7 +121,7 @@ class OrderCreateRequest(serializers.Serializer):
     """
 
     sync_id = uuid7_field()
-    order_no = text_field(max_length=30, required=False, allow_blank=True)
+    order_no = text_field(max_length=30)                # the receipt number, unique per company
     customer_id = whole_number_field()
 
     # device_created_at is when the booking happened on the device, possibly
@@ -146,7 +146,6 @@ class OrderCreateRequest(serializers.Serializer):
         error_messages={**REQUIRED, "invalid": "must be a number"},
     )
     net_amount = _money_field()
-    advance_amount = _money_field(required=False)
 
     is_hotel_order = serializers.BooleanField(required=False, default=False)
     hotel_commission = _money_field(required=False)

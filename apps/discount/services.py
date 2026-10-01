@@ -301,8 +301,6 @@ def request_approval(session, values):
     order = Order.objects.filter(pk=values["order_id"], company=company).first()
     if order is None:
         raise DiscountRefused("unknown_order", "No order with that id.", 404)
-    if order.customer_id is None:
-        raise DiscountRefused("order_has_no_customer", "This order has no customer.", 400)
     customer = _customer_by_full_number(company, values["full_number"])
     discount = (CardDiscount.objects.select_related("card_grade__card_type")
                 .filter(pk=values["card_discount_id"], company=company).first())
