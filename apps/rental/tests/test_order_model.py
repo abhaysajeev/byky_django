@@ -9,9 +9,11 @@ import pytest
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
+from apps.company.models import PaymentMode
 from apps.devices.models import Device, DeviceStatus
 from apps.fleet.models import UOM, Brand, Category, Vehicle, VehicleType
-from apps.rental.models import Order, OrderItem, OrderItemStatus, PaymentStatus
+from apps.rental.models import Order, OrderItem, OrderItemStatus, PaymentKind, PaymentStatus
+from apps.rental.services import record_payment
 from apps.rental.tests.conftest import make_customer
 from core.enums import Channel
 from core.ids import uuid7
@@ -91,3 +93,41 @@ def test_a_vehicle_is_on_one_active_line_at_a_time(make_order, world):
     first.status = OrderItemStatus.RETURNED
     first.save()
     assert line(make_order()).created_on is not None                  # free again, and audited
+
+
+# -- Payment entries ---------------------------------------------------------------
+
+
+def test_payment_entries_move_the_orders_totals(make_order, world):
+    cash = PaymentMode.objects.create(company=world["company"], name="Cash")
+    card = PaymentMode.objects.create(company=world["company"], name="Card")
+    order = make_order(net_amount="104.00")
+    tablet_time = timezone.now() - timezone.timedelta(hours=2)      # booked offline, synced later
+
+    def pay(kind, mode, amount, **extra):
+        record_payment(order, payment_id=uuid7(), kind=kind, mode=mode, amount=Decimal(amount),
+                       paid_at=tablet_time, **extra)
+        order.refresh_from_db()
+        return (order.amount_received, order.amount_refunded, order.paid_amount, order.balance_due,
+                order.payment_status)
+
+    assert pay(PaymentKind.ADVANCE, cash, "60") == (60, 0, 60, 44, PaymentStatus.PARTLY_PAID)
+    assert pay(PaymentKind.ADVANCE, card, "50", reference_no="4421") == (110, 0, 110, -6, PaymentStatus.PAID)
+    assert pay(PaymentKind.REFUND, cash, "6") == (110, 6, 104, 0, PaymentStatus.PAID)
+
+    entries = list(order.payments.order_by("created_on").values_list("kind", "mode__name", "amount", "paid_at"))
+    assert entries == [
+        (PaymentKind.ADVANCE, "Cash", Decimal("60.00"), tablet_time),
+        (PaymentKind.ADVANCE, "Card", Decimal("50.00"), tablet_time),
+        (PaymentKind.REFUND, "Cash", Decimal("6.00"), tablet_time),
+    ]
+
+
+def test_a_payment_entry_needs_a_positive_amount(make_order, world):
+    cash = PaymentMode.objects.create(company=world["company"], name="Cash")
+    order = make_order()
+    with pytest.raises(IntegrityError), transaction.atomic():
+        record_payment(order, payment_id=uuid7(), kind=PaymentKind.ADVANCE, mode=cash, amount=Decimal("0"),
+                       paid_at=timezone.now())
+    order.refresh_from_db()
+    assert order.amount_received == 0          # the total did not move either

@@ -170,7 +170,7 @@ late; the bill settles with his approved discount card.
     "order_no": "C1-0007-000231",
     "customer_id": 5512,
     "device_created_at": "2026-10-02 16:00:05",
-    "lines": [
+    "items": [
       { "sync_id": "L-1", "vehicle_id": 2041, "fare_id": 88, "package_minutes": 60,
         "start_time": "2026-10-02 16:00:00", "expected_end_time": "2026-10-02 17:00:00",
         "rate": "50.00", "amount": "50.00", "total_amount": "50.00" },
@@ -197,7 +197,7 @@ counter to 231.
 { "code": "ok", "message": "Order created.",
   "data": { "sync_id": "O-1", "order_no": "C1-0007-000231", "status": "active",
             "net_amount": "105.00", "paid_amount": "100.00", "balance_due": "5.00",
-            "lines": [ { "sync_id": "L-1", "vehicle": "MO 41", "status": "active" },
+            "items": [ { "sync_id": "L-1", "vehicle": "MO 41", "status": "active" },
                        { "sync_id": "L-2", "vehicle": "DC 02", "status": "active" } ] } }
 ```
 
@@ -218,17 +218,17 @@ settlement.
 ```json
 { "request_data": {
     "sync_id": "R-1",
-    "order_id": "O-1", "old_line_id": "L-1",
+    "order_id": "O-1", "old_item_id": "L-1",
     "replaced_at": "2026-10-02 16:20:00",
     "reason": "Chain broken",
-    "new_line": { "sync_id": "L-3", "vehicle_id": 2042, "fare_id": 88, "package_minutes": 60,
+    "new_item": { "sync_id": "L-3", "vehicle_id": 2042, "fare_id": 88, "package_minutes": 60,
                   "start_time": "2026-10-02 16:20:00", "expected_end_time": "2026-10-02 17:00:00",
                   "rate": "50.00", "amount": "50.00", "total_amount": "50.00" } } }
 ```
 
 ```json
 { "code": "ok", "message": "Vehicle replaced.",
-  "data": { "lines": [ { "sync_id": "L-1", "vehicle": "MO 41", "status": "replaced" },
+  "data": { "items": [ { "sync_id": "L-1", "vehicle": "MO 41", "status": "replaced" },
                        { "sync_id": "L-2", "vehicle": "DC 02", "status": "active" },
                        { "sync_id": "L-3", "vehicle": "MO 42", "status": "active", "replaces": "L-1" } ],
             "net_amount": "105.00" } }
@@ -245,29 +245,29 @@ line keeps the package, so the bill is unchanged.
 DC 02 back on time — `POST /api/v1/operator/orders/return`:
 
 ```json
-{ "request_data": { "sync_id": "T-1", "order_id": "O-1", "line_id": "L-2",
+{ "request_data": { "sync_id": "T-1", "order_id": "O-1", "item_id": "L-2",
                     "returned_at": "2026-10-02 17:00:00", "total_amount": "50.00" } }
 ```
 
 ```json
 { "code": "ok", "message": "Vehicle returned.",
-  "data": { "line": { "sync_id": "L-2", "status": "returned" }, "lines_out": 1 } }
+  "data": { "item": { "sync_id": "L-2", "status": "returned" }, "items_out": 1 } }
 ```
 
 MO 42 back 12 minutes late, AED 10 overtime:
 
 ```json
-{ "request_data": { "sync_id": "T-2", "order_id": "O-1", "line_id": "L-3",
+{ "request_data": { "sync_id": "T-2", "order_id": "O-1", "item_id": "L-3",
                     "returned_at": "2026-10-02 17:12:00", "overtime_amount": "10.00",
                     "total_amount": "60.00" } }
 ```
 
 ```json
 { "code": "ok", "message": "Vehicle returned.",
-  "data": { "line": { "sync_id": "L-3", "status": "returned" }, "lines_out": 0 } }
+  "data": { "item": { "sync_id": "L-3", "status": "returned" }, "items_out": 0 } }
 ```
 
-`lines_out: 0` — everything is back; the order can be settled.
+`items_out: 0` — everything is back; the order can be settled.
 
 A return that reaches the server before its booking:
 

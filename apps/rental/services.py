@@ -1,12 +1,21 @@
 """Rental Management services."""
 
 from django.db import IntegrityError, transaction
+from django.db.models import F
 from django.utils import timezone
 
 from apps.company.models import PaymentMode
 from apps.fare.models import Fare, Offer
 from apps.fleet.models import Vehicle
-from apps.rental.models import Customer, Order, OrderItem, Payment, PaymentKind, full_number
+from apps.rental.models import (
+    MONEY_IN,
+    Customer,
+    Order,
+    OrderItem,
+    Payment,
+    PaymentKind,
+    full_number,
+)
 from core.ids import uuid7
 
 
@@ -44,6 +53,32 @@ def customer_by_phone(company, full_number):
     if customer is None:
         raise UnknownCustomer()
     return customer
+
+
+def record_payment(order, *, payment_id, kind, mode, amount, paid_at, device=None, user=None,
+                   reference_no="", reference_date=None, remarks=""):
+    """One payment entry on an order -- the only way one is written.
+
+    Adds the entry and moves the order's running total in the same
+    transaction: amount_received for money in (advance, balance),
+    amount_refunded for money out (refund). The increment happens in the
+    database (F), so two payments on one order at the same moment cannot
+    miscount. paid_amount, balance_due and payment_status follow on their
+    own (order_lifecycle_design.md 1 "Money", 4.4).
+
+    Entries are never edited or deleted; a mistake is a reversing refund.
+    """
+    total = "amount_received" if kind in MONEY_IN else "amount_refunded"
+    with transaction.atomic():
+        payment = Payment.objects.create(
+            id=payment_id, order=order, kind=kind, mode=mode, amount=amount, paid_at=paid_at,
+            reference_no=reference_no, reference_date=reference_date, remarks=remarks,
+            device=device, collected_by=user, created_by=user, modified_by=user,
+        )
+        Order.objects.filter(pk=order.pk).update(
+            **{total: F(total) + amount}, modified_by=user, modified_on=timezone.now(),
+        )
+    return payment
 
 
 class OrderRefused(Exception):
@@ -119,7 +154,6 @@ def create_rental_order(session, values):
     if missing_offers:
         raise OrderRefused("unknown_offer", f"No offer with id {sorted(missing_offers)[0]}.")
 
-    synced_at = timezone.now()
     order = Order(
         id=sync_id, company=company, branch=branch, device=session.device,
         customer=customer, customer_name=customer.full_name, customer_mobile=customer.mobile_full,
@@ -150,13 +184,10 @@ def create_rental_order(session, values):
             order.save(force_insert=True)
             OrderItem.objects.bulk_create(item_rows)
             if collected > 0:
-                Payment.objects.create(
-                    order=order, kind=PaymentKind.ADVANCE, mode=payment_mode, amount=collected,
-                    device=session.device, collected_by=session.user, collected_at=synced_at,
-                    created_by=session.user, modified_by=session.user,
+                record_payment(
+                    order, payment_id=uuid7(), kind=PaymentKind.ADVANCE, mode=payment_mode, amount=collected,
+                    paid_at=values["device_created_at"], device=session.device, user=session.user,
                 )
-                order.amount_received = collected
-                order.save(update_fields=["amount_received"])
     except IntegrityError:
         # Either a concurrent call with the same sync_id already won (the
         # order row exists -- answer duplicate, the same race

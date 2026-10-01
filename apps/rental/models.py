@@ -26,7 +26,6 @@ import re
 from django.db import models
 from django.db.models import Case, F, Q, Value, When
 
-from core.ids import uuid7
 from core.models import ApprovalMixin, TimeStampedModel
 
 
@@ -329,60 +328,64 @@ class OrderItem(TimeStampedModel):
 
 # --- Payment ---------------------------------------------------------------------
 #
-# One kind, one running total: an advance collected at booking and a rental
-# payment collected later both count toward the same Order.paid_amount --
-# legacy's DepositAmount/AdvanceAmount split doesn't survive in the live
-# rental data (see the Order docstring above), so there is no separate
-# refundable-hold balance to track. REFUND exists for the one real "money
-# goes back out" case: the advance collected turns out to be more than the
-# final bill.
+# A payment entry, in the manner of ERPNext's Payment Entry: every movement of
+# money is one row, and an order has any number of them -- part cash, part
+# card (order_lifecycle_design.md 1, 4.4). The order carries no payment mode.
 #
-# mode is a real FK to company.PaymentMode, not a second hardcoded enum --
-# legacy split "how it was paid" across DMSPayment.PaymentModeID and
-# DMSOrder.PaymentModeID with no shared master underneath either, which is
-# exactly the kind of two-sources-of-truth bug this avoids.
+# amount is always positive; kind gives the direction: ADVANCE (booking or
+# mid-rental) and BALANCE (settlement) bring money in, REFUND sends it back.
+# Entries are never edited or deleted -- a mistake is corrected by a reversing
+# REFUND, so the trail stays whole. They are written only through
+# apps.rental.services.record_payment, which keeps the order's
+# amount_received / amount_refunded in step in the same transaction.
+#
+# Legacy DMSPayment hardcoded PaymentModeID = 1 on both of its insert paths
+# (Save_Order_Booking, Service_Save_SubmitExit_Order): all 159,511 rows say
+# Cash. mode here is what was actually used.
 
 
 class PaymentKind(models.TextChoices):
     ADVANCE = "advance", "Advance"
-    RENTAL = "rental", "Rental"
+    BALANCE = "balance", "Balance"
     REFUND = "refund", "Refund"
 
 
+MONEY_IN = (PaymentKind.ADVANCE, PaymentKind.BALANCE)
+
+
 class Payment(TimeStampedModel):
-    # Server-generated (unlike Order/OrderItem's device-sent sync_id): a
-    # Payment row is always created as a byproduct of another already-
-    # idempotent operation (order creation, keyed on Order.id), so it has no
-    # need yet for its own client-supplied identity.
-    id = models.UUIDField(primary_key=True, default=uuid7, editable=False)
+    id = models.UUIDField(primary_key=True, editable=False)      # the tablet's sync_id
 
     order = models.ForeignKey(Order, on_delete=models.PROTECT, related_name="payments")
     kind = models.CharField(max_length=10, choices=PaymentKind.choices)
     mode = models.ForeignKey("company.PaymentMode", on_delete=models.PROTECT, related_name="payments")
-    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    amount = models.DecimalField(**MONEY)
 
-    # Cheque no / card reference / gateway ref, one pair for all of them --
-    # legacy kept ChequeNo/ChequeDate and CardNumber/CardDate as separate
-    # columns on DMSPayment for what is structurally the same fact.
+    # Card slip, cheque, gateway ref -- one pair for all of them; legacy kept
+    # ChequeNo/ChequeDate and CardNumber/CardDate apart for the same fact.
     reference_no = models.CharField(max_length=50, blank=True)
-    reference_date = models.DateTimeField(null=True, blank=True)
+    reference_date = models.DateField(null=True, blank=True)
 
+    paid_at = models.DateTimeField()           # tablet time; created_on is when the server stored it
     device = models.ForeignKey(
         "devices.Device", null=True, blank=True, on_delete=models.PROTECT, related_name="payments",
     )
     collected_by = models.ForeignKey(
         "core.User", null=True, blank=True, on_delete=models.PROTECT, related_name="+",
     )
-    collected_at = models.DateTimeField()
     remarks = models.TextField(blank=True)
 
     class Meta:
         db_table = "payment"
-        ordering = ["-collected_at"]
+        ordering = ["-paid_at"]
         constraints = [
             models.CheckConstraint(condition=models.Q(amount__gt=0), name="payment_amount_positive"),
         ]
-        indexes = [models.Index(fields=["order"])]
+        indexes = [
+            models.Index(fields=["order"]),
+            models.Index(fields=["paid_at"]),
+            models.Index(fields=["mode"]),
+        ]
 
     def __str__(self):
         return f"{self.get_kind_display()} {self.amount} on {self.order}"
