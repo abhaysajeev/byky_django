@@ -35,7 +35,8 @@ _VEHICLES_SAMPLE = {
                     "is_direct_rent": False, "vehicle_count": 1,
                     "vehicles": [
                         {"vehicle_id": 2007, "vehicle_identifier": "VB0321", "vehicle_code": "BRG07",
-                         "vehicle_name": "BRG 07", "rfid_epc": "35440575", "uom": "Number", "is_available": True},
+                         "vehicle_name": "BRG 07", "rfid_epc": "35440575", "uom": "Number", "is_available": True,
+                         "on_rent": False, "rental": None, "can_rent": True},
                     ],
                 },
                 {
@@ -43,7 +44,10 @@ _VEHICLES_SAMPLE = {
                     "tax_percentage": "5.00", "is_direct_rent": True, "vehicle_count": 1,
                     "vehicles": [
                         {"vehicle_id": 3102, "vehicle_identifier": "VB0874", "vehicle_code": "DC02",
-                         "vehicle_name": "DC 02", "rfid_epc": "", "uom": "Number", "is_available": True},
+                         "vehicle_name": "DC 02", "rfid_epc": "", "uom": "Number", "is_available": True,
+                         "on_rent": True, "rental": {"order_no": "ADCOR60182000231",
+                                                     "expected_end_time": "2026-09-24 07:00:00"},
+                         "can_rent": False},
                     ],
                 },
                 {
@@ -51,9 +55,11 @@ _VEHICLES_SAMPLE = {
                     "is_direct_rent": False, "vehicle_count": 2,
                     "vehicles": [
                         {"vehicle_id": 1041, "vehicle_identifier": "VB1241", "vehicle_code": "MO41",
-                         "vehicle_name": "MO 41", "rfid_epc": "36543595", "uom": "Number", "is_available": True},
+                         "vehicle_name": "MO 41", "rfid_epc": "36543595", "uom": "Number", "is_available": True,
+                         "on_rent": False, "rental": None, "can_rent": True},
                         {"vehicle_id": 1042, "vehicle_identifier": "VB1242", "vehicle_code": "MO42",
-                         "vehicle_name": "MO 42", "rfid_epc": "", "uom": "Number", "is_available": False},
+                         "vehicle_name": "MO 42", "rfid_epc": "", "uom": "Number", "is_available": False,
+                         "on_rent": False, "rental": None, "can_rent": False},
                     ],
                 },
             ],
@@ -84,6 +90,12 @@ taken from the access token's session.
 - `vehicle_type_id` is the id `POST /api/v1/operator/fares` takes.
 - `is_direct_rent` (per vehicle type): `true` = billed before handover, no runtime fare.
 - `rfid_epc` may be `""` (no tag assigned yet): also allow lookup by `vehicle_code`.
+- `on_rent`: the vehicle is out on an active order now; `rental` then gives that order's
+  `order_no` and the vehicle's `expected_end_time` (company time), else `null`.
+- `can_rent` = `is_available` and not `on_rent` -- the one flag to grey a vehicle out by.
+  `is_available` alone is the manual switch (maintenance, held back); a rental never
+  changes it. A booking is still refused if the vehicle was rented from another tablet
+  since this list was fetched (`vehicle_already_rented`).
 
 A category or vehicle type this station cannot use (another company's, inactive, not
 approved) is an error; a usable one with no vehicle here is an empty list.

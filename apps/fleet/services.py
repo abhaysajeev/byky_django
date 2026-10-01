@@ -7,6 +7,7 @@ from django.db.models import F
 from django.utils import timezone
 
 from apps.fleet.models import IDENTIFIER_SEQUENCE, Category, Vehicle, VehicleType
+from apps.rental import services as rental_services
 from core.enums import ApprovalStatus
 from core.timezones import zone_for
 
@@ -26,7 +27,10 @@ def device_vehicles(branch, *, vehicle_category_id=None, vehicle_type_id=None, a
 
     Only active, approved vehicles whose type and category are active and
     approved too. `is_available` is sent as-is so the app can say why a
-    scanned vehicle cannot be rented; `is_direct_rent` (per vehicle type)
+    scanned vehicle cannot be rented. `on_rent` and `rental` say whether it
+    is out on an active order now -- derived from the order items, never
+    stored (order_lifecycle_design.md 5, decision 6) -- and `can_rent` is
+    both together: available and not on rent; `is_direct_rent` (per vehicle type)
     tells it to bill a fixed-time ride in full before handover. Categories
     and types with no vehicle here are left out.
 
@@ -58,6 +62,10 @@ def device_vehicles(branch, *, vehicle_category_id=None, vehicle_type_id=None, a
         "vehicle_type__category__category_name", "vehicle_type__vehicle_type_name", "identifier_no",
     )
 
+    vehicles = list(vehicles)
+    rentals = rental_services.active_rentals([vehicle.pk for vehicle in vehicles])
+    zone = zone_for(branch.company)
+
     categories = {}
     for vehicle in vehicles:
         vehicle_type = vehicle.vehicle_type
@@ -78,6 +86,7 @@ def device_vehicles(branch, *, vehicle_category_id=None, vehicle_type_id=None, a
             "vehicle_id": vehicle.pk, "vehicle_identifier": vehicle.identifier, "vehicle_code": vehicle.vehicle_code,
             "vehicle_name": vehicle.vehicle_name, "rfid_epc": vehicle.rfid_epc,
             "uom": vehicle.uom.uom_name, "is_available": vehicle.is_available,
+            **_rental_status(vehicle, rentals.get(vehicle.pk), zone),
         })
         type_entry["vehicle_count"] += 1
         entry["vehicle_count"] += 1
@@ -91,6 +100,21 @@ def device_vehicles(branch, *, vehicle_category_id=None, vehicle_type_id=None, a
         "categories": [
             {**c, "vehicle_types": list(c["vehicle_types"].values())} for c in categories.values()
         ],
+    }
+
+
+def _rental_status(vehicle, rental, zone):
+    rental_json = None
+    if rental is not None:
+        order_no, expected_end = rental
+        rental_json = {
+            "order_no": order_no,
+            "expected_end_time": timezone.localtime(expected_end, zone).strftime("%Y-%m-%d %H:%M:%S"),
+        }
+    return {
+        "on_rent": rental is not None,
+        "rental": rental_json,
+        "can_rent": vehicle.is_available and rental is None,
     }
 
 
