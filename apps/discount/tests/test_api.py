@@ -22,7 +22,7 @@ from apps.discount.models import (
 )
 from apps.discount.tests.conftest import make_claim, make_order
 from apps.fare.tests import test_api as fare_api
-from apps.rental.models import Customer, Order
+from apps.rental.models import Customer
 from core.ids import uuid7
 from core.timezones import business_date_for
 
@@ -342,13 +342,6 @@ def test_an_automatic_discount_needs_no_approval(client, world, token, approval_
 def test_a_blocked_customer_is_refused_a_request(client, world, token, approval_world):
     Customer.objects.filter(pk=approval_world["customer"].pk).update(is_blocked=True)
     assert request_approval(client, token, approval_data(approval_world)).json()["code"] == "customer_blocked"
-
-
-def test_an_order_without_a_customer_is_refused(client, world, token, approval_world):
-    Order.objects.filter(pk=approval_world["order"].pk).update(customer=None)
-    response = request_approval(client, token, approval_data(approval_world))
-    assert response.status_code == 400
-    assert response.json()["code"] == "order_has_no_customer"
 
 
 def test_another_companys_order_is_unknown(client, world, token, approval_world):

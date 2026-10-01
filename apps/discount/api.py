@@ -284,7 +284,6 @@ class ApprovalRequestView(APIView):
             (200, "ok", "Approval requested.", _APPROVAL_SAMPLE),
             (200, "duplicate", "Already requested.", {**_APPROVAL_SAMPLE, "status": "approved"}),
             (400, "invalid_request", "sync_id must be a UUIDv7.", {"errors": {"sync_id": "must be a UUIDv7"}}),
-            (400, "order_has_no_customer", "This order has no customer.", {}),
             (400, "approval_not_needed", "This card discount needs no approval.", {}),
             (404, "unknown_order", "No order with that id.", {}),
             (404, "unknown_customer", "No customer found.", {}),

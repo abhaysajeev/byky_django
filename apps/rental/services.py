@@ -7,6 +7,7 @@ from apps.company.models import PaymentMode
 from apps.fare.models import Fare, Offer
 from apps.fleet.models import Vehicle
 from apps.rental.models import Customer, Order, OrderItem, Payment, PaymentKind, full_number
+from core.ids import uuid7
 
 
 def next_customer_code(company):
@@ -83,6 +84,9 @@ def create_rental_order(session, values):
             raise OrderRefused("sync_id_conflict", "That sync_id is already used.", 409)
         return existing, False
 
+    if Order.objects.filter(company=company, order_no=values["order_no"]).exists():
+        raise OrderRefused("order_no_used", "That order number is already used.", 409)
+
     customer = Customer.objects.filter(pk=values["customer_id"], company=company).first()
     if customer is None:
         raise OrderRefused("unknown_customer", "No customer with that id.")
@@ -118,26 +122,24 @@ def create_rental_order(session, values):
     synced_at = timezone.now()
     order = Order(
         id=sync_id, company=company, branch=branch, device=session.device,
-        customer=customer, customer_name=customer.full_name, customer_mobile=customer.mobile_no,
-        order_no=values.get("order_no", ""),
-        device_created_at=values["device_created_at"], synced_at=synced_at,
-        start_time=values["start_time"], number_of_vehicles=len(items_input),
+        customer=customer, customer_name=customer.full_name, customer_mobile=customer.mobile_full,
+        order_no=values["order_no"], booked_at=values["device_created_at"], start_time=values["start_time"],
         total_amount=values["total_amount"], total_discount=values.get("total_discount") or 0,
         total_tax=values.get("total_tax") or 0, tax_percentage=values.get("tax_percentage") or 0,
         rounded_diff=values.get("rounded_diff") or 0, net_amount=values["net_amount"],
-        advance_amount=values.get("advance_amount") or 0, payment_mode=payment_mode,
         is_direct_bill=values.get("is_direct_bill", False),
         is_hotel_order=values.get("is_hotel_order", False), hotel_commission=values.get("hotel_commission") or 0,
         created_by=session.user, modified_by=session.user,
     )
     item_rows = [
         OrderItem(
-            order_id=sync_id, vehicle=vehicles[item["vehicle_id"]],
+            id=uuid7(), order_id=sync_id, vehicle=vehicles[item["vehicle_id"]],
             fare=fares.get(item.get("fare_id")), offer=offers.get(item.get("offer_id")),
             package_minutes=item["package_minutes"], start_time=item["start_time"],
             expected_end_time=item["expected_end_time"], rate=item["rate"], amount=item["amount"],
             discount=item.get("discount") or 0, tax_amount=item.get("tax_amount") or 0,
-            total_amount=item["total_amount"], remarks=item.get("remarks") or "",
+            total_amount=item["total_amount"], reason=item.get("remarks") or "",
+            created_by=session.user, modified_by=session.user,
         )
         for item in items_input
     ]
@@ -153,8 +155,8 @@ def create_rental_order(session, values):
                     device=session.device, collected_by=session.user, collected_at=synced_at,
                     created_by=session.user, modified_by=session.user,
                 )
-                order.paid_amount = collected
-                order.save(update_fields=["paid_amount"])
+                order.amount_received = collected
+                order.save(update_fields=["amount_received"])
     except IntegrityError:
         # Either a concurrent call with the same sync_id already won (the
         # order row exists -- answer duplicate, the same race
@@ -168,6 +170,7 @@ def create_rental_order(session, values):
             "vehicle_already_rented", "A vehicle in this order is already on an active rental.", 409,
         ) from None
 
+    order.refresh_from_db()        # paid_amount, balance_due, payment_status: computed by the database
     return order, True
 
 

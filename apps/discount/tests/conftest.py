@@ -5,7 +5,7 @@ import uuid
 import pytest
 from django.utils import timezone
 
-from apps.company.models import Branch, BranchType, Company, Country, Location, PaymentMode, State
+from apps.company.models import Branch, BranchType, Company, Country, Location, State
 from apps.devices.models import Device, DeviceStatus
 from apps.discount.models import (
     CardDiscount,
@@ -99,13 +99,11 @@ def make_order(customer, *, branch=None, order_no="", **fields):
         defaults={"company": company, "platform": "android", "channel": Channel.OPERATOR,
                   "status": DeviceStatus.APPROVED, "approved_at": timezone.now()},
     )[0]
-    mode = PaymentMode.objects.get_or_create(company=company, name="Cash")[0]
     values = {
         "id": uuid.uuid4(), "company": company, "branch": branch, "device": device, "customer": customer,
-        "customer_name": customer.full_name, "customer_mobile": customer.mobile_no,
-        "order_no": order_no or f"ORD-{uuid.uuid4().hex[:6]}", "device_created_at": timezone.now(),
-        "start_time": timezone.now(), "number_of_vehicles": 1, "total_amount": "100.00",
-        "net_amount": "100.00", "payment_mode": mode,
+        "customer_name": customer.full_name, "customer_mobile": customer.mobile_full,
+        "order_no": order_no or f"ORD-{uuid.uuid4().hex[:6]}", "booked_at": timezone.now(),
+        "start_time": timezone.now(), "total_amount": "100.00", "net_amount": "100.00",
     }
     values.update(fields)
     return Order.objects.create(**values)

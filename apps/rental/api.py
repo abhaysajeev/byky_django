@@ -210,7 +210,7 @@ _ORDER_ITEM_SAMPLE = {
 
 _ORDER_SAMPLE = {
     "sync_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9", "order_no": "BR01-856475", "status": "active",
-    "net_amount": "52.50", "paid_amount": "52.50", "advance_amount": "0.00",
+    "net_amount": "52.50", "paid_amount": "52.50", "balance_due": "0.00", "payment_status": "paid",
     "items": [_ORDER_ITEM_SAMPLE],
 }
 
@@ -247,6 +247,7 @@ payment (kind `advance`) in the given `payment_mode`.
 | `unknown_vehicle` | a vehicle id is not this company's |
 | `vehicle_not_at_station` | a vehicle is not at this device's own station |
 | `unknown_fare` / `unknown_offer` | not this company's |
+| `order_no_used` | that order number is already used in this company |
 | `vehicle_already_rented` | a vehicle in this order is already on an active rental elsewhere |
 | `sync_id_conflict` | that sync_id was already used by a different company |
 """
@@ -277,6 +278,7 @@ class OrderCreateView(APIView):
             (403, "wrong_channel", "Not allowed on this app.", {}),
             (409, "device_not_mapped", "This device has no station.", {}),
             (409, "branch_inactive", "This station is closed.", {}),
+            (409, "order_no_used", "That order number is already used.", {}),
             (409, "vehicle_already_rented", "A vehicle in this order is already on an active rental.", {}),
             (409, "sync_id_conflict", "That sync_id is already used.", {}),
             SERVER_ERROR,
@@ -316,7 +318,7 @@ def _order_json(order):
     return {
         "sync_id": str(order.pk), "order_no": order.order_no, "status": order.status,
         "net_amount": str(order.net_amount), "paid_amount": str(order.paid_amount),
-        "advance_amount": str(order.advance_amount),
+        "balance_due": str(order.balance_due), "payment_status": order.payment_status,
         "items": [
             {"item_id": str(item.pk), "vehicle_id": item.vehicle_id, "status": item.status}
             for item in order.items.all()

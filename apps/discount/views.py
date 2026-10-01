@@ -23,6 +23,7 @@ from apps.discount.models import CardDiscount, CardGrade, CardType, ClaimStatus,
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
+from apps.rental.models import OrderItemStatus
 from core.ordering import recent_first
 from core.timezones import zone_for
 from theme import drawers as theme_drawers
@@ -268,7 +269,7 @@ def _claim_row(claim, zone):
         "requested_at": requested, "status": claim.status, "status_label": claim.get_status_display(),
         "order_no": _order_no(claim.order),
         "order_start": claim.order.start_time.astimezone(zone),
-        "order_vehicles": claim.order.number_of_vehicles,
+        "order_vehicles": claim.order.items.exclude(status=OrderItemStatus.REPLACED).count(),
         "order_total": claim.order.total_amount, "order_net": claim.order.net_amount,
         "order_status": claim.order.get_status_display(),
         "bill_amount": claim.bill_amount, "discount_amount": claim.discount_amount,
