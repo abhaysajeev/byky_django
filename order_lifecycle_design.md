@@ -1,7 +1,8 @@
 # Order lifecycle — design
 
-Status: **draft for sign-off** (2 Oct 2026). Nothing here is built yet beyond
-`POST /api/v1/{app}/orders` (create), which this design replaces.
+Status: **decisions agreed** (1 Oct 2026; section 5). Built so far: `Order`,
+`OrderItem` and `Payment` (section 4) with `services.record_payment`. The API
+(`POST /api/v1/{app}/orders` and the rest) is being rebuilt to this design.
 
 The legacy system is the reference, not the template: the business flow is
 kept, its bugs are not. Legacy sources are cited as proc names
@@ -548,20 +549,46 @@ One row per billed line (replaced and removed lines are not billed).
 
 ---
 
-## 5. Assumptions (to confirm)
+## 5. Decisions (agreed 1 Oct 2026)
 
-1. **Cancel needs manager approval** (as the card discount does); operators do
-   not cancel on their own. Legacy: 900 approved cancel requests
-   (`Approve_Request`, type 4) against 137 back-office cancels (`Cancel_Order`).
-2. **Overtime and final amounts are computed on the tablet** and trusted, as
-   booking is today; the server checks only that totals add up.
-3. **Every order has a customer** — no anonymous walk-ins.
-4. **No auto-block on a low rating** (legacy `Service_Save_SubmitExit_Order`
-   blocked customers rated below 2).
-5. **Receipt number required and unique per tablet**; each order raises the
+1. **Cancel needs manager approval**; operators do not cancel on their own.
+   Legacy: 900 approved cancel requests (`Approve_Request`, type 4) against 137
+   back-office cancels (`Cancel_Order`).
+2. **Refunds are recorded by the tablet** (`/orders/payments`, kind `refund`)
+   when the money is actually handed back — including after an approved cancel.
+   The server never creates a payment entry on its own.
+3. **Any tablet at the order's station can act on it** — return, replace,
+   settle — so a rental is never stuck on a dead tablet. **Returns happen at the
+   same station** only.
+4. **Overtime and final amounts are computed on the tablet** and stored as sent.
+5. **Card discount:** requested any time while the vehicles are out (the order
+   must exist first). The tablet checks the request's status; once approved, the
+   operator enters the discount from the request's details. At settle the
+   tablet names the request it applied (`card_discount: {claim_id, amount}`):
+   that request becomes **redeemed** and the amount is stored on the order
+   (`card_discount_amount`). Every other request on the order still pending, or
+   approved but not applied, becomes **cancelled**. The link is the existing
+   `CardDiscountClaim.order`; the order needs no new field.
+6. **"On rent" is derived, never stored.** A vehicle is on rent when it has an
+   active order item (one per vehicle, enforced by the database). `/vehicles`
+   returns `on_rent`, the `rental` it is on (order no., expected end) and
+   `can_rent` (active, available and not on rent). `is_available` stays the
+   manual "can be used" switch (maintenance, held back) and is never changed
+   by a rental. Legacy kept "rented" in three places (`RmsAntennaDataTracking
+   .IsRented`, `RmsBranchVehicleTrackingDetails.IsOnRent`, `DMSVehicleStatus`)
+   that its procedures updated inconsistently.
+7. **Business validations come later** (totals adding up, vehicle and fare
+   checks, settling with money owed, …). Only the guards that keep the data
+   consistent are in from the start: an item must be active to be returned or
+   replaced; a completed or cancelled order takes no changes (except a refund
+   on a cancelled one); settle needs every vehicle back.
+8. **Every order has a customer.** **No auto-block on a low rating** (legacy
+   `Service_Save_SubmitExit_Order` blocked customers rated below 2).
+9. **Order number required and unique** per company; each booking raises the
    tablet's `BillContinuity.last_number` to the number used.
-6. **Not in this build:** reprint / discount / complimentary approvals, hotel
-   room/guest details, loyalty points, online (customer-app) payment.
+10. **Operator app only** for these calls; cancel approval on the web first.
+11. **Not in this build:** reprint / discount / complimentary approvals, hotel
+    room/guest details, loyalty points, online (customer-app) payment.
 
 ---
 
