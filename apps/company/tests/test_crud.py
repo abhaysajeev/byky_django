@@ -347,6 +347,23 @@ def test_approval_authorities_are_saved(client_in, world, mechanic):
     }
 
 
+def test_the_branch_list_puts_the_last_saved_first_with_its_approvers(client_in, world, mechanic):
+    # The drawer posts checkbox values, which are text.
+    post(client_in, "/company/branch/save/", branch_payload(
+        world, code="A1", name="Alpha", rms_app_authority=[str(mechanic.pk)]))
+    post(client_in, "/company/branch/save/", branch_payload(world, code="O1", name="Omega"))
+    alpha = Branch.objects.get(short_code="A1")
+
+    def first():
+        return client_in.get("/company/branch/list/").context["branches"][0]["fields_json"]
+
+    assert first()["name"] == "Omega"
+    post(client_in, "/company/branch/save/", branch_payload(
+        world, pk=alpha.pk, code="A1", name="Alpha", rms_app_authority=[str(mechanic.pk)]))
+    row = first()
+    assert (row["name"], row["rms_app_authority"]) == ("Alpha", [mechanic.pk])
+
+
 def test_unpicking_an_approver_removes_their_authority(client_in, world, mechanic):
     from apps.company.models import BranchApprovalAuthority
 
@@ -420,3 +437,21 @@ def test_the_branch_screen_reports_a_duplicate_code_within_one_company(client_in
 
     assert response.status_code == 400
     assert any("already exists" in e["message"] for e in response.json()["errors"])
+
+
+def test_the_station_flags_show_for_a_station():
+    # show_if compares the select's value, which is the stored choice, not its label.
+    from apps.company.drawers import BRANCH
+    from apps.company.models import BranchType
+
+    flags = next(f for s in BRANCH["sections"] for f in s["fields"] if f["id"] == "flags")
+    assert flags["show_if"] == f"branch_type:{BranchType.STATION.value}"
+
+
+def test_the_station_flags_are_saved(client_in, world):
+    response = post(client_in, "/company/branch/save/", branch_payload(
+        world, is_hotel=True, hotel_commission="12.5", app_payment=True, multi_user=True, test_vehicle=True))
+    assert response.status_code == 200, response.content
+    branch = Branch.objects.get(short_code="C1")
+    assert (branch.is_hotel, branch.accepts_app_payment, branch.is_multi_device, branch.allows_test_ride,
+            str(branch.hotel_commission)) == (True, True, True, True, "12.50")

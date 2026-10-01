@@ -76,7 +76,7 @@ BRANCH = {
                     "kind": "checkgroup",
                     "required": False,
                     "width": 12,
-                    "show_if": "branch_type:Station",
+                    "show_if": "branch_type:station",
                     "help": "These apply to a station only.",
                     "options": [
                         {"id": "is_hotel", "label": "Is Hotel", "enables": "hotel_commission"},

@@ -44,6 +44,7 @@ from apps.devices.models import (
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
+from core.ordering import recent_first, recent_key
 from theme import drawers as theme_drawers
 from theme.views import ThemedTemplateView
 
@@ -247,6 +248,12 @@ class DeviceApprovalDetailView(DeviceScreenView):
         return context
 
 
+def _latest(*records):
+    """Whichever of the records (any may be None) was saved last."""
+    present = [r for r in records if r is not None]
+    return min(present, key=recent_key) if present else None
+
+
 class DeviceMappingView(DeviceScreenView):
     """Approved devices and the station each is mapped to.
 
@@ -276,6 +283,8 @@ class DeviceMappingView(DeviceScreenView):
         }
         latest_sessions, in_use = _latest_sessions(user, device_ids)
 
+        # The device or its mapping, whichever changed last, puts it on top.
+        devices.sort(key=lambda d: recent_key(_latest(d, open_mappings.get(d.pk))))
         rows = []
         for device in devices:
             mapping = open_mappings.get(device.pk)
@@ -551,9 +560,8 @@ class AppReleaseView(DeviceScreenView):
         context = super().get_context_data(**kwargs)
         user = self.request.user
         releases = list(
-            scoping.releases_for(user)
+            recent_first(scoping.releases_for(user))
             .select_related("created_by", "company")
-            .order_by("channel", "-version_code")
         )
         # Where each build is live, in one query.
         usage = {}
@@ -934,6 +942,8 @@ class DeviceSettingsView(DeviceScreenView):
             ))
         }
 
+        # Stations whose settings changed last first; those with none after.
+        branches.sort(key=lambda b: recent_key(rows.get(b.pk)))
         grid, sources = [], []
         for branch in branches:
             row = rows.get(branch.pk)

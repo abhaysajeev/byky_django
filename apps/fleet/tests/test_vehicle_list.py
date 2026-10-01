@@ -10,6 +10,7 @@ import pytest
 from apps.fleet.models import Vehicle
 from apps.fleet.tests import test_masters as masters
 from apps.portal.models import RolePermission
+from core.ordering import recent_first
 
 # The two companies (and their branches, types, UOMs) from the masters tests.
 world, sign_in = masters.world, masters.sign_in
@@ -54,8 +55,8 @@ def test_the_list_is_paged_by_the_server_fifty_at_a_time(client_in, fleet):
     second = client_in.get(URL + "?page=2")
     assert len(names(second)) == 10 and "Showing 51–60 of 60" in second.content.decode()
     assert set(names(first)).isdisjoint(names(second))
-    # In identifier order, which is creation order here.
-    ids = list(Vehicle.objects.filter(company__short_code="BYKY").order_by("identifier_no")
+    # The last saved first.
+    ids = list(recent_first(Vehicle.objects.filter(company__short_code="BYKY"))
                .values_list("vehicle_name", flat=True))
     assert names(first) + names(second) == ids
 

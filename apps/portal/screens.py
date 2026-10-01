@@ -28,6 +28,7 @@ from apps.portal.services import has_permission
 from apps.portal.session_models import LogoutReason
 from core.enums import Channel
 from core.models import User
+from core.ordering import recent_first
 from theme import drawers as theme_drawers
 from theme.views import ThemedTemplateView
 
@@ -76,7 +77,7 @@ class RoleListView(PortalScreenView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        roles = scoping.roles_for(self.request.user).select_related("company")
+        roles = recent_first(scoping.roles_for(self.request.user)).select_related("company")
 
         rows = []
         for i, role in enumerate(roles):
@@ -142,7 +143,7 @@ class UserListView(PortalScreenView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        users = scoping.users_for(self.request.user).select_related("role", "employee", "company")
+        users = recent_first(scoping.users_for(self.request.user)).select_related("role", "employee", "company")
 
         rows = []
         for i, account in enumerate(users):
@@ -240,7 +241,7 @@ class UserResetPassword(company_writes.WriteView):
             account.set_password(password)
             account.failed_login_count = 0
             account.locked_until = None
-            account.save(update_fields=["password", "failed_login_count", "locked_until"])
+            account.save(update_fields=["password", "failed_login_count", "locked_until", "modified_on"])
             close_sessions_for_user(account, LogoutReason.FORCED)
 
         return JsonResponse({"ok": True, "message": f"Password reset for {account.username}."})
@@ -262,7 +263,7 @@ class UserUnlock(company_writes.WriteView):
         account = get_object_or_404(self.rows(), pk=pk)
         account.failed_login_count = 0
         account.locked_until = None
-        account.save(update_fields=["failed_login_count", "locked_until"])
+        account.save(update_fields=["failed_login_count", "locked_until", "modified_on"])
         return JsonResponse({"ok": True, "message": f"{account.username} can sign in again."})
 
 

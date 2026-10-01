@@ -123,7 +123,6 @@
           <tr>
             <th>Branch</th>
             <th>Code</th>
-            <th>Company</th>
             <th>Location</th>
             <th>Is HO</th>
             <th>Multi User</th>
@@ -144,7 +143,6 @@
               </div>
             </td>
             <td><span class="scr-code">{{ b.code }}</span></td>
-            <td class="scr-state">{{ b.company }}</td>
             <td class="scr-state">{{ b.location }}</td>
             <td><span class="scr-flag {% if b.is_ho %}scr-flag-yes{% else %}scr-flag-no{% endif %}">{% if b.is_ho %}Y{% else %}N{% endif %}</span></td>
             <td><span class="scr-flag {% if b.multi_user %}scr-flag-yes{% else %}scr-flag-no{% endif %}">{% if b.multi_user %}Y{% else %}N{% endif %}</span></td>
@@ -166,7 +164,7 @@
           {{ b.vehicles_json|json_script:b.vehicles_json_id }}
           {% empty %}
           <tr>
-            <td colspan="9" style="padding:0">
+            <td colspan="8" style="padding:0">
               <div class="scr-empty">
                 <span class="scr-empty-ico">
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V4.2A1.2 1.2 0 0 1 5.2 3h8.6A1.2 1.2 0 0 1 15 4.2V21M15 9h4.8A1.2 1.2 0 0 1 21 10.2V21M3 21h18M8 7h3M8 11h3M8 15h3"></path></svg>

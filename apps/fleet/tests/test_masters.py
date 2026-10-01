@@ -369,3 +369,17 @@ def test_the_sidebar_lists_exactly_the_screens_the_role_may_read(client_in):
     for master in MASTERS:
         shown = f'class="menu-label">{master.name}</span>' in body
         assert shown == (master.name not in hidden), master.name
+
+
+@pytest.mark.parametrize("master", MASTERS, ids=str)
+def test_the_list_shows_the_last_saved_row_first(client_in, world, master):
+    def order():
+        body = client_in.get(f"/fleet/{master.slug}/list/").content.decode()
+        return sorted(("Alpha", "Omega"), key=body.index)
+
+    alpha = master.make(world["ours"], world["our"], "Alpha")
+    master.make(world["ours"], world["our"], "Omega")
+    assert order() == ["Omega", "Alpha"]                     # newest first, not alphabetical
+
+    alpha.save()                                             # an edit moves it to the top
+    assert order() == ["Alpha", "Omega"]
