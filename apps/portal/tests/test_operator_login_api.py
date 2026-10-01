@@ -110,7 +110,7 @@ def test_login_returns_the_full_response_shape(client, app_user, device, world):
     data = body["data"]
     assert set(data) == {
         "tokens", "first_name", "branch", "device_settings",
-        "order_no_prefix", "next_order_number", "next_test_number",
+        "order_no_prefix", "last_order_no", "next_order_number", "next_test_number",
     }
     assert data["tokens"]["access"] and data["tokens"]["refresh"]
     assert data["first_name"] == "Rashed"
@@ -126,6 +126,7 @@ def test_login_returns_the_full_response_shape(client, app_user, device, world):
 
     assert data["device_settings"]["settings_code"] == "S01"
     assert data["order_no_prefix"] == "CREEK"
+    assert data["last_order_no"] is None
     assert data["next_order_number"] == 1
     assert data["next_test_number"] == 1
 
@@ -146,7 +147,9 @@ def test_a_second_login_advances_the_bill_numbers(client, app_user, device):
     counter.save(update_fields=["last_number"])
 
     response = _login(client, app_user, device)
-    assert response.json()["data"]["next_order_number"] == 41
+    data = response.json()["data"]
+    assert data["next_order_number"] == 41
+    assert data["last_order_no"] == f"CREEK{device.device_registration_id}000040"
 
 
 def test_missing_installation_id_is_a_type_error_not_a_login_refusal(client, app_user):

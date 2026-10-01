@@ -153,3 +153,37 @@ def test_counter_for_order_and_test_ride_are_independent(device, branch):
     ride = services.counter_for(device, branch, BillKind.TEST_RIDE)
     assert order.pk != ride.pk
     assert BillContinuity.objects.filter(device=device, branch=branch).count() == 2
+
+
+# -- Raised from an uploaded receipt -------------------------------------------
+
+
+@pytest.mark.parametrize(("last", "receipt", "expected"), [
+    (0, "DUBPP60182000335", 335),            # the number inside this device's own receipt
+    (335, "DUBPP60182000335", 335),          # resent: no change
+    (340, "DUBPP60182000335", 340),          # an older receipt, uploaded late: never backwards
+    (0, "DUBPP601821234567", 1_234_567),     # past six digits
+    (0, "DUBPP60183000335", 0),              # another device's head
+    (0, "MARIN60182000335", 0),              # another prefix
+    (0, "DUBPP60182", 0),                    # no number
+    (0, "DUBPP6018233", 0),                  # too short to be one of ours
+    (0, "DUBPP60182000A35", 0),              # not digits
+], ids=["raised", "resent", "late", "seven-digits", "other-device", "other-prefix", "head-only", "short",
+        "not-digits"])
+def test_an_uploaded_receipt_raises_the_counter_to_its_number(device, branch, last, receipt, expected):
+    counter(device, branch, last=last)
+
+    raised = services.raise_counter_from(device, branch, BillKind.ORDER, receipt)
+
+    assert raised.last_number == expected == BillContinuity.objects.get(device=device).last_number
+
+
+def test_a_test_ride_receipt_raises_only_the_test_ride_counter(device, branch):
+    counter(device, branch, kind=BillKind.ORDER)
+    counter(device, branch, kind=BillKind.TEST_RIDE)
+
+    services.raise_counter_from(device, branch, BillKind.TEST_RIDE, "TDUBPP60182000006")
+    services.raise_counter_from(device, branch, BillKind.TEST_RIDE, "DUBPP60182000335")    # no T: not a ride
+
+    assert dict(BillContinuity.objects.values_list("kind", "last_number")) == {
+        BillKind.ORDER: 0, BillKind.TEST_RIDE: 6}
