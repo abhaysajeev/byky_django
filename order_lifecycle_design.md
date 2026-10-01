@@ -1,8 +1,10 @@
 # Order lifecycle — design
 
-Status: **decisions agreed** (1 Oct 2026; section 5). Built so far: `Order`,
-`OrderItem` and `Payment` (section 4) with `services.record_payment`. The API
-(`POST /api/v1/{app}/orders` and the rest) is being rebuilt to this design.
+Status: **P1 built** (1 Oct 2026). Decisions agreed in section 5. Built:
+`Order`, `OrderItem`, `Payment`, `OrderEvent` (section 4); `run_once`,
+`record_payment`, `lock_order`; booking (`POST /orders`), `POST /orders/detail`,
+running status on `/vehicles`, `POST /device/settings`. Next: P2 return +
+settle + invoice + card discount.
 
 The legacy system is the reference, not the template: the business flow is
 kept, its bugs are not. Legacy sources are cited as proc names
@@ -139,6 +141,25 @@ and the reply that was sent.
    - **final** — e.g. `vehicle_already_rented`, `line_not_active`,
      `customer_blocked`, `order_closed`: stop retrying, show the operator.
 
+Every refusal carries `data.retry` (`true` / `false`) so the app need not keep
+its own list. The codes, one place in the code (`apps/rental/services.py`
+`ORDER_ERRORS`, which Swagger is built from):
+
+| Code | HTTP | Kind | When |
+|---|---|---|---|
+| `order_not_synced` | 409 | retry | a call for an order the server has not got yet |
+| `sync_id_conflict` | 409 | final | the call's id is already used with another body |
+| `order_no_used` | 409 | final | the receipt number is already used in the company |
+| `vehicle_already_rented` | 409 | final | a vehicle is on another active line |
+| `vehicle_repeated` | 400 | final | the same vehicle twice in one booking |
+| `item_id_used` / `payment_id_used` | 409 | final | a line or payment id already exists |
+| `unknown_customer` / `_payment_mode` / `_vehicle` / `_fare` / `_offer` | 400 | final | not this company's |
+| `vehicle_not_at_station` | 400 | final | the vehicle is at another station |
+| `unknown_order` | 404 | final | no such order at this station (`/orders/detail`) |
+
+A constraint lost in a race (two tablets, one vehicle, the same instant) is
+reported as the code it means, read from the database constraint's name.
+
 Rules for the app team: every call has a new `sync_id` and a resend reuses it;
 orders and lines get their `sync_id` on the tablet; send an order's calls in
 order; `ok`/`duplicate` = done, retry code = keep queued, final code = stop and
@@ -146,6 +167,23 @@ show.
 
 Later, if tablets spend long periods offline: a batch endpoint taking the whole
 queue in one request, with the same `sync_id`s and the same rules.
+
+### What the tablet reads
+
+- **`POST /orders/detail`** — one order, by `sync_id` or `order_no`, in the same
+  shape as every order reply. Any tablet at the order's station.
+- **`/vehicles`** — each vehicle carries `on_rent`, `rental` (`order_no`,
+  `expected_end_time`) and `can_rent` (= `is_available` and not on rent),
+  derived from the active lines (decision 6).
+- **`POST /device/settings`** — the login's settings block on its own:
+  station settings, `order_no_prefix`, `last_order_no` (the last receipt the
+  server has seen from this tablet here), `next_order_number`,
+  `next_test_number`. Login keeps returning the same block.
+- **Receipt counter.** A receipt number is prefix + tablet registration id +
+  six or more digits (`DUBPP` + `60182` + `000231`). Each booking raises the
+  tablet's `BillContinuity.last_number` to the number inside its `order_no`
+  (never lowers it; a number not in this tablet's shape is stored and counts
+  nothing). Every order reply carries `next_order_number`.
 
 ---
 
@@ -156,7 +194,7 @@ House style: `POST` with `{credentials, request_data}`, reply
 are UUIDv7. Times are `YYYY-MM-DD HH:MM:SS` in company time.
 
 **Scenario:** customer Ahmed at Corniche 1, tablet TAB-07 (receipt prefix
-`C1`), two bikes for one hour. One breaks and is swapped; both return, one
+`DUBPP`, registration id `60182`), two bikes for one hour. One breaks and is swapped; both return, one
 late; the bill settles with his approved discount card.
 
 ### 3.1 Book — two bikes, AED 100 advance in cash
@@ -168,9 +206,9 @@ late; the bill settles with his approved discount card.
   "credentials": { "...": "..." },
   "request_data": {
     "sync_id": "O-1",
-    "order_no": "C1-0007-000231",
+    "order_no": "DUBPP60182000231",
     "customer_id": 5512,
-    "device_created_at": "2026-10-02 16:00:05",
+    "booked_at": "2026-10-02 16:00:05", "start_time": "2026-10-02 16:00:00",
     "items": [
       { "sync_id": "L-1", "vehicle_id": 2041, "fare_id": 88, "package_minutes": 60,
         "start_time": "2026-10-02 16:00:00", "expected_end_time": "2026-10-02 17:00:00",
@@ -188,18 +226,35 @@ late; the bill settles with his approved discount card.
 }
 ```
 
-Server checks: customer exists and is not blocked; each vehicle is active,
-available, at this station and not already rented; fare is this company's;
-figures add up (lines 100 + tax 5 = net 105); receipt number is new for this
-tablet. Saves everything in one transaction and raises the tablet's receipt
-counter to 231.
+Cash and card together are two entries in `payments`, each with its own
+`sync_id`; at booking only `advance`.
+
+Server checks (P1): customer, vehicles, fares and payment modes are this
+company's; each vehicle is at this station, not in the order twice and not
+already rented; the receipt number and every id are new. Saves everything in
+one transaction with the call's history row and raises the tablet's receipt
+counter to 231. Still to come (decision 7): blocked customer, vehicle
+available, figures adding up.
 
 ```json
 { "code": "ok", "message": "Order created.",
-  "data": { "sync_id": "O-1", "order_no": "C1-0007-000231", "status": "active",
-            "net_amount": "105.00", "paid_amount": "100.00", "balance_due": "5.00",
-            "items": [ { "sync_id": "L-1", "vehicle": "MO 41", "status": "active" },
-                       { "sync_id": "L-2", "vehicle": "DC 02", "status": "active" } ] } }
+  "data": { "sync_id": "O-1", "order_no": "DUBPP60182000231",
+            "status": "active", "payment_status": "partly_paid",
+            "booked_at": "2026-10-02 16:00:05", "start_time": "2026-10-02 16:00:00",
+            "completed_at": null, "cancelled_at": null,
+            "customer": { "id": 5512, "name": "Ahmed Al Mansoori", "mobile": "971501234567" },
+            "total_amount": "100.00", "total_tax": "5.00", "net_amount": "105.00",
+            "amount_received": "100.00", "amount_refunded": "0.00",
+            "paid_amount": "100.00", "balance_due": "5.00", "items_out": 2,
+            "items": [ { "sync_id": "L-1", "status": "active",
+                         "vehicle": { "id": 2041, "name": "MO 41", "identifier": "VB1241" },
+                         "start_time": "2026-10-02 16:00:00", "expected_end_time": "2026-10-02 17:00:00",
+                         "end_time": null, "total_amount": "50.00", "replaced_item_id": null, "...": "..." },
+                       { "sync_id": "L-2", "...": "DC 02, the same fields" } ],
+            "payments": [ { "sync_id": "P-1", "kind": "advance",
+                            "payment_mode": { "id": 1, "name": "Cash" }, "amount": "100.00",
+                            "paid_at": "2026-10-02 16:00:05", "...": "..." } ],
+            "next_order_number": 232 } }
 ```
 
 The reply is lost; the tablet resends the identical request:
@@ -304,7 +359,7 @@ balance        4.00   → collected now by card
 
 Server checks the figures add up and every line is back; then in one
 transaction: order Completed, payment P-2 saved, the card-discount claim
-marked Redeemed with AED 11.00, and invoice `C1-0007-000231` issued (the order
+marked Redeemed with AED 11.00, and invoice `DUBPP60182000231` issued (the order
 number). Had the claim still been pending, it would be
 Cancelled and the tablet would have billed without it.
 
@@ -312,7 +367,7 @@ Cancelled and the tablet would have billed without it.
 { "code": "ok", "message": "Order settled.",
   "data": { "sync_id": "O-1", "status": "completed", "net_amount": "104.00",
             "paid_amount": "104.00", "balance_due": "0.00", "card_discount": "redeemed",
-            "invoice": { "invoice_no": "C1-0007-000231", "issued_at": "2026-10-02 17:13:30",
+            "invoice": { "invoice_no": "DUBPP60182000231", "issued_at": "2026-10-02 17:13:30",
                          "net_amount": "104.00" } } }
 ```
 
