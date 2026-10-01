@@ -21,6 +21,7 @@ from apps.fleet.scoping import categories_for, vehicle_types_for
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
+from core.ordering import recent_first
 from core.timezones import business_date_for
 from theme.views import ThemedTemplateView
 
@@ -54,12 +55,11 @@ class FareListView(FareScreenView):
         context = super().get_context_data(**kwargs)
         user = self.request.user
         fares = (
-            fares_for(user)
+            recent_first(fares_for(user))
             .select_related("company", "vehicle_type__category")
             .prefetch_related("branch_links__branch")
             .annotate(season_count=Count("seasons", distinct=True),
                       rule_count=Count("rules", filter=Q(rules__season__isnull=True), distinct=True))
-            .order_by("vehicle_type__vehicle_type_name", "package_minutes", "-valid_from")
         )
         # The branch search finds every fare that applies at a branch: its own
         # and its company's (which covers every branch of the company).
@@ -262,11 +262,7 @@ class OfferListView(OfferScreenView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         user = self.request.user
-        offers = (
-            offers_for(user)
-            .select_related("company", "branch", "location")
-            .order_by("-valid_from", "offer_name")
-        )
+        offers = recent_first(offers_for(user)).select_related("company", "branch", "location")
         today_of = {}
         rows = []
         for offer in offers:

@@ -38,6 +38,7 @@ from apps.crew.models import (
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
+from core.ordering import recent_first
 from core.timezones import zone_for
 from theme import drawers as theme_drawers
 from theme.views import ThemedTemplateView
@@ -108,7 +109,7 @@ class DesignationListView(CrewScreenView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         rows = []
-        designations = scoping.designations_for(self.request.user).annotate(
+        designations = recent_first(scoping.designations_for(self.request.user)).annotate(
             headcount=Count("employees", filter=Q(employees__is_active=True))
         )
         for i, designation in enumerate(designations):
@@ -153,7 +154,7 @@ class EmployeeListView(CrewScreenView):
         today = timezone.localdate()
 
         employees = (
-            scoping.employees_for(self.request.user)
+            recent_first(scoping.employees_for(self.request.user))
             .select_related("designation", "branch", "detail")
         )
 
@@ -232,7 +233,7 @@ class EmployeeAddressListView(CrewScreenView):
         context = super().get_context_data(**kwargs)
         rows = []
         addresses = (
-            scoping.addresses_for(self.request.user)
+            recent_first(scoping.addresses_for(self.request.user))
             .select_related("employee", "state", "country")
         )
         for i, address in enumerate(addresses):

@@ -9,6 +9,7 @@ from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
 from apps.rental import drawers, scoping
 from apps.rental.models import Customer, Gender, IdType
+from core.ordering import recent_first
 from theme import drawers as theme_drawers
 from theme.views import ThemedTemplateView
 
@@ -44,7 +45,7 @@ class CustomerListView(RentalScreenView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        customers = scoping.customers_for(self.request.user).select_related("company")
+        customers = recent_first(scoping.customers_for(self.request.user)).select_related("company")
 
         rows = []
         for i, customer in enumerate(customers):

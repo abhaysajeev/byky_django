@@ -23,6 +23,7 @@ from apps.discount.models import CardDiscount, CardGrade, CardType, ClaimStatus,
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
+from core.ordering import recent_first
 from core.timezones import zone_for
 from theme import drawers as theme_drawers
 from theme.views import ThemedTemplateView
@@ -60,7 +61,7 @@ class CardTypeListView(DiscountScreenView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        types = scoping.card_types_for(self.request.user).annotate(grade_count=Count("grades"))
+        types = recent_first(scoping.card_types_for(self.request.user)).annotate(grade_count=Count("grades"))
         context.update({
             "rows": [
                 {
@@ -99,7 +100,7 @@ class CardGradeListView(DiscountScreenView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        grades = scoping.card_grades_for(self.request.user).select_related("card_type")
+        grades = recent_first(scoping.card_grades_for(self.request.user)).select_related("card_type")
         context.update({
             "rows": [
                 {
@@ -152,7 +153,7 @@ class CardDiscountListView(DiscountScreenView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        discounts = (scoping.card_discounts_for(self.request.user)
+        discounts = (recent_first(scoping.card_discounts_for(self.request.user))
                      .select_related("card_grade__card_type").prefetch_related("days"))
         context.update({
             "rows": [

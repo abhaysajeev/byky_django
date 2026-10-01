@@ -22,6 +22,7 @@ from apps.fleet.models import UOM, Asset, AssetType, Brand, Category, Vehicle, V
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
+from core.ordering import recent_first
 from theme import drawers as theme_drawers
 from theme.views import ThemedTemplateView
 
@@ -81,7 +82,7 @@ class BrandListView(FleetScreenView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         rows = []
-        for i, brand in enumerate(scoping.brands_for(self.request.user)):
+        for i, brand in enumerate(recent_first(scoping.brands_for(self.request.user))):
             rows.append({
                 "code": brand.brand_code,
                 "name": brand.brand_name,
@@ -128,7 +129,7 @@ class CategoryListView(FleetScreenView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         rows = []
-        for i, category in enumerate(scoping.categories_for(self.request.user)):
+        for i, category in enumerate(recent_first(scoping.categories_for(self.request.user))):
             rows.append({
                 "code": category.category_code,
                 "name": category.category_name,
@@ -172,7 +173,7 @@ class VehicleTypeListView(FleetScreenView):
         context = super().get_context_data(**kwargs)
         rows = []
         vehicle_types = (
-            scoping.vehicle_types_for(self.request.user).select_related("category", "brand")
+            recent_first(scoping.vehicle_types_for(self.request.user)).select_related("category", "brand")
         )
         for i, vehicle_type in enumerate(vehicle_types):
             rows.append({
@@ -229,7 +230,7 @@ class UOMListView(FleetScreenView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         rows = []
-        for i, uom in enumerate(scoping.uoms_for(self.request.user)):
+        for i, uom in enumerate(recent_first(scoping.uoms_for(self.request.user))):
             rows.append({
                 "code": uom.uom_code,
                 "name": uom.uom_name,
@@ -272,7 +273,7 @@ class AssetTypeListView(FleetScreenView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         rows = []
-        for i, asset_type in enumerate(scoping.asset_types_for(self.request.user)):
+        for i, asset_type in enumerate(recent_first(scoping.asset_types_for(self.request.user))):
             rows.append({
                 "code": asset_type.asset_type_code,
                 "name": asset_type.asset_type_name,
@@ -316,7 +317,7 @@ class AssetListView(FleetScreenView):
         context = super().get_context_data(**kwargs)
         rows = []
         assets = (
-            scoping.assets_for(self.request.user)
+            recent_first(scoping.assets_for(self.request.user))
             .select_related("asset_type", "brand", "custodian", "branch")
         )
         for i, asset in enumerate(assets):
@@ -404,7 +405,7 @@ def filtered_vehicles(request):
         vehicles = vehicles.filter(is_available=params["available"] == "yes")
     if params.get("status") in ("active", "inactive"):
         vehicles = vehicles.filter(is_active=params["status"] == "active")
-    return vehicles.order_by("identifier_no")
+    return recent_first(vehicles)
 
 
 class VehicleListView(FleetScreenView):

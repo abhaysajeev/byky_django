@@ -228,6 +228,10 @@
       [].forEach.call(drawer.querySelectorAll('.byky-multi[data-field]'), function (multi) {
         var chosen = (mode === 'edit' && record && record[multi.dataset.field]) || [];
         if (typeof chosen === 'string') chosen = chosen.split(',');
+        /* A record carries ids as numbers ([5, 7]); a checkbox's value is always
+           text ("5"). Compared as they are, nothing matched, so an edit opened
+           with every box empty and the next save wiped the stored choice. */
+        chosen = chosen.map(String);
         [].forEach.call(multi.querySelectorAll('input[type="checkbox"]'), function (b) {
           b.checked = chosen.indexOf(b.value) > -1;
         });

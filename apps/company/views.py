@@ -32,6 +32,7 @@ from apps.crew.scoping import employees_for
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
+from core.ordering import recent_first
 from theme import drawers as theme_drawers
 from theme.views import ThemedTemplateView
 
@@ -90,7 +91,7 @@ class CompanyListView(CompanyScreenView):
         context = super().get_context_data(**kwargs)
         rows = []
         for i, company in enumerate(
-            scoping.companies_for(self.request.user).select_related("country", "state")
+            recent_first(scoping.companies_for(self.request.user)).select_related("country", "state")
         ):
             sections = drawers.company_sections(company)
             filled = [f for section in sections for f in section["fields"] if f["value"]]
@@ -135,7 +136,7 @@ class CountryStateListView(CompanyScreenView):
         context = super().get_context_data(**kwargs)
 
         countries = []
-        countries_qs = scoping.countries_for(self.request.user).annotate(state_count=Count("states"))
+        countries_qs = recent_first(scoping.countries_for(self.request.user)).annotate(state_count=Count("states"))
         for i, country in enumerate(countries_qs):
             countries.append({
                 "name": country.name,
@@ -153,7 +154,7 @@ class CountryStateListView(CompanyScreenView):
             })
 
         states = []
-        state_rows = scoping.states_for(self.request.user).select_related("country").annotate(
+        state_rows = recent_first(scoping.states_for(self.request.user)).select_related("country").annotate(
             branch_count=Count("locations__branches", distinct=True)
         )
         for i, state in enumerate(state_rows):
@@ -202,7 +203,7 @@ class LocationListView(CompanyScreenView):
         context = super().get_context_data(**kwargs)
         rows = []
         for i, location in enumerate(
-            scoping.locations_for(self.request.user).select_related("country", "state")
+            recent_first(scoping.locations_for(self.request.user)).select_related("country", "state")
         ):
             rows.append({
                 "code": location.short_code,
@@ -237,7 +238,7 @@ class DepartmentListView(CompanyScreenView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         rows = []
-        for i, department in enumerate(scoping.departments_for(self.request.user)):
+        for i, department in enumerate(recent_first(scoping.departments_for(self.request.user))):
             rows.append({
                 "code": department.short_code,
                 "name": department.name,
@@ -267,7 +268,7 @@ class BranchListView(CompanyScreenView):
         context = super().get_context_data(**kwargs)
         rows = []
         branches = (
-            scoping.branches_for(self.request.user)
+            recent_first(scoping.branches_for(self.request.user))
             .select_related("company", "location", "location__state")
             .prefetch_related("departments")
         )

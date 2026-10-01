@@ -163,7 +163,7 @@ class EntityDeleteView(WriteView):
 
         if hasattr(instance, "is_active"):
             instance.is_active = False
-            instance.save(update_fields=["is_active"])
+            instance.save(update_fields=["is_active", "modified_on"])
         return JsonResponse({
             "ok": False,
             "code": "in_use",
