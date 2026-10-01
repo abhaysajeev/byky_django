@@ -42,26 +42,28 @@
       <div class="scr-form-head">
         <div class="scr-form-title-row">
           <h2 class="scr-form-title">Request</h2>
-          {% if claim.status == "pending" %}<span class="scr-badge scr-badge-pending"><i></i>Pending</span>
-          {% elif claim.status == "approved" %}<span class="scr-badge scr-badge-approved"><i></i>Approved</span>
-          {% elif claim.status == "redeemed" %}<span class="scr-badge scr-badge-active"><i></i>Redeemed</span>
-          {% else %}<span class="scr-badge scr-badge-mandatory"><i></i>Rejected</span>{% endif %}
+          {% include "discount/partials/claim_status.html" with status=claim.status %}
         </div>
       </div>
       <div class="scr-form-body scr-mon-body">
         <div class="scr-detail-rows">
+          <div class="scr-detail-row"><span class="scr-detail-label">Order</span><span class="scr-detail-value">{{ claim.order_no }} · {{ claim.order_status }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Order Start</span><span class="scr-detail-value">{{ claim.order_start|date:"d M Y, H:i" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Vehicles</span><span class="scr-detail-value">{{ claim.order_vehicles }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Order Total</span><span class="scr-detail-value">{{ claim.order_total }} · net {{ claim.order_net }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Branch</span><span class="scr-detail-value">{{ claim.branch|default:"—" }}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Customer</span><span class="scr-detail-value">{{ claim.customer }}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Phone</span><span class="scr-detail-value">{{ claim.phone }}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Card</span><span class="scr-detail-value">{{ claim.card_type }} · {{ claim.grade }}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Card No</span><span class="scr-detail-value">{{ claim.card_number|default:"—" }}</span></div>
-          <div class="scr-detail-row"><span class="scr-detail-label">Discount</span><span class="scr-detail-value">{{ claim.percent }} · {{ claim.fare_basis }}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Usage</span><span class="scr-detail-value">{{ usage }} · used {{ redeemed_count }}</span></div>
-          <div class="scr-detail-row"><span class="scr-detail-label">Order</span><span class="scr-detail-value">{{ claim.order_ref|default:"—" }}</span></div>
-          <div class="scr-detail-row"><span class="scr-detail-label">Bill Amount</span><span class="scr-detail-value">{% if claim.bill_amount is not None %}{{ claim.bill_amount }}{% else %}—{% endif %}</span></div>
-          <div class="scr-detail-row"><span class="scr-detail-label">Branch</span><span class="scr-detail-value">{{ claim.branch|default:"—" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Bill Amount</span><span class="scr-detail-value">{{ claim.bill_amount|default_if_none:"—" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Discount</span><span class="scr-detail-value">{{ claim.percent }} · {{ claim.fare_basis }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Discount Amount</span><span class="scr-detail-value">{{ claim.discount_amount|default_if_none:"—" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Net Amount</span><span class="scr-detail-value">{{ claim.net_amount|default_if_none:"—" }}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Requested</span><span class="scr-detail-value">{{ claim.requested_at|date:"d M Y, H:i" }}{% if claim.requested_by %} · {{ claim.requested_by }}{% endif %}</span></div>
           {% if claim.decided_at %}
-          <div class="scr-detail-row"><span class="scr-detail-label">Decided</span><span class="scr-detail-value">{{ claim.decided_at|date:"d M Y, H:i" }} · {{ claim.decided_by }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">{% if claim.status == "cancelled" %}Cancelled{% else %}Decided{% endif %}</span><span class="scr-detail-value">{{ claim.decided_at|date:"d M Y, H:i" }}{% if claim.decided_by %} · {{ claim.decided_by }}{% endif %}</span></div>
           {% endif %}
           {% if claim.remarks %}
           <div class="scr-detail-row"><span class="scr-detail-label">Remarks</span><span class="scr-detail-value">{{ claim.remarks }}</span></div>
@@ -73,15 +75,36 @@
     <div class="scr-card">
       <div class="scr-form-head"><div class="scr-form-title-row"><h2 class="scr-form-title">Card Photo</h2></div></div>
       <div class="scr-form-body scr-mon-body">
+        {% if claim.photo and claim.photo_is_image %}
+        <button type="button" class="scr-photo-thumb" data-scr-modal-open="card-photo" aria-label="View card photo">
+          <img src="{{ claim.photo }}" alt="Card photo" loading="lazy" />
+        </button>
+        {% elif claim.photo %}
+        <a class="scr-btn" href="{{ claim.photo }}" target="_blank" rel="noopener">Open photo</a>
+        {% else %}
         <div class="scr-empty">
           <span class="scr-empty-ico">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7a2 2 0 0 1 2-2h2l1.5-2h5L16 5h2a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8"></path></svg>
           </span>
           <div><div class="scr-empty-title">No photo</div></div>
         </div>
+        {% endif %}
       </div>
     </div>
   </div>
+
+  {% if claim.photo and claim.photo_is_image %}
+  <div class="scr-modal-veil" data-scr-modal-veil="card-photo" hidden></div>
+  <div class="scr-modal scr-photo-modal" data-scr-modal="card-photo" hidden>
+    <div class="scr-modal-head">
+      <div><div class="scr-modal-title">Card Photo</div><p class="scr-modal-sub">{{ claim.customer }} · {{ claim.card_type }} · {{ claim.grade }}</p></div>
+      <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+      </button>
+    </div>
+    <div class="scr-modal-body"><img src="{{ claim.photo }}" alt="Card photo" /></div>
+  </div>
+  {% endif %}
 
   <div class="scr-card" style="margin-top:20px">
     <div class="scr-form-head"><div class="scr-form-title-row"><h2 class="scr-form-title">Customer History</h2></div></div>
@@ -103,13 +126,10 @@
             <td><a class="scr-mon-time" href="{{ h.detail_url }}">{{ h.requested_at|date:"d M Y" }}<span>{{ h.requested_at|date:"H:i" }}</span></a></td>
             <td class="scr-state">{{ h.card_type }} · {{ h.grade }}</td>
             <td class="scr-state">{{ h.percent }} · {{ h.fare_basis }}</td>
-            <td class="scr-state">{{ h.order_ref|default:"—" }}</td>
+            <td class="scr-state">{{ h.order_no }}</td>
             <td class="scr-state">{{ h.branch|default:"—" }}</td>
             <td>
-              {% if h.status == "pending" %}<span class="scr-badge scr-badge-pending"><i></i>Pending</span>
-              {% elif h.status == "approved" %}<span class="scr-badge scr-badge-approved"><i></i>Approved</span>
-              {% elif h.status == "redeemed" %}<span class="scr-badge scr-badge-active"><i></i>Redeemed</span>
-              {% else %}<span class="scr-badge scr-badge-mandatory"><i></i>Rejected</span>{% endif %}
+              {% include "discount/partials/claim_status.html" with status=h.status %}
             </td>
           </tr>
           {% empty %}

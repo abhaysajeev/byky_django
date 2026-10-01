@@ -5,7 +5,8 @@ import uuid
 import pytest
 from django.utils import timezone
 
-from apps.company.models import Branch, BranchType, Company, Country, Location, State
+from apps.company.models import Branch, BranchType, Company, Country, Location, PaymentMode, State
+from apps.devices.models import Device, DeviceStatus
 from apps.discount.models import (
     CardDiscount,
     CardDiscountClaim,
@@ -18,7 +19,7 @@ from apps.discount.models import (
 )
 from apps.portal.models import Role
 from apps.portal.services import grant_all
-from apps.rental.models import Customer
+from apps.rental.models import Customer, Order
 from core.enums import Channel, UserScope
 from core.models import User
 
@@ -88,8 +89,31 @@ def make_discount(grade, *, start=datetime.date(2026, 10, 1), end=datetime.date(
     return discount
 
 
-def make_claim(discount, customer, *, status=ClaimStatus.PENDING, when=None, **fields):
+def make_order(customer, *, branch=None, order_no="", **fields):
+    """A rental order for a claim to point at -- the order's own details are
+    not what these tests are about."""
+    company = customer.company
+    branch = branch or Branch.objects.filter(company=company).first()
+    device = Device.objects.get_or_create(
+        installation_id=f"till-{company.short_code}",
+        defaults={"company": company, "platform": "android", "channel": Channel.OPERATOR,
+                  "status": DeviceStatus.APPROVED, "approved_at": timezone.now()},
+    )[0]
+    mode = PaymentMode.objects.get_or_create(company=company, name="Cash")[0]
+    values = {
+        "id": uuid.uuid4(), "company": company, "branch": branch, "device": device, "customer": customer,
+        "customer_name": customer.full_name, "customer_mobile": customer.mobile_no,
+        "order_no": order_no or f"ORD-{uuid.uuid4().hex[:6]}", "device_created_at": timezone.now(),
+        "start_time": timezone.now(), "number_of_vehicles": 1, "total_amount": "100.00",
+        "net_amount": "100.00", "payment_mode": mode,
+    }
+    values.update(fields)
+    return Order.objects.create(**values)
+
+
+def make_claim(discount, customer, *, status=ClaimStatus.PENDING, when=None, order=None, **fields):
     when = when or timezone.now()
+    order = order or make_order(customer)
     decided = status in (ClaimStatus.APPROVED, ClaimStatus.REJECTED) or (
         status == ClaimStatus.REDEEMED and discount.requires_approval)
     values = {
@@ -98,8 +122,8 @@ def make_claim(discount, customer, *, status=ClaimStatus.PENDING, when=None, **f
         "discount_percent": "10", "fare_basis": discount.fare_basis, "requires_approval": discount.requires_approval,
         "customer": customer, "customer_name": customer.full_name, "mobile_full": customer.mobile_full
         if hasattr(customer, "mobile_full") else customer.mobile_no,
-        "status": status, "requested_at": when,
-        "decided_at": when if decided else None,
+        "order": order, "status": status, "requested_at": when,
+        "decided_at": when if decided or status == ClaimStatus.CANCELLED else None,
         "redeemed_at": when if status == ClaimStatus.REDEEMED else None,
     }
     values.update(fields)

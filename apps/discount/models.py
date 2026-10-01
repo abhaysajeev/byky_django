@@ -179,6 +179,9 @@ class ClaimStatus(models.TextChoices):
     PENDING = "pending", "Pending"
     APPROVED = "approved", "Approved"
     REJECTED = "rejected", "Rejected"
+    # Still pending when its order was billed -- set by the order-close API
+    # (services.cancel_pending_for_order), never by a person.
+    CANCELLED = "cancelled", "Cancelled"
     REDEEMED = "redeemed", "Redeemed"
 
 
@@ -189,11 +192,13 @@ class CardDiscountClaim(TimeStampedModel):
     web, and becomes redeemed when the bill closes; an automatic one is
     redeemed at once. Only redeemed claims count against a usage limit.
 
-    Written by the device APIs (not built yet). The discount's %, fare basis,
-    type and grade are copied in as they were when claimed, so later edits to
-    the discount never rewrite history. order_ref and bill_amount stand in
-    for the Order until that module exists; card_photo is a path in the photo
-    store once it is set up.
+    Written by the device APIs (apps/discount/api.py). The discount's type,
+    grade and fare basis are copied in as they were when claimed, so later
+    edits to the discount never rewrite history. The bill figures -- bill
+    amount, %, discount amount, net -- are the device's own, stored as sent
+    and only displayed. card_photo is the link the device sends after
+    uploading the photo to the photo store. At most one request per order is
+    pending at a time (uniq_pending_claim_per_order).
     """
 
     id = models.UUIDField(primary_key=True, editable=False)
@@ -209,10 +214,12 @@ class CardDiscountClaim(TimeStampedModel):
     customer_name = models.CharField(max_length=200)
     mobile_full = models.CharField("Phone", max_length=30)
     card_number = models.CharField(max_length=50, blank=True)
-    card_photo = models.CharField(max_length=255, blank=True)
+    card_photo = models.CharField(max_length=500, blank=True)
 
-    order_ref = models.CharField("Order", max_length=64, blank=True)
+    order = models.ForeignKey("rental.Order", on_delete=models.PROTECT, related_name="card_claims")
     bill_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    discount_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    net_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     branch = models.ForeignKey("company.Branch", null=True, blank=True, on_delete=models.PROTECT,
                                related_name="card_claims")
     requested_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT,
@@ -239,11 +246,17 @@ class CardDiscountClaim(TimeStampedModel):
                       redeemed_at__isnull=True, requires_approval=True)
                     | Q(status__in=[ClaimStatus.APPROVED, ClaimStatus.REJECTED], decided_at__isnull=False,
                         redeemed_at__isnull=True, requires_approval=True)
+                    | Q(status=ClaimStatus.CANCELLED, decided_at__isnull=False, redeemed_at__isnull=True,
+                        requires_approval=True)
                     | Q(status=ClaimStatus.REDEEMED, redeemed_at__isnull=False, requires_approval=False)
                     | Q(status=ClaimStatus.REDEEMED, redeemed_at__isnull=False, requires_approval=True,
                         decided_at__isnull=False)
                 ),
                 name="card_claim_status_fields",
+            ),
+            UniqueConstraint(
+                fields=["order"], condition=Q(status=ClaimStatus.PENDING), name="uniq_pending_claim_per_order",
+                violation_error_message="This order already has a pending approval request.",
             ),
         ]
         indexes = [
