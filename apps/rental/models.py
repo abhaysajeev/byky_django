@@ -333,7 +333,8 @@ class OrderItem(TimeStampedModel):
 # card (order_lifecycle_design.md 1, 4.4). The order carries no payment mode.
 #
 # amount is always positive; kind gives the direction: ADVANCE (booking or
-# mid-rental) and BALANCE (settlement) bring money in, REFUND sends it back.
+# mid-rental) and SETTLEMENT (when the bill is settled) bring money in,
+# REFUND sends it back.
 # Entries are never edited or deleted -- a mistake is corrected by a reversing
 # REFUND, so the trail stays whole. They are written only through
 # apps.rental.services.record_payment, which keeps the order's
@@ -346,11 +347,11 @@ class OrderItem(TimeStampedModel):
 
 class PaymentKind(models.TextChoices):
     ADVANCE = "advance", "Advance"
-    BALANCE = "balance", "Balance"
+    SETTLEMENT = "settlement", "Settlement"
     REFUND = "refund", "Refund"
 
 
-MONEY_IN = (PaymentKind.ADVANCE, PaymentKind.BALANCE)
+MONEY_IN = (PaymentKind.ADVANCE, PaymentKind.SETTLEMENT)
 
 
 class Payment(TimeStampedModel):

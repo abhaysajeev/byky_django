@@ -54,7 +54,7 @@ part card.
 |---|---|
 | `sync_id` | the entry's id, made on the tablet; makes a resend safe |
 | `order` | the one order it belongs to (no splitting a payment across orders) |
-| `kind` | **Advance** (booking or mid-rental), **Balance** (settlement) — money in; **Refund** — money out |
+| `kind` | **Advance** (booking or mid-rental), **Settlement** (when the bill is settled) — money in; **Refund** — money out |
 | `payment_mode` | Cash, Card, … — per entry |
 | `amount` | always positive; `kind` gives the direction |
 | `reference_no` / `reference_date` | card slip, cheque |
@@ -297,7 +297,7 @@ balance        4.00   → collected now by card
     "sync_id": "S-1", "order_id": "O-1", "settled_at": "2026-10-02 17:13:30",
     "total_amount": "110.00", "card_discount_amount": "11.00", "total_tax": "4.95",
     "rounded_diff": "0.05", "net_amount": "104.00",
-    "payments": [ { "sync_id": "P-2", "kind": "balance", "payment_mode_id": 2, "amount": "4.00",
+    "payments": [ { "sync_id": "P-2", "kind": "settlement", "payment_mode_id": 2, "amount": "4.00",
                     "reference_no": "4421", "paid_at": "2026-10-02 17:13:30" } ] } }
 ```
 
@@ -369,7 +369,7 @@ Customer ─┐                         ┌─ CardDiscountClaim (apps.discount,
 | `OrderStatus` | `active`, `completed`, `cancelled` — the rental's life only |
 | `PaymentStatus` | `unpaid`, `partly_paid`, `paid` — computed, never set |
 | `OrderItemStatus` | `active`, `returned`, `replaced`, `cancelled` |
-| `PaymentKind` | `advance`, `balance` (money in) · `refund` (money out) |
+| `PaymentKind` | `advance`, `settlement` (money in) · `refund` (money out) |
 | `OrderAction` | `book`, `add`, `replace`, `remove`, `return`, `payment`, `settle`, `cancel_request`, `cancel_approved`, `cancel_rejected` |
 | `CancelStatus` | `pending`, `approved`, `rejected` |
 
@@ -399,7 +399,7 @@ Customer ─┐                         ┌─ CardDiscountClaim (apps.discount,
 | `total_tax` | money | |
 | `rounded_diff` | decimal(6, 2) | may be negative |
 | `net_amount` | money | the bill |
-| `amount_received` | money, default 0 | Advance + Balance entries; written only by the payment service |
+| `amount_received` | money, default 0 | Advance + Settlement entries; written only by the payment service |
 | `amount_refunded` | money, default 0 | Refund entries; written only by the payment service |
 | `paid_amount` | **generated** | `amount_received − amount_refunded` |
 | `balance_due` | **generated** | `net_amount − paid_amount`; > 0 owed, 0 paid, < 0 refund owed |

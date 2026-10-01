@@ -1,6 +1,6 @@
 """Payment rebuilt as a payment entry (order_lifecycle_design.md 4.4).
 
-- kind `rental` becomes `balance` (money collected at settlement).
+- kind `rental` becomes `settlement` (money collected when the bill is settled).
 - collected_at becomes paid_at: a rename, the values carry over. It is the
   tablet's time from here on.
 - reference_date becomes a date (it is a card slip's or cheque's date).
@@ -10,8 +10,8 @@
 from django.db import migrations, models
 
 
-def rental_to_balance(apps, schema_editor):
-    apps.get_model("rental", "Payment").objects.filter(kind="rental").update(kind="balance")
+def rental_to_settlement(apps, schema_editor):
+    apps.get_model("rental", "Payment").objects.filter(kind="rental").update(kind="settlement")
 
 
 class Migration(migrations.Migration):
@@ -21,7 +21,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunPython(rental_to_balance, migrations.RunPython.noop),
+        migrations.RunPython(rental_to_settlement, migrations.RunPython.noop),
         # Run the foreign-key checks the update deferred, or Postgres refuses
         # the next ALTER TABLE ("pending trigger events").
         migrations.RunSQL("SET CONSTRAINTS ALL IMMEDIATE", migrations.RunSQL.noop),
@@ -31,7 +31,7 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='payment', name='kind',
             field=models.CharField(
-                choices=[('advance', 'Advance'), ('balance', 'Balance'), ('refund', 'Refund')], max_length=10,
+                choices=[('advance', 'Advance'), ('settlement', 'Settlement'), ('refund', 'Refund')], max_length=10,
             ),
         ),
         migrations.AlterField(

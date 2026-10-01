@@ -3,7 +3,7 @@
 0005_order_lifecycle: the renames keep their values, the received / refunded
 totals come from the payment entries, blank or repeated order numbers get a
 unique stand-in before the unique key goes on. 0006_payment_entry: `rental`
-payments become `balance`, collected_at becomes paid_at, reference_date a
+payments become `settlement`, collected_at becomes paid_at, reference_date a
 date.
 
 Each test leaves the database migrated to the latest state again, or every
@@ -84,7 +84,7 @@ def test_orders_survive_the_rebuild():
     paid = order("C1-1", paid="104.00")
     Payment.objects.create(order=paid, kind="advance", mode=cash, amount="110.00", collected_at=now)
     Payment.objects.create(order=paid, kind="refund", mode=cash, amount="6.00", collected_at=now)
-    balance = Payment.objects.create(order=paid, kind="rental", mode=cash, amount="1.00", collected_at=now,
+    settled = Payment.objects.create(order=paid, kind="rental", mode=cash, amount="1.00", collected_at=now,
                                      reference_no="4421", reference_date=now)
     OrderItem.objects.create(order=paid, vehicle=vehicle, start_time=now, expected_end_time=now,
                              package_minutes=60, rate="50", amount="50", total_amount="50", remarks="Chain")
@@ -100,8 +100,8 @@ def test_orders_survive_the_rebuild():
         Decimal("111.00"), Decimal("6.00"), Decimal("105.00"))
     assert (paid.balance_due, paid.payment_status) == (Decimal("0.00"), "paid")
 
-    balance = apps.get_model("rental", "Payment").objects.get(pk=balance.pk)
-    assert (balance.kind, balance.paid_at, balance.reference_date) == ("balance", now, now.date())
+    settled = apps.get_model("rental", "Payment").objects.get(pk=settled.pk)
+    assert (settled.kind, settled.paid_at, settled.reference_date) == ("settlement", now, now.date())
 
     blank = Order.objects.get(pk=blank.pk)
     assert blank.status == "active" and blank.order_no == "X" + blank.pk.hex[:24]
