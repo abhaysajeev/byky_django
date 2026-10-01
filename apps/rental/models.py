@@ -26,7 +26,6 @@ import re
 from django.db import models
 from django.db.models import Case, F, Q, Value, When
 
-from core.ids import uuid7
 from core.models import ApprovalMixin, TimeStampedModel
 
 
@@ -329,60 +328,119 @@ class OrderItem(TimeStampedModel):
 
 # --- Payment ---------------------------------------------------------------------
 #
-# One kind, one running total: an advance collected at booking and a rental
-# payment collected later both count toward the same Order.paid_amount --
-# legacy's DepositAmount/AdvanceAmount split doesn't survive in the live
-# rental data (see the Order docstring above), so there is no separate
-# refundable-hold balance to track. REFUND exists for the one real "money
-# goes back out" case: the advance collected turns out to be more than the
-# final bill.
+# A payment entry, in the manner of ERPNext's Payment Entry: every movement of
+# money is one row, and an order has any number of them -- part cash, part
+# card (order_lifecycle_design.md 1, 4.4). The order carries no payment mode.
 #
-# mode is a real FK to company.PaymentMode, not a second hardcoded enum --
-# legacy split "how it was paid" across DMSPayment.PaymentModeID and
-# DMSOrder.PaymentModeID with no shared master underneath either, which is
-# exactly the kind of two-sources-of-truth bug this avoids.
+# amount is always positive; kind gives the direction: ADVANCE (booking or
+# mid-rental) and SETTLEMENT (when the bill is settled) bring money in,
+# REFUND sends it back.
+# Entries are never edited or deleted -- a mistake is corrected by a reversing
+# REFUND, so the trail stays whole. They are written only through
+# apps.rental.services.record_payment, which keeps the order's
+# amount_received / amount_refunded in step in the same transaction.
+#
+# Legacy DMSPayment hardcoded PaymentModeID = 1 on both of its insert paths
+# (Save_Order_Booking, Service_Save_SubmitExit_Order): all 159,511 rows say
+# Cash. mode here is what was actually used.
 
 
 class PaymentKind(models.TextChoices):
     ADVANCE = "advance", "Advance"
-    RENTAL = "rental", "Rental"
+    SETTLEMENT = "settlement", "Settlement"
     REFUND = "refund", "Refund"
 
 
+MONEY_IN = (PaymentKind.ADVANCE, PaymentKind.SETTLEMENT)
+
+
 class Payment(TimeStampedModel):
-    # Server-generated (unlike Order/OrderItem's device-sent sync_id): a
-    # Payment row is always created as a byproduct of another already-
-    # idempotent operation (order creation, keyed on Order.id), so it has no
-    # need yet for its own client-supplied identity.
-    id = models.UUIDField(primary_key=True, default=uuid7, editable=False)
+    id = models.UUIDField(primary_key=True, editable=False)      # the tablet's sync_id
 
     order = models.ForeignKey(Order, on_delete=models.PROTECT, related_name="payments")
     kind = models.CharField(max_length=10, choices=PaymentKind.choices)
     mode = models.ForeignKey("company.PaymentMode", on_delete=models.PROTECT, related_name="payments")
-    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    amount = models.DecimalField(**MONEY)
 
-    # Cheque no / card reference / gateway ref, one pair for all of them --
-    # legacy kept ChequeNo/ChequeDate and CardNumber/CardDate as separate
-    # columns on DMSPayment for what is structurally the same fact.
+    # Card slip, cheque, gateway ref -- one pair for all of them; legacy kept
+    # ChequeNo/ChequeDate and CardNumber/CardDate apart for the same fact.
     reference_no = models.CharField(max_length=50, blank=True)
-    reference_date = models.DateTimeField(null=True, blank=True)
+    reference_date = models.DateField(null=True, blank=True)
 
+    paid_at = models.DateTimeField()           # tablet time; created_on is when the server stored it
     device = models.ForeignKey(
         "devices.Device", null=True, blank=True, on_delete=models.PROTECT, related_name="payments",
     )
     collected_by = models.ForeignKey(
         "core.User", null=True, blank=True, on_delete=models.PROTECT, related_name="+",
     )
-    collected_at = models.DateTimeField()
     remarks = models.TextField(blank=True)
 
     class Meta:
         db_table = "payment"
-        ordering = ["-collected_at"]
+        ordering = ["-paid_at"]
         constraints = [
             models.CheckConstraint(condition=models.Q(amount__gt=0), name="payment_amount_positive"),
         ]
-        indexes = [models.Index(fields=["order"])]
+        indexes = [
+            models.Index(fields=["order"]),
+            models.Index(fields=["paid_at"]),
+            models.Index(fields=["mode"]),
+        ]
 
     def __str__(self):
         return f"{self.get_kind_display()} {self.amount} on {self.order}"
+
+
+class OrderAction(models.TextChoices):
+    BOOK = "book", "Booked"
+    ADD = "add", "Vehicle added"
+    REPLACE = "replace", "Vehicle replaced"
+    REMOVE = "remove", "Vehicle removed"
+    RETURN = "return", "Vehicle returned"
+    PAYMENT = "payment", "Payment"
+    SETTLE = "settle", "Settled"
+    CANCEL_REQUEST = "cancel_request", "Cancel requested"
+    CANCEL_APPROVED = "cancel_approved", "Cancel approved"
+    CANCEL_REJECTED = "cancel_rejected", "Cancel rejected"
+
+
+class OrderEvent(models.Model):
+    """One call that changed an order -- its history, and what makes a resent
+    call safe (order_lifecycle_design.md 2, 4.5).
+
+    `id` is the call's own sync_id. A resend with the same body is answered
+    with `response` again and writes nothing; the same id with a different
+    body (`request_hash`) is a conflict. Append-only: never edited, so it
+    carries no modified_* fields.
+    """
+
+    id = models.UUIDField(primary_key=True, editable=False)      # the call's sync_id
+
+    order = models.ForeignKey(Order, on_delete=models.PROTECT, related_name="events")
+    action = models.CharField(max_length=20, choices=OrderAction.choices)
+    item = models.ForeignKey(
+        OrderItem, null=True, blank=True, on_delete=models.PROTECT, related_name="+",
+    )
+    new_item = models.ForeignKey(
+        OrderItem, null=True, blank=True, on_delete=models.PROTECT, related_name="+",
+    )
+    detail = models.JSONField(default=dict, blank=True)
+
+    request_hash = models.CharField(max_length=64)               # SHA-256 of request_data
+    response = models.JSONField(default=dict)                    # the reply's data, replayed as-is
+
+    happened_at = models.DateTimeField()                         # tablet time
+    received_at = models.DateTimeField(auto_now_add=True)        # server time
+    device = models.ForeignKey(
+        "devices.Device", null=True, blank=True, on_delete=models.PROTECT, related_name="order_events",
+    )
+    user = models.ForeignKey("core.User", on_delete=models.PROTECT, related_name="+")
+
+    class Meta:
+        db_table = "order_event"
+        ordering = ["happened_at"]
+        indexes = [models.Index(fields=["order", "happened_at"])]
+
+    def __str__(self):
+        return f"{self.get_action_display()} on {self.order}"

@@ -25,7 +25,6 @@ from rest_framework.views import APIView
 from apps.company.models import Company
 from apps.crew import services as crew_services
 from apps.devices import services as devices_services
-from apps.devices.models import BillKind
 from apps.portal import auth
 from apps.portal import jwt as app_jwt
 from apps.portal.authentication import AppJWTAuthentication
@@ -122,9 +121,6 @@ def _operator_login(request, form):
     except auth.LoginRefused as refused:
         return envelope(refused.code, refused.message, http_status=refused.status)
 
-    order_counter = devices_services.counter_for(device, branch, BillKind.ORDER)
-    test_counter = devices_services.counter_for(device, branch, BillKind.TEST_RIDE)
-
     data = {
         "tokens": _issue_tokens(user, session),
         "first_name": user.employee.first_name,
@@ -137,12 +133,10 @@ def _operator_login(request, form):
             "is_multi_device": branch.is_multi_device,
             "allows_test_ride": branch.allows_test_ride,
         },
-        # settings_payload(branch) cannot be None here -- sign_in_operator
-        # already refused device_settings_not_done if it were.
-        "device_settings": devices_services.settings_payload(branch),
-        "order_no_prefix": order_counter.prefix,
-        "next_order_number": order_counter.next_number,
-        "next_test_number": test_counter.next_number,
+        # Never None here -- sign_in_operator already refused
+        # device_settings_not_done if it were. The same block as
+        # POST /device/settings.
+        **devices_services.operator_settings(device, branch),
     }
     return envelope("ok", "Logged in.", data)
 
@@ -211,10 +205,9 @@ _OPERATOR_LOGIN_SUCCESS_DATA = {
         "is_multi_device": False, "allows_test_ride": True,
     },
     "device_settings": {
-        "settings_code": "S01", "station": "Creek Park 1",
-        "order_no_prefix": "AUH01", "logo": "iVBORw0KGgoAAAANSUhEUgAA...",
+        "settings_code": "S01", "station": "Creek Park 1", "logo": "iVBORw0KGgoAAAANSUhEUgAA...",
     },
-    "order_no_prefix": "AUH01", "next_order_number": 335, "next_test_number": 6,
+    "order_no_prefix": "AUH01", "last_order_no": "AUH0160182000334", "next_order_number": 335, "next_test_number": 6,
 }
 
 _MANAGER_LOGIN_SUCCESS_DATA = {

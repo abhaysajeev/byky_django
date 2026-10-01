@@ -1,7 +1,10 @@
 # Order lifecycle — design
 
-Status: **draft for sign-off** (2 Oct 2026). Nothing here is built yet beyond
-`POST /api/v1/{app}/orders` (create), which this design replaces.
+Status: **P1 built** (1 Oct 2026). Decisions agreed in section 5. Built:
+`Order`, `OrderItem`, `Payment`, `OrderEvent` (section 4); `run_once`,
+`record_payment`, `lock_order`; booking (`POST /orders`), `POST /orders/detail`,
+running status on `/vehicles`, `POST /device/settings`. Next: P2 return +
+settle + invoice + card discount.
 
 The legacy system is the reference, not the template: the business flow is
 kept, its bugs are not. Legacy sources are cited as proc names
@@ -54,7 +57,7 @@ part card.
 |---|---|
 | `sync_id` | the entry's id, made on the tablet; makes a resend safe |
 | `order` | the one order it belongs to (no splitting a payment across orders) |
-| `kind` | **Advance** (booking or mid-rental), **Balance** (settlement) — money in; **Refund** — money out |
+| `kind` | **Advance** (booking or mid-rental), **Settlement** (when the bill is settled) — money in; **Refund** — money out |
 | `payment_mode` | Cash, Card, … — per entry |
 | `amount` | always positive; `kind` gives the direction |
 | `reference_no` / `reference_date` | card slip, cheque |
@@ -138,6 +141,25 @@ and the reply that was sent.
    - **final** — e.g. `vehicle_already_rented`, `line_not_active`,
      `customer_blocked`, `order_closed`: stop retrying, show the operator.
 
+Every refusal carries `data.retry` (`true` / `false`) so the app need not keep
+its own list. The codes, one place in the code (`apps/rental/services.py`
+`ORDER_ERRORS`, which Swagger is built from):
+
+| Code | HTTP | Kind | When |
+|---|---|---|---|
+| `order_not_synced` | 409 | retry | a call for an order the server has not got yet |
+| `sync_id_conflict` | 409 | final | the call's id is already used with another body |
+| `order_no_used` | 409 | final | the receipt number is already used in the company |
+| `vehicle_already_rented` | 409 | final | a vehicle is on another active line |
+| `vehicle_repeated` | 400 | final | the same vehicle twice in one booking |
+| `item_id_used` / `payment_id_used` | 409 | final | a line or payment id already exists |
+| `unknown_customer` / `_payment_mode` / `_vehicle` / `_fare` / `_offer` | 400 | final | not this company's |
+| `vehicle_not_at_station` | 400 | final | the vehicle is at another station |
+| `unknown_order` | 404 | final | no such order at this station (`/orders/detail`) |
+
+A constraint lost in a race (two tablets, one vehicle, the same instant) is
+reported as the code it means, read from the database constraint's name.
+
 Rules for the app team: every call has a new `sync_id` and a resend reuses it;
 orders and lines get their `sync_id` on the tablet; send an order's calls in
 order; `ok`/`duplicate` = done, retry code = keep queued, final code = stop and
@@ -145,6 +167,33 @@ show.
 
 Later, if tablets spend long periods offline: a batch endpoint taking the whole
 queue in one request, with the same `sync_id`s and the same rules.
+
+### What the tablet reads
+
+- **`POST /orders/detail`** — one order, by `sync_id` or `order_no`, in the same
+  shape as every order reply. Any tablet at the order's station.
+- **`/vehicles`** — each vehicle carries `on_rent`, `rental` (`order_no`,
+  `expected_end_time`) and `can_rent` (= `is_available` and not on rent),
+  derived from the active lines (decision 6).
+- **`POST /device/settings`** — the login's settings block on its own:
+  station settings, `order_no_prefix`, `last_order_no` (the last receipt the
+  server has seen from this tablet here), `next_order_number`,
+  `next_test_number`. Login keeps returning the same block.
+- **Receipt counter.** A receipt number is prefix + tablet registration id +
+  six or more digits (`DUBPP` + `60182` + `000231`). Each booking raises the
+  tablet's `BillContinuity.last_number` to the number inside its `order_no`
+  (never lowers it; a number not in this tablet's shape is stored and counts
+  nothing) — **a refused booking too**, since its receipt was already
+  printed. Every order reply carries `next_order_number`.
+- **One prefix.** The tablet builds receipt numbers from the top-level
+  `order_no_prefix` (its counter's own, kept if the station's is changed).
+  `device_settings` carries no prefix of its own.
+- **App rules for offline queues:** at login continue from the *higher* of
+  the tablet's own number and the server's (queued bookings have not raised
+  the server's yet — taking the server's blindly reissues them, and their
+  uploads are refused `order_no_used`); upload the whole queue before logging
+  out (a tablet moved to another station would upload its old station's
+  bookings under the new one).
 
 ---
 
@@ -155,7 +204,7 @@ House style: `POST` with `{credentials, request_data}`, reply
 are UUIDv7. Times are `YYYY-MM-DD HH:MM:SS` in company time.
 
 **Scenario:** customer Ahmed at Corniche 1, tablet TAB-07 (receipt prefix
-`C1`), two bikes for one hour. One breaks and is swapped; both return, one
+`DUBPP`, registration id `60182`), two bikes for one hour. One breaks and is swapped; both return, one
 late; the bill settles with his approved discount card.
 
 ### 3.1 Book — two bikes, AED 100 advance in cash
@@ -167,10 +216,10 @@ late; the bill settles with his approved discount card.
   "credentials": { "...": "..." },
   "request_data": {
     "sync_id": "O-1",
-    "order_no": "C1-0007-000231",
+    "order_no": "DUBPP60182000231",
     "customer_id": 5512,
-    "device_created_at": "2026-10-02 16:00:05",
-    "lines": [
+    "booked_at": "2026-10-02 16:00:05", "start_time": "2026-10-02 16:00:00",
+    "items": [
       { "sync_id": "L-1", "vehicle_id": 2041, "fare_id": 88, "package_minutes": 60,
         "start_time": "2026-10-02 16:00:00", "expected_end_time": "2026-10-02 17:00:00",
         "rate": "50.00", "amount": "50.00", "total_amount": "50.00" },
@@ -187,18 +236,35 @@ late; the bill settles with his approved discount card.
 }
 ```
 
-Server checks: customer exists and is not blocked; each vehicle is active,
-available, at this station and not already rented; fare is this company's;
-figures add up (lines 100 + tax 5 = net 105); receipt number is new for this
-tablet. Saves everything in one transaction and raises the tablet's receipt
-counter to 231.
+Cash and card together are two entries in `payments`, each with its own
+`sync_id`; at booking only `advance`.
+
+Server checks (P1): customer, vehicles, fares and payment modes are this
+company's; each vehicle is at this station, not in the order twice and not
+already rented; the receipt number and every id are new. Saves everything in
+one transaction with the call's history row and raises the tablet's receipt
+counter to 231. Still to come (decision 7): blocked customer, vehicle
+available, figures adding up.
 
 ```json
 { "code": "ok", "message": "Order created.",
-  "data": { "sync_id": "O-1", "order_no": "C1-0007-000231", "status": "active",
-            "net_amount": "105.00", "paid_amount": "100.00", "balance_due": "5.00",
-            "lines": [ { "sync_id": "L-1", "vehicle": "MO 41", "status": "active" },
-                       { "sync_id": "L-2", "vehicle": "DC 02", "status": "active" } ] } }
+  "data": { "sync_id": "O-1", "order_no": "DUBPP60182000231",
+            "status": "active", "payment_status": "partly_paid",
+            "booked_at": "2026-10-02 16:00:05", "start_time": "2026-10-02 16:00:00",
+            "completed_at": null, "cancelled_at": null,
+            "customer": { "id": 5512, "name": "Ahmed Al Mansoori", "mobile": "971501234567" },
+            "total_amount": "100.00", "total_tax": "5.00", "net_amount": "105.00",
+            "amount_received": "100.00", "amount_refunded": "0.00",
+            "paid_amount": "100.00", "balance_due": "5.00", "items_out": 2,
+            "items": [ { "sync_id": "L-1", "status": "active",
+                         "vehicle": { "id": 2041, "name": "MO 41", "identifier": "VB1241" },
+                         "start_time": "2026-10-02 16:00:00", "expected_end_time": "2026-10-02 17:00:00",
+                         "end_time": null, "total_amount": "50.00", "replaced_item_id": null, "...": "..." },
+                       { "sync_id": "L-2", "...": "DC 02, the same fields" } ],
+            "payments": [ { "sync_id": "P-1", "kind": "advance",
+                            "payment_mode": { "id": 1, "name": "Cash" }, "amount": "100.00",
+                            "paid_at": "2026-10-02 16:00:05", "...": "..." } ],
+            "next_order_number": 232 } }
 ```
 
 The reply is lost; the tablet resends the identical request:
@@ -218,17 +284,17 @@ settlement.
 ```json
 { "request_data": {
     "sync_id": "R-1",
-    "order_id": "O-1", "old_line_id": "L-1",
+    "order_id": "O-1", "old_item_id": "L-1",
     "replaced_at": "2026-10-02 16:20:00",
     "reason": "Chain broken",
-    "new_line": { "sync_id": "L-3", "vehicle_id": 2042, "fare_id": 88, "package_minutes": 60,
+    "new_item": { "sync_id": "L-3", "vehicle_id": 2042, "fare_id": 88, "package_minutes": 60,
                   "start_time": "2026-10-02 16:20:00", "expected_end_time": "2026-10-02 17:00:00",
                   "rate": "50.00", "amount": "50.00", "total_amount": "50.00" } } }
 ```
 
 ```json
 { "code": "ok", "message": "Vehicle replaced.",
-  "data": { "lines": [ { "sync_id": "L-1", "vehicle": "MO 41", "status": "replaced" },
+  "data": { "items": [ { "sync_id": "L-1", "vehicle": "MO 41", "status": "replaced" },
                        { "sync_id": "L-2", "vehicle": "DC 02", "status": "active" },
                        { "sync_id": "L-3", "vehicle": "MO 42", "status": "active", "replaces": "L-1" } ],
             "net_amount": "105.00" } }
@@ -245,29 +311,29 @@ line keeps the package, so the bill is unchanged.
 DC 02 back on time — `POST /api/v1/operator/orders/return`:
 
 ```json
-{ "request_data": { "sync_id": "T-1", "order_id": "O-1", "line_id": "L-2",
+{ "request_data": { "sync_id": "T-1", "order_id": "O-1", "item_id": "L-2",
                     "returned_at": "2026-10-02 17:00:00", "total_amount": "50.00" } }
 ```
 
 ```json
 { "code": "ok", "message": "Vehicle returned.",
-  "data": { "line": { "sync_id": "L-2", "status": "returned" }, "lines_out": 1 } }
+  "data": { "item": { "sync_id": "L-2", "status": "returned" }, "items_out": 1 } }
 ```
 
 MO 42 back 12 minutes late, AED 10 overtime:
 
 ```json
-{ "request_data": { "sync_id": "T-2", "order_id": "O-1", "line_id": "L-3",
+{ "request_data": { "sync_id": "T-2", "order_id": "O-1", "item_id": "L-3",
                     "returned_at": "2026-10-02 17:12:00", "overtime_amount": "10.00",
                     "total_amount": "60.00" } }
 ```
 
 ```json
 { "code": "ok", "message": "Vehicle returned.",
-  "data": { "line": { "sync_id": "L-3", "status": "returned" }, "lines_out": 0 } }
+  "data": { "item": { "sync_id": "L-3", "status": "returned" }, "items_out": 0 } }
 ```
 
-`lines_out: 0` — everything is back; the order can be settled.
+`items_out: 0` — everything is back; the order can be settled.
 
 A return that reaches the server before its booking:
 
@@ -297,13 +363,13 @@ balance        4.00   → collected now by card
     "sync_id": "S-1", "order_id": "O-1", "settled_at": "2026-10-02 17:13:30",
     "total_amount": "110.00", "card_discount_amount": "11.00", "total_tax": "4.95",
     "rounded_diff": "0.05", "net_amount": "104.00",
-    "payments": [ { "sync_id": "P-2", "kind": "balance", "payment_mode_id": 2, "amount": "4.00",
+    "payments": [ { "sync_id": "P-2", "kind": "settlement", "payment_mode_id": 2, "amount": "4.00",
                     "reference_no": "4421", "paid_at": "2026-10-02 17:13:30" } ] } }
 ```
 
 Server checks the figures add up and every line is back; then in one
 transaction: order Completed, payment P-2 saved, the card-discount claim
-marked Redeemed with AED 11.00, and invoice `C1-0007-000231` issued (the order
+marked Redeemed with AED 11.00, and invoice `DUBPP60182000231` issued (the order
 number). Had the claim still been pending, it would be
 Cancelled and the tablet would have billed without it.
 
@@ -311,7 +377,7 @@ Cancelled and the tablet would have billed without it.
 { "code": "ok", "message": "Order settled.",
   "data": { "sync_id": "O-1", "status": "completed", "net_amount": "104.00",
             "paid_amount": "104.00", "balance_due": "0.00", "card_discount": "redeemed",
-            "invoice": { "invoice_no": "C1-0007-000231", "issued_at": "2026-10-02 17:13:30",
+            "invoice": { "invoice_no": "DUBPP60182000231", "issued_at": "2026-10-02 17:13:30",
                          "net_amount": "104.00" } } }
 ```
 
@@ -369,7 +435,7 @@ Customer ─┐                         ┌─ CardDiscountClaim (apps.discount,
 | `OrderStatus` | `active`, `completed`, `cancelled` — the rental's life only |
 | `PaymentStatus` | `unpaid`, `partly_paid`, `paid` — computed, never set |
 | `OrderItemStatus` | `active`, `returned`, `replaced`, `cancelled` |
-| `PaymentKind` | `advance`, `balance` (money in) · `refund` (money out) |
+| `PaymentKind` | `advance`, `settlement` (money in) · `refund` (money out) |
 | `OrderAction` | `book`, `add`, `replace`, `remove`, `return`, `payment`, `settle`, `cancel_request`, `cancel_approved`, `cancel_rejected` |
 | `CancelStatus` | `pending`, `approved`, `rejected` |
 
@@ -399,7 +465,7 @@ Customer ─┐                         ┌─ CardDiscountClaim (apps.discount,
 | `total_tax` | money | |
 | `rounded_diff` | decimal(6, 2) | may be negative |
 | `net_amount` | money | the bill |
-| `amount_received` | money, default 0 | Advance + Balance entries; written only by the payment service |
+| `amount_received` | money, default 0 | Advance + Settlement entries; written only by the payment service |
 | `amount_refunded` | money, default 0 | Refund entries; written only by the payment service |
 | `paid_amount` | **generated** | `amount_received − amount_refunded` |
 | `balance_due` | **generated** | `net_amount − paid_amount`; > 0 owed, 0 paid, < 0 refund owed |
@@ -548,20 +614,46 @@ One row per billed line (replaced and removed lines are not billed).
 
 ---
 
-## 5. Assumptions (to confirm)
+## 5. Decisions (agreed 1 Oct 2026)
 
-1. **Cancel needs manager approval** (as the card discount does); operators do
-   not cancel on their own. Legacy: 900 approved cancel requests
-   (`Approve_Request`, type 4) against 137 back-office cancels (`Cancel_Order`).
-2. **Overtime and final amounts are computed on the tablet** and trusted, as
-   booking is today; the server checks only that totals add up.
-3. **Every order has a customer** — no anonymous walk-ins.
-4. **No auto-block on a low rating** (legacy `Service_Save_SubmitExit_Order`
-   blocked customers rated below 2).
-5. **Receipt number required and unique per tablet**; each order raises the
+1. **Cancel needs manager approval**; operators do not cancel on their own.
+   Legacy: 900 approved cancel requests (`Approve_Request`, type 4) against 137
+   back-office cancels (`Cancel_Order`).
+2. **Refunds are recorded by the tablet** (`/orders/payments`, kind `refund`)
+   when the money is actually handed back — including after an approved cancel.
+   The server never creates a payment entry on its own.
+3. **Any tablet at the order's station can act on it** — return, replace,
+   settle — so a rental is never stuck on a dead tablet. **Returns happen at the
+   same station** only.
+4. **Overtime and final amounts are computed on the tablet** and stored as sent.
+5. **Card discount:** requested any time while the vehicles are out (the order
+   must exist first). The tablet checks the request's status; once approved, the
+   operator enters the discount from the request's details. At settle the
+   tablet names the request it applied (`card_discount: {claim_id, amount}`):
+   that request becomes **redeemed** and the amount is stored on the order
+   (`card_discount_amount`). Every other request on the order still pending, or
+   approved but not applied, becomes **cancelled**. The link is the existing
+   `CardDiscountClaim.order`; the order needs no new field.
+6. **"On rent" is derived, never stored.** A vehicle is on rent when it has an
+   active order item (one per vehicle, enforced by the database). `/vehicles`
+   returns `on_rent`, the `rental` it is on (order no., expected end) and
+   `can_rent` (active, available and not on rent). `is_available` stays the
+   manual "can be used" switch (maintenance, held back) and is never changed
+   by a rental. Legacy kept "rented" in three places (`RmsAntennaDataTracking
+   .IsRented`, `RmsBranchVehicleTrackingDetails.IsOnRent`, `DMSVehicleStatus`)
+   that its procedures updated inconsistently.
+7. **Business validations come later** (totals adding up, vehicle and fare
+   checks, settling with money owed, …). Only the guards that keep the data
+   consistent are in from the start: an item must be active to be returned or
+   replaced; a completed or cancelled order takes no changes (except a refund
+   on a cancelled one); settle needs every vehicle back.
+8. **Every order has a customer.** **No auto-block on a low rating** (legacy
+   `Service_Save_SubmitExit_Order` blocked customers rated below 2).
+9. **Order number required and unique** per company; each booking raises the
    tablet's `BillContinuity.last_number` to the number used.
-6. **Not in this build:** reprint / discount / complimentary approvals, hotel
-   room/guest details, loyalty points, online (customer-app) payment.
+10. **Operator app only** for these calls; cancel approval on the web first.
+11. **Not in this build:** reprint / discount / complimentary approvals, hotel
+    room/guest details, loyalty points, online (customer-app) payment.
 
 ---
 

@@ -22,6 +22,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
 from django.db import IntegrityError, transaction
 from django.db.models import Case, F, IntegerField, Q, Value, When
+from django.db.models.functions import Greatest
 from django.utils import timezone
 
 from apps.company import services as company_services
@@ -1464,7 +1465,10 @@ def settings_payload(branch, *, since=None):
         "print_logo": row.print_logo,
         "receipt_copies": row.receipt_copies,
         "share_on_whatsapp": row.share_on_whatsapp,
-        "order_no_prefix": row.order_no_prefix,
+        # No order_no_prefix here: the tablet builds its receipt numbers from
+        # its own counter's prefix (operator_settings' top-level
+        # order_no_prefix), a snapshot that a later change to this one does
+        # not move. Two prefixes in one reply invite using the wrong one.
         "customer_test_minutes": row.customer_test_minutes,
         "cashier_test_minutes": row.cashier_test_minutes,
         "round_off_mode": row.round_off_mode,
@@ -1521,10 +1525,61 @@ def format_bill_number(counter, number=None):
     to cashiers and customers: DUBPP + 60182 + 000335 = DUBPP60182000335, and a
     test ride TDUBPP60182000006.
 
-    The missing separator is ambiguous to read back (ABCO2+60179 against
-    ABCO+260179), but nothing needs to: orders store the device and the number
-    as separate columns. Past 999999 the number simply grows a digit.
+    The missing separator is ambiguous to read back in general (ABCO2+60179
+    against ABCO+260179), but not for the device that printed it: its own
+    head is known (_bill_head), so raise_counter_from only strips that. Past
+    999999 the number simply grows a digit.
     """
     n = counter.next_number if number is None else number
+    return f"{_bill_head(counter)}{n:0{BILL_NUMBER_WIDTH}d}"
+
+
+def _bill_head(counter):
     lead = "T" if counter.kind == BillKind.TEST_RIDE else ""
-    return f"{lead}{counter.prefix}{counter.device.device_registration_id}{n:0{BILL_NUMBER_WIDTH}d}"
+    return f"{lead}{counter.prefix}{counter.device.device_registration_id}"
+
+
+def raise_counter_from(device, branch, kind, receipt_no):
+    """Move this device's counter up to the number inside `receipt_no`, a
+    receipt it printed and has now uploaded. Returns the counter, re-read.
+
+    Raised, never incremented: last_number becomes GREATEST(current, n), so
+    a resent upload or one arriving late after a newer one changes nothing
+    (see BillContinuity). A receipt not in this device's own shape -- another
+    head, or not digits after it -- leaves the counter alone; the number is
+    still stored on the order, and checking it is one of the deferred
+    validations (order_lifecycle_design.md 5, decision 7).
+    """
+    counter = counter_for(device, branch, kind)
+    head = _bill_head(counter)
+    tail = receipt_no[len(head):] if receipt_no.startswith(head) else ""
+    if tail.isdigit() and len(tail) >= BILL_NUMBER_WIDTH:
+        BillContinuity.objects.filter(pk=counter.pk).update(
+            last_number=Greatest(F("last_number"), int(tail)), modified_on=timezone.now(),
+        )
+        counter.refresh_from_db(fields=["last_number", "modified_on"])
+    return counter
+
+
+def operator_settings(device, branch, *, since=None):
+    """What an operator tablet is told about its station and its receipt
+    numbering -- at login, and again on POST /device/settings whenever it
+    asks. None when the station's device settings are not set up yet.
+
+    `last_order_no` is the last receipt number the server has seen from this
+    tablet here (null before its first), so the tablet can pick up from
+    whichever is higher, its own or the server's.
+    """
+    payload = settings_payload(branch, since=since)
+    if payload is None:
+        return None
+    order_counter = counter_for(device, branch, BillKind.ORDER)
+    test_counter = counter_for(device, branch, BillKind.TEST_RIDE)
+    return {
+        "device_settings": payload,
+        "order_no_prefix": order_counter.prefix,
+        "last_order_no": (format_bill_number(order_counter, order_counter.last_number)
+                          if order_counter.last_number else None),
+        "next_order_number": order_counter.next_number,
+        "next_test_number": test_counter.next_number,
+    }

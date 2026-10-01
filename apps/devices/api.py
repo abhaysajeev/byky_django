@@ -6,14 +6,20 @@ services.py, where login step 0 and the App Releases screen use them too.
 
 import logging
 
+from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.throttling import AnonRateThrottle, SimpleRateThrottle
+from rest_framework.views import APIView
 
 from apps.devices import services
-from apps.devices.serializers import RegistrationRequest, UpdateCheckRequest
-from core.api import PublicAPIView, envelope, request_parts
+from apps.devices.serializers import DeviceSettingsRequest, RegistrationRequest, UpdateCheckRequest
+from apps.portal.authentication import AppJWTAuthentication
+from core.api import PublicAPIView, envelope, request_parts, session_station
+from core.enums import Channel
 from core.schema import RATE_LIMITED, SERVER_ERROR, envelope_request, envelope_responses
+from core.timezones import zone_for
 
 log = logging.getLogger(__name__)
 
@@ -247,3 +253,80 @@ class RegistrationView(PublicAPIView):
         )
         http_status, message = REGISTRATION_REPLIES[outcome]
         return envelope(outcome, message, _registration_data(outcome, device), http_status)
+
+
+_SETTINGS_SAMPLE = {
+    "device_settings": {
+        "settings_code": "S01", "station": "Dubai Parks",
+        "logo_changed_at": "2026-09-20T09:12:00+04:00", "logo": "",
+    },
+    "order_no_prefix": "DUBPP",
+    "last_order_no": "DUBPP60182000334",
+    "next_order_number": 335,
+    "next_test_number": 6,
+}
+
+_SETTINGS_DESCRIPTION = """
+This tablet's station settings and receipt numbering -- the same block the
+operator login returns, on its own, so the app can refresh it without signing
+in again (on opening, after its offline queue has uploaded, or from a refresh
+button).
+
+**Receipt numbering:** build every receipt number from the top-level
+`order_no_prefix` -- this tablet's own, kept even if the station's prefix is
+changed later. `last_order_no` is the last receipt number the server has
+seen from this tablet at this station (`null` before its first);
+`next_order_number` is the one after it. Bookings still waiting in the
+tablet's queue have not moved it yet, so the tablet carries on from whichever
+is higher -- its own number or the server's.
+
+**`since`** (optional, `YYYY-MM-DD HH:MM:SS`, company time) -- when the tablet
+last synced. `device_settings.logo` is `""` when the logo has not changed since
+then; leave `since` out to always get it.
+
+The station and tablet are the signed-in session's own, never sent.
+"""
+
+
+class DeviceSettingsView(APIView):
+    """POST /api/v1/{app}/device/settings -- operator app only."""
+
+    authentication_classes = [AppJWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Operator Device"],
+        summary="This tablet's station settings and receipt numbering",
+        description=_SETTINGS_DESCRIPTION,
+        request=envelope_request("DeviceSettingsEnvelope", DeviceSettingsRequest, request_data_required=False),
+        responses=envelope_responses(
+            (200, "ok", "Device settings.", _SETTINGS_SAMPLE),
+            (400, "invalid_request", "since must be a date-time like 2026-09-30 17:05:00.",
+             {"errors": {"since": "must be a date-time like 2026-09-30 17:05:00"}}),
+            (401, "not_authenticated", "Sign in first.", {}),
+            (403, "wrong_channel", "Not allowed on this app.", {}),
+            (409, "device_not_mapped", "This device has no station.", {}),
+            (409, "branch_inactive", "This station is closed.", {}),
+            (409, "device_settings_not_done", "This station's receipt settings are not set up yet.", {}),
+            SERVER_ERROR,
+        ),
+    )
+    def post(self, request, app):
+        if app != Channel.OPERATOR:
+            return envelope("wrong_channel", "Not allowed on this app.", http_status=403)
+        branch, refused = session_station(request)
+        if refused:
+            return refused
+
+        _, request_data = request_parts(request)
+        form = DeviceSettingsRequest(data=request_data)
+        form.is_valid(raise_exception=True)
+        since = form.validated_data.get("since")
+        if since is not None:
+            since = timezone.make_aware(since, zone_for(branch.company))
+
+        data = services.operator_settings(request.auth.device, branch, since=since)
+        if data is None:
+            return envelope("device_settings_not_done", "This station's receipt settings are not set up yet.",
+                            http_status=409)
+        return envelope("ok", "Device settings.", data)

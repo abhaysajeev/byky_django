@@ -8,7 +8,7 @@ the app is tested instead of being silently answered "no update" forever.
 from rest_framework import serializers
 
 from apps.devices.models import Platform
-from core.api import REQUIRED, text_field, whole_number_field
+from core.api import REQUIRED, datetime_field, text_field, whole_number_field
 
 
 class UpdateCheckRequest(serializers.Serializer):
@@ -40,3 +40,10 @@ class RegistrationRequest(serializers.Serializer):
     )
     platform_id = text_field(64, required=False, allow_blank=True, allow_null=True)
     device_model = text_field(120, required=False, allow_blank=True, allow_null=True)
+
+
+class DeviceSettingsRequest(serializers.Serializer):
+    """POST /device/settings. `since` is when the tablet last synced its
+    settings, company time: the logo is sent again only if it changed since."""
+
+    since = datetime_field(required=False, allow_null=True)

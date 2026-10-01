@@ -1,13 +1,21 @@
 """POST /api/v1/operator/vehicles through HTTP, and vehicle.current_branch
 itself: the form's scoping and the database's same-company guard."""
 
+import datetime
+
 import pytest
 from django.db import IntegrityError, connection, transaction
+from django.utils import timezone
 
+from apps.devices.models import Device
 from apps.fare.tests import test_api as fare_api
 from apps.fleet import api
 from apps.fleet.models import UOM, Category, Vehicle, VehicleType
+from apps.rental.models import Order, OrderItem, OrderItemStatus
+from apps.rental.tests.conftest import make_customer
 from core.enums import ApprovalStatus
+from core.ids import uuid7
+from core.timezones import zone_for
 
 # The signed-in till from the fare API tests, reused as fixtures here.
 call = fare_api.call
@@ -49,13 +57,45 @@ def test_vehicles_come_nested_by_category_and_type(client, world, token, uom):
     first, second = (Vehicle.objects.get(vehicle_code=code) for code in ("MON-2", "MON-1"))
     assert monaco["vehicles"] == [                       # in identifier order: MON-2 was created first
         {"vehicle_id": first.pk, "vehicle_identifier": first.identifier, "vehicle_code": "MON-2",
-         "vehicle_name": "MON-2", "rfid_epc": "E2801", "uom": "Number", "is_available": False},
+         "vehicle_name": "MON-2", "rfid_epc": "E2801", "uom": "Number", "is_available": False,
+         "on_rent": False, "rental": None, "can_rent": False},
         {"vehicle_id": second.pk, "vehicle_identifier": second.identifier, "vehicle_code": "MON-1",
-         "vehicle_name": "MON-1", "rfid_epc": "E2800", "uom": "Number", "is_available": True},
+         "vehicle_name": "MON-1", "rfid_epc": "E2800", "uom": "Number", "is_available": True,
+         "on_rent": False, "rental": None, "can_rent": True},
     ]
     assert first.identifier.startswith("VB") and first.identifier_no < second.identifier_no
     # The Swagger example is exactly what a device gets.
     assert fare_api.shape(data) == fare_api.shape(api._VEHICLES_SAMPLE)
+
+
+def test_a_vehicle_out_on_rent_says_so_until_it_is_back(client, world, token, uom):
+    out = vehicle(world, uom, "MON-1", world["monaco"], world["adc1"])
+    vehicle(world, uom, "MON-2", world["monaco"], world["adc1"])
+    start = timezone.make_aware(datetime.datetime(2026, 10, 2, 16, 0), zone_for(world["company"]))
+    customer = make_customer(world)
+    order = Order.objects.create(
+        id=uuid7(), company=world["company"], branch=world["adc1"],
+        device=Device.objects.get(installation_id="till-1"), customer=customer, order_no="ADC0000231",
+        booked_at=start, start_time=start, total_amount=50, net_amount=50,
+    )
+    line = OrderItem.objects.create(
+        id=uuid7(), order=order, vehicle=out, package_minutes=60, start_time=start,
+        expected_end_time=start + datetime.timedelta(hours=1), rate=50, amount=50, total_amount=50,
+    )
+
+    def flags():
+        data = call(client, URL, token=token).json()["data"]
+        vehicles = data["categories"][0]["vehicle_types"][0]["vehicles"]
+        return {v["vehicle_code"]: (v["on_rent"], v["rental"], v["can_rent"]) for v in vehicles}
+
+    assert flags() == {
+        "MON-1": (True, {"order_no": "ADC0000231", "expected_end_time": "2026-10-02 17:00:00"}, False),
+        "MON-2": (False, None, True),
+    }
+
+    line.status = OrderItemStatus.RETURNED
+    line.save()
+    assert flags()["MON-1"] == (False, None, True)
 
 
 def test_each_vehicle_type_says_whether_it_is_direct_rent(client, world, token, uom):

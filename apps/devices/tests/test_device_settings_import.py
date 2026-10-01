@@ -185,7 +185,6 @@ def test_what_the_tablet_is_handed_is_what_the_legacy_sent(legacy_branch, import
     payload = services.settings_payload(legacy_branch)
 
     assert base64.b64decode(payload["logo"]) == bytes(row.logo)
-    assert payload["order_no_prefix"] == row.order_no_prefix
     assert payload["header_1"] == row.header_1
     assert services.bill_prefix_for(legacy_branch) == row.order_no_prefix
 
