@@ -1,10 +1,11 @@
 # Order lifecycle — design
 
-Status: **P1 built** (1 Oct 2026). Decisions agreed in section 5. Built:
-`Order`, `OrderItem`, `Payment`, `OrderEvent` (section 4); `run_once`,
-`record_payment`, `lock_order`; booking (`POST /orders`), `POST /orders/detail`,
-running status on `/vehicles`, `POST /device/settings`. Next: P2 return +
-settle + invoice + card discount.
+Status: **P2 built** (2 Oct 2026). Decisions agreed in section 5. Built:
+`Order`, `OrderItem`, `Payment`, `OrderEvent`, `Invoice`, `InvoiceItem`
+(section 4); `run_once`, `record_payment`, `lock_order`; booking
+(`POST /orders`), `POST /orders/detail`, `POST /orders/return`,
+`POST /orders/settle` (card discount redeemed, invoice issued), running status
+on `/vehicles`, `POST /device/settings`. Next: P3 add / replace / remove.
 
 The legacy system is the reference, not the template: the business flow is
 kept, its bugs are not. Legacy sources are cited as proc names
@@ -34,8 +35,9 @@ kept, its bugs are not. Legacy sources are cited as proc names
    applied and marked *Redeemed*; one still pending is *Cancelled*. Compared
    with what was paid: collect the **balance**, or record a **refund**. Order
    **Completed**; final receipt prints.
-   **Direct rental** (paid in full, nothing to add): returning the vehicle
-   settles the order in the same step.
+   **Direct rental** — the same three calls: book (an advance is optional),
+   return (no overtime, so total = base fare), settle (payment may be taken
+   here). No special endpoint.
 5. **Cancel** — whole order only, before settlement, through manager approval.
    On approval: order and lines *Cancelled*, vehicles freed, money taken is
    recorded as a refund, a pending card discount is cancelled.
@@ -93,9 +95,9 @@ settled, blank once cancelled. Settle refuses unless the bill is paid in full
 
 ### Invoice
 
-An invoice exists only for a **settled** order: settlement (or the one-step
-direct return) creates it in the same transaction, after full payment. A
-cancelled order never gets one.
+An invoice exists only for a **settled** order: settlement creates it in the
+same transaction, after full payment, issued by the settling tablet and
+operator. A cancelled order never gets one.
 
 - **Number = the order number** (as BYKY works today). The tablet sends
   nothing extra at settlement. A cancelled order's number is simply never
@@ -174,6 +176,13 @@ its own list. The codes, one place in the code (`apps/rental/services.py`
 | `unknown_customer` / `_payment_mode` / `_vehicle` / `_fare` / `_offer` | 400 | final | not this company's |
 | `vehicle_not_at_station` | 400 | final | the vehicle is at another station |
 | `unknown_order` | 404 | final | no such order at this station (`/orders/detail`) |
+| `order_closed` | 409 | final | the order is completed or cancelled |
+| `unknown_item` / `item_not_active` | 404 / 409 | final | the line is not on the order / already returned, replaced or removed |
+| `invalid_return_time` | 400 | final | returned before the line's start |
+| `items_still_out` | 409 | final | settle with a vehicle not returned |
+| `amount_mismatch` | 400 | final | a figure does not agree (line total, subtotal, net) |
+| `balance_not_settled` | 409 | final | after settle's payments, paid ≠ net |
+| `unknown_card_claim` / `card_claim_not_approved` / `unknown_card_discount` | 404 / 409 / 404 | final | the discount named at settle cannot be applied |
 
 A constraint lost in a race (two tablets, one vehicle, the same instant) is
 reported as the code it means, read from the database constraint's name.
@@ -332,33 +341,31 @@ DC 02 back on time — `POST /api/v1/operator/orders/return`:
 
 ```json
 { "request_data": { "sync_id": "T-1", "order_id": "O-1", "item_id": "L-2",
-                    "returned_at": "2026-10-02 17:00:00", "total_amount": "50.00" } }
+                    "returned_at": "2026-10-02 17:00:00", "run_minutes": 60,
+                    "overtime_amount": "0.00", "total_amount": "50.00" } }
 ```
 
-```json
-{ "code": "ok", "message": "Vehicle returned.",
-  "data": { "item": { "sync_id": "L-2", "status": "returned" }, "items_out": 1 } }
-```
+The tablet works out the run time and the amounts; the server checks only
+`total_amount` = `base_fare` + `overtime_amount`. Reply: the full order, the
+line `returned`, `items_out: 1`.
 
 MO 42 back 12 minutes late, AED 10 overtime:
 
 ```json
 { "request_data": { "sync_id": "T-2", "order_id": "O-1", "item_id": "L-3",
-                    "returned_at": "2026-10-02 17:12:00", "overtime_amount": "10.00",
-                    "total_amount": "60.00" } }
+                    "returned_at": "2026-10-02 17:12:00", "run_minutes": 72,
+                    "overtime_amount": "10.00", "total_amount": "60.00" } }
 ```
 
-```json
-{ "code": "ok", "message": "Vehicle returned.",
-  "data": { "item": { "sync_id": "L-3", "status": "returned" }, "items_out": 0 } }
-```
+Reply: the full order, `items_out: 0`.
 
 `items_out: 0` — everything is back; the order can be settled.
 
 A return that reaches the server before its booking:
 
 ```json
-{ "code": "order_not_synced", "message": "Send the order first.", "data": {} }
+{ "code": "order_not_synced", "message": "That order has not reached the server yet.",
+  "data": { "retry": true } }
 ```
 
 (409, retryable — the tablet keeps it queued.)
@@ -366,10 +373,9 @@ A return that reaches the server before its booking:
 ### 3.4 Settle — final bill, card discount, balance by card
 
 ```
-lines        110.00   (DC 02 50.00 + MO 42 60.00; MO 41 replaced, not billed)
+subtotal     110.00   (DC 02 50.00 + MO 42 60.00; MO 41 replaced, not billed)
 card disc.   -11.00   (10%, approved)
-subtotal      99.00
-tax 5%         4.95
+VAT 5%         4.95   (on 99.00)
 rounding       0.05
 net          104.00
 paid         100.00   (advance P-1)
@@ -381,24 +387,30 @@ balance        4.00   → collected now by card
 ```json
 { "request_data": {
     "sync_id": "S-1", "order_id": "O-1", "settled_at": "2026-10-02 17:13:30",
-    "subtotal": "110.00", "card_discount": { "claim_id": "C-1", "amount": "11.00" },
+    "subtotal": "110.00",
+    "discount": { "claim_id": "C-1", "discount_percentage": "10.00", "discount_amount": "11.00" },
     "tax_percentage": "5.00", "tax_amount": "4.95", "rounding_adjustment": "0.05", "net_amount": "104.00",
     "payments": [ { "sync_id": "P-2", "kind": "settlement", "payment_mode_id": 2, "amount": "4.00",
                     "reference_no": "4421", "paid_at": "2026-10-02 17:13:30" } ] } }
 ```
 
-Server checks the figures add up and every line is back; then in one
-transaction: order Completed, payment P-2 saved, the card-discount claim
-marked Redeemed with AED 11.00, and invoice `DUBPP60182000231` issued (the order
-number). Had the claim still been pending, it would be
-Cancelled and the tablet would have billed without it.
+The tablet works out the whole bill. The server checks only that every
+vehicle is back, the subtotal is the returned lines' totals, the net adds up,
+and after P-2 the bill is paid in full. Then in one transaction: the bill
+stored, claim C-1 Redeemed (and any other request on the order Cancelled),
+payment P-2 saved, the order Completed (`paid`), and invoice
+`DUBPP60182000231` issued (the order number). An automatic discount is sent as
+`{card_discount_id, card_number, discount_percentage, discount_amount}` and
+recorded as a new redemption.
 
 ```json
 { "code": "ok", "message": "Order settled.",
-  "data": { "sync_id": "O-1", "status": "completed", "net_amount": "104.00",
-            "paid_amount": "104.00", "balance_due": "0.00", "card_discount": "redeemed",
+  "data": { "sync_id": "O-1", "status": "completed", "payment_status": "paid",
+            "subtotal": "110.00", "net_amount": "104.00",
+            "discount": { "claim_id": "C-1", "discount_percentage": "10.00", "discount_amount": "11.00" },
+            "paid_amount": "104.00", "balance_due": "0.00",
             "invoice": { "invoice_no": "DUBPP60182000231", "issued_at": "2026-10-02 17:13:30",
-                         "net_amount": "104.00" } } }
+                         "net_amount": "104.00" }, "...": "the rest of the order" } }
 ```
 
 Overpaid instead (advance 110): the payment is `{"kind": "refund", "amount": "6.00"}`
@@ -522,6 +534,7 @@ Removed from today's model: `payment_mode` (per payment entry now),
 | `start_time` | datetime | |
 | `expected_end_time` | datetime | start + package |
 | `end_time` | datetime, null | returned / replaced / removed at (tablet time) |
+| `run_minutes` | int, null | how long it actually ran; set at return (tablet) |
 | `base_fare` | money | the package price agreed at booking |
 | `overtime_amount` | money, null | extra-time charge; set at return (0 if on time) |
 | `total_amount` | money, null | `base_fare + overtime_amount`; set at return |
@@ -596,10 +609,10 @@ Created at settlement, never edited.
 |---|---|---|
 | `id` | UUID, PK | server-made (uuid7) |
 | `order` | **one-to-one** Order | `related_name="invoice"` |
-| `company`, `branch`, `device` | FK | as on the order |
+| `company`, `branch` | FK | as on the order |
 | `invoice_no` | char(30) | = `order.order_no` |
 | `issued_at` | datetime | = settlement time |
-| `issued_by` | FK User | |
+| `device`, `issued_by` | FK | the **settling** tablet and operator |
 | `company_name`, `company_trn` | char | as at issue (`Company.income_tax_number`) |
 | `branch_name` | char | as at issue |
 | `customer_name`, `customer_mobile` | char | as at issue |
@@ -618,7 +631,7 @@ One row per billed line (replaced and removed lines are not billed).
 | `invoice` | FK Invoice | `related_name="items"` |
 | `order_item` | FK OrderItem | traceability |
 | `vehicle_identifier`, `vehicle_name`, `vehicle_type` | char | as at issue |
-| `package_minutes` | int | |
+| `package_minutes`, `run_minutes` | int | |
 | `start_time`, `end_time` | datetime | |
 | `base_fare`, `overtime_amount`, `total_amount` | money | copied from the line |
 
@@ -666,7 +679,10 @@ One row per billed line (replaced and removed lines are not billed).
    consistent are in from the start: an item must be active to be returned or
    replaced; a completed or cancelled order takes no changes (except a refund
    on a cancelled one); settle needs every vehicle back and the bill paid in
-   full (`balance_not_settled`), so `paid` is always true.
+   full (`balance_not_settled`), so `paid` is always true. The tablet works out
+   every amount; the basic checks are only that the figures agree: line total =
+   base fare + overtime; subtotal = the returned lines' totals; net = subtotal −
+   discount + VAT ± rounding (`amount_mismatch`).
 8. **Every order has a customer.** **No auto-block on a low rating** (legacy
    `Service_Save_SubmitExit_Order` blocked customers rated below 2).
 9. **Order number required and unique** per company; each booking raises the
