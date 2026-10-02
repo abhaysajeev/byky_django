@@ -1,0 +1,99 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Orders - Rental{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Rental</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Orders</b>
+      </div>
+      <h1 class="scr-title">Orders</h1>
+    </div>
+  </div>
+
+  <div class="scr-tiles">
+    {% for k in kpis %}
+    <div class="scr-tile"><div><div class="scr-tile-val">{{ k.value }}</div><div class="scr-tile-lab">{{ k.label }}</div></div></div>
+    {% endfor %}
+  </div>
+
+  <div class="scr-card" data-scr-server-paged>
+    <form method="get" class="scr-toolbar scr-mon-toolbar" data-scr-autosubmit>
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="text" name="q" value="{{ params.q }}" placeholder="Order no, customer or phone" aria-label="Search" />
+      </div>
+      <div class="scr-mon-dates">
+        <input type="date" name="from" class="scr-input" value="{{ params.from }}" aria-label="Booked from" title="Booked from" />
+        <span>to</span>
+        <input type="date" name="to" class="scr-input" value="{{ params.to }}" aria-label="Booked to" title="Booked to" />
+      </div>
+      <select name="status" class="scr-input scr-list-select" aria-label="Status">
+        <option value="">All statuses</option>
+        {% for value, label in statuses %}<option value="{{ value }}"{% if params.status == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+      <select name="branch" class="scr-input scr-list-select" aria-label="Station">
+        <option value="">All stations</option>
+        {% for b in branches %}<option value="{{ b.id }}"{% if params.branch == b.id|stringformat:"s" %} selected{% endif %}>{{ b.name }}</option>{% endfor %}
+      </select>
+      <button type="submit" class="scr-btn">Filter</button>
+      {% if filtered %}<a href="{% url 'rental-order-list' %}" class="scr-btn-secondary">Clear</a>{% endif %}
+      <span class="scr-toolbar-count">{{ page.paginator.count }} order{{ page.paginator.count|pluralize }}</span>
+    </form>
+
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Order No.</th>
+            <th>Customer</th>
+            <th>Station</th>
+            <th>Status</th>
+            <th class="scr-th-actions"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr class="scr-mon-row" data-scr-href="{{ r.detail_url }}">
+            <td><a class="scr-mon-time" href="{{ r.detail_url }}">{{ r.order_no }}<span>{{ r.booked_at|date:"d M Y, H:i" }}</span></a></td>
+            <td><div class="scr-co-name">{{ r.customer|default:"—" }}</div><div class="scr-contact-sub">{{ r.mobile }}</div></td>
+            <td><div class="scr-contact">{{ r.station }}</div><div class="scr-contact-sub">Tablet {{ r.tablet }}</div></td>
+            <td>
+              {% include "rental/partials/order_status.html" with status=r.status %}
+              {% if r.is_direct %}<div class="scr-contact-sub">Direct rental</div>{% endif %}
+            </td>
+            <td>
+              <div class="scr-row-actions">
+                <a class="scr-icon-btn" href="{{ r.detail_url }}" title="View order" aria-label="View order {{ r.order_no }}">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                </a>
+              </div>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="5" style="padding:0"><div class="scr-empty"><div><div class="scr-empty-title">{% if filtered %}No orders match{% else %}No orders yet{% endif %}</div></div></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% include "byky/partials/server_pager.html" %}
+  </div>
+</div>
+{% endblock %}
