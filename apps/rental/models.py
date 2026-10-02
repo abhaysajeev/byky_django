@@ -295,6 +295,7 @@ class OrderItem(TimeStampedModel):
     base_fare = models.DecimalField(**MONEY)        # the package price agreed at booking
     # Blank until the vehicle is returned. No discount and no VAT here: both
     # are on the order's bill.
+    run_minutes = models.PositiveIntegerField(null=True, blank=True)     # how long it actually ran
     overtime_amount = models.DecimalField(**MONEY, null=True, blank=True)
     total_amount = models.DecimalField(**MONEY, null=True, blank=True)   # base_fare + overtime
 
@@ -451,3 +452,76 @@ class OrderEvent(models.Model):
 
     def __str__(self):
         return f"{self.get_action_display()} on {self.order}"
+
+
+# --- Invoice ------------------------------------------------------------------------
+#
+# Issued at settle, in the same transaction, and never edited: a frozen copy of
+# the bill as it was (order_lifecycle_design.md 1 "Invoice", 4.7, 4.8). Legacy
+# had no invoice table -- RMS_PRINT_INVOICE rebuilt one from the order at print
+# time, so editing the order changed an invoice already issued.
+
+
+class Invoice(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, editable=False)
+    order = models.OneToOneField(Order, on_delete=models.PROTECT, related_name="invoice")
+    company = models.ForeignKey("company.Company", on_delete=models.PROTECT, related_name="invoices")
+    branch = models.ForeignKey("company.Branch", on_delete=models.PROTECT, related_name="invoices")
+    device = models.ForeignKey("devices.Device", on_delete=models.PROTECT, related_name="invoices")  # settling tablet
+    issued_by = models.ForeignKey("core.User", on_delete=models.PROTECT, related_name="+")
+
+    invoice_no = models.CharField(max_length=30)               # = the order's order_no
+    issued_at = models.DateTimeField()                          # = settle time (tablet)
+
+    # As at issue.
+    company_name = models.CharField(max_length=200)
+    company_trn = models.CharField(max_length=100, blank=True)
+    branch_name = models.CharField(max_length=200)
+    customer_name = models.CharField(max_length=200, blank=True)
+    customer_mobile = models.CharField(max_length=20, blank=True)
+
+    subtotal = models.DecimalField(**MONEY)
+    discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    discount_amount = models.DecimalField(**MONEY)
+    tax_percentage = models.DecimalField(max_digits=5, decimal_places=2)
+    tax_amount = models.DecimalField(**MONEY)
+    rounding_adjustment = models.DecimalField(max_digits=6, decimal_places=2)
+    net_amount = models.DecimalField(**MONEY)
+    payments = models.JSONField(default=list)      # [{mode, kind, amount, reference_no}] at issue
+
+    class Meta:
+        db_table = "invoice"
+        ordering = ["-issued_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["company", "invoice_no"], name="uniq_invoice_no_per_company"),
+        ]
+        indexes = [models.Index(fields=["branch", "issued_at"])]
+
+    def __str__(self):
+        return self.invoice_no
+
+
+class InvoiceItem(models.Model):
+    """One billed vehicle line, as at issue. Replaced and removed lines are not billed."""
+
+    id = models.UUIDField(primary_key=True, editable=False)
+    invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name="items")
+    order_item = models.ForeignKey(OrderItem, on_delete=models.PROTECT, related_name="+")
+
+    vehicle_identifier = models.CharField(max_length=20)
+    vehicle_name = models.CharField(max_length=200)
+    vehicle_type = models.CharField(max_length=200)
+    package_minutes = models.PositiveSmallIntegerField()
+    run_minutes = models.PositiveIntegerField(null=True, blank=True)
+    start_time = models.DateTimeField()
+    end_time = models.DateTimeField(null=True, blank=True)
+    base_fare = models.DecimalField(**MONEY)
+    overtime_amount = models.DecimalField(**MONEY)
+    total_amount = models.DecimalField(**MONEY)
+
+    class Meta:
+        db_table = "invoice_item"
+        ordering = ["start_time"]
+
+    def __str__(self):
+        return f"{self.vehicle_name} on {self.invoice}"
