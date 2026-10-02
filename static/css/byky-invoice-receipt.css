@@ -110,11 +110,16 @@ standard secondary look (white, hairline border, ink on hover), no colour. */
    ring read as a stray grey border. */
 .bill-btn:focus, .bill-btn:focus-visible { outline: none; box-shadow: none; }
 .bill-btn:disabled { opacity: 0.5; cursor: default; }
-/* Print: solid deep brand red (#c2141a, the darker end of the primary
-   gradient -- not its vivid #e8272e), white text, no border. */
-.bill-btn-print { background: #c2141a; border-color: #c2141a; color: #fff; }
-.bill-btn-print:hover { background: #a8090f; border-color: #a8090f; color: #fff; }
-.bill-btn-print:disabled { background: #c2141a; color: #fff; }
+/* Print: the theme red (#d81f26), flat -- no gradient -- with white text.
+   No border at all: a border drawn over the same fill roughened the rounded
+   corners. One pixel more padding keeps it as tall as Close (which has a
+   1px border). */
+.bill-btn-print {
+  background: #d81f26; color: #fff; border: none; padding: 7px 13px;
+  -webkit-font-smoothing: antialiased;
+}
+.bill-btn-print:hover { background: #c2141a; color: #fff; }
+.bill-btn-print:disabled { background: #d81f26; color: #fff; }
 
 /* While a receipt loads: the veil and a small spinner, no empty modal. */
 .bill-loader {
