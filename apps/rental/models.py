@@ -173,8 +173,9 @@ class PaymentStatus(models.TextChoices):
 class OrderItemStatus(models.TextChoices):
     ACTIVE = "active", "Active"        # legacy =1 Running
     RETURNED = "returned", "Returned"   # legacy =2 Received
-    REPLACED = "replaced", "Replaced"    # legacy =4
-    CANCELLED = "cancelled", "Cancelled"  # removed from the order -- legacy =3
+    REPLACED = "replaced", "Replaced"    # swapped for another vehicle -- legacy =4
+    REMOVED = "removed", "Removed"       # taken off the order, not billed -- legacy =3
+    CANCELLED = "cancelled", "Cancelled"  # the whole order was cancelled
 
 
 MONEY = {"max_digits": 12, "decimal_places": 2}

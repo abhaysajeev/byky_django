@@ -29,8 +29,11 @@ from apps.rental.models import Invoice, OrderItemStatus
 from apps.rental.serializers import (
     CustomerCreateRequest,
     CustomerLookupRequest,
+    OrderAddRequest,
     OrderCreateRequest,
     OrderDetailRequest,
+    OrderRemoveRequest,
+    OrderReplaceRequest,
     OrderReturnRequest,
     OrderSettleRequest,
 )
@@ -682,3 +685,210 @@ class OrderSettleView(_OperatorView):
         except services.OrderRefused as refusal:
             return _refused(refusal)
         return envelope("ok", "Order settled.", data) if done else envelope("duplicate", "Already recorded.", data)
+
+
+# -- Add, replace, remove a vehicle ---------------------------------------------------
+
+_ADDED_ITEM = {
+    **_ORDER_SAMPLE["items"][1], "sync_id": "01923e1c-0a17-7b22-8c33-d4e5f6a7b8c9",
+    "vehicle": {"id": 1050, "name": "MO 50", "identifier": "VB1250"}, "package_minutes": 30,
+    "start_time": "2026-10-02 16:30:00", "expected_end_time": "2026-10-02 17:00:00", "base_fare": "30.00",
+}
+_ADDED_SAMPLE = {
+    **_ORDER_SAMPLE, "items_out": 3, "items": [*_ORDER_SAMPLE["items"], _ADDED_ITEM],
+    "amount_received": "130.00", "paid_amount": "130.00",
+    "payments": [
+        *_ORDER_SAMPLE["payments"],
+        {"sync_id": "01923e1c-0a18-7b22-8c33-d4e5f6a7b8c9", "kind": "advance",
+         "payment_mode": {"id": 1, "name": "Cash"}, "amount": "30.00", "reference_no": "",
+         "reference_date": None, "paid_at": "2026-10-02 16:30:00"},
+    ],
+}
+_REPLACED_SAMPLE = {
+    **_ORDER_SAMPLE,
+    "items": [
+        {**_ORDER_SAMPLE["items"][0], "status": "replaced", "end_time": "2026-10-02 16:20:00",
+         "reason": "Chain broken"},
+        _ORDER_SAMPLE["items"][1],
+        {**_ORDER_SAMPLE["items"][0], "sync_id": "01923e1c-0a19-7b22-8c33-d4e5f6a7b8c9",
+         "vehicle": {"id": 1042, "name": "MO 42", "identifier": "VB1242"},
+         "start_time": "2026-10-02 16:20:00",
+         "replaced_item_id": _ORDER_SAMPLE["items"][0]["sync_id"]},
+    ],
+}
+_REMOVED_SAMPLE = {
+    **_ORDER_SAMPLE, "items_out": 1,
+    "items": [
+        _ORDER_SAMPLE["items"][0],
+        {**_ORDER_SAMPLE["items"][1], "status": "removed", "end_time": "2026-10-02 16:05:00",
+         "reason": "Booked by mistake"},
+    ],
+}
+
+_CHANGE_ERRORS = ("order_not_synced", "sync_id_conflict", "order_closed")
+_NEW_LINE_ERRORS = (
+    "vehicle_already_rented", "vehicle_not_at_station", "unknown_vehicle", "unknown_fare", "unknown_offer",
+    "item_id_used",
+)
+_ADD_ERRORS = (*_CHANGE_ERRORS, *_NEW_LINE_ERRORS, "unknown_payment_mode", "payment_id_used")
+_REPLACE_ERRORS = (*_CHANGE_ERRORS, "unknown_item", "item_not_active", "invalid_time", "vehicle_repeated",
+                   *_NEW_LINE_ERRORS)
+_REMOVE_ERRORS = (*_CHANGE_ERRORS, "unknown_item", "item_not_active", "invalid_time")
+
+_CHANGE_RULES = """
+**`sync_id`** is this call's own id (UUIDv7, made on the tablet, resent
+unchanged); a new line has its own `sync_id` too. Any tablet at the order's
+station can make the change, while the order is still active (`order_closed`
+once it is settled or cancelled). A call that reaches the server before its
+booking is `order_not_synced` -- keep it queued and retry.
+"""
+
+_ADD_DESCRIPTION = """
+Another vehicle joins an active order. The new `item` is checked as at
+booking: this company's, at this station, not already out. It carries only
+its package and agreed `base_fare`; its final amount comes at return.
+
+**`payments`** (optional, `advance` only) -- money taken for the added vehicle,
+recorded in this same call. Send each payment once: here, or alone through
+the payments call -- never both.
+""" + _CHANGE_RULES + """
+""" + _error_table(*_ADD_ERRORS)
+
+_REPLACE_DESCRIPTION = """
+A vehicle swapped for another (order_lifecycle_design.md 3.2), in one step:
+- the old line (`old_item_id`) closes as **`replaced`** at `replaced_at`, with
+  the `reason` (required) -- it is **never billed**, and its vehicle is free
+  at once;
+- the `new_item` starts, with `replaced_item_id` pointing back at the old line,
+  carrying the package's `base_fare` (the customer pays for one package).
+
+The replacement must be another vehicle (`vehicle_repeated`), checked as at
+booking; `replaced_at` cannot be before the old line's start (`invalid_time`).
+""" + _CHANGE_RULES + """
+""" + _error_table(*_REPLACE_ERRORS)
+
+_REMOVE_DESCRIPTION = """
+A vehicle taken off the order with no replacement. The line stays on the
+order as **`removed`**, with `removed_at` and the `reason` (required) -- it is
+**never billed** nor invoiced, `items_out` no longer counts it, and the
+vehicle is free at once. A vehicle the customer rode is **returned**, not
+removed.
+""" + _CHANGE_RULES + """
+""" + _error_table(*_REMOVE_ERRORS)
+
+
+class _ChangeView(_OperatorView):
+    """One change to an active order: validate, make the times company-aware,
+    run the service, answer ok / duplicate / the refusal."""
+
+    form_class = None
+    times = ()
+    item_keys = ()
+    done_message = ""
+
+    def change(self, session, values, request_data, reply_for):
+        raise NotImplementedError
+
+    def post(self, request, app):
+        branch, refused = self.station(request, app)
+        if refused:
+            return refused
+
+        _, request_data = request_parts(request)
+        form = self.form_class(data=request_data)
+        form.is_valid(raise_exception=True)
+        values = form.validated_data
+        zone = zone_for(branch.company)
+        for key in self.times:
+            values[key] = timezone.make_aware(values[key], zone)
+        for key in self.item_keys:
+            for time_key in ("start_time", "expected_end_time"):
+                values[key][time_key] = timezone.make_aware(values[key][time_key], zone)
+        for payment in values.get("payments") or []:
+            payment["paid_at"] = timezone.make_aware(payment["paid_at"], zone)
+
+        session = request.auth
+        try:
+            data, done = self.change(
+                session, values, request_data,
+                lambda order: order_json(order, zone=zone, next_order_number=_counter_number(session)),
+            )
+        except services.OrderRefused as refusal:
+            return _refused(refusal)
+        return envelope("ok", self.done_message, data) if done else envelope("duplicate", "Already recorded.", data)
+
+
+class OrderAddView(_ChangeView):
+    """POST /api/v1/{app}/orders/add -- operator app only."""
+
+    form_class, times, item_keys, done_message = OrderAddRequest, ("added_at",), ("item",), "Vehicle added."
+
+    @extend_schema(
+        tags=["Operator Orders"],
+        summary="Add a vehicle to an order",
+        description=_ADD_DESCRIPTION,
+        request=envelope_request("OrderAddEnvelope", OrderAddRequest),
+        responses=envelope_responses(
+            (200, "ok", "Vehicle added.", _ADDED_SAMPLE),
+            (200, "duplicate", "Already recorded.", _ADDED_SAMPLE),
+            (400, "invalid_request", "item is required.", {"errors": {"item": "is required"}}),
+            *_error_rows(*_ADD_ERRORS),
+            *_COMMON,
+        ),
+    )
+    def post(self, request, app):
+        return super().post(request, app)
+
+    def change(self, *args):
+        return services.add_item(*args)
+
+
+class OrderReplaceView(_ChangeView):
+    """POST /api/v1/{app}/orders/replace -- operator app only."""
+
+    form_class, times, item_keys = OrderReplaceRequest, ("replaced_at",), ("new_item",)
+    done_message = "Vehicle replaced."
+
+    @extend_schema(
+        tags=["Operator Orders"],
+        summary="Replace a vehicle on an order",
+        description=_REPLACE_DESCRIPTION,
+        request=envelope_request("OrderReplaceEnvelope", OrderReplaceRequest),
+        responses=envelope_responses(
+            (200, "ok", "Vehicle replaced.", _REPLACED_SAMPLE),
+            (200, "duplicate", "Already recorded.", _REPLACED_SAMPLE),
+            (400, "invalid_request", "reason is required.", {"errors": {"reason": "is required"}}),
+            *_error_rows(*_REPLACE_ERRORS),
+            *_COMMON,
+        ),
+    )
+    def post(self, request, app):
+        return super().post(request, app)
+
+    def change(self, *args):
+        return services.replace_item(*args)
+
+
+class OrderRemoveView(_ChangeView):
+    """POST /api/v1/{app}/orders/remove -- operator app only."""
+
+    form_class, times, done_message = OrderRemoveRequest, ("removed_at",), "Vehicle removed."
+
+    @extend_schema(
+        tags=["Operator Orders"],
+        summary="Remove a vehicle from an order",
+        description=_REMOVE_DESCRIPTION,
+        request=envelope_request("OrderRemoveEnvelope", OrderRemoveRequest),
+        responses=envelope_responses(
+            (200, "ok", "Vehicle removed.", _REMOVED_SAMPLE),
+            (200, "duplicate", "Already recorded.", _REMOVED_SAMPLE),
+            (400, "invalid_request", "reason is required.", {"errors": {"reason": "is required"}}),
+            *_error_rows(*_REMOVE_ERRORS),
+            *_COMMON,
+        ),
+    )
+    def post(self, request, app):
+        return super().post(request, app)
+
+    def change(self, *args):
+        return services.remove_item(*args)

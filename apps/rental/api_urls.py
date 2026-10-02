@@ -13,4 +13,7 @@ urlpatterns = [
     path("orders/detail", api.OrderDetailView.as_view(), name="api-app-order-detail"),
     path("orders/return", api.OrderReturnView.as_view(), name="api-app-order-return"),
     path("orders/settle", api.OrderSettleView.as_view(), name="api-app-order-settle"),
+    path("orders/add", api.OrderAddView.as_view(), name="api-app-order-add"),
+    path("orders/replace", api.OrderReplaceView.as_view(), name="api-app-order-replace"),
+    path("orders/remove", api.OrderRemoveView.as_view(), name="api-app-order-remove"),
 ]

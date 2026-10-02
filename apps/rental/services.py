@@ -120,6 +120,7 @@ ORDER_ERRORS = {
     "unknown_item": (404, "That item is not on this order.", False),
     "item_not_active": (409, "That vehicle is already returned, replaced or removed.", False),
     "invalid_return_time": (400, "returned_at is before the vehicle's start time.", False),
+    "invalid_time": (400, "That time is before the vehicle's start time.", False),
     "items_still_out": (409, "Every vehicle must be returned before the order is settled.", False),
     "amount_mismatch": (400, "The amounts do not add up.", False),
     "balance_not_settled": (409, "The bill is not paid in full.", False),
@@ -309,6 +310,34 @@ def _book(session, values, reply_for):
     if customer is None:
         raise OrderRefused("unknown_customer")
 
+    refs = _line_refs(company, branch, items_input)
+    modes = _payment_modes(company, payments_input)
+
+    order = Order.objects.create(
+        id=values["sync_id"], company=company, branch=branch, device=device,
+        customer=customer, customer_name=customer.full_name, customer_mobile=customer.mobile_full,
+        order_no=values["order_no"], booked_at=values["booked_at"], start_time=values["start_time"],
+        is_direct_bill=values.get("is_direct_bill", False),
+        is_hotel_order=values.get("is_hotel_order", False), hotel_commission=values.get("hotel_commission") or 0,
+        created_by=user, modified_by=user,
+    )
+    _new_lines(order, items_input, refs, user)
+    _record_payments(session, order, payments_input, modes)
+    devices_services.raise_counter_from(device, branch, BillKind.ORDER, order.order_no)
+
+    order.refresh_from_db()        # paid_amount, balance_due, payment_status: computed by the database
+    event = {
+        "action": OrderAction.BOOK, "happened_at": values["booked_at"], "device": device, "user": user,
+        "detail": {"items": len(items_input), "advance": str(sum(p["amount"] for p in payments_input))},
+    }
+    return order, event, reply_for(order)
+
+
+def _line_refs(company, branch, items_input):
+    """(vehicles, fares, offers) by id for new vehicle lines -- or the refusal.
+    Each vehicle this company's, at this station, in the call once and not on
+    another active line; each fare and offer this company's; each line id new.
+    Shared by booking, add and replace."""
     vehicle_list = [item["vehicle_id"] for item in items_input]
     if len(set(vehicle_list)) != len(vehicle_list):
         raise OrderRefused("vehicle_repeated")
@@ -322,42 +351,29 @@ def _book(session, values, reply_for):
     rented = active_rentals(vehicle_list)
     if rented:
         raise OrderRefused("vehicle_already_rented", f"Vehicle {min(rented)} is already on an active rental.")
-
     fares = _by_id(Fare, company, {item["fare_id"] for item in items_input if item.get("fare_id")},
                    "unknown_fare", "fare")
     offers = _by_id(Offer, company, {item["offer_id"] for item in items_input if item.get("offer_id")},
                     "unknown_offer", "offer")
-    modes = _payment_modes(company, payments_input)
     if OrderItem.objects.filter(pk__in=[item["sync_id"] for item in items_input]).exists():
         raise OrderRefused("item_id_used")
+    return vehicles, fares, offers
 
-    order = Order.objects.create(
-        id=values["sync_id"], company=company, branch=branch, device=device,
-        customer=customer, customer_name=customer.full_name, customer_mobile=customer.mobile_full,
-        order_no=values["order_no"], booked_at=values["booked_at"], start_time=values["start_time"],
-        is_direct_bill=values.get("is_direct_bill", False),
-        is_hotel_order=values.get("is_hotel_order", False), hotel_commission=values.get("hotel_commission") or 0,
-        created_by=user, modified_by=user,
-    )
-    OrderItem.objects.bulk_create([
+
+def _new_lines(order, items_input, refs, user, replaced_item=None):
+    """The new vehicle lines, with the tablet's ids -- the package and its
+    agreed base fare only; the rest comes at return (design 1 "Money")."""
+    vehicles, fares, offers = refs
+    return OrderItem.objects.bulk_create([
         OrderItem(
             id=item["sync_id"], order=order, vehicle=vehicles[item["vehicle_id"]],
             fare=fares.get(item.get("fare_id")), offer=offers.get(item.get("offer_id")),
             package_minutes=item["package_minutes"], start_time=item["start_time"],
             expected_end_time=item["expected_end_time"], base_fare=item["base_fare"],
-            created_by=user, modified_by=user,
+            replaced_item=replaced_item, created_by=user, modified_by=user,
         )
         for item in items_input
     ])
-    _record_payments(session, order, payments_input, modes)
-    devices_services.raise_counter_from(device, branch, BillKind.ORDER, order.order_no)
-
-    order.refresh_from_db()        # paid_amount, balance_due, payment_status: computed by the database
-    event = {
-        "action": OrderAction.BOOK, "happened_at": values["booked_at"], "device": device, "user": user,
-        "detail": {"items": len(items_input), "advance": str(sum(p["amount"] for p in payments_input))},
-    }
-    return order, event, reply_for(order)
 
 
 def _by_id(model, company, ids, code, noun):
@@ -412,6 +428,103 @@ def return_item(session, values, request_data, reply_for):
             "device": session.device, "user": session.user,
             "detail": {"run_minutes": item.run_minutes, "overtime_amount": str(item.overtime_amount),
                        "total_amount": str(item.total_amount)},
+        }
+        return order, event, reply_for(order)
+
+    return run_once(event_id=values["sync_id"], company=session.branch.company, request_data=request_data,
+                    apply=apply)
+
+
+# -- Orders: add, replace, remove a vehicle -------------------------------------------
+
+
+def add_item(session, values, request_data, reply_for):
+    """Another vehicle joins an active order. Returns (reply, done_now).
+
+    The new line goes through the same checks as a booked one. Money taken for
+    it now (`payments`, advance only) is recorded in the same call -- never a
+    second request.
+    """
+
+    def apply():
+        order = _open_order(session, values["order_id"])
+        item, payments = values["item"], values.get("payments") or []
+        refs = _line_refs(order.company, session.branch, [item])
+        modes = _payment_modes(order.company, payments)
+        [line] = _new_lines(order, [item], refs, session.user)
+        _record_payments(session, order, payments, modes)
+        order.refresh_from_db()
+        event = {
+            "action": OrderAction.ADD, "new_item": line, "happened_at": values["added_at"],
+            "device": session.device, "user": session.user,
+            "detail": {"vehicle_id": line.vehicle_id, "advance": str(sum(p["amount"] for p in payments))},
+        }
+        return order, event, reply_for(order)
+
+    return run_once(event_id=values["sync_id"], company=session.branch.company, request_data=request_data,
+                    apply=apply)
+
+
+def _active_line(order, item_id, at):
+    """The order's line `item_id`, still out, started by `at` -- or the refusal."""
+    line = OrderItem.objects.filter(pk=item_id, order=order).first()
+    if line is None:
+        raise OrderRefused("unknown_item")
+    if line.status != OrderItemStatus.ACTIVE:
+        raise OrderRefused("item_not_active")
+    if at < line.start_time:
+        raise OrderRefused("invalid_time")
+    return line
+
+
+def replace_item(session, values, request_data, reply_for):
+    """A vehicle swapped for another (order_lifecycle_design.md 3.2). Returns
+    (reply, done_now).
+
+    The old line closes as replaced -- with its reason, never billed -- and the
+    new one starts, pointing back at it and carrying the package price. The old
+    line is closed first, so its vehicle is free before the new line is saved.
+    """
+
+    def apply():
+        order = _open_order(session, values["order_id"])
+        old = _active_line(order, values["old_item_id"], values["replaced_at"])
+        new_item = values["new_item"]
+        if new_item["vehicle_id"] == old.vehicle_id:
+            raise OrderRefused("vehicle_repeated", "The replacement is the same vehicle.")
+        old.status, old.end_time, old.reason = OrderItemStatus.REPLACED, values["replaced_at"], values["reason"]
+        old.modified_by = session.user
+        old.save()
+        refs = _line_refs(order.company, session.branch, [new_item])
+        [line] = _new_lines(order, [new_item], refs, session.user, replaced_item=old)
+        event = {
+            "action": OrderAction.REPLACE, "item": old, "new_item": line, "happened_at": values["replaced_at"],
+            "device": session.device, "user": session.user,
+            "detail": {"reason": values["reason"], "old_vehicle_id": old.vehicle_id,
+                       "new_vehicle_id": line.vehicle_id},
+        }
+        return order, event, reply_for(order)
+
+    return run_once(event_id=values["sync_id"], company=session.branch.company, request_data=request_data,
+                    apply=apply)
+
+
+def remove_item(session, values, request_data, reply_for):
+    """A vehicle taken off an order with no replacement. Returns (reply,
+    done_now). The line stays, as removed with its reason -- never billed --
+    and the vehicle is free at once. A vehicle the customer rode is returned,
+    not removed."""
+
+    def apply():
+        order = _open_order(session, values["order_id"])
+        line = _active_line(order, values["item_id"], values["removed_at"])
+        line.status, line.end_time, line.reason = OrderItemStatus.REMOVED, values["removed_at"], values["reason"]
+        line.modified_by = session.user
+        line.save()
+        event = {
+            "action": OrderAction.REMOVE, "item": line, "happened_at": values["removed_at"],
+            "device": session.device, "user": session.user,
+            "detail": {"reason": values["reason"], "vehicle_id": line.vehicle_id},
         }
         return order, event, reply_for(order)
 

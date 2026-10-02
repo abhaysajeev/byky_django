@@ -202,6 +202,46 @@ class OrderReturnRequest(serializers.Serializer):
     total_amount = _money_field()
 
 
+class OrderAddRequest(serializers.Serializer):
+    """Another vehicle joins an active order: one new line (its own sync_id,
+    package and base fare), and any advance taken for it -- recorded in this
+    same call."""
+
+    sync_id = uuid7_field()
+    order_id = _existing_id()
+    added_at = datetime_field()
+    item = OrderItemRequest()
+    payments = OrderPaymentRequest(many=True, required=False)
+
+    def validate_payments(self, payments):
+        if _repeated(payment["sync_id"] for payment in payments):
+            raise serializers.ValidationError("Each payment needs its own sync_id.")
+        return payments
+
+
+class OrderReplaceRequest(serializers.Serializer):
+    """A vehicle swapped for another: the old line closes as replaced (with
+    the reason, never billed), the new line starts."""
+
+    sync_id = uuid7_field()
+    order_id = _existing_id()
+    old_item_id = _existing_id()
+    replaced_at = datetime_field()
+    reason = text_field(max_length=500)
+    new_item = OrderItemRequest()
+
+
+class OrderRemoveRequest(serializers.Serializer):
+    """A vehicle taken off the order, no replacement: the line stays as
+    removed, with the reason, never billed."""
+
+    sync_id = uuid7_field()
+    order_id = _existing_id()
+    item_id = _existing_id()
+    removed_at = datetime_field()
+    reason = text_field(max_length=500)
+
+
 class SettlePaymentRequest(OrderPaymentRequest):
     """A payment taken at settle: the balance (`settlement`), or money handed
     back when the customer paid more than the bill (`refund`)."""
