@@ -1,11 +1,12 @@
 # Order lifecycle — design
 
-Status: **P2 built** (2 Oct 2026). Decisions agreed in section 5. Built:
+Status: **P3 built** (2 Oct 2026). Decisions agreed in section 5. Built:
 `Order`, `OrderItem`, `Payment`, `OrderEvent`, `Invoice`, `InvoiceItem`
 (section 4); `run_once`, `record_payment`, `lock_order`; booking
-(`POST /orders`), `POST /orders/detail`, `POST /orders/return`,
-`POST /orders/settle` (card discount redeemed, invoice issued), running status
-on `/vehicles`, `POST /device/settings`. Next: P3 add / replace / remove.
+(`POST /orders`), `POST /orders/detail`, `/orders/add`, `/orders/replace`,
+`/orders/remove`, `POST /orders/return`, `POST /orders/settle` (card discount
+redeemed, invoice issued), running status on `/vehicles`,
+`POST /device/settings`. Next: P4 standalone payments.
 
 The legacy system is the reference, not the template: the business flow is
 kept, its bugs are not. Legacy sources are cited as proc names
@@ -23,10 +24,16 @@ kept, its bugs are not. Legacy sources are cited as proc names
    number. Order **Active**; vehicles **on rent**.
 2. **During the rental** (optional):
    - **Replace** — a vehicle breaks and is swapped. The old line closes as
-     *Replaced*, a new line starts. Only the current line is billed.
-   - **Add** — another vehicle joins the order.
-   - **Remove** — a vehicle comes off without a replacement; its line closes as
-     *Cancelled*.
+     *Replaced* (with the reason, never billed); a new line starts, linked to
+     it and carrying the package price. Only the current line is billed.
+   - **Add** — another vehicle joins the order; an advance for it can be taken
+     in the same call.
+   - **Remove** — a vehicle comes off without a replacement; its line stays on
+     the order as *Removed* (with the reason, never billed). A vehicle the
+     customer rode is returned, not removed.
+
+   Money sent with a call (`payments`) is recorded in that call by the server
+   — never a second request. Each payment is sent once.
 3. **Return** — each vehicle comes back on its own: its line becomes
    *Returned* with the real return time and its final amount (overtime
    included). The vehicle is free to rent at once.
@@ -47,7 +54,7 @@ kept, its bugs are not. Legacy sources are cited as proc names
 | Record | Flow |
 |---|---|
 | Order | Active → Completed · Active → Cancelled |
-| Line | Active → Returned / Replaced / Cancelled |
+| Line | Active → Returned (billed) / Replaced / Removed / Cancelled (the order was cancelled) |
 
 ### Money
 
@@ -179,6 +186,7 @@ its own list. The codes, one place in the code (`apps/rental/services.py`
 | `order_closed` | 409 | final | the order is completed or cancelled |
 | `unknown_item` / `item_not_active` | 404 / 409 | final | the line is not on the order / already returned, replaced or removed |
 | `invalid_return_time` | 400 | final | returned before the line's start |
+| `invalid_time` | 400 | final | replaced / removed before the line's start |
 | `items_still_out` | 409 | final | settle with a vehicle not returned |
 | `amount_mismatch` | 400 | final | a figure does not agree (line total, subtotal, net) |
 | `balance_not_settled` | 409 | final | after settle's payments, paid ≠ net |
@@ -321,13 +329,22 @@ settlement.
                   "base_fare": "50.00" } } }
 ```
 
+In one step L-1 closes as `replaced` at 16:20 with the reason (never billed;
+MO 41 is free at once) and L-3 starts on MO 42, pointing back at L-1 and
+carrying the package price. Reply: the full order —
+
 ```json
 { "code": "ok", "message": "Vehicle replaced.",
-  "data": { "items": [ { "sync_id": "L-1", "vehicle": "MO 41", "status": "replaced" },
-                       { "sync_id": "L-2", "vehicle": "DC 02", "status": "active" },
-                       { "sync_id": "L-3", "vehicle": "MO 42", "status": "active", "replaces": "L-1" } ],
-            "net_amount": "105.00" } }
+  "data": { "items": [ { "sync_id": "L-1", "vehicle": { "name": "MO 41" }, "status": "replaced",
+                         "end_time": "2026-10-02 16:20:00", "reason": "Chain broken" },
+                       { "sync_id": "L-2", "vehicle": { "name": "DC 02" }, "status": "active" },
+                       { "sync_id": "L-3", "vehicle": { "name": "MO 42" }, "status": "active",
+                         "replaced_item_id": "L-1", "base_fare": "50.00" } ],
+            "items_out": 2, "...": "the rest of the order" } }
 ```
+
+`POST /orders/add` takes `{sync_id, order_id, added_at, item, payments?}`;
+`POST /orders/remove` takes `{sync_id, order_id, item_id, removed_at, reason}`.
 
 MO 41 is free; MO 42 is on rent. The replaced line no longer bills; the new
 line keeps the package, so the bill is unchanged.
@@ -466,7 +483,7 @@ Customer ─┐                         ┌─ CardDiscountClaim (apps.discount,
 |---|---|
 | `OrderStatus` | `active`, `completed`, `cancelled` — the rental's life only |
 | `PaymentStatus` | `pending` (active), `paid` (completed); blank when cancelled — computed from `status`, never set |
-| `OrderItemStatus` | `active`, `returned`, `replaced`, `cancelled` |
+| `OrderItemStatus` | `active`, `returned`, `replaced`, `removed`, `cancelled` (the order was cancelled) |
 | `PaymentKind` | `advance`, `settlement` (money in) · `refund` (money out) |
 | `OrderAction` | `book`, `add`, `replace`, `remove`, `return`, `payment`, `settle`, `cancel_request`, `cancel_approved`, `cancel_rejected` |
 | `CancelStatus` | `pending`, `approved`, `rejected` |
@@ -539,7 +556,7 @@ Removed from today's model: `payment_mode` (per payment entry now),
 | `overtime_amount` | money, null | extra-time charge; set at return (0 if on time) |
 | `total_amount` | money, null | `base_fare + overtime_amount`; set at return |
 | `replaced_item` | FK self, null | the old line this one replaced |
-| `reason` | text | replace / remove reason |
+| `reason` | text | why it was replaced (on the old line) or removed — required by those calls |
 
 Key: unique (`vehicle`) where `status = active` — a vehicle is on one active
 line at a time (exists today). Index (`order`), (`vehicle`, `status`).
