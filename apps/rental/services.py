@@ -26,6 +26,7 @@ from apps.rental.models import (
     OrderItemStatus,
     OrderStatus,
     Payment,
+    PaymentKind,
     full_number,
 )
 from core.ids import uuid7
@@ -525,6 +526,46 @@ def remove_item(session, values, request_data, reply_for):
             "action": OrderAction.REMOVE, "item": line, "happened_at": values["removed_at"],
             "device": session.device, "user": session.user,
             "detail": {"reason": values["reason"], "vehicle_id": line.vehicle_id},
+        }
+        return order, event, reply_for(order)
+
+    return run_once(event_id=values["sync_id"], company=session.branch.company, request_data=request_data,
+                    apply=apply)
+
+
+# -- Orders: standalone payments ---------------------------------------------------------
+
+# Which kind of money may move on an order in each state: an advance only
+# while it is out, a refund also once it is cancelled; nothing once settled --
+# its bill is invoiced.
+_PAYMENT_ALLOWED = {
+    PaymentKind.ADVANCE: (OrderStatus.ACTIVE,),
+    PaymentKind.REFUND: (OrderStatus.ACTIVE, OrderStatus.CANCELLED),
+}
+
+
+def record_payments(session, values, request_data, reply_for):
+    """Money moving on its own -- an extra advance, or a refund (decision 2).
+    Returns (reply, done_now).
+
+    One kind for the whole call, each entry through record_payment. Money that
+    belongs to a booking, an added vehicle or a settlement is sent with that
+    call instead -- each payment once. Whether a refund exceeds what was paid
+    is a later validation (decision 7).
+    """
+
+    def apply():
+        order = lock_order(values["order_id"], session.branch)
+        kind = values["kind"]
+        if order.status not in _PAYMENT_ALLOWED[kind]:
+            raise OrderRefused("order_closed", f"No {kind} can be taken on a {order.status} order.")
+        entries = [{**payment, "kind": kind} for payment in values["payments"]]
+        _record_payments(session, order, entries, _payment_modes(order.company, entries))
+        order.refresh_from_db()
+        event = {
+            "action": OrderAction.PAYMENT, "happened_at": entries[0]["paid_at"],
+            "device": session.device, "user": session.user,
+            "detail": {"kind": kind, "total": str(sum(p["amount"] for p in entries)), "count": len(entries)},
         }
         return order, event, reply_for(order)
 

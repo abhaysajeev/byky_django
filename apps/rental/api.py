@@ -32,6 +32,7 @@ from apps.rental.serializers import (
     OrderAddRequest,
     OrderCreateRequest,
     OrderDetailRequest,
+    OrderPaymentsRequest,
     OrderRemoveRequest,
     OrderReplaceRequest,
     OrderReturnRequest,
@@ -892,3 +893,81 @@ class OrderRemoveView(_ChangeView):
 
     def change(self, *args):
         return services.remove_item(*args)
+
+
+# -- Standalone payments ----------------------------------------------------------------
+
+_ADVANCE_ENTRIES = [
+    {"sync_id": "01923e1c-0a20-7b22-8c33-d4e5f6a7b8c9", "kind": "advance",
+     "payment_mode": {"id": 1, "name": "Cash"}, "amount": "50.00", "reference_no": "",
+     "reference_date": None, "paid_at": "2026-10-02 16:40:00"},
+    {"sync_id": "01923e1c-0a21-7b22-8c33-d4e5f6a7b8c9", "kind": "advance",
+     "payment_mode": {"id": 2, "name": "Card"}, "amount": "20.00", "reference_no": "448901",
+     "reference_date": "2026-10-02", "paid_at": "2026-10-02 16:40:00"},
+]
+_ADVANCE_SAMPLE = {
+    **_ORDER_SAMPLE, "amount_received": "170.00", "paid_amount": "170.00",
+    "payments": [*_ORDER_SAMPLE["payments"], *_ADVANCE_ENTRIES],
+}
+_REFUND_SAMPLE = {
+    **_ORDER_SAMPLE, "amount_refunded": "40.00", "paid_amount": "60.00",
+    "payments": [
+        *_ORDER_SAMPLE["payments"],
+        {"sync_id": "01923e1c-0a22-7b22-8c33-d4e5f6a7b8c9", "kind": "refund",
+         "payment_mode": {"id": 1, "name": "Cash"}, "amount": "40.00", "reference_no": "R-17",
+         "reference_date": "2026-10-02", "paid_at": "2026-10-02 16:45:00"},
+    ],
+}
+
+_PAYMENTS_ERRORS = ("order_not_synced", "sync_id_conflict", "order_closed", "unknown_payment_mode",
+                    "payment_id_used")
+
+_PAYMENTS_DESCRIPTION = """
+Money moving on its own: an **extra advance** mid-rental, or a **refund** --
+part of an advance handed back, or money returned after a cancel is approved.
+
+**One `kind` for the whole call** -- `advance` or `refund` -- and a list of
+`payments` (cash and card together are two entries, recorded together or not
+at all). Each entry has its own `sync_id` (UUIDv7); `amount` is more than 0;
+`reference_no` / `reference_date` for a card slip or cheque.
+
+| Order is | `advance` | `refund` |
+|---|---|---|
+| active | yes | yes |
+| cancelled | no | yes |
+| completed | no | no -- the bill is invoiced |
+
+Anything else is `order_closed`.
+
+**Send each payment once.** Money that belongs to a booking, an added vehicle
+or a settlement goes in that call's own `payments` -- never again here; the
+same payment `sync_id` twice is `payment_id_used`.
+""" + _CHANGE_RULES + """
+""" + _error_table(*_PAYMENTS_ERRORS)
+
+
+class OrderPaymentsView(_ChangeView):
+    """POST /api/v1/{app}/orders/payments -- operator app only."""
+
+    form_class, done_message = OrderPaymentsRequest, "Payment recorded."
+
+    @extend_schema(
+        tags=["Operator Orders"],
+        summary="Take an extra advance, or record a refund",
+        description=_PAYMENTS_DESCRIPTION,
+        request=envelope_request("OrderPaymentsEnvelope", OrderPaymentsRequest),
+        responses=envelope_responses(
+            (200, "ok", "Payment recorded.", _ADVANCE_SAMPLE, "ok (advance)"),
+            (200, "ok", "Payment recorded.", _REFUND_SAMPLE, "ok (refund)"),
+            (200, "duplicate", "Already recorded.", _ADVANCE_SAMPLE),
+            (400, "invalid_request", "kind must be advance or refund.",
+             {"errors": {"kind": "must be advance or refund"}}),
+            *_error_rows(*_PAYMENTS_ERRORS),
+            *_COMMON,
+        ),
+    )
+    def post(self, request, app):
+        return super().post(request, app)
+
+    def change(self, *args):
+        return services.record_payments(*args)
