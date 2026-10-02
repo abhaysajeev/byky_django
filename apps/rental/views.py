@@ -1,5 +1,6 @@
-"""Rental Management screens: the Orders list and detail (read-only), and the
-Customer and Payment Mode lists + drawers."""
+"""Rental Management screens: the Orders and Invoices lists and details
+(read-only, with the invoice print preview), and the Customer and Payment
+Mode lists + drawers."""
 
 import datetime
 from decimal import Decimal
@@ -7,11 +8,14 @@ from decimal import Decimal
 from django.core.paginator import Paginator
 from django.db.models import Count, Q, Sum
 from django.http import Http404
+from django.shortcuts import render
 from django.urls import reverse
+from django.views import View
 
 from apps.company import writes as company_writes
 from apps.company.models import PaymentMode
 from apps.company.scoping import branches_for, companies_for, payment_modes_for
+from apps.devices import services as devices_services
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
@@ -394,5 +398,160 @@ class OrderDetailView(RentalScreenView):
                 .order_by("happened_at", "received_at")
             ],
             "list_url": reverse("rental-order-list"),
+        })
+        return context
+
+
+# -- Invoices (read-only: issued at settle, never edited) ---------------------------
+
+INVOICES_PER_PAGE = 50
+
+
+def _hhmm(minutes):
+    return f"{minutes // 60:02d}:{minutes % 60:02d}" if minutes is not None else "—"
+
+
+def _clock(moment):
+    return moment.strftime("%I:%M %p") if moment else "—"
+
+
+def _rate(amount, minutes):
+    return f"{amount:.2f}/{minutes} MINS"
+
+
+def _receipt(invoice, zone):
+    """The printed tax invoice, laid out as the station's receipt -- one dict
+    for the print preview and the detail page. Everything comes from the
+    invoice's own copy, frozen at issue; only what it does not hold is read
+    from the order (who opened it, the customer's ID, the fare's extra rate)."""
+    order = invoice.order
+
+    def local(moment):
+        return moment.astimezone(zone) if moment else None
+
+    items = list(invoice.items.select_related("order_item__fare").order_by("start_time"))
+    lines = []
+    for number, item in enumerate(items, start=1):
+        fare = item.order_item.fare
+        lines.append({
+            "sno": f"{number:02d}", "vehicle": item.vehicle_name, "identifier": item.vehicle_identifier,
+            "vehicle_type": item.vehicle_type, "package_minutes": item.package_minutes,
+            "run_minutes": item.run_minutes,
+            "base_rate": _rate(item.base_fare, item.package_minutes),
+            "extra_rate": _rate(fare.concurrent_fare, fare.concurrent_interval_minutes) if fare else "—",
+            "start_time": local(item.start_time), "end_time": local(item.end_time),
+            "returned": _clock(local(item.end_time)), "duration": _hhmm(item.run_minutes),
+            "base_fare": item.base_fare, "overtime_amount": item.overtime_amount, "amount": item.total_amount,
+        })
+    returned = max((item.end_time for item in items if item.end_time), default=None)
+    run = sum(item.run_minutes or 0 for item in items) if items else None
+    customer = order.customer
+    number = devices_services.running_number(order.device, order.branch, invoice.invoice_no)
+    issued = local(invoice.issued_at)
+    return {
+        "invoice_no": invoice.invoice_no, "issued_at": issued, "date": issued.strftime("%d-%m-%Y"),
+        "trans_no": number if number is not None else "—",
+        "station": invoice.branch_name, "emirate": invoice.branch.location.state.name,
+        "company": invoice.company_name, "trn": invoice.company_trn or "—",
+        "open_by": order.created_by.display_name if order.created_by_id else "—",
+        "closed_by": invoice.issued_by.display_name,
+        "starting_time": _clock(local(order.start_time)), "returning_time": _clock(local(returned)),
+        "closing_time": _clock(issued),
+        "lines": lines,
+        "subtotal": invoice.subtotal, "discount_percentage": invoice.discount_percentage,
+        "discount_amount": invoice.discount_amount, "taxable_amount": invoice.subtotal - invoice.discount_amount,
+        "tax_percentage": invoice.tax_percentage, "tax_amount": invoice.tax_amount,
+        "rounding": invoice.rounding_adjustment, "net_amount": invoice.net_amount,
+        "customer": invoice.customer_name or "—", "mobile": invoice.customer_mobile or "—",
+        "id_type": customer.get_id_type_display() if customer.id_type else "—", "id_no": customer.id_no or "—",
+        "balance": invoice.net_amount - order.paid_amount, "time": _hhmm(run),
+        "payments": invoice.payments,
+        "order_no": order.order_no, "tablet": invoice.device.device_registration_id,
+        "receipt_url": reverse("rental-invoice-receipt", args=[invoice.pk]),
+    }
+
+
+def _invoices_for_receipt(user):
+    return scoping.invoices_for(user).select_related(
+        "order__customer", "order__created_by", "order__device", "order__branch", "branch__location__state",
+        "device", "issued_by",
+    )
+
+
+def _invoices(request, zone):
+    """The invoices the list shows, narrowed by the query string."""
+    params = request.GET
+    invoices = scoping.invoices_for(request.user).select_related("device", "issued_by")
+    text = params.get("q", "").strip()
+    if text:
+        invoices = invoices.filter(Q(invoice_no__icontains=text) | Q(customer_name__icontains=text)
+                                   | Q(customer_mobile__icontains=text))
+    if params.get("branch", "").isdigit():
+        invoices = invoices.filter(branch_id=int(params["branch"]))
+    start, end = _date_param(params.get("from")), _date_param(params.get("to"))
+    if start:
+        invoices = invoices.filter(issued_at__gte=_day_bounds(start, zone)[0])
+    if end:
+        invoices = invoices.filter(issued_at__lt=_day_bounds(end, zone)[1])
+    return invoices.order_by("-issued_at")
+
+
+class InvoiceListView(RentalScreenView):
+    template_name = "rental/invoice_list.html"
+    page_code = "rental.invoice"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user, params = self.request.user, self.request.GET
+        zone = zone_for(getattr(user, "company", None))
+        page = Paginator(_invoices(self.request, zone), INVOICES_PER_PAGE).get_page(params.get("page"))
+        query = params.copy()
+        query.pop("page", None)
+        context.update({
+            "rows": [
+                {
+                    "invoice_no": invoice.invoice_no, "issued_at": invoice.issued_at.astimezone(zone),
+                    "customer": invoice.customer_name, "mobile": invoice.customer_mobile,
+                    "station": invoice.branch_name, "tablet": invoice.device.device_registration_id,
+                    "issued_by": invoice.issued_by.display_name,
+                    "net_amount": invoice.net_amount, "tax_amount": invoice.tax_amount,
+                    "receipt_url": reverse("rental-invoice-receipt", args=[invoice.pk]),
+                    "detail_url": reverse("rental-invoice-detail", args=[invoice.pk]),
+                }
+                for invoice in page.object_list
+            ],
+            "page": page, "query": query.urlencode(), "params": params,
+            "filtered": any(params.get(k) for k in ("q", "branch", "from", "to")),
+            "branches": list(branches_for(user).filter(is_active=True).order_by("name").values("id", "name")),
+        })
+        return context
+
+
+class InvoiceReceiptView(PagePermissionMixin, View):
+    """The receipt alone -- an HTML fragment the print preview loads."""
+
+    page_code = "rental.invoice"
+
+    def get(self, request, pk):
+        invoice = _invoices_for_receipt(request.user).filter(pk=pk).first()
+        if invoice is None:
+            raise Http404("No such invoice.")
+        bill = _receipt(invoice, zone_for(getattr(request.user, "company", None)))
+        return render(request, "rental/partials/invoice_receipt.html", {"bill": bill})
+
+
+class InvoiceDetailView(RentalScreenView):
+    template_name = "rental/invoice_detail.html"
+    page_code = "rental.invoice"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        invoice = _invoices_for_receipt(self.request.user).filter(pk=self.kwargs["pk"]).first()
+        if invoice is None:
+            raise Http404("No such invoice.")
+        context.update({
+            "bill": _receipt(invoice, zone_for(getattr(self.request.user, "company", None))),
+            "list_url": reverse("rental-invoice-list"),
+            "order_url": reverse("rental-order-detail", args=[invoice.order_id]),
         })
         return context

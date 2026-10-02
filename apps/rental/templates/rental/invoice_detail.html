@@ -1,0 +1,145 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Invoice {{ bill.invoice_no }} - Rental{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+<link rel="stylesheet" href="{% static 'css/byky-invoice-receipt.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+<script src="{% static 'js/byky-invoice-print.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr">
+
+  <div class="scr-head no-print">
+    <div>
+      <div class="scr-crumb">
+        <span>Rental</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <a href="{{ list_url }}">Invoices</a>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>{{ bill.invoice_no }}</b>
+      </div>
+      <h1 class="scr-title">{{ bill.invoice_no }}</h1>
+      <p class="scr-sub">Tax invoice · issued {{ bill.issued_at|date:"d M Y, H:i" }}</p>
+    </div>
+    <div class="scr-head-actions">
+      <a href="{{ list_url }}" class="scr-btn-secondary">Back</a>
+      <button type="button" class="scr-btn" data-invoice-receipt="{{ bill.receipt_url }}" data-invoice-no="{{ bill.invoice_no }}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6M6 18H4a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-2M6 14h12v7H6z"></path></svg>
+        Print
+      </button>
+    </div>
+  </div>
+
+  <div class="scr-mon-grid no-print">
+    <div class="scr-card">
+      <div class="scr-form-head"><div class="scr-form-title-row"><h2 class="scr-form-title">Invoice</h2></div></div>
+      <div class="scr-form-body scr-mon-body">
+        <div class="scr-detail-rows">
+          <div class="scr-detail-row"><span class="scr-detail-label">Company</span><span class="scr-detail-value">{{ bill.company }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">TRN</span><span class="scr-detail-value">{{ bill.trn }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Station</span><span class="scr-detail-value">{{ bill.station }} · {{ bill.emirate }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Order</span><span class="scr-detail-value"><a href="{{ order_url }}">{{ bill.order_no }}</a> · Trans No {{ bill.trans_no }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Tablet</span><span class="scr-detail-value">{{ bill.tablet }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Opened</span><span class="scr-detail-value">{{ bill.starting_time }} · {{ bill.open_by }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Closed</span><span class="scr-detail-value">{{ bill.closing_time }} · {{ bill.closed_by }}</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="scr-card">
+      <div class="scr-form-head"><div class="scr-form-title-row"><h2 class="scr-form-title">Bill To</h2></div></div>
+      <div class="scr-form-body scr-mon-body">
+        <div class="scr-detail-rows">
+          <div class="scr-detail-row"><span class="scr-detail-label">Customer</span><span class="scr-detail-value">{{ bill.customer }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Mobile</span><span class="scr-detail-value">{{ bill.mobile }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">ID</span><span class="scr-detail-value">{{ bill.id_type }}{% if bill.id_no != "—" %} · {{ bill.id_no }}{% endif %}</span></div>
+        </div>
+      </div>
+      <div class="scr-form-head" style="border-top:1px solid #f0eff7"><div class="scr-form-title-row"><h2 class="scr-form-title">Totals</h2></div></div>
+      <div class="scr-form-body scr-mon-body">
+        <div class="scr-detail-rows">
+          <div class="scr-detail-row"><span class="scr-detail-label">Subtotal</span><span class="scr-detail-value">AED {{ bill.subtotal }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Card Discount</span><span class="scr-detail-value">{% if bill.discount_percentage %}{{ bill.discount_percentage }}% · {% endif %}−AED {{ bill.discount_amount }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Taxable Amount</span><span class="scr-detail-value">AED {{ bill.taxable_amount }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">VAT</span><span class="scr-detail-value">{{ bill.tax_percentage }}% · AED {{ bill.tax_amount }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Rounding</span><span class="scr-detail-value">AED {{ bill.rounding }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label"><b>Net</b></span><span class="scr-detail-value"><b>AED {{ bill.net_amount }}</b></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="scr-card no-print" style="margin-top:20px">
+    <div class="scr-form-head"><div class="scr-form-title-row"><h2 class="scr-form-title">Vehicles</h2></div></div>
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Vehicle</th>
+            <th>Package</th>
+            <th>Start → End</th>
+            <th>Base Fare</th>
+            <th>Overtime</th>
+            <th>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for l in bill.lines %}
+          <tr>
+            <td><div class="scr-co-name">{{ l.vehicle }}</div><div class="scr-contact-sub">{{ l.identifier }} · {{ l.vehicle_type }}</div></td>
+            <td class="scr-state">{{ l.package_minutes }} min<div class="scr-contact-sub">ran {{ l.duration }}</div></td>
+            <td class="scr-state">{{ l.start_time|date:"H:i" }} → {% if l.end_time %}{{ l.end_time|date:"H:i" }}{% else %}—{% endif %}<div class="scr-contact-sub">{{ l.start_time|date:"d M Y" }}</div></td>
+            <td class="scr-state">AED {{ l.base_fare }}<div class="scr-contact-sub">{{ l.base_rate }}</div></td>
+            <td class="scr-state">AED {{ l.overtime_amount }}<div class="scr-contact-sub">{{ l.extra_rate }}</div></td>
+            <td class="scr-state"><b>AED {{ l.amount }}</b></td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="6" style="padding:0"><div class="scr-empty"><div><div class="scr-empty-title">No vehicles billed</div></div></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="scr-card no-print" style="margin-top:20px">
+    <div class="scr-form-head"><div class="scr-form-title-row"><h2 class="scr-form-title">Payments</h2></div></div>
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Mode</th>
+            <th>Kind</th>
+            <th>Reference</th>
+            <th>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in bill.payments %}
+          <tr>
+            <td class="scr-state">{{ p.mode }}</td>
+            <td class="scr-state">{{ p.kind|capfirst }}</td>
+            <td class="scr-state">{{ p.reference_no|default:"—" }}</td>
+            <td class="scr-state"><b>AED {% if p.kind == "refund" %}−{% endif %}{{ p.amount }}</b></td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="4" style="padding:0"><div class="scr-empty"><div><div class="scr-empty-title">No payments</div></div></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+{% comment %}Outside .scr on purpose: the screen-wide table rules (.scr th / td) must not reach the receipt.{% endcomment %}
+{% include "rental/partials/invoice_print_modal.html" %}
+{% endblock %}

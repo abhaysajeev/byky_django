@@ -1,0 +1,148 @@
+/* The printed tax invoice -- the station receipt's own layout, ported from
+   the BYKY wireframe's Print Invoice screen (byky-main
+   src/assets/css/byky-invoice-print.css). A receipt reads as a receipt:
+   plain black on white, a condensed sans-serif, colon-aligned label : value
+   rows.
+
+   Self-contained on purpose: every rule is under .bill and resets what the
+   app's screen-wide styles set (.scr th / td / tbody tr -- uppercase,
+   letter-spacing, padding, nowrap, row borders and hover), so the receipt
+   looks the same wherever it is placed.
+
+   100mm wide, not 80mm: the rental table's 7 columns include two compound
+   values ("50.00/60 MINS") that overflow a true 80mm roll. */
+
+.bill {
+  width: 100mm;
+  margin: 0 auto;
+  background: #fff;
+  padding: 4mm 5mm 6mm;
+  font-family: Tahoma, Verdana, Arial, sans-serif;
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: #000;
+  text-align: left;
+  box-shadow: 0 1px 3px rgba(26, 22, 64, 0.12);
+}
+.bill * { box-sizing: border-box; }
+
+.bill .bill-head { display: flex; align-items: center; justify-content: space-between; gap: 3mm; }
+.bill .bill-head-text { flex: 1; min-width: 0; }
+.bill .bill-head-text .station { font-weight: 700; font-size: 13px; }
+.bill .bill-head-text .emirate { font-weight: 700; font-size: 11px; margin-top: 1px; }
+.bill .bill-logo { height: 13mm; width: auto; flex: 0 0 auto; }
+
+.bill .bill-title-block { text-align: center; margin-top: 1mm; }
+.bill .bill-title { font-weight: 700; font-size: 12.5px; letter-spacing: 0.3px; }
+.bill .bill-trn { font-size: 10px; margin-top: 1px; }
+
+.bill .bill-rule { border: none; border-top: 1px dashed #555; margin: 2mm 0; opacity: 1; }
+
+/* Two label : value pairs a row. The column split and label widths are set
+   so the longest label ("Returning Time") and a full mobile number
+   (971501234567) each fit on one line. */
+.bill .bill-row2 { display: flex; gap: 2mm; margin-bottom: 0.5mm; }
+.bill .bill-row2 .col-a { flex: 0 0 50%; display: flex; min-width: 0; }
+.bill .bill-row2 .col-b { flex: 1 1 auto; display: flex; min-width: 0; }
+.bill .bill-kv-label { flex: 0 0 18mm; white-space: nowrap; }
+.bill .bill-row2 .col-b .bill-kv-label { flex-basis: 21mm; }
+.bill .bill-kv-colon { flex: 0 0 2.5mm; }
+.bill .bill-kv-value { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+
+.bill .bill-section-title { font-weight: 700; margin: 2mm 0 1mm; }
+
+/* The rental lines. Fixed layout and a width per column keep the receipt to
+   the paper; every cell property is set here so nothing from the page's own
+   table styles applies. */
+.bill .bill-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 9px; margin: 0; }
+.bill .bill-table thead tr,
+.bill .bill-table tbody tr { background: none; border: none; transition: none; }
+.bill .bill-table tbody tr:hover { background: none; }
+.bill .bill-table th,
+.bill .bill-table td {
+  padding: 0.8mm 0.6mm;
+  text-align: left;
+  vertical-align: top;
+  font-size: 9px;
+  line-height: 1.4;
+  color: #000;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: normal;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+.bill .bill-table th { font-weight: 700; border-bottom: 1px solid #555; white-space: nowrap; }
+.bill .bill-table td { font-weight: 400; }
+.bill .bill-table th:first-child, .bill .bill-table td:first-child { padding-inline-start: 0; }
+.bill .bill-table th:last-child, .bill .bill-table td:last-child { padding-inline-end: 0; text-align: right; }
+.bill .bill-table .c-sno { width: 7%; }
+.bill .bill-table .c-bike { width: 17%; }
+.bill .bill-table .c-base { width: 20%; }
+.bill .bill-table .c-extra { width: 20%; }
+.bill .bill-table .c-rtn { width: 14%; }
+.bill .bill-table .c-dur { width: 9%; }
+.bill .bill-table .c-amt { width: 13%; }
+
+.bill .bill-net { display: flex; justify-content: space-between; font-weight: 700; font-size: 12.5px; }
+.bill .bill-foot .bill-row2 { margin-bottom: 1mm; }
+
+/* The print preview modal around it. On screen the receipt is shown 18%
+   larger (zoom scales the whole layout, so every alignment holds) on a soft
+   grey "desk", with tighter paper margins and a hint of a rounded corner.
+   None of this reaches paper: print resets it below. */
+.bill-modal { width: min(96vw, 134mm); }
+.bill-modal .scr-modal-head { padding: 14px 18px 12px; }
+.bill-modal .scr-modal-body { background: #ecebf3; padding: 10px; }
+.bill-modal .scr-modal-foot { padding: 10px 18px; }
+.bill-modal .bill { zoom: 1.18; padding: 3mm 4mm 4mm; border-radius: 3px; }
+.bill-modal .bill-state { padding: 40px 12px; text-align: center; font-size: 13px; color: #6b6790; }
+
+/* The preview's footer buttons -- Close and Print -- small and plain: the
+standard secondary look (white, hairline border, ink on hover), no colour. */
+.bill-btn {
+  display: inline-flex; align-items: center; gap: 6px; border: 1px solid #e6e4f0; background: #fff;
+  cursor: pointer; font-size: 12px; font-weight: 600; color: #4b4770; padding: 6px 12px; border-radius: 8px;
+  transition: border-color 0.16s, color 0.16s;
+}
+.bill-btn:hover { border-color: #d3d0e6; color: #1a1640; }
+/* No focus ring: focus lands on Print when the print dialog closes, and the
+   ring read as a stray grey border. */
+.bill-btn:focus, .bill-btn:focus-visible { outline: none; box-shadow: none; }
+.bill-btn:disabled { opacity: 0.5; cursor: default; }
+/* Print: the theme red (#d81f26), flat -- no gradient -- with white text.
+   No border at all: a border drawn over the same fill roughened the rounded
+   corners. One pixel more padding keeps it as tall as Close (which has a
+   1px border). */
+.bill-btn-print {
+  background: #d81f26; color: #fff; border: none; padding: 7px 13px;
+  -webkit-font-smoothing: antialiased;
+}
+.bill-btn-print:hover { background: #c2141a; color: #fff; }
+.bill-btn-print:disabled { background: #d81f26; color: #fff; }
+
+/* While a receipt loads: the veil and a small spinner, no empty modal. */
+.bill-loader {
+  display: inline-flex; align-items: center; gap: 10px; padding: 12px 18px; border-radius: 12px;
+  background: #fff; color: #1a1640; font-size: 13px; font-weight: 500;
+  box-shadow: 0 12px 30px -12px rgba(26, 22, 64, 0.35);
+}
+.bill-loader[hidden] { display: none; }
+.bill-loader-spin {
+  width: 18px; height: 18px; border-radius: 50%; border: 2px solid #ebe9f4; border-top-color: #c2141a;
+  animation: billSpin 0.7s linear infinite;
+}
+@keyframes billSpin { to { transform: rotate(360deg); } }
+
+/* Print: only the receipt, at the receipt's own width, the height flowing
+   with its content the way a thermal roll prints. */
+@page { size: 100mm auto; margin: 0; }
+@media print {
+  body * { visibility: hidden; }
+  .bill, .bill * { visibility: visible; }
+  .bill, .bill-modal .bill {
+    position: absolute; top: 0; left: 0; margin: 0; width: 100mm;
+    zoom: 1; padding: 4mm 5mm 6mm; border-radius: 0; box-shadow: none;
+  }
+  .no-print { display: none !important; }
+}

@@ -1539,6 +1539,18 @@ def _bill_head(counter):
     return f"{lead}{counter.prefix}{counter.device.device_registration_id}"
 
 
+def running_number(device, branch, receipt_no, kind=BillKind.ORDER):
+    """The running number inside `receipt_no`, a receipt this device printed
+    at `branch` (DUBPP60182000231 -> 231), or None when it is not in this
+    device's shape. Read-only: no counter is created."""
+    counter = BillContinuity.objects.filter(device=device, branch=branch, kind=kind).select_related("device").first()
+    if counter is None:
+        return None
+    head = _bill_head(counter)
+    tail = receipt_no[len(head):] if receipt_no.startswith(head) else ""
+    return int(tail) if tail.isdigit() and len(tail) >= BILL_NUMBER_WIDTH else None
+
+
 def raise_counter_from(device, branch, kind, receipt_no):
     """Move this device's counter up to the number inside `receipt_no`, a
     receipt it printed and has now uploaded. Returns the counter, re-read.
