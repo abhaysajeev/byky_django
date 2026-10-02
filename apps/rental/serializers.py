@@ -98,11 +98,9 @@ class OrderItemRequest(serializers.Serializer):
     package_minutes = whole_number_field(min_value=1)
     start_time = datetime_field()
     expected_end_time = datetime_field()
-    rate = _money_field()
-    amount = _money_field()
-    discount = _money_field(required=False)
-    tax_amount = _money_field(required=False)
-    total_amount = _money_field()
+    # The package price agreed now. Everything else on the bill comes later:
+    # the line's final amount at return, the order's bill at settle.
+    base_fare = _money_field()
 
     def validate(self, values):
         if values["expected_end_time"] < values["start_time"]:
@@ -127,8 +125,8 @@ class OrderPaymentRequest(serializers.Serializer):
 
 class OrderCreateRequest(serializers.Serializer):
     """One rental booking, whole -- the order, its vehicle lines and any
-    advance payments, in one call. Device money figures are trusted as sent,
-    not recomputed (design 5, decision 4).
+    advance payments, in one call. No bill yet: each line carries its agreed
+    base fare, and the bill is made at settle (design 1 "Money").
 
     `sync_id` is the order's id and this call's, a UUIDv7 made on the tablet
     and resent unchanged on retry. The branch, device and user are never
@@ -147,19 +145,6 @@ class OrderCreateRequest(serializers.Serializer):
     is_direct_bill = serializers.BooleanField(required=False, default=False)
     is_hotel_order = serializers.BooleanField(required=False, default=False)
     hotel_commission = _money_field(required=False)
-
-    total_amount = _money_field()
-    total_discount = _money_field(required=False)
-    total_tax = _money_field(required=False)
-    tax_percentage = serializers.DecimalField(
-        max_digits=5, decimal_places=2, min_value=Decimal(0), required=False,
-        error_messages={**REQUIRED, "invalid": "must be a number", "min_value": "must be 0 or more"},
-    )
-    rounded_diff = serializers.DecimalField(
-        max_digits=6, decimal_places=2, required=False,
-        error_messages={**REQUIRED, "invalid": "must be a number"},
-    )
-    net_amount = _money_field()
 
     items = OrderItemRequest(many=True)
     payments = OrderPaymentRequest(many=True, required=False)
@@ -195,3 +180,81 @@ class OrderDetailRequest(serializers.Serializer):
         if not values.get("sync_id") and not values.get("order_no"):
             raise serializers.ValidationError({"sync_id": "or order_no is required"})
         return values
+
+
+def _existing_id():
+    """An order or item the tablet already holds -- any UUID (orders from before
+    the tablet-made ids are not v7)."""
+    return serializers.UUIDField(error_messages={**REQUIRED, "invalid": "must be a UUID"})
+
+
+class OrderReturnRequest(serializers.Serializer):
+    """One vehicle back. `sync_id` is this call's own id. The tablet works out
+    the run time and the amounts; total_amount must be the line's base fare +
+    overtime_amount."""
+
+    sync_id = uuid7_field()
+    order_id = _existing_id()
+    item_id = _existing_id()
+    returned_at = datetime_field()
+    run_minutes = whole_number_field()
+    overtime_amount = _money_field()
+    total_amount = _money_field()
+
+
+class SettlePaymentRequest(OrderPaymentRequest):
+    """A payment taken at settle: the balance (`settlement`), or money handed
+    back when the customer paid more than the bill (`refund`)."""
+
+    kind = serializers.ChoiceField(
+        choices=[PaymentKind.SETTLEMENT, PaymentKind.REFUND],
+        error_messages={**REQUIRED, "invalid_choice": "must be settlement or refund"},
+    )
+
+
+class SettleDiscountRequest(serializers.Serializer):
+    """The card discount applied: an approved request (`claim_id`), or an
+    automatic discount (`card_discount_id`, with the card's number) -- one of
+    the two."""
+
+    claim_id = serializers.UUIDField(required=False, allow_null=True, error_messages={"invalid": "must be a UUID"})
+    card_discount_id = whole_number_field(required=False, allow_null=True)
+    card_number = text_field(max_length=50, required=False, allow_blank=True)
+    discount_percentage = serializers.DecimalField(
+        max_digits=5, decimal_places=2, min_value=Decimal("0.01"), max_value=Decimal("100"),
+        error_messages={**REQUIRED, "invalid": "must be a number", "min_value": "must be more than 0",
+                        "max_value": "must be 100 or less"},
+    )
+    discount_amount = _money_field()
+
+    def validate(self, values):
+        if bool(values.get("claim_id")) == bool(values.get("card_discount_id")):
+            raise serializers.ValidationError({"claim_id": "or card_discount_id is required, not both"})
+        return values
+
+
+class OrderSettleRequest(serializers.Serializer):
+    """Close the bill. The tablet works out every amount; the server checks
+    only that the subtotal is the returned vehicles' total, the net adds up,
+    and the bill is paid in full after `payments`."""
+
+    sync_id = uuid7_field()
+    order_id = _existing_id()
+    settled_at = datetime_field()
+    subtotal = _money_field()
+    discount = SettleDiscountRequest(required=False, allow_null=True)
+    tax_percentage = serializers.DecimalField(
+        max_digits=5, decimal_places=2, min_value=Decimal(0),
+        error_messages={**REQUIRED, "invalid": "must be a number", "min_value": "must be 0 or more"},
+    )
+    tax_amount = _money_field()
+    rounding_adjustment = serializers.DecimalField(
+        max_digits=6, decimal_places=2, error_messages={**REQUIRED, "invalid": "must be a number"},
+    )
+    net_amount = _money_field()
+    payments = SettlePaymentRequest(many=True, required=False)
+
+    def validate_payments(self, payments):
+        if _repeated(payment["sync_id"] for payment in payments):
+            raise serializers.ValidationError("Each payment needs its own sync_id.")
+        return payments

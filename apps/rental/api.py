@@ -25,12 +25,14 @@ from apps.devices import services as devices_services
 from apps.devices.models import BillKind
 from apps.portal.authentication import AppJWTAuthentication
 from apps.rental import services
-from apps.rental.models import OrderItemStatus
+from apps.rental.models import Invoice, OrderItemStatus
 from apps.rental.serializers import (
     CustomerCreateRequest,
     CustomerLookupRequest,
     OrderCreateRequest,
     OrderDetailRequest,
+    OrderReturnRequest,
+    OrderSettleRequest,
 )
 from core.api import envelope, request_parts, session_station
 from core.enums import Channel
@@ -233,6 +235,7 @@ def order_json(order, *, zone, next_order_number):
     `next_order_number` is the asking tablet's receipt counter after the call."""
     items = list(order.items.select_related("vehicle").order_by("start_time", "created_on"))
     payments = list(order.payments.select_related("mode").order_by("paid_at", "created_on"))
+    invoice = Invoice.objects.filter(order_id=order.pk).first()
     return {
         "sync_id": str(order.pk), "order_no": order.order_no,
         "status": order.status, "payment_status": order.payment_status,
@@ -241,10 +244,15 @@ def order_json(order, *, zone, next_order_number):
         "is_direct_bill": order.is_direct_bill, "is_hotel_order": order.is_hotel_order,
         "hotel_commission": _money(order.hotel_commission),
         "customer": {"id": order.customer_id, "name": order.customer_name, "mobile": order.customer_mobile},
-        "total_amount": _money(order.total_amount), "total_discount": _money(order.total_discount),
-        "card_discount_amount": _money(order.card_discount_amount),
-        "tax_percentage": _money(order.tax_percentage), "total_tax": _money(order.total_tax),
-        "rounded_diff": _money(order.rounded_diff), "net_amount": _money(order.net_amount),
+        # The bill: null until settle.
+        "subtotal": _money(order.subtotal),
+        "discount": {
+            "claim_id": str(order.discount_claim_id), "discount_percentage": _money(order.discount_percentage),
+            "discount_amount": _money(order.discount_amount),
+        } if order.discount_claim_id else None,
+        "tax_percentage": _money(order.tax_percentage), "tax_amount": _money(order.tax_amount),
+        "rounding_adjustment": _money(order.rounding_adjustment), "net_amount": _money(order.net_amount),
+        # Money collected, from booking on; balance_due null until settle.
         "amount_received": _money(order.amount_received), "amount_refunded": _money(order.amount_refunded),
         "paid_amount": _money(order.paid_amount), "balance_due": _money(order.balance_due),
         "items_out": sum(1 for item in items if item.status == OrderItemStatus.ACTIVE),
@@ -254,12 +262,13 @@ def order_json(order, *, zone, next_order_number):
                 "vehicle": {"id": item.vehicle_id, "name": item.vehicle.vehicle_name,
                             "identifier": item.vehicle.identifier},
                 "fare_id": item.fare_id, "offer_id": item.offer_id, "package_minutes": item.package_minutes,
+                "run_minutes": item.run_minutes,                       # null until returned
                 "start_time": _local(item.start_time, zone),
                 "expected_end_time": _local(item.expected_end_time, zone),
                 "end_time": _local(item.end_time, zone),
-                "rate": _money(item.rate), "amount": _money(item.amount),
-                "overtime_amount": _money(item.overtime_amount), "discount": _money(item.discount),
-                "tax_amount": _money(item.tax_amount), "total_amount": _money(item.total_amount),
+                "base_fare": _money(item.base_fare),
+                "overtime_amount": _money(item.overtime_amount),       # null until returned
+                "total_amount": _money(item.total_amount),             # null until returned
                 "replaced_item_id": str(item.replaced_item_id) if item.replaced_item_id else None,
                 "reason": item.reason,
             }
@@ -275,6 +284,10 @@ def order_json(order, *, zone, next_order_number):
             }
             for payment in payments
         ],
+        "invoice": {
+            "invoice_no": invoice.invoice_no, "issued_at": _local(invoice.issued_at, zone),
+            "net_amount": _money(invoice.net_amount),
+        } if invoice else None,
         "next_order_number": next_order_number,
     }
 
@@ -308,28 +321,28 @@ def _counter_number(session):
 
 _ORDER_SAMPLE = {
     "sync_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9", "order_no": "DUBPP60182000231",
-    "status": "active", "payment_status": "partly_paid",
+    "status": "active", "payment_status": "pending",
     "booked_at": "2026-10-02 16:00:05", "start_time": "2026-10-02 16:00:00",
     "completed_at": None, "cancelled_at": None,
     "is_direct_bill": False, "is_hotel_order": False, "hotel_commission": "0.00",
     "customer": {"id": 5512, "name": "Ahmed Al Mansoori", "mobile": "971501234567"},
-    "total_amount": "100.00", "total_discount": "0.00", "card_discount_amount": "0.00",
-    "tax_percentage": "5.00", "total_tax": "5.00", "rounded_diff": "0.00", "net_amount": "105.00",
-    "amount_received": "100.00", "amount_refunded": "0.00", "paid_amount": "100.00", "balance_due": "5.00",
+    "subtotal": None, "discount": None, "tax_percentage": None, "tax_amount": None,
+    "rounding_adjustment": None, "net_amount": None,
+    "amount_received": "100.00", "amount_refunded": "0.00", "paid_amount": "100.00", "balance_due": None,
     "items_out": 2,
     "items": [
         {"sync_id": "01923e1c-0a12-7b22-8c33-d4e5f6a7b8c9", "status": "active",
          "vehicle": {"id": 1041, "name": "MO 41", "identifier": "VB1241"},
-         "fare_id": 88, "offer_id": None, "package_minutes": 60,
+         "fare_id": 88, "offer_id": None, "package_minutes": 60, "run_minutes": None,
          "start_time": "2026-10-02 16:00:00", "expected_end_time": "2026-10-02 17:00:00", "end_time": None,
-         "rate": "50.00", "amount": "50.00", "overtime_amount": "0.00", "discount": "0.00",
-         "tax_amount": "2.50", "total_amount": "50.00", "replaced_item_id": None, "reason": ""},
+         "base_fare": "50.00", "overtime_amount": None, "total_amount": None,
+         "replaced_item_id": None, "reason": ""},
         {"sync_id": "01923e1c-0a13-7b22-8c33-d4e5f6a7b8c9", "status": "active",
          "vehicle": {"id": 3102, "name": "DC 02", "identifier": "VB0874"},
-         "fare_id": 88, "offer_id": None, "package_minutes": 60,
+         "fare_id": 88, "offer_id": None, "package_minutes": 60, "run_minutes": None,
          "start_time": "2026-10-02 16:00:00", "expected_end_time": "2026-10-02 17:00:00", "end_time": None,
-         "rate": "50.00", "amount": "50.00", "overtime_amount": "0.00", "discount": "0.00",
-         "tax_amount": "2.50", "total_amount": "50.00", "replaced_item_id": None, "reason": ""},
+         "base_fare": "50.00", "overtime_amount": None, "total_amount": None,
+         "replaced_item_id": None, "reason": ""},
     ],
     "payments": [
         {"sync_id": "01923e1c-0a14-7b22-8c33-d4e5f6a7b8c9", "kind": "advance",
@@ -339,7 +352,34 @@ _ORDER_SAMPLE = {
          "payment_mode": {"id": 2, "name": "Card"}, "amount": "40.00", "reference_no": "448812",
          "reference_date": "2026-10-02", "paid_at": "2026-10-02 16:00:05"},
     ],
+    "invoice": None,
     "next_order_number": 232,
+}
+
+# The same order once both bikes are back -- DC 02 on time, MO 41 twelve
+# minutes late -- and the bill settled: 10% card discount, VAT, the balance by
+# card (order_lifecycle_design.md 3.3, 3.4).
+_RETURNED_ITEMS = [
+    {**_ORDER_SAMPLE["items"][0], "status": "returned", "run_minutes": 72, "end_time": "2026-10-02 17:12:00",
+     "overtime_amount": "10.00", "total_amount": "60.00"},
+    {**_ORDER_SAMPLE["items"][1], "status": "returned", "run_minutes": 60, "end_time": "2026-10-02 17:00:00",
+     "overtime_amount": "0.00", "total_amount": "50.00"},
+]
+_RETURNED_SAMPLE = {**_ORDER_SAMPLE, "items_out": 0, "items": _RETURNED_ITEMS}
+_SETTLED_SAMPLE = {
+    **_RETURNED_SAMPLE, "status": "completed", "payment_status": "paid", "completed_at": "2026-10-02 17:13:30",
+    "subtotal": "110.00",
+    "discount": {"claim_id": "01923e2a-11aa-7b22-8c33-d4e5f6a7b8c9", "discount_percentage": "10.00",
+                 "discount_amount": "11.00"},
+    "tax_percentage": "5.00", "tax_amount": "4.95", "rounding_adjustment": "0.05", "net_amount": "104.00",
+    "amount_received": "104.00", "paid_amount": "104.00", "balance_due": "0.00",
+    "payments": [
+        *_ORDER_SAMPLE["payments"],
+        {"sync_id": "01923e1c-0a16-7b22-8c33-d4e5f6a7b8c9", "kind": "settlement",
+         "payment_mode": {"id": 2, "name": "Card"}, "amount": "4.00", "reference_no": "4421",
+         "reference_date": "2026-10-02", "paid_at": "2026-10-02 17:13:30"},
+    ],
+    "invoice": {"invoice_no": "DUBPP60182000231", "issued_at": "2026-10-02 17:13:30", "net_amount": "104.00"},
 }
 
 _BOOK_ERRORS = (
@@ -378,10 +418,22 @@ one entry per payment mode (cash and card are two entries). Only `advance`
 at booking. `amount` more than 0; `reference_no` / `reference_date` for a
 card slip or cheque.
 
-**Money** is stored as sent, not recomputed. **Times** are
-`YYYY-MM-DD HH:MM:SS` in company time, no offset: `booked_at` is when the
-booking happened on the tablet (earlier if it was offline), `start_time`
-the rental's own start.
+**No bill yet.** Each item carries only its `package_minutes` and the
+`base_fare` agreed for it. The rest is filled later, never guessed:
+
+| Amount | Filled when |
+|---|---|
+| item `base_fare` | booking |
+| item `run_minutes`, `overtime_amount`, `total_amount` (= base fare + overtime) | that vehicle is returned |
+| order `subtotal`, `discount`, `tax_percentage`, `tax_amount`, `rounding_adjustment`, `net_amount`, `balance_due` | the order is settled |
+| order `amount_received`, `amount_refunded`, `paid_amount` | each payment, from booking on |
+
+Until then they are `null`. `payment_status` is `pending` while the order is
+active and `paid` once it is settled (blank for a cancelled order).
+
+**Times** are `YYYY-MM-DD HH:MM:SS` in company time, no offset: `booked_at`
+is when the booking happened on the tablet (earlier if it was offline),
+`start_time` the rental's own start.
 
 **Errors** carry `data.retry`: `true` -- keep the call queued and send it
 again; `false` -- stop and show the operator.
@@ -484,3 +536,149 @@ class OrderDetailView(_OperatorView):
             return _refused(refusal)
         data = order_json(order, zone=zone_for(branch.company), next_order_number=_counter_number(request.auth))
         return envelope("ok", "Order.", data)
+
+
+_FLOW = """
+**Every rental, direct ones too:** book → return each vehicle → settle. A direct
+rental is returned like any other (overtime 0, so total = base fare), and its
+payment may be taken at settle instead of up front.
+"""
+
+_RETURN_ERRORS = (
+    "order_not_synced", "sync_id_conflict", "order_closed", "unknown_item", "item_not_active",
+    "invalid_return_time", "amount_mismatch",
+)
+
+_RETURN_DESCRIPTION = """
+One vehicle back (order_lifecycle_design.md 3.3). The line closes as `returned`
+and the vehicle can be rented again at once.
+
+**`sync_id`** is this call's own id (UUIDv7, made on the tablet, resent
+unchanged); `order_id` and `item_id` are the order's and the line's.
+
+**The tablet works out the amounts:** `run_minutes` (how long it ran),
+`overtime_amount` (0 if on time) and `total_amount`. The server stores them as
+sent, checking only that `total_amount` = the line's `base_fare` +
+`overtime_amount` (`amount_mismatch`).
+
+Any tablet at the order's station can return it. A return that reaches the
+server before its booking is `order_not_synced` -- keep it queued and retry.
+""" + _FLOW + """
+""" + _error_table(*_RETURN_ERRORS)
+
+
+class OrderReturnView(_OperatorView):
+    """POST /api/v1/{app}/orders/return -- operator app only."""
+
+    @extend_schema(
+        tags=["Operator Orders"],
+        summary="Return one vehicle",
+        description=_RETURN_DESCRIPTION,
+        request=envelope_request("OrderReturnEnvelope", OrderReturnRequest),
+        responses=envelope_responses(
+            (200, "ok", "Vehicle returned.", _RETURNED_SAMPLE),
+            (200, "duplicate", "Already recorded.", _RETURNED_SAMPLE),
+            (400, "invalid_request", "run_minutes is required.", {"errors": {"run_minutes": "is required"}}),
+            *_error_rows(*_RETURN_ERRORS),
+            *_COMMON,
+        ),
+    )
+    def post(self, request, app):
+        branch, refused = self.station(request, app)
+        if refused:
+            return refused
+
+        _, request_data = request_parts(request)
+        form = OrderReturnRequest(data=request_data)
+        form.is_valid(raise_exception=True)
+        values = form.validated_data
+        zone = zone_for(branch.company)
+        values["returned_at"] = timezone.make_aware(values["returned_at"], zone)
+
+        session = request.auth
+        try:
+            data, done = services.return_item(
+                session, values, request_data,
+                lambda order: order_json(order, zone=zone, next_order_number=_counter_number(session)),
+            )
+        except services.OrderRefused as refusal:
+            return _refused(refusal)
+        return envelope("ok", "Vehicle returned.", data) if done else envelope("duplicate", "Already recorded.", data)
+
+
+_SETTLE_ERRORS = (
+    "order_not_synced", "sync_id_conflict", "order_closed", "items_still_out", "amount_mismatch",
+    "balance_not_settled", "unknown_card_claim", "card_claim_not_approved", "unknown_card_discount",
+    "unknown_payment_mode", "payment_id_used",
+)
+
+_SETTLE_DESCRIPTION = """
+Close the bill (order_lifecycle_design.md 3.4). Every vehicle must already be
+returned (`items_still_out`). In one step: the bill is stored, the card
+discount redeemed, the payments recorded, the order **completed** (payment
+status `paid`) and the **invoice** issued -- numbered by the order number.
+
+**The tablet works out the whole bill and sends it:** `subtotal`, `discount`,
+`tax_percentage`, `tax_amount`, `rounding_adjustment` (may be negative),
+`net_amount`. The server only checks that the figures agree
+(`amount_mismatch`):
+- `subtotal` = the returned vehicles' `total_amount`s (replaced or removed
+  vehicles are not billed);
+- `net_amount` = `subtotal` − `discount_amount` + `tax_amount` + `rounding_adjustment`.
+
+**`discount`** (optional) -- the card discount applied, one of:
+- `{claim_id, discount_percentage, discount_amount}` -- an approval request
+  that was approved: it becomes redeemed;
+- `{card_discount_id, card_number, discount_percentage, discount_amount}` -- an
+  automatic discount: recorded as a new redemption.
+
+Every other request on the order still pending, or approved but not applied,
+is cancelled.
+
+**`payments`** -- `settlement` for the balance, `refund` for money handed back
+when the customer paid more than the bill. After them the bill must be paid
+in full: what was received minus refunded = `net_amount`
+(`balance_not_settled`; nothing is written). A bill of 0 settles too.
+""" + _FLOW + """
+""" + _error_table(*_SETTLE_ERRORS)
+
+
+class OrderSettleView(_OperatorView):
+    """POST /api/v1/{app}/orders/settle -- operator app only."""
+
+    @extend_schema(
+        tags=["Operator Orders"],
+        summary="Settle an order and issue its invoice",
+        description=_SETTLE_DESCRIPTION,
+        request=envelope_request("OrderSettleEnvelope", OrderSettleRequest),
+        responses=envelope_responses(
+            (200, "ok", "Order settled.", _SETTLED_SAMPLE),
+            (200, "duplicate", "Already recorded.", _SETTLED_SAMPLE),
+            (400, "invalid_request", "net_amount is required.", {"errors": {"net_amount": "is required"}}),
+            *_error_rows(*_SETTLE_ERRORS),
+            *_COMMON,
+        ),
+    )
+    def post(self, request, app):
+        branch, refused = self.station(request, app)
+        if refused:
+            return refused
+
+        _, request_data = request_parts(request)
+        form = OrderSettleRequest(data=request_data)
+        form.is_valid(raise_exception=True)
+        values = form.validated_data
+        zone = zone_for(branch.company)
+        values["settled_at"] = timezone.make_aware(values["settled_at"], zone)
+        for payment in values.get("payments") or []:
+            payment["paid_at"] = timezone.make_aware(payment["paid_at"], zone)
+
+        session = request.auth
+        try:
+            data, done = services.settle_order(
+                session, values, request_data,
+                lambda order: order_json(order, zone=zone, next_order_number=_counter_number(session)),
+            )
+        except services.OrderRefused as refusal:
+            return _refused(refusal)
+        return envelope("ok", "Order settled.", data) if done else envelope("duplicate", "Already recorded.", data)

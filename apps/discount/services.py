@@ -5,12 +5,15 @@ its day rows, checked together and written in one transaction.
 decide_claim() -- an approver's Approve / Reject on a pending claim.
 card_usage() -- a customer's redemptions of the discounts usable today (device API).
 request_approval() / cancel_pending_for_order() -- the approval request's life.
+redeem_for_order() / cancel_unused_for_order() -- the order's settlement.
 """
 
 import datetime
 from decimal import Decimal, InvalidOperation
 
 from django.db import IntegrityError, transaction
+from django.db.models import F, Value
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from apps.company.models import WeekDay
@@ -25,6 +28,7 @@ from apps.discount.models import (
 )
 from apps.discount.scoping import card_discounts_for, card_grades_for
 from apps.rental.models import Customer, Order
+from core.ids import uuid7
 from core.timezones import business_date_for, zone_for
 
 # The four options the screen shows (legacy RMSCardPromotionType), stored as
@@ -342,6 +346,77 @@ def cancel_pending_for_order(order, now=None):
     request is cancelled. For the order-close / billing API (not built yet)."""
     return CardDiscountClaim.objects.filter(order=order, status=ClaimStatus.PENDING).update(
         status=ClaimStatus.CANCELLED, decided_at=now or timezone.now(), modified_on=timezone.now(),
+    )
+
+
+# -- At settlement (apps/rental/services.py::settle_order) ---------------------------
+
+
+class RedeemRefused(Exception):
+    """The discount named at settle cannot be applied. `code` is one of the
+    order API's refusals (unknown_card_claim, card_claim_not_approved,
+    unknown_card_discount)."""
+
+    def __init__(self, code):
+        super().__init__(code)
+        self.code = code
+
+
+def redeem_for_order(session, order, discount, *, at, bill_amount, net_amount):
+    """The card discount the tablet applied to `order`'s bill, redeemed.
+    Returns the claim.
+
+    An approval-mode discount names its approved claim (`claim_id`), which
+    becomes redeemed. An automatic one names the discount
+    (`card_discount_id`): there was no request, so a new claim is written,
+    redeemed at once -- the claim table is the redemption history the usage
+    limits count. Either way the claim's figures become the ones applied.
+    Every other claim on the order still pending or approved is cancelled
+    (order_lifecycle_design.md 5, decision 5).
+    """
+    figures = {
+        "bill_amount": bill_amount, "discount_percent": discount["discount_percentage"],
+        "discount_amount": discount["discount_amount"], "net_amount": net_amount,
+    }
+    if discount.get("claim_id"):
+        claim = CardDiscountClaim.objects.select_for_update().filter(pk=discount["claim_id"], order=order).first()
+        if claim is None:
+            raise RedeemRefused("unknown_card_claim")
+        if claim.status != ClaimStatus.APPROVED:
+            raise RedeemRefused("card_claim_not_approved")
+        for field, value in figures.items():
+            setattr(claim, field, value)
+        claim.status, claim.redeemed_at, claim.modified_by = ClaimStatus.REDEEMED, at, session.user
+        claim.save()
+    else:
+        card = (CardDiscount.objects.select_related("card_grade__card_type")
+                .filter(pk=discount["card_discount_id"], company=order.company).first())
+        if card is None:
+            raise RedeemRefused("unknown_card_discount")
+        claim = CardDiscountClaim.objects.create(
+            id=uuid7(), company=order.company, card_discount=card, card_type=card.card_grade.card_type,
+            card_grade=card.card_grade, fare_basis=card.fare_basis, requires_approval=False,
+            customer=order.customer, customer_name=order.customer_name or order.customer.full_name,
+            mobile_full=order.customer_mobile or order.customer.mobile_full,
+            card_number=discount.get("card_number") or "", order=order, branch=session.branch,
+            requested_by=session.user,
+            rms_installation_id=session.device.installation_id if session.device_id else "",
+            status=ClaimStatus.REDEEMED, requested_at=at, redeemed_at=at,
+            created_by=session.user, modified_by=session.user, **figures,
+        )
+    cancel_unused_for_order(order, keep=claim, now=at)
+    return claim
+
+
+def cancel_unused_for_order(order, *, keep=None, now=None):
+    """The order was billed: every claim on it still pending, or approved but
+    not the one applied (`keep`), is cancelled. Returns how many."""
+    now = now or timezone.now()
+    unused = CardDiscountClaim.objects.filter(order=order, status__in=[ClaimStatus.PENDING, ClaimStatus.APPROVED])
+    if keep is not None:
+        unused = unused.exclude(pk=keep.pk)
+    return unused.update(
+        status=ClaimStatus.CANCELLED, decided_at=Coalesce(F("decided_at"), Value(now)), modified_on=timezone.now(),
     )
 
 

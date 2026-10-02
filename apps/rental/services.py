@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from decimal import Decimal
 
 from django.db import IntegrityError, transaction
 from django.db.models import F
@@ -10,19 +11,24 @@ from django.utils import timezone
 from apps.company.models import PaymentMode
 from apps.devices import services as devices_services
 from apps.devices.models import BillKind
+from apps.discount import services as discount_services
 from apps.fare.models import Fare, Offer
 from apps.fleet.models import Vehicle
 from apps.rental.models import (
     MONEY_IN,
     Customer,
+    Invoice,
+    InvoiceItem,
     Order,
     OrderAction,
     OrderEvent,
     OrderItem,
     OrderItemStatus,
+    OrderStatus,
     Payment,
     full_number,
 )
+from core.ids import uuid7
 
 
 def next_customer_code(company):
@@ -110,6 +116,16 @@ ORDER_ERRORS = {
     "unknown_fare": (400, "No fare with that id.", False),
     "unknown_offer": (400, "No offer with that id.", False),
     "unknown_order": (404, "No order with that id at this station.", False),
+    "order_closed": (409, "This order is already completed or cancelled.", False),
+    "unknown_item": (404, "That item is not on this order.", False),
+    "item_not_active": (409, "That vehicle is already returned, replaced or removed.", False),
+    "invalid_return_time": (400, "returned_at is before the vehicle's start time.", False),
+    "items_still_out": (409, "Every vehicle must be returned before the order is settled.", False),
+    "amount_mismatch": (400, "The amounts do not add up.", False),
+    "balance_not_settled": (409, "The bill is not paid in full.", False),
+    "unknown_card_claim": (404, "That card-discount request is not on this order.", False),
+    "card_claim_not_approved": (409, "That card-discount request is not approved.", False),
+    "unknown_card_discount": (404, "No card discount with that id.", False),
 }
 
 
@@ -250,9 +266,10 @@ def create_rental_order(session, values, request_data, reply_for):
     The tablet makes every id -- order, lines, payments -- so it can act on
     them before the server has replied (design 2).
 
-    Money figures are trusted as sent, not recomputed; the business checks
-    (totals adding up, blocked customer, available vehicle, ...) come later
-    (design 5, decision 7). Ported from: Save_Order_Booking.
+    No bill is made here: each line keeps its agreed base fare, the line's
+    final amount comes at return and the order's bill at settle (design 1
+    "Money"). The business checks (blocked customer, available vehicle, ...)
+    come later (design 5, decision 7). Ported from: Save_Order_Booking.
     """
     sync_id = values["sync_id"]
     try:
@@ -310,27 +327,14 @@ def _book(session, values, reply_for):
                    "unknown_fare", "fare")
     offers = _by_id(Offer, company, {item["offer_id"] for item in items_input if item.get("offer_id")},
                     "unknown_offer", "offer")
-    modes = {
-        mode.pk: mode for mode in PaymentMode.objects.filter(
-            pk__in={p["payment_mode_id"] for p in payments_input}, company=company, is_active=True,
-        )
-    }
-    for payment in payments_input:
-        if payment["payment_mode_id"] not in modes:
-            raise OrderRefused("unknown_payment_mode", f"No payment mode with id {payment['payment_mode_id']}.")
-
+    modes = _payment_modes(company, payments_input)
     if OrderItem.objects.filter(pk__in=[item["sync_id"] for item in items_input]).exists():
         raise OrderRefused("item_id_used")
-    if Payment.objects.filter(pk__in=[p["sync_id"] for p in payments_input]).exists():
-        raise OrderRefused("payment_id_used")
 
     order = Order.objects.create(
         id=values["sync_id"], company=company, branch=branch, device=device,
         customer=customer, customer_name=customer.full_name, customer_mobile=customer.mobile_full,
         order_no=values["order_no"], booked_at=values["booked_at"], start_time=values["start_time"],
-        total_amount=values["total_amount"], total_discount=values.get("total_discount") or 0,
-        total_tax=values.get("total_tax") or 0, tax_percentage=values.get("tax_percentage") or 0,
-        rounded_diff=values.get("rounded_diff") or 0, net_amount=values["net_amount"],
         is_direct_bill=values.get("is_direct_bill", False),
         is_hotel_order=values.get("is_hotel_order", False), hotel_commission=values.get("hotel_commission") or 0,
         created_by=user, modified_by=user,
@@ -340,18 +344,12 @@ def _book(session, values, reply_for):
             id=item["sync_id"], order=order, vehicle=vehicles[item["vehicle_id"]],
             fare=fares.get(item.get("fare_id")), offer=offers.get(item.get("offer_id")),
             package_minutes=item["package_minutes"], start_time=item["start_time"],
-            expected_end_time=item["expected_end_time"], rate=item["rate"], amount=item["amount"],
-            discount=item.get("discount") or 0, tax_amount=item.get("tax_amount") or 0,
-            total_amount=item["total_amount"], created_by=user, modified_by=user,
+            expected_end_time=item["expected_end_time"], base_fare=item["base_fare"],
+            created_by=user, modified_by=user,
         )
         for item in items_input
     ])
-    for payment in payments_input:
-        record_payment(
-            order, payment_id=payment["sync_id"], kind=payment["kind"], mode=modes[payment["payment_mode_id"]],
-            amount=payment["amount"], paid_at=payment["paid_at"], device=device, user=user,
-            reference_no=payment.get("reference_no") or "", reference_date=payment.get("reference_date"),
-        )
+    _record_payments(session, order, payments_input, modes)
     devices_services.raise_counter_from(device, branch, BillKind.ORDER, order.order_no)
 
     order.refresh_from_db()        # paid_amount, balance_due, payment_status: computed by the database
@@ -368,6 +366,197 @@ def _by_id(model, company, ids, code, noun):
     if missing:
         raise OrderRefused(code, f"No {noun} with id {sorted(missing)[0]}.")
     return rows
+
+
+# -- Orders: return and settle ------------------------------------------------------
+
+
+def _open_order(session, order_id):
+    """The order, row-locked, at the session's station and still active."""
+    order = lock_order(order_id, session.branch)
+    if order.status != OrderStatus.ACTIVE:
+        raise OrderRefused("order_closed")
+    return order
+
+
+def return_item(session, values, request_data, reply_for):
+    """One vehicle back (order_lifecycle_design.md 3.3). Returns (reply, done_now).
+
+    The tablet works out the run time and the amounts (decision 4); the server
+    stores them as sent, checking only that total = base fare + overtime. The
+    line closes as returned and the vehicle is free to rent at once. Any
+    tablet at the order's station may return it (decision 3).
+    """
+
+    def apply():
+        order = _open_order(session, values["order_id"])
+        item = OrderItem.objects.filter(pk=values["item_id"], order=order).first()
+        if item is None:
+            raise OrderRefused("unknown_item")
+        if item.status != OrderItemStatus.ACTIVE:
+            raise OrderRefused("item_not_active")
+        if values["returned_at"] < item.start_time:
+            raise OrderRefused("invalid_return_time")
+        if values["total_amount"] != item.base_fare + values["overtime_amount"]:
+            raise OrderRefused(
+                "amount_mismatch",
+                f"total_amount must be base_fare {item.base_fare} + overtime_amount {values['overtime_amount']}.",
+            )
+        item.status, item.end_time = OrderItemStatus.RETURNED, values["returned_at"]
+        item.run_minutes = values["run_minutes"]
+        item.overtime_amount, item.total_amount = values["overtime_amount"], values["total_amount"]
+        item.modified_by = session.user
+        item.save()
+        event = {
+            "action": OrderAction.RETURN, "item": item, "happened_at": values["returned_at"],
+            "device": session.device, "user": session.user,
+            "detail": {"run_minutes": item.run_minutes, "overtime_amount": str(item.overtime_amount),
+                       "total_amount": str(item.total_amount)},
+        }
+        return order, event, reply_for(order)
+
+    return run_once(event_id=values["sync_id"], company=session.branch.company, request_data=request_data,
+                    apply=apply)
+
+
+def settle_order(session, values, request_data, reply_for):
+    """Close the bill (order_lifecycle_design.md 3.4). Returns (reply, done_now).
+
+    Every vehicle must already be back. The tablet works out the whole bill
+    and sends it; the server stores it as sent after the basic checks -- the
+    subtotal is the returned lines' totals, the net adds up, and after this
+    call's payments the bill is paid in full (so `paid` is always true). In
+    one transaction: the card discount redeemed (and unused requests
+    cancelled), the payments recorded, the order completed and the invoice
+    issued. A zero bill settles too.
+    """
+
+    def apply():
+        order = _open_order(session, values["order_id"])
+        items = list(order.items.select_related("vehicle__vehicle_type"))
+        if any(item.status == OrderItemStatus.ACTIVE for item in items):
+            raise OrderRefused("items_still_out")
+
+        billed = [item for item in items if item.status == OrderItemStatus.RETURNED]
+        discount = values.get("discount")
+        discount_amount = discount["discount_amount"] if discount else Decimal("0")
+        lines_total = sum((item.total_amount for item in billed), Decimal("0"))
+        if values["subtotal"] != lines_total:
+            raise OrderRefused("amount_mismatch", f"subtotal must be the returned vehicles' total, {lines_total}.")
+        expected_net = (values["subtotal"] - discount_amount + values["tax_amount"]
+                        + values["rounding_adjustment"])
+        if values["net_amount"] != expected_net:
+            raise OrderRefused(
+                "amount_mismatch",
+                f"net_amount must be subtotal - discount_amount + tax_amount + rounding_adjustment = {expected_net}.",
+            )
+
+        claim = None
+        if discount:
+            try:
+                claim = discount_services.redeem_for_order(
+                    session, order, discount, at=values["settled_at"],
+                    bill_amount=values["subtotal"], net_amount=values["net_amount"],
+                )
+            except discount_services.RedeemRefused as refused:
+                raise OrderRefused(refused.code) from None
+        else:
+            discount_services.cancel_unused_for_order(order, now=values["settled_at"])
+
+        payments = values.get("payments") or []
+        _record_payments(session, order, payments, _payment_modes(order.company, payments))
+
+        order.refresh_from_db()
+        if order.paid_amount != values["net_amount"]:
+            raise OrderRefused(
+                "balance_not_settled",
+                f"Paid {order.paid_amount} against a bill of {values['net_amount']}: the bill is not paid in full.",
+            )
+
+        order.subtotal, order.tax_percentage = values["subtotal"], values["tax_percentage"]
+        order.tax_amount, order.rounding_adjustment = values["tax_amount"], values["rounding_adjustment"]
+        order.net_amount = values["net_amount"]
+        order.discount_claim = claim
+        order.discount_percentage = discount["discount_percentage"] if discount else None
+        order.discount_amount = discount_amount
+        order.status, order.completed_at = OrderStatus.COMPLETED, values["settled_at"]
+        order.modified_by = session.user
+        order.save()
+        order.refresh_from_db()            # payment_status, balance_due: computed by the database
+
+        issue_invoice(order, billed, session, at=values["settled_at"])
+        event = {
+            "action": OrderAction.SETTLE, "happened_at": values["settled_at"],
+            "device": session.device, "user": session.user,
+            "detail": {"net_amount": str(order.net_amount), "discount_amount": str(order.discount_amount),
+                       "payments": len(payments)},
+        }
+        return order, event, reply_for(order)
+
+    return run_once(event_id=values["sync_id"], company=session.branch.company, request_data=request_data,
+                    apply=apply)
+
+
+def _payment_modes(company, payments):
+    """{id: PaymentMode} for a call's payment entries -- each mode this
+    company's and active, each entry id unused -- or the refusal."""
+    if not payments:
+        return {}
+    modes = {
+        mode.pk: mode for mode in PaymentMode.objects.filter(
+            pk__in={p["payment_mode_id"] for p in payments}, company=company, is_active=True,
+        )
+    }
+    for payment in payments:
+        if payment["payment_mode_id"] not in modes:
+            raise OrderRefused("unknown_payment_mode", f"No payment mode with id {payment['payment_mode_id']}.")
+    if Payment.objects.filter(pk__in=[p["sync_id"] for p in payments]).exists():
+        raise OrderRefused("payment_id_used")
+    return modes
+
+
+def _record_payments(session, order, payments, modes):
+    """Each payment entry of a call, through record_payment."""
+    for payment in payments:
+        record_payment(
+            order, payment_id=payment["sync_id"], kind=payment["kind"], mode=modes[payment["payment_mode_id"]],
+            amount=payment["amount"], paid_at=payment["paid_at"], device=session.device, user=session.user,
+            reference_no=payment.get("reference_no") or "", reference_date=payment.get("reference_date"),
+        )
+
+
+def issue_invoice(order, billed_items, session, *, at):
+    """The invoice for a settled order: a frozen copy of the bill, numbered by
+    the order, issued by the settling tablet and operator. Only returned lines
+    are billed -- replaced and removed ones are not copied."""
+    company, branch = order.company, order.branch
+    invoice = Invoice.objects.create(
+        id=uuid7(), order=order, company=company, branch=branch, device=session.device, issued_by=session.user,
+        invoice_no=order.order_no, issued_at=at,
+        company_name=company.name, company_trn=company.income_tax_number or "", branch_name=branch.name,
+        customer_name=order.customer_name, customer_mobile=order.customer_mobile,
+        subtotal=order.subtotal, discount_percentage=order.discount_percentage,
+        discount_amount=order.discount_amount, tax_percentage=order.tax_percentage, tax_amount=order.tax_amount,
+        rounding_adjustment=order.rounding_adjustment, net_amount=order.net_amount,
+        payments=[
+            {"mode": payment.mode.name, "kind": payment.kind, "amount": str(payment.amount),
+             "reference_no": payment.reference_no}
+            for payment in order.payments.select_related("mode").order_by("paid_at", "created_on")
+        ],
+        created_by=session.user, modified_by=session.user,
+    )
+    InvoiceItem.objects.bulk_create([
+        InvoiceItem(
+            id=uuid7(), invoice=invoice, order_item=item,
+            vehicle_identifier=item.vehicle.identifier, vehicle_name=item.vehicle.vehicle_name,
+            vehicle_type=item.vehicle.vehicle_type.vehicle_type_name,
+            package_minutes=item.package_minutes, run_minutes=item.run_minutes,
+            start_time=item.start_time, end_time=item.end_time, base_fare=item.base_fare,
+            overtime_amount=item.overtime_amount, total_amount=item.total_amount,
+        )
+        for item in sorted(billed_items, key=lambda line: line.start_time)
+    ])
+    return invoice
 
 
 class CustomerExists(Exception):

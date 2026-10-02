@@ -4,7 +4,8 @@
 totals come from the payment entries, blank or repeated order numbers get a
 unique stand-in before the unique key goes on. 0006_payment_entry: `rental`
 payments become `settlement`, collected_at becomes paid_at, reference_date a
-date.
+date. 0008_bill_fields: an order still on rent loses its bill (made at
+settle now), a settled one keeps it under the new names.
 
 Each test leaves the database migrated to the latest state again, or every
 test after it in the same worker would run on the old schema."""
@@ -35,17 +36,14 @@ def back_to_latest():
     migrate(executor.loader.graph.leaf_nodes())
 
 
-@pytest.mark.django_db(transaction=True)
-def test_orders_survive_the_rebuild():
-    apps = migrate(BEFORE)
+def make_world(apps):
+    """A company, station, tablet, customer and bike, in the given state's models."""
     Country, State, Location, Company, Branch = (
         apps.get_model("company", name) for name in ("Country", "State", "Location", "Company", "Branch")
     )
     Device = apps.get_model("devices", "Device")
     PaymentMode = apps.get_model("company", "PaymentMode")
-    Customer, Order, OrderItem, Payment = (
-        apps.get_model("rental", name) for name in ("Customer", "Order", "OrderItem", "Payment")
-    )
+    Customer = apps.get_model("rental", "Customer")
     Vehicle = apps.get_model("fleet", "Vehicle")
     Category, Brand, VehicleType, UOM = (
         apps.get_model("fleet", name) for name in ("Category", "Brand", "VehicleType", "UOM")
@@ -70,6 +68,14 @@ def test_orders_survive_the_rebuild():
     uom = UOM.objects.create(company=company, uom_code="N", uom_name="Number")
     vehicle = Vehicle.objects.create(company=company, vehicle_code="MO41", vehicle_name="MO 41",
                                      vehicle_type=vtype, uom=uom, current_branch=branch)
+    return company, branch, device, cash, customer, vehicle
+
+
+@pytest.mark.django_db(transaction=True)
+def test_orders_survive_the_rebuild():
+    apps = migrate(BEFORE)
+    company, branch, device, cash, customer, vehicle = make_world(apps)
+    Order, OrderItem, Payment = (apps.get_model("rental", name) for name in ("Order", "OrderItem", "Payment"))
 
     now = timezone.now()
 
@@ -110,3 +116,47 @@ def test_orders_survive_the_rebuild():
 
     item = OrderItem.objects.get(order_id=paid.pk)
     assert (item.reason, item.overtime_amount, item.created_on is not None) == ("Chain", Decimal("0.00"), True)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_an_open_order_loses_its_bill_and_a_settled_one_keeps_it():
+    apps = migrate([("rental", "0007_order_event")])
+    company, branch, device, cash, customer, vehicle = make_world(apps)
+    Order, OrderItem = apps.get_model("rental", "Order"), apps.get_model("rental", "OrderItem")
+    now = timezone.now()
+
+    def order(order_no, status):
+        made = Order.objects.create(
+            id=uuid.uuid4(), company=company, branch=branch, device=device, customer=customer,
+            order_no=order_no, status=status, booked_at=now, start_time=now,
+            total_amount="100.00", total_discount="0.00", card_discount_amount="10.00", tax_percentage="5.00",
+            total_tax="4.50", rounded_diff="0.50", net_amount="95.00", amount_received="95.00",
+        )
+        OrderItem.objects.create(
+            id=uuid.uuid4(), order=made, vehicle=vehicle, start_time=now, expected_end_time=now,
+            package_minutes=60, rate="50", amount="50", overtime_amount="0", total_amount="50",
+            status="active" if status == "active" else "returned", created_on=now,
+        )
+        return made
+
+    on_rent, settled = order("C1-1", "active"), order("C1-2", "completed")
+
+    apps = migrate([("rental", "0008_bill_fields")])
+    Order, OrderItem = apps.get_model("rental", "Order"), apps.get_model("rental", "OrderItem")
+
+    on_rent = Order.objects.get(pk=on_rent.pk)
+    assert (on_rent.subtotal, on_rent.discount_amount, on_rent.tax_amount, on_rent.net_amount) == (
+        None, None, None, None)
+    assert (on_rent.paid_amount, on_rent.balance_due, on_rent.payment_status) == (
+        Decimal("95.00"), None, "pending")
+    line = OrderItem.objects.get(order_id=on_rent.pk)
+    assert (line.base_fare, line.overtime_amount, line.total_amount) == (Decimal("50.00"), None, None)
+
+    settled = Order.objects.get(pk=settled.pk)
+    assert (settled.subtotal, settled.discount_amount, settled.tax_percentage, settled.tax_amount,
+            settled.rounding_adjustment, settled.net_amount) == (
+        Decimal("100.00"), Decimal("10.00"), Decimal("5.00"), Decimal("4.50"), Decimal("0.50"), Decimal("95.00"))
+    assert (settled.balance_due, settled.payment_status, settled.discount_claim_id) == (
+        Decimal("0.00"), "paid", None)
+    line = OrderItem.objects.get(order_id=settled.pk)
+    assert (line.base_fare, line.total_amount) == (Decimal("50.00"), Decimal("50.00"))
