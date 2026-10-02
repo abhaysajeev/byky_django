@@ -108,6 +108,10 @@ standard secondary look (white, hairline border, ink on hover), no colour. */
 .bill-btn:hover { border-color: #d3d0e6; color: #1a1640; }
 .bill-btn:focus-visible { outline: 2px solid #8b87b0; outline-offset: 2px; }
 .bill-btn:disabled { opacity: 0.5; cursor: default; }
+/* Print: the theme's soft red (as .scr-btn-save-new) -- a light tint and the
+   deep brand red, no border -- not the vivid primary gradient. */
+.bill-btn-print { background: #fdeced; border-color: transparent; color: #c2141a; }
+.bill-btn-print:hover { background: #fbdcde; border-color: transparent; color: #a8090f; }
 
 /* While a receipt loads: the veil and a small spinner, no empty modal. */
 .bill-loader {

@@ -47,7 +47,6 @@
     printButton.disabled = !printable;
     body.scrollTop = 0;
     modal.hidden = false;
-    printButton.focus({ preventScroll: true });
   }
 
   function failure() {
