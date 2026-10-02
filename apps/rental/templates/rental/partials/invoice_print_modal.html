@@ -4,7 +4,12 @@ clicked invoice's receipt (rental/partials/invoice_receipt.html, loaded from
 its receipt URL by byky-invoice-print.js). The frame is .no-print, so Print
 puts only the receipt on paper.
 {% endcomment %}
-<div class="scr-modal-veil no-print" data-scr-modal-veil="invoice-print" hidden></div>
+<div class="scr-modal-veil no-print" data-scr-modal-veil="invoice-print" hidden>
+  <div class="bill-loader" data-invoice-loader role="status" aria-live="polite" hidden>
+    <span class="bill-loader-spin" aria-hidden="true"></span>
+    Loading invoice…
+  </div>
+</div>
 <div class="scr-modal bill-modal" data-scr-modal="invoice-print" data-invoice-modal hidden role="dialog" aria-modal="true" aria-labelledby="invoice-print-title">
   <div class="scr-modal-head no-print">
     <div>

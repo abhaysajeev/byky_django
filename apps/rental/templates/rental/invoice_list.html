@@ -97,6 +97,8 @@
     {% include "byky/partials/server_pager.html" %}
   </div>
 
-  {% include "rental/partials/invoice_print_modal.html" %}
 </div>
+
+{% comment %}Outside .scr on purpose: the screen-wide table rules (.scr th / td) must not reach the receipt.{% endcomment %}
+{% include "rental/partials/invoice_print_modal.html" %}
 {% endblock %}
