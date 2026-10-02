@@ -167,7 +167,7 @@ def test_a_direct_rental_is_returned_then_paid_at_settle(client, world, token, s
 
 def test_a_zero_bill_settles(client, world, token, shop, booked):
     """Every vehicle came off the order: nothing billed, the advance handed back."""
-    OrderItem.objects.filter(order_id=booked["sync_id"]).update(status=OrderItemStatus.CANCELLED)
+    OrderItem.objects.filter(order_id=booked["sync_id"]).update(status=OrderItemStatus.REMOVED)
 
     body = settle(client, token, bill(
         booked, shop, subtotal="0.00", tax_amount="0.00", net_amount="0.00",
