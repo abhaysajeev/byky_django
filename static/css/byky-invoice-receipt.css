@@ -98,18 +98,16 @@
 .bill-modal .bill { zoom: 1.18; padding: 3mm 4mm 4mm; border-radius: 3px; }
 .bill-modal .bill-state { padding: 40px 12px; text-align: center; font-size: 13px; color: #6b6790; }
 
-/* Print, in the theme's navy ink (#1a1640, the headings' colour) rather than
-   the brand red -- printing is an everyday action, not the page's call to
-   action. Same shape and lift as .scr-btn-primary, which it is paired with. */
-.bill-print-btn {
-  display: flex; align-items: center; gap: 8px; border: none; cursor: pointer;
-  font-size: 12.5px; font-weight: 600; color: #fff; padding: 11px 16px; border-radius: 10px;
-  background: linear-gradient(100deg, #1a1640, #3a3470); box-shadow: 0 6px 16px -8px rgba(26, 22, 64, 0.55);
-  transition: transform 0.18s, box-shadow 0.2s, opacity 0.18s;
+/* The preview's footer buttons -- Close and Print -- small and plain: the
+standard secondary look (white, hairline border, ink on hover), no colour. */
+.bill-btn {
+  display: inline-flex; align-items: center; gap: 6px; border: 1px solid #e6e4f0; background: #fff;
+  cursor: pointer; font-size: 12px; font-weight: 600; color: #4b4770; padding: 6px 12px; border-radius: 8px;
+  transition: border-color 0.16s, color 0.16s;
 }
-.bill-print-btn:hover { color: #fff; transform: translateY(-1px); box-shadow: 0 10px 22px -9px rgba(26, 22, 64, 0.6); }
-.bill-print-btn:focus-visible { outline: 2px solid #8b87b0; outline-offset: 2px; }
-.bill-print-btn:disabled { opacity: 0.5; cursor: default; transform: none; box-shadow: none; }
+.bill-btn:hover { border-color: #d3d0e6; color: #1a1640; }
+.bill-btn:focus-visible { outline: 2px solid #8b87b0; outline-offset: 2px; }
+.bill-btn:disabled { opacity: 0.5; cursor: default; }
 
 /* While a receipt loads: the veil and a small spinner, no empty modal. */
 .bill-loader {
