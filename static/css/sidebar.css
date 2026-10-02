@@ -1,5 +1,4 @@
 /* Byky RMS sidebar — matches "Byky Sidebar v2" exactly. No Bootstrap dependency. */
-@import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap');
 
 .byky-shell{display:flex;height:100vh;min-height:600px;overflow:hidden;position:relative;background:#f4f5fa;font-family:'Sora',sans-serif;color:#1a1640}
 .byky-spacer{width:0;flex:0 0 auto}
