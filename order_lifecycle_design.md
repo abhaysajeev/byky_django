@@ -1,12 +1,12 @@
 # Order lifecycle — design
 
-Status: **P3 built** (2 Oct 2026). Decisions agreed in section 5. Built:
+Status: **P4 built** (2 Oct 2026). Decisions agreed in section 5. Built:
 `Order`, `OrderItem`, `Payment`, `OrderEvent`, `Invoice`, `InvoiceItem`
 (section 4); `run_once`, `record_payment`, `lock_order`; booking
 (`POST /orders`), `POST /orders/detail`, `/orders/add`, `/orders/replace`,
 `/orders/remove`, `POST /orders/return`, `POST /orders/settle` (card discount
-redeemed, invoice issued), running status on `/vehicles`,
-`POST /device/settings`. Next: P4 standalone payments.
+redeemed, invoice issued), `POST /orders/payments`, running status on
+`/vehicles`, `POST /device/settings`. Next: P5 cancel request and approval.
 
 The legacy system is the reference, not the template: the business flow is
 kept, its bugs are not. Legacy sources are cited as proc names
@@ -78,8 +78,10 @@ part card.
   (legacy's `DMSOrder.PaidAmount` vs `SUM(DMSPayment.Amount)` bug).
 - **Entries are never edited or deleted.** A mistake is corrected by a
   reversing Refund entry, so the trail stays complete.
-- Booking and settlement take a **list** of entries; `POST /orders/payments`
-  adds one mid-rental (e.g. an extra advance when the customer extends).
+- Booking, add and settlement take a **list** of entries, recorded in that
+  same call. `POST /orders/payments` is for money moving on its own: an extra
+  advance mid-rental, or a refund (also after an approved cancel). One `kind`
+  per call; each payment is sent once.
 - The invoice copies the payment breakdown by mode at settlement.
 
 **No bill before the ride ends.** Amounts are filled when they are known,
@@ -433,6 +435,29 @@ recorded as a new redemption.
 Overpaid instead (advance 110): the payment is `{"kind": "refund", "amount": "6.00"}`
 and `paid_amount` still comes to 104.00.
 
+### 3.4b Payments on their own
+
+`POST /api/v1/operator/orders/payments` — an extra advance or a refund, one
+`kind` for the whole call:
+
+```json
+{ "request_data": {
+    "sync_id": "PY-1", "order_id": "O-1", "kind": "advance",
+    "payments": [ { "sync_id": "P-4", "payment_mode_id": 1, "amount": "50.00",
+                    "paid_at": "2026-10-02 16:40:00" },
+                  { "sync_id": "P-5", "payment_mode_id": 2, "amount": "20.00",
+                    "reference_no": "448901", "reference_date": "2026-10-02",
+                    "paid_at": "2026-10-02 16:40:00" } ] } }
+```
+
+| Order is | advance | refund |
+|---|---|---|
+| active | yes | yes |
+| cancelled | no | yes (money handed back after the cancel) |
+| completed | no | no — the bill is invoiced |
+
+Otherwise `order_closed`. Reply: the full order.
+
 ### 3.5 Cancel — a different order, O-2
 
 1. `POST /orders/cancel/request` `{sync_id: "C-1", order_id: "O-2", reason: "Customer changed mind"}`
@@ -699,7 +724,8 @@ One row per billed line (replaced and removed lines are not billed).
    full (`balance_not_settled`), so `paid` is always true. The tablet works out
    every amount; the basic checks are only that the figures agree: line total =
    base fare + overtime; subtotal = the returned lines' totals; net = subtotal −
-   discount + VAT ± rounding (`amount_mismatch`).
+   discount + VAT ± rounding (`amount_mismatch`). Not checked yet: a refund
+   larger than what was paid.
 8. **Every order has a customer.** **No auto-block on a low rating** (legacy
    `Service_Save_SubmitExit_Order` blocked customers rated below 2).
 9. **Order number required and unique** per company; each booking raises the
