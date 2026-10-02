@@ -1,0 +1,79 @@
+/* The printed tax invoice -- the station receipt's own layout, ported from
+   the BYKY wireframe's Print Invoice screen (byky-main
+   src/assets/css/byky-invoice-print.css). A receipt reads as a receipt:
+   plain black on white, a condensed sans-serif, colon-aligned label : value
+   rows. Everything is scoped under .bill, so nothing here touches the .scr
+   page around it.
+
+   100mm wide, not 80mm: the rental table's 7 columns include two compound
+   values ("50.00/60 MINS") that overflow a true 80mm roll. */
+
+.bill {
+  width: 100mm;
+  margin: 0 auto;
+  background: #fff;
+  padding: 4mm 5mm 6mm;
+  font-family: Tahoma, Verdana, Arial, sans-serif;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: #000;
+  box-shadow: 0 1px 3px rgba(26, 22, 64, 0.12);
+}
+.bill * { box-sizing: border-box; }
+
+.bill-head { display: flex; align-items: center; justify-content: space-between; gap: 3mm; }
+.bill-head-text { flex: 1; min-width: 0; }
+.bill-head-text .station { font-weight: 700; font-size: 13px; }
+.bill-head-text .emirate { font-weight: 700; font-size: 11px; margin-top: 1px; }
+.bill-logo { height: 13mm; width: auto; flex: 0 0 auto; }
+
+.bill-title-block { text-align: center; margin-top: 1mm; }
+.bill-title-block .bill-title { font-weight: 700; font-size: 12.5px; letter-spacing: 0.3px; }
+.bill-title-block .bill-trn { font-size: 10px; margin-top: 1px; }
+
+.bill-rule { border: none; border-top: 1px dashed #555; margin: 2mm 0; }
+
+/* Two label : value pairs a row -- the first column wider (names and
+   numbers run long), the second narrower (times, short amounts). */
+.bill-row2 { display: flex; gap: 2mm; margin-bottom: 0.5mm; }
+.bill-row2 .col-a { flex: 0 0 56%; display: flex; min-width: 0; }
+.bill-row2 .col-b { flex: 1; min-width: 0; display: flex; }
+.bill-kv-label { flex: 0 0 auto; width: 16mm; }
+.bill-row2 .col-b .bill-kv-label { width: 19mm; }
+.bill-kv-colon { flex: 0 0 auto; width: 2mm; }
+.bill-kv-value { flex: 1; min-width: 0; word-break: break-word; }
+
+.bill-section-title { font-weight: 700; margin: 2mm 0 1mm; }
+
+/* Fixed layout and a width per column: a long rate wraps inside its own
+   cell instead of pushing the receipt wider than the paper. */
+.bill-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 9px; }
+.bill-table th { text-align: left; font-weight: 700; border-bottom: 1px solid #555; padding: 0.8mm 0.5mm; }
+.bill-table td { padding: 0.8mm 0.5mm; vertical-align: top; word-break: break-word; }
+.bill-table th:last-child, .bill-table td:last-child { text-align: right; }
+.bill-table th:nth-child(1), .bill-table td:nth-child(1) { width: 7%; }
+.bill-table th:nth-child(2), .bill-table td:nth-child(2) { width: 15%; }
+.bill-table th:nth-child(3), .bill-table td:nth-child(3) { width: 20%; }
+.bill-table th:nth-child(4), .bill-table td:nth-child(4) { width: 20%; }
+.bill-table th:nth-child(5), .bill-table td:nth-child(5) { width: 14%; white-space: nowrap; }
+.bill-table th:nth-child(6), .bill-table td:nth-child(6) { width: 10%; white-space: nowrap; }
+.bill-table th:nth-child(7), .bill-table td:nth-child(7) { width: 14%; white-space: nowrap; }
+
+.bill-net { display: flex; justify-content: space-between; font-weight: 700; font-size: 12.5px; }
+.bill-foot .bill-row2 { margin-bottom: 1mm; }
+
+/* The print preview modal around it: a little wider than the paper, the
+   receipt on a soft grey "desk". */
+.bill-modal { width: min(94vw, 132mm); }
+.bill-modal .scr-modal-body { background: #ecebf3; padding: 18px; }
+.bill-state { padding: 40px 12px; text-align: center; font-size: 13px; color: #6b6790; }
+
+/* Print: only the receipt, at the receipt's own width, the height flowing
+   with its content the way a thermal roll prints. */
+@page { size: 100mm auto; margin: 0; }
+@media print {
+  body * { visibility: hidden; }
+  .bill, .bill * { visibility: visible; }
+  .bill { position: absolute; top: 0; left: 0; margin: 0; width: 100mm; box-shadow: none; }
+  .no-print { display: none !important; }
+}

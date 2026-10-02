@@ -1,0 +1,96 @@
+{% load static %}
+<div class="bill">
+  <div class="bill-head">
+    <div class="bill-head-text">
+      <div class="station">{{ bill.station|upper }}</div>
+      <div class="emirate">{{ bill.emirate|upper }}</div>
+    </div>
+    <img class="bill-logo" src="{% static 'img/branding/byky-logo.png' %}" alt="BYKY" />
+  </div>
+  <div class="bill-title-block">
+    <div class="bill-title">TAX INVOICE</div>
+    <div class="bill-trn">TRN : {{ bill.trn }}</div>
+  </div>
+
+  <hr class="bill-rule" />
+
+  <div class="bill-row2">
+    <div class="col-a"><span class="bill-kv-label">Date</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">{{ bill.date }}</span></div>
+    <div class="col-b"><span class="bill-kv-label">Trans No</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">{{ bill.trans_no }}</span></div>
+  </div>
+  <div class="bill-row2">
+    <div class="col-a"><span class="bill-kv-label">Inv No</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">{{ bill.invoice_no }}</span></div>
+    <div class="col-b"><span class="bill-kv-label">Starting Time</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">{{ bill.starting_time }}</span></div>
+  </div>
+  <div class="bill-row2">
+    <div class="col-a"><span class="bill-kv-label">Open By</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">{{ bill.open_by }}</span></div>
+    <div class="col-b"><span class="bill-kv-label">Returning Time</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">{{ bill.returning_time }}</span></div>
+  </div>
+  <div class="bill-row2">
+    <div class="col-a"><span class="bill-kv-label">Closed By</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">{{ bill.closed_by }}</span></div>
+    <div class="col-b"><span class="bill-kv-label">Closing Time</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">{{ bill.closing_time }}</span></div>
+  </div>
+
+  <div class="bill-section-title">Bike Rental Details</div>
+  <table class="bill-table">
+    <thead>
+      <tr>
+        <th>SNo</th>
+        <th>Bike No</th>
+        <th>Base Rate</th>
+        <th>Extra Rate</th>
+        <th>Rtn Time</th>
+        <th>Dur</th>
+        <th>Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in bill.lines %}
+      <tr>
+        <td>{{ l.sno }}</td>
+        <td>{{ l.vehicle }}</td>
+        <td>{{ l.base_rate }}</td>
+        <td>{{ l.extra_rate }}</td>
+        <td>{{ l.returned }}</td>
+        <td>{{ l.duration }}</td>
+        <td>{{ l.amount }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="7">No vehicles billed</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="bill-row2" style="margin-top:2mm">
+    <div class="col-a"><span class="bill-kv-label">Card Disc.</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ bill.discount_amount }}{% if bill.discount_percentage %} ({{ bill.discount_percentage }}%){% endif %}</span></div>
+    <div class="col-b"><span class="bill-kv-label">Taxable Amt</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ bill.taxable_amount }}</span></div>
+  </div>
+  <div class="bill-row2">
+    <div class="col-a"><span class="bill-kv-label">Rounded Off</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ bill.rounding }}</span></div>
+    <div class="col-b"><span class="bill-kv-label">VAT @{{ bill.tax_percentage|floatformat:1 }}%</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ bill.tax_amount }}</span></div>
+  </div>
+
+  <hr class="bill-rule" />
+
+  <div class="bill-net">
+    <span>NET TOTAL :</span>
+    <span>AED {{ bill.net_amount }}</span>
+  </div>
+
+  <hr class="bill-rule" />
+
+  <div class="bill-foot">
+    <div class="bill-row2">
+      <div class="col-a"><span class="bill-kv-label">Name</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">{{ bill.customer }}</span></div>
+      <div class="col-b"><span class="bill-kv-label">Mobile</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">{{ bill.mobile }}</span></div>
+    </div>
+    <div class="bill-row2">
+      <div class="col-a"><span class="bill-kv-label">ID Type</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">{{ bill.id_type }}</span></div>
+      <div class="col-b"><span class="bill-kv-label">ID No</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">{{ bill.id_no }}</span></div>
+    </div>
+    <div class="bill-row2">
+      <div class="col-a"><span class="bill-kv-label">Balance</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ bill.balance }}</span></div>
+      <div class="col-b"><span class="bill-kv-label">Time</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">{{ bill.time }}</span></div>
+    </div>
+  </div>
+</div>
