@@ -15,8 +15,8 @@ from apps.fare.models import (
     FareRule,
     FareSeason,
     InventoryType,
-    Offer,
-    OfferLevel,
+    Package,
+    PackageLevel,
     PromotionFor,
     PromotionType,
     RuleKind,
@@ -115,12 +115,12 @@ def make_rule(fare, kind=RuleKind.EVERY_DAY, start=960, end=1200, *, season=None
                                    weekdays=list(weekdays), on_date=on_date, **{**PRICE, **fields})
 
 
-def make_offer(world, *, code="PROMO1", **fields):
+def make_package(world, *, code="PROMO1", **fields):
     values = {
-        "company": world["company"], "offer_code": code, "offer_name": "Promo",
-        "level": OfferLevel.COMPANY, "valid_from": D(2026, 1, 1), "valid_to": D(2026, 12, 31),
+        "company": world["company"], "package_code": code, "package_name": "Promo",
+        "level": PackageLevel.COMPANY, "valid_from": D(2026, 1, 1), "valid_to": D(2026, 12, 31),
         "promotion_for": PromotionFor.QUANTITY, "inventory_type": InventoryType.VEHICLE_TYPE,
         "lower_value": Decimal("1"), "upper_value": Decimal("5"), "promotion_type": PromotionType.QUANTITY,
     }
     values.update(fields)
-    return Offer.objects.create(**values)
+    return Package.objects.create(**values)

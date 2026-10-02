@@ -18,7 +18,7 @@ kept, its bugs are not. Legacy sources are cited as proc names
 
 1. **Book.** The operator finds or registers the customer (a blocked customer
    is refused), picks one or more vehicles at the station and a package for
-   each (fare or offer), and usually takes money up front (the **advance**).
+   each (fare or package), and usually takes money up front (the **advance**).
    A discount card is raised as a card-discount request and approved by a
    manager (already built). The tablet prints a receipt with its own receipt
    number. Order **Active**; vehicles **on rent**.
@@ -571,7 +571,7 @@ Removed from today's model: `payment_mode` (per payment entry now),
 | `vehicle` | FK Vehicle | |
 | `status` | `OrderItemStatus` | default `active` |
 | `fare` | FK Fare, null | |
-| `offer` | FK Offer, null | |
+| `offer` | FK Package, null | the package applied — Offers were renamed Packages (2 Oct 2026); the field and the tablet API's `offer_id` / `unknown_offer` keep the old name |
 | `package_minutes` | int | |
 | `start_time` | datetime | |
 | `expected_end_time` | datetime | start + package |

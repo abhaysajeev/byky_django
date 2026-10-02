@@ -51,7 +51,7 @@ MODULES = [
     ("crew", "Crew", "Operations", 20, False, CREW_SVG, ""),
     ("devices", "Devices", "Operations", 30, False, DEVICES_SVG, ""),
     ("fleet", "Inventory", "Operations", 40, False, FLEET_SVG, ""),
-    ("fare", "Fare & Offers", "Operations", 50, False, FARE_SVG, ""),
+    ("fare", "Fare & Packages", "Operations", 50, False, FARE_SVG, ""),
     ("rental", "Rental", "Operations", 60, False, RENTAL_SVG, ""),
     ("discount", "Discount Card", "Operations", 65, False, DISCOUNT_SVG, ""),
     ("system", "Users & Roles", "System", 90, False, SYSTEM_SVG, ""),
@@ -121,7 +121,7 @@ PAGES = [
     ("fleet.privileges", "fleet", "Privileges", "fleet-privileges", ["read", "update"], 9, False),
 
     ("fare.fare", "fare", "Fares", "fare-fare-list", CRUD_PRINT, 1, False),
-    ("fare.offer", "fare", "Offers", "fare-offer-list", CRUD_PRINT, 2, False),
+    ("fare.package", "fare", "Packages", "fare-package-list", CRUD_PRINT, 2, False),
     ("fare.privileges", "fare", "Privileges", "fare-privileges", ["read", "update"], 9, False),
 
     ("rental.order", "rental", "Orders", "rental-order-list", ["read"], 0, False),

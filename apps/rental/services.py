@@ -12,7 +12,7 @@ from apps.company.models import PaymentMode
 from apps.devices import services as devices_services
 from apps.devices.models import BillKind
 from apps.discount import services as discount_services
-from apps.fare.models import Fare, Offer
+from apps.fare.models import Fare, Package
 from apps.fleet.models import Vehicle
 from apps.rental.models import (
     MONEY_IN,
@@ -354,7 +354,8 @@ def _line_refs(company, branch, items_input):
         raise OrderRefused("vehicle_already_rented", f"Vehicle {min(rented)} is already on an active rental.")
     fares = _by_id(Fare, company, {item["fare_id"] for item in items_input if item.get("fare_id")},
                    "unknown_fare", "fare")
-    offers = _by_id(Offer, company, {item["offer_id"] for item in items_input if item.get("offer_id")},
+    # A package (sent as offer_id: the tablet API kept the old name).
+    offers = _by_id(Package, company, {item["offer_id"] for item in items_input if item.get("offer_id")},
                     "unknown_offer", "offer")
     if OrderItem.objects.filter(pk__in=[item["sync_id"] for item in items_input]).exists():
         raise OrderRefused("item_id_used")

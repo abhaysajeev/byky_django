@@ -284,9 +284,11 @@ class OrderItem(TimeStampedModel):
     status = models.CharField(max_length=20, choices=OrderItemStatus.choices, default=OrderItemStatus.ACTIVE)
 
     # Traceability only -- the amounts below are what bills, and stay right if
-    # the fare or offer is edited later.
+    # the fare or package is edited later.
     fare = models.ForeignKey("fare.Fare", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
-    offer = models.ForeignKey("fare.Offer", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    # The package applied (named offer until the rename; the tablet API still
+    # sends it as offer_id).
+    offer = models.ForeignKey("fare.Package", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
     package_minutes = models.PositiveSmallIntegerField()
 
     start_time = models.DateTimeField()

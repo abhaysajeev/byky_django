@@ -1,7 +1,7 @@
 {% extends layout_path %}
 {% load static %}
 
-{% block title %}Offers - Fare &amp; Offers{% endblock title %}
+{% block title %}Packages - Fare &amp; Packages{% endblock title %}
 
 {% block page_css %}
 {{ block.super }}
@@ -19,18 +19,18 @@
   <div class="scr-head">
     <div>
       <div class="scr-crumb">
-        <span>Fare &amp; Offers</span>
+        <span>Fare &amp; Packages</span>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
-        <b>Offers</b>
+        <b>Packages</b>
       </div>
-      <h1 class="scr-title">Offers</h1>
-      <p class="scr-sub">Promotions on rental quantity or amount -- discounts, free items or an offer price, within a validity and scope.</p>
+      <h1 class="scr-title">Packages</h1>
+      <p class="scr-sub">Promotions on rental quantity or amount -- discounts, free items or a package price, within a validity and scope.</p>
     </div>
     <div class="scr-head-actions">
       {% if perm.create %}
-      <a href="{% url 'fare-offer-add' %}" class="scr-btn-primary">
+      <a href="{% url 'fare-package-add' %}" class="scr-btn-primary">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
-        Add Offer
+        Add Package
       </a>
       {% endif %}
     </div>
@@ -41,7 +41,7 @@
       <span class="scr-tile-ico scr-tile-ico-green">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9-9-9"></path><path d="M7.5 7.5h.01"></path></svg>
       </span>
-      <div><div class="scr-tile-val">{{ count_active }}</div><div class="scr-tile-lab">Active offers</div></div>
+      <div><div class="scr-tile-val">{{ count_active }}</div><div class="scr-tile-lab">Active packages</div></div>
     </div>
     <div class="scr-tile">
       <span class="scr-tile-ico scr-tile-ico-blue">
@@ -57,11 +57,11 @@
     </div>
   </div>
 
-  <div class="scr-card" data-scr-delete-url="{{ delete_url }}" data-scr-noun="Offer">
+  <div class="scr-card" data-scr-delete-url="{{ delete_url }}" data-scr-noun="Package">
     <div class="scr-toolbar">
       <div class="scr-search">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
-        <input type="text" data-search-key="offer" placeholder="Search promotion code or name" aria-label="Search promotion code or name" />
+        <input type="text" data-search-key="package" placeholder="Search promotion code or name" aria-label="Search promotion code or name" />
       </div>
 
       <div class="scr-filter-wrap" data-filter-key="level">
@@ -102,7 +102,7 @@
         </div>
       </div>
 
-      <span class="scr-toolbar-count">{{ offers|length }} offer{{ offers|length|pluralize }}</span>
+      <span class="scr-toolbar-count">{{ packages|length }} package{{ packages|length|pluralize }}</span>
     </div>
 
     <div class="scr-table-scroll scr-sb">
@@ -120,14 +120,14 @@
           </tr>
         </thead>
         <tbody>
-          {% for o in offers %}
+          {% for o in packages %}
           <tr class="scr-row" data-pk="{{ o.pk }}"
-              data-search-offer="{{ o.offer_code|lower }} {{ o.offer_name|lower }} {{ o.company|lower }}"
+              data-search-package="{{ o.package_code|lower }} {{ o.package_name|lower }} {{ o.company|lower }}"
               data-level="{{ o.level }}" data-period="{{ o.period }}"
               data-status="{% if o.active %}Active{% else %}Inactive{% endif %}">
             <td>
-              <a class="scr-co-name" href="{{ o.edit_url }}" style="font-weight:600">{{ o.offer_code }}</a>
-              <div class="scr-contact-sub">{{ o.offer_name }}</div>
+              <a class="scr-co-name" href="{{ o.edit_url }}" style="font-weight:600">{{ o.package_code }}</a>
+              <div class="scr-contact-sub">{{ o.package_name }}</div>
             </td>
             {% if sees_every_company %}<td>{{ o.company }}</td>{% endif %}
             <td>
@@ -155,13 +155,13 @@
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9-9-9"></path><path d="M7.5 7.5h.01"></path></svg>
                 </span>
                 <div>
-                  <div class="scr-empty-title">No offers yet</div>
-                  <p class="scr-empty-sub">Add an offer to give a discount, an offer price or free items on a rental.</p>
+                  <div class="scr-empty-title">No packages yet</div>
+                  <p class="scr-empty-sub">Add a package to give a discount, a package price or free items on a rental.</p>
                 </div>
                 {% if perm.create %}
-                <a href="{% url 'fare-offer-add' %}" class="scr-btn-primary">
+                <a href="{% url 'fare-package-add' %}" class="scr-btn-primary">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
-                  Add Offer
+                  Add Package
                 </a>
                 {% endif %}
               </div>
@@ -173,7 +173,7 @@
     </div>
 
     <div class="scr-pager">
-      <span class="scr-pager-info">Showing {{ offers|length }} of {{ offers|length }}</span>
+      <span class="scr-pager-info">Showing {{ packages|length }} of {{ packages|length }}</span>
       <div class="scr-pager-nav">
         <button type="button" class="scr-pager-btn" disabled>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"></path></svg>

@@ -1,17 +1,17 @@
-"""The offer form's JSON, both ways.
+"""The package form's JSON, both ways.
 
-parse() turns what the browser posts into an OfferSpec plus the identifiers
+parse() turns what the browser posts into an PackageSpec plus the identifiers
 the service needs (meta), reporting format problems in the message modal's
 shape (same apps.fare.pricing.Issue that Fare's own payload.py uses).
-serialise() turns a saved offer back into the same JSON, for the edit screen.
+serialise() turns a saved package back into the same JSON, for the edit screen.
 
 The shape:
 
-  {pk, company, offer_code, offer_name, level, branch, location,
+  {pk, company, package_code, package_name, level, branch, location,
    valid_from, valid_to, promotion_for, inventory_type,
    lower_value, upper_value, promotion_type,
    time_slab_applicable, free_item_selectable, free_item_selectable_note,
-   free_or_offer_price, is_active,
+   free_or_package_price, is_active,
    items:      [{key, id, vehicle_type, package_minutes, value}],
    free_items: [{key, id, vehicle_type, package_minutes, value}],
    time_slabs: [{key, id, date_mode, specific_date, day, from, to,
@@ -19,7 +19,7 @@ The shape:
 
 Dates are ISO, times "HH:MM", money a decimal string. `key` names a row in
 messages: "i12"/"f3"/"t7" for saved rows, anything else for new ones. There
-is no lock_version -- Offer doesn't carry one (models.py's own note on why).
+is no lock_version -- Package doesn't carry one (models.py's own note on why).
 """
 
 import datetime
@@ -28,9 +28,9 @@ from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 
 from apps.fare.models import (
-    FreeOrOfferPrice,
+    FreeOrPackagePrice,
     InventoryType,
-    OfferLevel,
+    PackageLevel,
     PromotionFor,
     PromotionType,
     SlabDateMode,
@@ -76,9 +76,9 @@ class TimeSlabRow:
 
 
 @dataclass
-class OfferSpec:
-    offer_code: str
-    offer_name: str
+class PackageSpec:
+    package_code: str
+    package_name: str
     level: str
     branch: int | None
     location: int | None
@@ -92,7 +92,7 @@ class OfferSpec:
     time_slab_applicable: bool
     free_item_selectable: bool
     free_item_selectable_note: str
-    free_or_offer_price: str
+    free_or_package_price: str
     items: tuple
     free_items: tuple
     time_slabs: tuple
@@ -100,7 +100,7 @@ class OfferSpec:
 
 @dataclass
 class Parsed:
-    spec: OfferSpec | None
+    spec: PackageSpec | None
     errors: list
     meta: dict = field(default_factory=dict)
 
@@ -267,19 +267,19 @@ def parse(data):
         "item_ids": {}, "free_item_ids": {}, "time_slab_ids": {},
     }
 
-    offer_code = reader.text(data.get("offer_code"), "", "Promotion Code", max_length=30)
-    offer_name = reader.text(data.get("offer_name"), "", "Promotion Name", max_length=100)
+    package_code = reader.text(data.get("package_code"), "", "Package Code", max_length=30)
+    package_name = reader.text(data.get("package_name"), "", "Package Name", max_length=100)
 
-    level = reader.choice(data.get("level"), "", "Promotion Level", OfferLevel.values, "a promotion level")
+    level = reader.choice(data.get("level"), "", "Package Level", PackageLevel.values, "a promotion level")
     branch = _id(data.get("branch"))
     location = _id(data.get("location"))
-    if level == OfferLevel.BRANCH and not branch:
+    if level == PackageLevel.BRANCH and not branch:
         reader.fail("", "Branch", "Choose a branch.", missing=True)
-    if level == OfferLevel.LOCATION and not location:
+    if level == PackageLevel.LOCATION and not location:
         reader.fail("", "Location", "Choose a location.", missing=True)
-    if level != OfferLevel.BRANCH:
+    if level != PackageLevel.BRANCH:
         branch = None
-    if level != OfferLevel.LOCATION:
+    if level != PackageLevel.LOCATION:
         location = None
 
     valid_from = reader.date(data.get("valid_from"), "", "Valid From")
@@ -303,8 +303,8 @@ def parse(data):
     time_slab_applicable = bool(data.get("time_slab_applicable"))
     free_item_selectable = bool(data.get("free_item_selectable"))
     free_item_selectable_note = str(data.get("free_item_selectable_note") or "").strip()
-    free_or_offer_price = reader.choice(data.get("free_or_offer_price"), "", "Free / Offer Price",
-                                        FreeOrOfferPrice.values, "Free or Offer Price")
+    free_or_package_price = reader.choice(data.get("free_or_package_price"), "", "Free / Package Price",
+                                        FreeOrPackagePrice.values, "Free or Package Price")
 
     items = _items(reader, data.get("items"), "Promotion Items", meta,
                    value_required=promotion_type not in (None, PromotionType.QUANTITY))
@@ -323,23 +323,23 @@ def parse(data):
         if not time_slabs:
             reader.fail("", "Free Item Time Slabs", "Add at least one time slab.", missing=True)
 
-    required = (offer_code, offer_name, level, valid_from, valid_to, promotion_for, inventory_type,
-               lower_value, upper_value, promotion_type, free_or_offer_price)
+    required = (package_code, package_name, level, valid_from, valid_to, promotion_for, inventory_type,
+               lower_value, upper_value, promotion_type, free_or_package_price)
     if None in required or not items:
         return Parsed(None, reader.errors, meta)
 
-    spec = OfferSpec(
-        offer_code=offer_code, offer_name=offer_name, level=level, branch=branch, location=location,
+    spec = PackageSpec(
+        package_code=package_code, package_name=package_name, level=level, branch=branch, location=location,
         valid_from=valid_from, valid_to=valid_to, promotion_for=promotion_for, inventory_type=inventory_type,
         lower_value=lower_value, upper_value=upper_value, promotion_type=promotion_type,
         time_slab_applicable=time_slab_applicable, free_item_selectable=free_item_selectable,
-        free_item_selectable_note=free_item_selectable_note, free_or_offer_price=free_or_offer_price,
+        free_item_selectable_note=free_item_selectable_note, free_or_package_price=free_or_package_price,
         items=items, free_items=free_items, time_slabs=time_slabs,
     )
     return Parsed(spec, reader.errors, meta)
 
 
-# -- Saved offer -> JSON -----------------------------------------------------------------
+# -- Saved package -> JSON -----------------------------------------------------------------
 
 
 def _item_json(row):
@@ -361,20 +361,20 @@ def _time_slab_json(row):
     }
 
 
-def serialise(offer):
-    """A saved offer in parse()'s shape. Expects items/free_items/time_slabs
-    prefetched (offer_services.with_children)."""
+def serialise(package):
+    """A saved package in parse()'s shape. Expects items/free_items/time_slabs
+    prefetched (package_services.with_children)."""
     return {
-        "pk": offer.pk, "company": offer.company_id, "offer_code": offer.offer_code, "offer_name": offer.offer_name,
-        "level": offer.level, "branch": offer.branch_id, "location": offer.location_id,
-        "valid_from": offer.valid_from.isoformat(), "valid_to": offer.valid_to.isoformat(),
-        "promotion_for": offer.promotion_for, "inventory_type": offer.inventory_type,
-        "lower_value": str(offer.lower_value), "upper_value": str(offer.upper_value),
-        "promotion_type": offer.promotion_type,
-        "time_slab_applicable": offer.time_slab_applicable, "free_item_selectable": offer.free_item_selectable,
-        "free_item_selectable_note": offer.free_item_selectable_note,
-        "free_or_offer_price": offer.free_or_offer_price, "is_active": offer.is_active,
-        "items": [_item_json(r) for r in offer.items.all()],
-        "free_items": [_free_item_json(r) for r in offer.free_items.all()],
-        "time_slabs": [_time_slab_json(r) for r in offer.time_slabs.all()],
+        "pk": package.pk, "company": package.company_id, "package_code": package.package_code, "package_name": package.package_name,
+        "level": package.level, "branch": package.branch_id, "location": package.location_id,
+        "valid_from": package.valid_from.isoformat(), "valid_to": package.valid_to.isoformat(),
+        "promotion_for": package.promotion_for, "inventory_type": package.inventory_type,
+        "lower_value": str(package.lower_value), "upper_value": str(package.upper_value),
+        "promotion_type": package.promotion_type,
+        "time_slab_applicable": package.time_slab_applicable, "free_item_selectable": package.free_item_selectable,
+        "free_item_selectable_note": package.free_item_selectable_note,
+        "free_or_package_price": package.free_or_package_price, "is_active": package.is_active,
+        "items": [_item_json(r) for r in package.items.all()],
+        "free_items": [_free_item_json(r) for r in package.free_items.all()],
+        "time_slabs": [_time_slab_json(r) for r in package.time_slabs.all()],
     }
