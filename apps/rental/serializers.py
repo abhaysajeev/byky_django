@@ -242,6 +242,37 @@ class OrderRemoveRequest(serializers.Serializer):
     reason = text_field(max_length=500)
 
 
+class StandalonePaymentRequest(serializers.Serializer):
+    """One entry of a standalone payments call -- its kind is the call's."""
+
+    sync_id = uuid7_field()
+    payment_mode_id = whole_number_field()
+    amount = _money_field(min_value=Decimal("0.01"))
+    reference_no = text_field(max_length=50, required=False, allow_blank=True)
+    reference_date = date_field(required=False, allow_null=True)
+    paid_at = datetime_field()
+
+
+class OrderPaymentsRequest(serializers.Serializer):
+    """Money moving on its own: an extra advance, or a refund. One `kind` for
+    the whole call, so advances and refunds are never mixed in one."""
+
+    sync_id = uuid7_field()
+    order_id = _existing_id()
+    kind = serializers.ChoiceField(
+        choices=[PaymentKind.ADVANCE, PaymentKind.REFUND],
+        error_messages={**REQUIRED, "invalid_choice": "must be advance or refund"},
+    )
+    payments = StandalonePaymentRequest(many=True)
+
+    def validate_payments(self, payments):
+        if not payments:
+            raise serializers.ValidationError("Send at least one payment.")
+        if _repeated(payment["sync_id"] for payment in payments):
+            raise serializers.ValidationError("Each payment needs its own sync_id.")
+        return payments
+
+
 class SettlePaymentRequest(OrderPaymentRequest):
     """A payment taken at settle: the balance (`settlement`), or money handed
     back when the customer paid more than the bill (`refund`)."""

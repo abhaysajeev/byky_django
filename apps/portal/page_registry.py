@@ -124,6 +124,7 @@ PAGES = [
     ("fare.offer", "fare", "Offers", "fare-offer-list", CRUD_PRINT, 2, False),
     ("fare.privileges", "fare", "Privileges", "fare-privileges", ["read", "update"], 9, False),
 
+    ("rental.order", "rental", "Orders", "rental-order-list", ["read"], 0, False),
     ("rental.customer", "rental", "Customer", "rental-customer-list", CRUD_PRINT, 1, False),
     ("rental.payment_mode", "rental", "Payment Mode", "rental-payment-mode-list", CRUD_PRINT, 2, False),
     ("rental.privileges", "rental", "Privileges", "rental-privileges", ["read", "update"], 9, False),

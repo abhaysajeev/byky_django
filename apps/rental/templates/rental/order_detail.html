@@ -1,0 +1,182 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Order {{ order.order_no }} - Rental{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Rental</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <a href="{{ list_url }}">Orders</a>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>{{ order.order_no }}</b>
+      </div>
+      <h1 class="scr-title">{{ order.order_no }}</h1>
+    </div>
+    <div class="scr-head-actions">
+      <a href="{{ list_url }}" class="scr-btn-secondary">Back</a>
+    </div>
+  </div>
+
+  <div class="scr-mon-grid">
+    <div class="scr-card">
+      <div class="scr-form-head">
+        <div class="scr-form-title-row">
+          <h2 class="scr-form-title">Order</h2>
+          {% include "rental/partials/order_status.html" with status=status %}
+        </div>
+      </div>
+      <div class="scr-form-body scr-mon-body">
+        <div class="scr-detail-rows">
+          <div class="scr-detail-row"><span class="scr-detail-label">Customer</span><span class="scr-detail-value">{{ order.customer_name|default:"—" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Mobile</span><span class="scr-detail-value">{{ order.customer_mobile|default:"—" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Station</span><span class="scr-detail-value">{{ order.branch.name }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Tablet</span><span class="scr-detail-value">{{ tablet }}{% if operator %} · {{ operator }}{% endif %}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Rental Type</span><span class="scr-detail-value">{% if order.is_direct_bill %}Direct rental{% else %}Rental{% endif %}{% if order.is_hotel_order %} · Hotel order{% endif %}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Booked</span><span class="scr-detail-value">{{ booked_at|date:"d M Y, H:i" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Start</span><span class="scr-detail-value">{{ start_time|date:"d M Y, H:i" }}</span></div>
+          {% if completed_at %}<div class="scr-detail-row"><span class="scr-detail-label">Settled</span><span class="scr-detail-value">{{ completed_at|date:"d M Y, H:i" }}</span></div>{% endif %}
+          {% if cancelled_at %}<div class="scr-detail-row"><span class="scr-detail-label">Cancelled</span><span class="scr-detail-value">{{ cancelled_at|date:"d M Y, H:i" }}</span></div>{% endif %}
+          <div class="scr-detail-row"><span class="scr-detail-label">Vehicles Out</span><span class="scr-detail-value">{{ items_out }}</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="scr-card">
+      <div class="scr-form-head"><div class="scr-form-title-row"><h2 class="scr-form-title">Bill</h2></div></div>
+      <div class="scr-form-body scr-mon-body">
+        {% if order.net_amount is None %}
+        <div class="scr-empty"><div><div class="scr-empty-title">Not billed yet</div><p class="scr-empty-sub">The bill is made when the order is settled, after every vehicle is back.</p></div></div>
+        {% else %}
+        <div class="scr-detail-rows">
+          <div class="scr-detail-row"><span class="scr-detail-label">Subtotal</span><span class="scr-detail-value">AED {{ order.subtotal }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Card Discount</span><span class="scr-detail-value">{% if order.discount_claim_id %}{{ discount_card }} · {{ order.discount_percentage }}% · −AED {{ order.discount_amount }}{% else %}—{% endif %}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">VAT</span><span class="scr-detail-value">{{ order.tax_percentage }}% · AED {{ order.tax_amount }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Rounding</span><span class="scr-detail-value">AED {{ order.rounding_adjustment }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label"><b>Net</b></span><span class="scr-detail-value"><b>AED {{ order.net_amount }}</b></span></div>
+        </div>
+        {% endif %}
+        <div class="scr-detail-rows" style="margin-top:14px">
+          <div class="scr-detail-row"><span class="scr-detail-label">Received</span><span class="scr-detail-value">AED {{ order.amount_received }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Refunded</span><span class="scr-detail-value">AED {{ order.amount_refunded }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Paid</span><span class="scr-detail-value">AED {{ order.paid_amount }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Balance Due</span><span class="scr-detail-value">{% if order.balance_due is None %}—{% else %}AED {{ order.balance_due }}{% endif %}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Payment</span><span class="scr-detail-value">{{ order.get_payment_status_display|default:"—" }}</span></div>
+          {% if invoice %}
+          <div class="scr-detail-row"><span class="scr-detail-label">Invoice</span><span class="scr-detail-value">{{ invoice.invoice_no }} · {{ invoice.issued_at|date:"d M Y, H:i" }} · {{ invoice.issued_by }}</span></div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="scr-card" style="margin-top:20px">
+    <div class="scr-form-head"><div class="scr-form-title-row"><h2 class="scr-form-title">Vehicles</h2></div></div>
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Vehicle</th>
+            <th>Status</th>
+            <th>Package</th>
+            <th>Start → Expected End</th>
+            <th>Returned</th>
+            <th>Base Fare</th>
+            <th>Overtime</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for i in items %}
+          <tr>
+            <td><div class="scr-co-name">{{ i.vehicle }}</div><div class="scr-contact-sub">{{ i.identifier }} · {{ i.vehicle_type }}</div></td>
+            <td>
+              {% include "rental/partials/order_status.html" with status=i.status %}
+              {% if i.replaced_by %}<div class="scr-contact-sub">by {{ i.replaced_by }}{% if i.reason %} · {{ i.reason }}{% endif %}</div>{% elif i.reason %}<div class="scr-contact-sub">{{ i.reason }}</div>{% endif %}
+            </td>
+            <td class="scr-state">{{ i.package_minutes }} min{% if i.run_minutes is not None %}<div class="scr-contact-sub">ran {{ i.run_minutes }} min</div>{% endif %}</td>
+            <td class="scr-state">{{ i.start_time|date:"H:i" }} → {{ i.expected_end_time|date:"H:i" }}<div class="scr-contact-sub">{{ i.start_time|date:"d M Y" }}</div></td>
+            <td class="scr-state">{% if i.end_time %}{{ i.end_time|date:"H:i" }}{% else %}—{% endif %}</td>
+            <td class="scr-state">AED {{ i.base_fare }}</td>
+            <td class="scr-state">{% if i.overtime_amount is None %}—{% else %}AED {{ i.overtime_amount }}{% endif %}</td>
+            <td class="scr-state">{% if i.total_amount is None %}—{% else %}<b>AED {{ i.total_amount }}</b>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="scr-card" style="margin-top:20px">
+    <div class="scr-form-head"><div class="scr-form-title-row"><h2 class="scr-form-title">Payments</h2></div></div>
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Paid At</th>
+            <th>Kind</th>
+            <th>Mode</th>
+            <th>Reference</th>
+            <th>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in payments %}
+          <tr>
+            <td class="scr-state">{{ p.paid_at|date:"d M Y, H:i" }}</td>
+            <td class="scr-state">{{ p.kind_label }}</td>
+            <td class="scr-state">{{ p.mode }}</td>
+            <td class="scr-state">{{ p.reference_no|default:"—" }}{% if p.reference_date %}<div class="scr-contact-sub">{{ p.reference_date|date:"d M Y" }}</div>{% endif %}</td>
+            <td class="scr-state"><b>AED {{ p.amount }}</b></td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="5" style="padding:0"><div class="scr-empty"><div><div class="scr-empty-title">No payments yet</div></div></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="scr-card" style="margin-top:20px">
+    <div class="scr-form-head"><div class="scr-form-title-row"><h2 class="scr-form-title">History</h2></div></div>
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>What</th>
+            <th>Details</th>
+            <th>By</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for h in history %}
+          <tr>
+            <td class="scr-state">{{ h.at|date:"d M Y, H:i" }}</td>
+            <td><div class="scr-co-name">{{ h.label }}</div></td>
+            <td class="scr-state">{{ h.summary }}</td>
+            <td class="scr-state">{{ h.who }}{% if h.tablet %}<div class="scr-contact-sub">Tablet {{ h.tablet }}</div>{% endif %}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="4" style="padding:0"><div class="scr-empty"><div><div class="scr-empty-title">No history</div></div></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
