@@ -190,6 +190,17 @@ def test_a_qr_punch_in_and_out_across_midnight_pair_up(client, world, operator):
     assert row.punch_out.punch_type == PunchType.PUNCH_OUT
 
 
+def test_names_come_from_the_employee_master_not_the_request(client, world, operator):
+    sent = qr("punch_in", local(DAY, 9), employee_name="Someone Else", rms_employee_name="Cashier1")
+    assert mark(client, operator, sent).json()["code"] == "ok"
+    unnamed = qr("punch_out", local(DAY, 18))
+    del unnamed["employee_name"], unnamed["rms_employee_name"]
+    assert mark(client, operator, unnamed).json()["code"] == "ok"
+
+    for row in Attendance.objects.all():
+        assert (row.employee_name, row.rms_employee_name) == ("Anil K", "Rashed K")
+
+
 def test_self_attendance_from_the_manager_app(client, world, manager):
     response = mark(client, manager, self_punch("punch_in", local(DAY, 9), rms_latitude="24.1", rms_longitude="54.2"),
                     app="manager")

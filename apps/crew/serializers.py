@@ -36,7 +36,9 @@ class SelfAttendanceRequest(serializers.Serializer):
     punch_type = serializers.ChoiceField(choices=PunchType.choices, error_messages=PUNCH_TYPE)
 
     employee_code = text_field(max_length=20)
-    employee_name = text_field(max_length=150)
+    # Optional and ignored: the server records the name from the employee
+    # master, so a punch's name always matches the employee it is linked to.
+    employee_name = text_field(max_length=150, required=False, allow_blank=True)
     employee_branch_code = text_field(max_length=10)
 
     rms_installation_id = text_field(max_length=64)
@@ -57,7 +59,7 @@ class QrAttendanceRequest(SelfAttendanceRequest):
     employee_longitude = coordinate_field(limit=180, required=False, allow_null=True)
 
     rms_employee_code = text_field(max_length=20)
-    rms_employee_name = text_field(max_length=150)
+    rms_employee_name = text_field(max_length=150, required=False, allow_blank=True)    # ignored, as above
     rms_branch_code = text_field(max_length=10)
 
     def validate(self, values):

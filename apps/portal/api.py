@@ -124,6 +124,10 @@ def _operator_login(request, form):
     data = {
         "tokens": _issue_tokens(user, session),
         "first_name": user.employee.first_name,
+        # Who is signed in on this tablet -- employee_code is what the app
+        # sends as rms_employee_code when it scans an attendance QR code.
+        "employee_code": user.employee.employee_code,
+        "full_name": user.employee.full_name,
         "branch": {
             # The station's database id -- what the app puts in the station
             # QR code, so a scan names exactly one branch.
@@ -201,7 +205,7 @@ _OPERATOR_LOGIN_SUCCESS_DATA = {
         "access_expires_at": "2026-09-21T05:46:16.131807+00:00",
         "refresh_expires_at": "2026-10-21T05:16:16.131807+00:00",
     },
-    "first_name": "Rashed",
+    "first_name": "Rashed", "employee_code": "OPR001", "full_name": "Rashed K",
     "branch": {
         "branch_id": 12, "name": "Creek Park 1", "branch_code": "AUH01", "is_hotel": False,
         "hotel_commission": "0.00", "accepts_app_payment": False,

@@ -264,7 +264,8 @@ def mark_attendance(user, source, values):
         punch_type=values["punch_type"],
         employee=employee,
         employee_code=values["employee_code"],
-        employee_name=values["employee_name"],
+        # From the master, never the request: the name always matches the employee.
+        employee_name=employee.full_name,
         employee_branch=_branch_by_code(company, values["employee_branch_code"], "employee_branch_code"),
         rms_installation_id=values["rms_installation_id"],
         rms_scan_time=values["rms_scan_time"],
@@ -280,7 +281,7 @@ def mark_attendance(user, source, values):
         row.employee_longitude = values.get("employee_longitude")
         row.rms_employee = _employee_by_code(company, values["rms_employee_code"], "unknown_rms_employee")
         row.rms_employee_code = values["rms_employee_code"]
-        row.rms_employee_name = values["rms_employee_name"]
+        row.rms_employee_name = row.rms_employee.full_name
         row.rms_branch = _branch_by_code(company, values["rms_branch_code"], "rms_branch_code")
 
     try:

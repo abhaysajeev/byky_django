@@ -80,6 +80,12 @@ nothing, so an offline queue can resend safely.
 **Times** -- `YYYY-MM-DD HH:MM:SS` in company time, no offset (the app's clock
 is set from server/time).
 
+**Codes, not names** -- people are found by `employee_code` and
+`rms_employee_code` (the operator's own code is `employee_code` in the
+operator login), branches by `employee_branch_code` and `rms_branch_code`.
+`employee_name` and `rms_employee_name` are optional and **ignored**: the
+server records each name from the employee master.
+
 **Pairing** -- a punch_out closes the employee's open punch_in, even across
 midnight. A punch_in stays open for 24 hours; after that it is a missing
 punch-out and no longer blocks a new punch_in.
