@@ -125,6 +125,9 @@ def _operator_login(request, form):
         "tokens": _issue_tokens(user, session),
         "first_name": user.employee.first_name,
         "branch": {
+            # The station's database id -- what the app puts in the station
+            # QR code, so a scan names exactly one branch.
+            "branch_id": branch.pk,
             "name": branch.name,
             "branch_code": branch.short_code,
             "is_hotel": branch.is_hotel,
@@ -200,7 +203,7 @@ _OPERATOR_LOGIN_SUCCESS_DATA = {
     },
     "first_name": "Rashed",
     "branch": {
-        "name": "Creek Park 1", "branch_code": "AUH01", "is_hotel": False,
+        "branch_id": 12, "name": "Creek Park 1", "branch_code": "AUH01", "is_hotel": False,
         "hotel_commission": "0.00", "accepts_app_payment": False,
         "is_multi_device": False, "allows_test_ride": True,
     },
@@ -239,7 +242,8 @@ class LoginView(PublicAPIView):
             "registered/approved/not-blocked/not-retired; Operator additionally "
             "requires it be mapped to a branch with receipt settings configured. "
             "Manager gets the tokens only. See the success examples below for "
-            "the different response shapes. "
+            "the different response shapes. Operator's `branch.branch_id` is the "
+            "station's id in the database -- use it when building the station QR code. "
             "design/login/login-for-employee.md, design/login/login-for-operator.md."
         ),
         request=envelope_request("LoginEnvelope", LoginRequest),

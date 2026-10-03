@@ -116,6 +116,7 @@ def test_login_returns_the_full_response_shape(client, app_user, device, world):
     assert data["first_name"] == "Rashed"
 
     branch = data["branch"]
+    assert branch["branch_id"] == world["branch"].pk
     assert branch["name"] == "Creek Park 1"
     assert branch["branch_code"] == "AUH01"
     assert branch["is_hotel"] is True
