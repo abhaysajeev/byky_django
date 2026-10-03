@@ -181,15 +181,15 @@ _EMPLOYEE_LOGIN_SUCCESS_DATA = {
     "employee": {
         "employee_code": "TEST-001", "full_name": "TEST USER", "first_name": "TEST",
         "middle_name": "", "last_name": "USER", "designation": "Cashier", "role": "Cashier",
-        "branch": None, "mobile": "", "email": "", "photo_url": None,
+        "branch_id": None, "branch": None, "mobile": "", "email": "", "photo_url": None,
         "company": "BY KY SPORT & LEISURE EQUIPMENT RENTAL & TRADING LLC",
     },
     "roster": {
         "week_start": "2026-09-20", "week_end": "2026-09-26",
         "days": [
-            {"date": "2026-09-20", "status": "Working", "branch": "Creek Park 1", "branch_code": "AUH01",
+            {"date": "2026-09-20", "status": "Working", "branch_id": 12, "branch": "Creek Park 1", "branch_code": "AUH01",
              "shift1_start": "07:00", "shift1_end": "23:00", "shift2_start": None, "shift2_end": None},
-            {"date": "2026-09-21", "status": None, "branch": None, "branch_code": None,
+            {"date": "2026-09-21", "status": None, "branch_id": None, "branch": None, "branch_code": None,
              "shift1_start": None, "shift1_end": None, "shift2_start": None, "shift2_end": None},
         ],
     },
