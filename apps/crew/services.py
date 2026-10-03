@@ -892,6 +892,7 @@ def employee_profile(employee):
         "last_name": employee.last_name,
         "designation": designation.title,
         "role": designation.get_roster_category_display() if designation.roster_category else None,
+        "branch_id": employee.branch_id,
         "branch": employee.branch.name if employee.branch_id else None,
         "mobile": employee.mobile,
         "email": employee.email,
@@ -930,7 +931,7 @@ def current_week_roster(employee, *, at=None):
         row = rows.get(day)
         if row is None:
             out.append({
-                "date": day.isoformat(), "status": None, "branch": None, "branch_code": None,
+                "date": day.isoformat(), "status": None, "branch_id": None, "branch": None, "branch_code": None,
                 "shift1_start": None, "shift1_end": None,
                 "shift2_start": None, "shift2_end": None,
             })
@@ -939,6 +940,8 @@ def current_week_roster(employee, *, at=None):
         out.append({
             "date": day.isoformat(),
             "status": row.get_day_type_display(),
+            # The station's database id, for the app's QR code.
+            "branch_id": row.branch_id,
             "branch": row.branch.name if row.branch_id else None,
             # The QR code carries this as employee_branch_code (attendance/mark).
             "branch_code": row.branch.short_code if row.branch_id else None,

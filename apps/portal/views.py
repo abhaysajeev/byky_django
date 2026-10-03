@@ -5,12 +5,15 @@ first screen port (.claude/skills/port-ui/SKILL.md).
 """
 
 from django.contrib import messages
+from django.http import JsonResponse
 from django.shortcuts import redirect, render
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_http_methods
 
 from apps.company import scoping
+from apps.fleet.scoping import vehicles_for
+from apps.portal import dashboard
 from apps.portal.auth import LoginRefused, close_session, sign_in_web
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.session_models import AppSession, LogoutReason
@@ -125,18 +128,24 @@ class DashboardView(PagePermissionMixin, ThemedTemplateView):
             )
         ]
 
+        live = dashboard.live_payload(self.request.user)
+        monthly = dashboard.monthly_sales(self.request.user)
         context.update({
-            # Real counts, from the two masters that exist.
+            # The first row is live: the branch carousel and the overdue watch
+            # refresh from /dashboard/live/; Monthly Sales is as of page load.
+            "live": live,
+            "monthly": monthly,
+            # Real counts.
             "stations": stations,
+            "vehicles": vehicles_for(self.request.user).filter(is_active=True).count(),
             "emirates": scoping.states_for(self.request.user).filter(is_active=True).count(),
             "empty_stations": stations,          # none holds a vehicle yet
             "stocked_stations": 0,
             "deployment_pct": 0,
             "avg_per_station": 0,
             "largest_station": {"name": "", "vehicle_count": 0},
-            # Fleet, crew and rental modules are not built, so these are zero
-            # rather than invented.
-            "vehicles": 0,
+            # The cards below the first row are not wired yet, so these are
+            # zero rather than invented.
             "categories": 0,
             "vehicle_types": 0,
             "electric": 0,
@@ -154,10 +163,11 @@ class DashboardView(PagePermissionMixin, ThemedTemplateView):
             "by_profession": [],
             "invoices": [],
             "map_points": points,
-            # Empty arrays, never arrays of zeros: the chart code divides by the
-            # series maximum, and an all-zero series would draw NaN geometry.
+            # The month's days include those with no sales (zeros); the
+            # sparkline draws an all-zero month as a flat line. The other
+            # series stay empty until their cards are wired.
             "chart_data": {
-                "daily_labels": [], "daily_revenue": [],
+                "daily_labels": monthly["labels"], "daily_revenue": monthly["series"],
                 "monthly_labels": [], "monthly_revenue": [],
                 "revenue_categories": [], "revenue_category_values": [],
                 "map_points": points,
@@ -166,3 +176,14 @@ class DashboardView(PagePermissionMixin, ThemedTemplateView):
             },
         })
         return context
+
+
+@never_cache
+@require_http_methods(["GET"])
+def dashboard_live_view(request):
+    """The dashboard's live figures, polled by the page once a minute while
+    someone is looking at it. A signed-out caller gets 401, not the sign-in
+    page, so the page's poller can stop instead of fetching HTML forever."""
+    if not request.user:
+        return JsonResponse({"detail": "Signed out."}, status=401)
+    return JsonResponse(dashboard.live_payload(request.user))

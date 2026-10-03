@@ -53,7 +53,7 @@ def test_employee_profile_reads_straight_off_the_record(employee):
     assert profile["mobile"] == "0500000000"
     assert profile["email"] == "rashed@byky.test"
     assert profile["photo_url"] is None
-    assert profile["branch"] is None
+    assert profile["branch"] is None and profile["branch_id"] is None
 
 
 def test_employee_profile_role_is_none_for_a_non_roster_designation(world, employee):
@@ -70,7 +70,7 @@ def test_current_week_roster_is_blank_for_an_unset_day(employee):
     assert roster["days"]
     for day in roster["days"]:
         assert day["status"] is None
-        assert day["branch"] is None
+        assert day["branch"] is None and day["branch_id"] is None
         assert day["shift1_start"] is None
 
 
@@ -90,6 +90,7 @@ def test_current_week_roster_shows_the_branch_local_time_not_utc(world, employee
     todays = next(d for d in roster["days"] if d["date"] == today.isoformat())
     assert todays["status"] == "Working"
     assert todays["branch"] == "Creek Park 1"
+    assert todays["branch_id"] == world["branch"].pk
     assert todays["shift1_start"] == "07:00"
     assert todays["shift1_end"] == "23:00"
 

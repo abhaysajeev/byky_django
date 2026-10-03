@@ -36,12 +36,13 @@ satellite), which a bubble plot on a blank grid cannot show.
 {% block page_js %}
 {{ block.super }}
 {{ chart_data|json_script:"byky-chart-data" }}
+{{ live|json_script:"bd-live" }}
 <script src="{% static 'js/byky-dashboard.js' %}"></script>
 <script src="{% static 'js/byky-station-network.js' %}"></script>
 {% endblock page_js %}
 
 {% block content %}
-<div class="bd">
+<div class="bd" data-live-url="{% url 'dashboard-live' %}">
 
   <div class="bd-head">
     <div>
@@ -63,93 +64,57 @@ satellite), which a bubble plot on a blank grid cannot show.
 
   <div class="bd-row">
 
-    <!-- Business overview carousel -->
-    <div class="bd-hero">
-      <div class="bd-hero-slide is-on">
-        <div class="bd-hero-top">
-          <div>
-            <h2 class="bd-hero-title">Revenue Overview</h2>
-            <p class="bd-hero-sub">Monthly performance</p>
-          </div>
-          <div class="bd-dots">
-            <button type="button" class="is-on" aria-label="Revenue"></button>
-            <button type="button" aria-label="Fleet"></button>
-            <button type="button" aria-label="Network"></button>
-          </div>
+    <!-- Branch live carousel: one slide per station, busiest first -->
+    <div class="bd-hero" data-bd-carousel aria-roledescription="carousel" aria-label="Stations today">
+      <div class="bd-hero-top">
+        <div>
+          <h2 class="bd-hero-title">Stations Today</h2>
+          <p class="bd-hero-sub" data-bd-updated>Live</p>
         </div>
-        <div class="bd-hero-body">
-          <div class="bd-hero-stats">
-            <div><span class="bd-hero-val">{{ sales.monthly_revenue|intcomma }}</span><div class="bd-hero-lab">Revenue AED</div></div>
-            <div><span class="bd-hero-val">{{ sales.daily_avg|intcomma }}</span><div class="bd-hero-lab">Daily Avg</div></div>
-            <div><span class="bd-hero-val">{{ sales.rentals|intcomma }}</span><div class="bd-hero-lab">Rentals</div></div>
-            <div><span class="bd-hero-val">{{ sales.avg_ticket }}</span><div class="bd-hero-lab">Avg Ticket</div></div>
-          </div>
-          <div class="bd-hero-icon">
-            <svg width="62" height="62" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.92)" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M5 21V4.2a1.2 1.2 0 0 1 1.2-1.2h11.6A1.2 1.2 0 0 1 19 4.2V21l-2.3-1.6-2.4 1.6-2.3-1.6-2.4 1.6L7.3 19.4z"></path>
-              <path d="m8.6 14.4 2.6-3.1 2.1 1.8 2.3-3.4M15.6 9.7h-2.2M15.6 9.7v2.2"></path>
-            </svg>
-          </div>
+        {% if live.branches|length > 1 %}
+        <div class="bd-car-nav">
+          <button type="button" class="bd-car-btn" data-bd-prev aria-label="Previous station">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"></path></svg>
+          </button>
+          <span class="bd-car-count"><span data-bd-pos>1</span> / <span data-bd-total>{{ live.branches|length }}</span></span>
+          <button type="button" class="bd-car-btn" data-bd-next aria-label="Next station">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+          </button>
         </div>
+        {% endif %}
       </div>
-
-      <div class="bd-hero-slide">
-        <div class="bd-hero-top">
-          <div>
-            <h2 class="bd-hero-title">Fleet Overview</h2>
-            <p class="bd-hero-sub">{{ vehicles|intcomma }} vehicles across {{ stations }} stations</p>
-          </div>
-          <div class="bd-dots">
-            <button type="button" aria-label="Revenue"></button>
-            <button type="button" class="is-on" aria-label="Fleet"></button>
-            <button type="button" aria-label="Network"></button>
-          </div>
-        </div>
-        <div class="bd-hero-body">
-          <div class="bd-hero-stats">
-            <div><span class="bd-hero-val">{{ vehicles|intcomma }}</span><div class="bd-hero-lab">Vehicles</div></div>
-            <div><span class="bd-hero-val">{{ categories }}</span><div class="bd-hero-lab">Categories</div></div>
-            <div><span class="bd-hero-val">{{ vehicle_types }}</span><div class="bd-hero-lab">Models</div></div>
-            <div><span class="bd-hero-val">{{ electric }}</span><div class="bd-hero-lab">Electric</div></div>
-          </div>
-          <div class="bd-hero-icon">
-            <svg width="62" height="62" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.92)" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M5.6 19.4a3.4 3.4 0 1 0 0-6.8 3.4 3.4 0 0 0 0 6.8M18.4 19.4a3.4 3.4 0 1 0 0-6.8 3.4 3.4 0 0 0 0 6.8"></path>
-              <path d="M5.6 16h4.1l3.2-6.4 5.5 6.4M9.7 16l3.2-6.4h-2.6M13.2 9.6h3.2M11.6 8.2h2.6"></path>
-            </svg>
-          </div>
-        </div>
-      </div>
-
-      <div class="bd-hero-slide">
-        <div class="bd-hero-top">
-          <div>
-            <h2 class="bd-hero-title">Network &amp; Workforce</h2>
-            <p class="bd-hero-sub">{{ stations }} stations in {{ emirates }} emirates</p>
-          </div>
-          <div class="bd-dots">
-            <button type="button" aria-label="Revenue"></button>
-            <button type="button" aria-label="Fleet"></button>
-            <button type="button" class="is-on" aria-label="Network"></button>
-          </div>
-        </div>
-        <div class="bd-hero-body">
-          <div class="bd-hero-stats">
-            <div><span class="bd-hero-val">{{ stations }}</span><div class="bd-hero-lab">Stations</div></div>
-            <div><span class="bd-hero-val">{{ emirates }}</span><div class="bd-hero-lab">Emirates</div></div>
-            <div><span class="bd-hero-val">{{ employees }}</span><div class="bd-hero-lab">Employees</div></div>
-            <div><span class="bd-hero-val">{{ avg_per_station }}</span><div class="bd-hero-lab">Avg Fleet</div></div>
-          </div>
-          <div class="bd-hero-icon">
-            <svg width="62" height="62" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.92)" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 14.6a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2M4.6 7.2a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4M19.4 7.2a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4M12 21.6a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4"></path>
-              <path d="m6.2 6.4 4 3.6M17.8 6.4l-4 3.6M12 14.6v2.6"></path>
-            </svg>
-          </div>
+      <div class="bd-car-viewport">
+        <div class="bd-car-track" data-bd-track>
+          {% for b in live.branches %}
+          <section class="bd-car-slide{% if forloop.first %} is-on{% endif %}" data-branch="{{ b.id }}" aria-roledescription="slide" aria-label="{{ b.name }}">
+            <div class="bd-car-head">
+              <h3 class="bd-car-name">{{ b.name }}</h3>
+              <div class="bd-car-hours">
+                <span data-live="hours">{{ b.hours }}</span>
+                {% if b.state != "not_set" %}<span class="bd-car-state is-{{ b.state }}" data-live="state">{% if b.state == "open" %}Open{% else %}Closed{% endif %}</span>{% endif %}
+              </div>
+            </div>
+            <div class="bd-car-revenue">
+              <span class="bd-car-amt"><small>AED</small><span data-live="revenue">{{ b.revenue }}</span></span>
+              <span class="bd-car-sub">Revenue today</span>
+            </div>
+            <div class="bd-car-stats">
+              <div class="bd-car-stat"><span class="bd-car-num" data-live="on_rent">{{ b.on_rent }}</span><span class="bd-car-lab">On rent</span></div>
+              <div class="bd-car-stat"><span class="bd-car-num" data-live="invoices">{{ b.invoices }}</span><span class="bd-car-lab">Invoices</span></div>
+              <div class="bd-car-stat"><span class="bd-car-num" data-live="devices">{{ b.devices }}</span><span class="bd-car-lab">Devices</span></div>
+              <div class="bd-car-stat"><span class="bd-car-num" data-live="staff">{{ b.staff }}</span><span class="bd-car-lab">On duty</span></div>
+            </div>
+          </section>
+          {% empty %}
+          <section class="bd-car-slide is-on">
+            <div class="bd-car-head"><h3 class="bd-car-name">No stations yet</h3></div>
+            <p class="bd-hero-sub">Stations appear here once they are added.</p>
+          </section>
+          {% endfor %}
         </div>
       </div>
     </div>
-    <!--/ Business overview carousel -->
+    <!--/ Branch live carousel -->
 
     <!-- Monthly Sales -->
     <div class="bd-card bd-sales">
@@ -157,68 +122,61 @@ satellite), which a bubble plot on a blank grid cannot show.
         <div class="bd-flexrow">
           <div>
             <h3 class="bd-card-h3">Monthly Sales</h3>
-            <p class="bd-card-sub">Rolling 30 days</p>
+            <p class="bd-card-sub">{{ monthly.title }}</p>
           </div>
           <span class="bd-chip">AED</span>
         </div>
-        <div style="display:flex;align-items:baseline;gap:8px;margin-top:16px">
-          <span class="bd-big">{{ sales.monthly_revenue|intcomma }}</span>
-          <span class="bd-delta">{{ sales.delta }}</span>
+        <div class="bd-sales-total">
+          <span class="bd-big">{{ monthly.total }}</span>
+          <span class="bd-delta is-{{ monthly.delta.direction }}" title="Against the same days last month">{% if monthly.delta.direction == "up" %}▲ {% elif monthly.delta.direction == "down" %}▼ {% endif %}{{ monthly.delta.text }}</span>
         </div>
-        <p class="bd-note">Daily average {{ sales.daily_avg|intcomma }}</p>
+        <p class="bd-note">Daily average {{ monthly.daily_avg }}</p>
       </div>
       <svg id="bd-spark" class="bd-spark" viewBox="0 0 300 96" preserveAspectRatio="none"></svg>
       <div class="bd-spark-labels">
-        <span class="peak" id="bd-spark-peak"></span>
-        <span class="aux" id="bd-spark-aux"></span>
+        <span class="peak" id="bd-spark-peak">{{ monthly.peak|default:"No sales yet" }}</span>
+        {% if monthly.best_day %}<span class="aux">{{ monthly.best_day }}</span>{% endif %}
       </div>
     </div>
     <!--/ Monthly Sales -->
 
-    <!-- Invoices -->
-    <div class="bd-card bd-invoices">
+    <!-- Vehicles Now: the overdue watch -->
+    <div class="bd-card bd-overdue" data-bd-overdue>
       <div class="bd-flexrow">
         <div>
-          <h3 class="bd-card-h3">Invoices</h3>
-          <p class="bd-card-sub">Rentals billed this month</p>
+          <h3 class="bd-card-h3">Vehicles Now</h3>
+          <p class="bd-card-sub">
+            <span data-live-overdue="on_rent">{{ live.overdue.on_rent }}</span> on rent ·
+            <span class="bd-od-count{% if live.overdue.overdue %} is-late{% endif %}"><span data-live-overdue="overdue">{{ live.overdue.overdue }}</span> overdue</span>
+          </p>
         </div>
+        <span class="bd-live-dot" title="Live"><i></i>Live</span>
       </div>
-      <div class="bd-big" style="margin-top:14px">{{ sales.rentals|intcomma }}</div>
-      <div class="bd-split">
-        <div style="flex:1">
-          <div style="display:flex;align-items:center;gap:7px">
-            <span class="bd-ico bd-ico-green">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#1f9d63" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"></path></svg>
+      <ul class="bd-od-list" data-bd-od-list>
+        {% for r in live.overdue.rows|slice:":3" %}
+        <li>
+          <a class="bd-od-row" href="{{ r.url }}">
+            <span class="bd-od-main">
+              <span class="bd-od-vehicle">{{ r.vehicle }}</span>
+              <span class="bd-od-station">{{ r.station }}</span>
             </span>
-            <span class="bd-mini-lab">Paid</span>
-          </div>
-          <div class="bd-pct">{{ sales.paid_pct }}%</div>
-          <p class="bd-pct-sub">{{ sales.paid_invoices|intcomma }}</p>
-        </div>
-        <div class="bd-split-div"></div>
-        <div style="flex:1;text-align:right">
-          <div style="display:flex;align-items:center;gap:7px;justify-content:flex-end">
-            <span class="bd-mini-lab">Pending</span>
-            <span class="bd-ico bd-ico-amber">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#e08700" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v4.5l3 1.8"></path></svg>
+            <span class="bd-od-who">
+              <span class="bd-od-name">{{ r.customer }}</span>
+              <span class="bd-od-phone">{{ r.mobile }}</span>
             </span>
-          </div>
-          <div class="bd-pct">{{ sales.pending_pct }}%</div>
-          <p class="bd-pct-sub">{{ sales.pending_invoices|intcomma }}</p>
-        </div>
-      </div>
-      <div class="bd-progress-wrap">
-        <div class="bd-progress-cap">
-          <span class="ok">{{ sales.paid_invoices|intcomma }} cleared</span>
-          <span class="warn">{{ sales.pending_invoices|intcomma }} open</span>
-        </div>
-        <div class="bd-progress">
-          <i class="paid" style="width:{{ sales.paid_pct }}%"></i>
-          <i class="pending" style="width:{{ sales.pending_pct }}%"></i>
-        </div>
+            <span class="bd-od-late" data-due="{{ r.due }}"></span>
+          </a>
+        </li>
+        {% empty %}
+        <li class="bd-od-empty">No overdue vehicles</li>
+        {% endfor %}
+      </ul>
+      <div class="bd-od-foot">
+        <span class="bd-od-page" data-bd-od-page></span>
+        <a class="bd-od-all" href="{% url 'rental-order-list' %}?status=active">View all on rent →</a>
       </div>
     </div>
-    <!--/ Invoices -->
+    <!--/ Vehicles Now -->
   </div>
 
   <div class="bd-row">
