@@ -253,7 +253,7 @@ SPECTACULAR_SETTINGS = {
 
 # Lifetimes from design/03-login.md section 6.2.
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
+    "ACCESS_TOKEN_LIFETIME": timedelta(days=5),        # unused copy; apps/portal/jwt.py decides
     "REFRESH_TOKEN_LIFETIME": timedelta(days=30),
     "ROTATE_REFRESH_TOKENS": True,
     "UPDATE_LAST_LOGIN": False,

@@ -22,7 +22,7 @@ class AppJWTAuthentication(BaseAuthentication):
     Checks the AppSession row by the token's session id rather than trusting
     the access token alone (section 7.4's own reasoning for the upload
     endpoint) -- a force logout or a blocked employee closes the session, and
-    that must take effect before the token's own 30-minute expiry would.
+    that must take effect before the token's own expiry would.
     """
 
     def authenticate(self, request):
