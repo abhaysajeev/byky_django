@@ -340,9 +340,10 @@ class Attendance(TimeStampedModel):
     server received it.
 
     A punch-out points at the punch-in it closes (`punch_in`), set by the
-    server -- apps/crew/services.py::mark_attendance. The code and name
-    columns are kept as captured beside the foreign keys: they are what the
-    QR code said, not a copy of the employee master.
+    server -- apps/crew/services.py::mark_attendance. The code columns keep
+    what the app sent beside the foreign keys; the name columns are copied
+    from the employee master when the punch is saved, so a punch always
+    shows the name of the employee it is linked to (3 Oct 2026).
     """
 
     id = models.UUIDField(primary_key=True, editable=False)
