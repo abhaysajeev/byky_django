@@ -64,24 +64,47 @@
 .bd-hero-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; position: relative; }
 .bd-hero-title { font-size: 17px; font-weight: 600; letter-spacing: -0.2px; }
 .bd-hero-sub { font-size: 12px; font-weight: 400; color: rgba(255, 255, 255, 0.82); margin-top: 4px !important; }
-.bd-dots { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; padding-top: 4px; }
-.bd-dots button { border: none; cursor: pointer; padding: 0; width: 7px; height: 7px; border-radius: 99px; background: rgba(255, 255, 255, 0.45); transition: width 0.2s, background 0.2s; }
-.bd-dots button.is-on { width: 20px; background: #fff; }
-.bd-hero-body { display: flex; align-items: flex-end; gap: 22px; margin-top: 26px; position: relative; flex-wrap: wrap; }
-.bd-hero-stats { display: grid; grid-template-columns: repeat(2, minmax(120px, 1fr)); gap: 20px 26px; flex: 1 1 260px; }
-.bd-hero-val { display: inline-block; font-size: 19px; font-weight: 600; letter-spacing: -0.4px; font-variant-numeric: tabular-nums; background: rgba(0, 0, 0, 0.14); border-radius: 8px; padding: 5px 10px; line-height: 1.15; }
+.bd-hero-val { display: inline-block; font-size: 19px; font-weight: 600; letter-spacing: -0.4px; font-variant-numeric: tabular-nums; background: rgba(0, 0, 0, 0.14); border-radius: 8px; padding: 5px 10px; line-height: 1.15; transition: background 0.4s; }
+.bd-hero-val.is-changed { background: rgba(255, 255, 255, 0.3); }
 .bd-hero-lab { font-size: 11.5px; font-weight: 400; color: rgba(255, 255, 255, 0.86); margin-top: 7px; letter-spacing: 0.2px; }
-.bd-hero-icon { flex: 0 0 auto; opacity: 0.9; padding: 0 10px 6px; }
-.bd-hero-slide { display: none; }
-.bd-hero-slide.is-on { display: block; }
+
+/* branch carousel: one track, moved with transform (no reflow) */
+.bd-car-nav { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.bd-car-btn {
+  width: 28px; height: 28px; border-radius: 99px; border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.12); color: #fff; display: grid; place-items: center;
+  cursor: pointer; padding: 0; transition: background 0.16s, border-color 0.16s;
+}
+.bd-car-btn:hover { background: rgba(255, 255, 255, 0.24); border-color: rgba(255, 255, 255, 0.6); }
+.bd-car-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.bd-car-count { font-size: 11.5px; font-weight: 600; color: rgba(255, 255, 255, 0.86); font-variant-numeric: tabular-nums; min-width: 44px; text-align: center; }
+.bd-car-viewport { overflow: hidden; margin-top: 14px; position: relative; flex: 1 1 auto; display: flex; }
+.bd-car-track { display: flex; flex: 1 1 auto; transition: transform 0.45s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.2s; will-change: transform; }
+.bd-car-track.is-instant { transition: none; }
+.bd-car-viewport.is-fading .bd-car-track { opacity: 0; }
+.bd-car-slide { flex: 0 0 100%; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 16px; }
+.bd-car-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+.bd .bd-car-name { font-size: 18px; font-weight: 700; letter-spacing: -0.4px; line-height: 1.2; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.bd-car-hours { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; font-size: 12px; color: rgba(255, 255, 255, 0.86); font-variant-numeric: tabular-nums; }
+.bd-car-state { font-size: 10.5px; font-weight: 600; letter-spacing: 0.3px; padding: 3px 8px; border-radius: 99px; }
+.bd-car-state.is-open { background: #fff; color: #14764a; }
+.bd-car-state.is-closed { background: rgba(0, 0, 0, 0.22); color: #fff; }
+.bd-car-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 560px) { .bd-car-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (prefers-reduced-motion: reduce) {
+  .bd-car-track, .bd-hero-val { transition: none; }
+}
 
 /* ── monthly sales ────────────────────────────────────────────────── */
 .bd-sales { flex: 1 1 250px; display: flex; flex-direction: column; overflow: hidden; position: relative; animation: bdFadeUp 0.34s ease-out 0.05s both; transition: box-shadow 0.22s, transform 0.22s; }
-.bd-sales:hover, .bd-invoices:hover { box-shadow: 0 16px 34px -22px rgba(26, 22, 64, 0.28); transform: translateY(-2px); }
+.bd-sales:hover, .bd-overdue:hover { box-shadow: 0 16px 34px -22px rgba(26, 22, 64, 0.28); transform: translateY(-2px); }
 .bd-sales-head { padding: 20px 20px 0; }
 .bd-flexrow { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .bd-big { font-size: 26px; font-weight: 700; letter-spacing: -1px; font-variant-numeric: tabular-nums; }
+.bd-sales-total { display: flex; align-items: baseline; gap: 8px; margin-top: 16px; }
 .bd-delta { font-size: 11.5px; font-weight: 600; color: #14764a; background: #e9f8f0; padding: 3px 7px; border-radius: 6px; }
+.bd-delta.is-down { color: #c2141a; background: #fdeced; }
+.bd-delta.is-none { color: #8b87b0; background: #f4f3f9; }
 .bd-note { font-size: 11.5px; color: #9490bb; margin-top: 6px !important; }
 .bd-spark { width: 100%; height: 104px; display: block; margin-top: 10px; }
 .bd-spark-marker { opacity: 0; transition: opacity 0.2s; }
@@ -92,25 +115,29 @@
 .bd-spark-labels .peak { color: #c2141a; border: 1px solid #fbdcde; }
 .bd-spark-labels .aux { color: #8b87b0; font-weight: 500; }
 
-/* ── invoices ─────────────────────────────────────────────────────── */
-.bd-invoices { flex: 1 1 250px; padding: 20px; display: flex; flex-direction: column; animation: bdFadeUp 0.34s ease-out 0.1s both; transition: box-shadow 0.22s, transform 0.22s; }
-.bd-split { display: flex; align-items: flex-start; gap: 12px; margin-top: 20px; }
-.bd-split-div { width: 1px; align-self: stretch; background: #f0eff7; }
-.bd-ico { width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; flex: 0 0 auto; }
-.bd-ico-green { background: #e9f8f0; }
-.bd-ico-amber { background: #fdf3e3; }
-.bd-mini-lab { font-size: 12px; font-weight: 500; color: #4b4770; }
-.bd-pct { font-size: 17px; font-weight: 700; margin-top: 9px; font-variant-numeric: tabular-nums; }
-.bd-pct-sub { font-size: 11px; color: #9490bb; margin-top: 2px !important; font-variant-numeric: tabular-nums; }
-.bd-progress-wrap { margin-top: auto; padding-top: 20px; }
-.bd-progress-cap { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 16px; opacity: 0; transition: opacity 0.2s; }
-.bd-invoices:hover .bd-progress-cap { opacity: 1; }
-.bd-progress-cap .ok { font-size: 10.5px; font-weight: 600; color: #14764a; white-space: nowrap; }
-.bd-progress-cap .warn { font-size: 10.5px; font-weight: 600; color: #8a5300; white-space: nowrap; }
-.bd-progress { display: flex; gap: 3px; height: 9px; margin-top: 6px; }
-.bd-progress i { display: block; height: 100%; }
-.bd-progress .paid { background: #1f9d63; border-radius: 99px 3px 3px 99px; }
-.bd-progress .pending { background: #e08700; border-radius: 3px 99px 99px 3px; }
+/* ── vehicles now: the overdue watch ─────────────────────────────── */
+.bd-overdue { flex: 1 1 300px; padding: 20px; display: flex; flex-direction: column; animation: bdFadeUp 0.34s ease-out 0.1s both; transition: box-shadow 0.22s, transform 0.22s; }
+.bd-overdue .bd-card-sub { font-variant-numeric: tabular-nums; }
+.bd-od-count.is-late { color: #c2141a; font-weight: 600; }
+.bd-live-dot { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 600; color: #14764a; background: #e9f8f0; padding: 4px 8px; border-radius: 99px; flex: 0 0 auto; }
+.bd-live-dot i { width: 6px; height: 6px; border-radius: 99px; background: #1f9d63; }
+.bd-live-dot.is-paused { color: #8b87b0; background: #f4f3f9; }
+.bd-live-dot.is-paused i { background: #b9b6d3; }
+.bd-od-list { list-style: none; margin: 10px 0 0 !important; padding: 0 !important; display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; }
+.bd-od-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) 66px; align-items: center; gap: 10px;
+  padding: 6px 10px; margin: 0 -10px; border-radius: 10px; color: inherit; transition: background 0.14s;
+}
+.bd-od-row:hover { background: #f8f7fc; }
+.bd-od-main, .bd-od-who { display: flex; flex-direction: column; min-width: 0; }
+.bd-od-vehicle, .bd-od-name { font-size: 12.5px; font-weight: 600; color: #1a1640; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bd-od-station, .bd-od-phone { font-size: 11px; color: #9490bb; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.bd-od-late { justify-self: end; font-size: 11px; font-weight: 600; color: #c2141a; background: #fdeced; padding: 3px 8px; border-radius: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.bd-od-empty { font-size: 12.5px; color: #14764a; background: #e9f8f0; padding: 12px; border-radius: 10px; text-align: center; margin-top: 6px; }
+.bd-od-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; padding-top: 10px; border-top: 1px solid #f0eff7; }
+.bd-od-page { font-size: 11px; color: #9490bb; font-variant-numeric: tabular-nums; }
+.bd-od-all { font-size: 12px; font-weight: 600; color: #c2141a; }
+.bd-od-all:hover { color: #a80f14; }
 
 /* ── revenue reports ──────────────────────────────────────────────── */
 .bd-reports { flex: 1 1 520px; padding: 22px; display: flex; flex-direction: column; transition: box-shadow 0.22s; }

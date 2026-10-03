@@ -1,7 +1,7 @@
 /* BYKY dashboard — the parts of the design that must be computed from data:
    sparkline, month bars, emirate/category bars, deployment gauge, station map,
-   and the hero carousel. Reads the same #byky-chart-data payload the old
-   ApexCharts build used, so views.py is unchanged. No vendor libraries. */
+   plus the live first row (branch carousel, overdue watch) and its poller.
+   Reads #byky-chart-data and #bd-live from the page. No vendor libraries. */
 (function () {
   'use strict';
 
@@ -19,22 +19,285 @@
   };
   var RED = '#d81f26', MID = '#ef767b', PALE = '#f6b8bb';
 
-  /* ── hero carousel ───────────────────────────────────────────── */
-  (function () {
-    var slides = root.querySelectorAll('.bd-hero-slide');
-    var dots = root.querySelectorAll('.bd-dots button');
-    if (!slides.length) return;
-    var i = 0, timer;
-    function go(n) {
-      i = n % slides.length;
-      slides.forEach(function (s, k) { s.classList.toggle('is-on', k === i); });
-      dots.forEach(function (d, k) { d.classList.toggle('is-on', k === i); });
+  /* ── live: branch carousel, overdue watch and one poller ─────── */
+  var liveNode = document.getElementById('bd-live');
+  var live = liveNode ? JSON.parse(liveNode.textContent) : null;
+  var REDUCED = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  var SLIDE_MS = 10000;
+
+  // Branch carousel: one slide per station, busiest first. The track moves by
+  // transform; the loop back to the first slide fades instead of rewinding
+  // across every station. A new busiest-first order is applied only there.
+  var carousel = (function () {
+    var box = root.querySelector('[data-bd-carousel]');
+    if (!box) return null;
+    var viewport = box.querySelector('.bd-car-viewport');
+    var track = box.querySelector('[data-bd-track]');
+    var pos = box.querySelector('[data-bd-pos]');
+    var i = 0, timer = null, hold = false, running = true, nextOrder = null;
+
+    function slides() { return track.querySelectorAll('.bd-car-slide'); }
+    function place(n) {
+      i = n;
+      track.style.transform = 'translateX(' + (-100 * i) + '%)';
+      if (pos) pos.textContent = String(i + 1);
     }
-    dots.forEach(function (d, k) {
-      d.addEventListener('click', function () { clearInterval(timer); go(k); });
+    function reorder(ids) {
+      var byId = {};
+      slides().forEach(function (s) { byId[s.getAttribute('data-branch')] = s; });
+      ids.forEach(function (id) { if (byId[id]) track.appendChild(byId[id]); });
+    }
+    function go(n) {
+      var count = slides().length;
+      if (count < 2) return;
+      var wraps = n >= count || n < 0;
+      var target = ((n % count) + count) % count;
+      if (!wraps || REDUCED) { place(target); return; }
+      viewport.classList.add('is-fading');
+      setTimeout(function () {
+        if (nextOrder && target === 0) { reorder(nextOrder); nextOrder = null; }
+        track.classList.add('is-instant');
+        place(target);
+        void track.offsetWidth;                 // apply the jump before re-enabling the slide
+        track.classList.remove('is-instant');
+        viewport.classList.remove('is-fading');
+      }, 200);
+    }
+    function schedule() {
+      clearTimeout(timer);
+      if (running && !hold && !REDUCED && slides().length > 1) {
+        timer = setTimeout(function () { go(i + 1); schedule(); }, SLIDE_MS);
+      }
+    }
+    function step(d) { go(i + d); schedule(); }
+
+    var prev = box.querySelector('[data-bd-prev]'), next = box.querySelector('[data-bd-next]');
+    if (prev) prev.addEventListener('click', function () { step(-1); });
+    if (next) next.addEventListener('click', function () { step(1); });
+    box.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowLeft') step(-1);
+      if (e.key === 'ArrowRight') step(1);
     });
-    timer = setInterval(function () { go(i + 1); }, 7000);
-    go(0);
+    box.addEventListener('mouseenter', function () { hold = true; schedule(); });
+    box.addEventListener('mouseleave', function () { hold = false; schedule(); });
+    box.addEventListener('focusin', function () { hold = true; schedule(); });
+    box.addEventListener('focusout', function () { hold = false; schedule(); });
+
+    function setText(el, value) {
+      value = String(value);
+      if (!el || el.textContent === value) return;
+      el.textContent = value;
+      if (el.classList.contains('bd-hero-val')) {
+        el.classList.add('is-changed');
+        setTimeout(function () { el.classList.remove('is-changed'); }, 1200);
+      }
+    }
+    function update(branches) {
+      branches.forEach(function (b) {
+        var slide = track.querySelector('[data-branch="' + b.id + '"]');
+        if (!slide) return;
+        ['hours', 'on_rent', 'invoices', 'revenue', 'devices', 'staff'].forEach(function (f) {
+          setText(slide.querySelector('[data-live="' + f + '"]'), b[f]);
+        });
+        var chip = slide.querySelector('[data-live="state"]');
+        if (chip) {
+          chip.className = 'bd-car-state is-' + b.state;
+          chip.textContent = b.state === 'open' ? 'Open' : 'Closed';
+        }
+      });
+      var ids = branches.map(function (b) { return String(b.id); });
+      var shown = Array.prototype.map.call(slides(), function (s) { return s.getAttribute('data-branch'); });
+      nextOrder = ids.join() === shown.join() ? null : ids;
+    }
+
+    place(0);
+    schedule();
+    return {
+      update: update,
+      run: function (on) { running = on; schedule(); }
+    };
+  })();
+
+  // Overdue watch: pages of 3 (what the card's height holds), swapped in place
+  // every 10 s when there are more.
+  // The minutes overdue are worked out here from each booked end time, so
+  // they keep counting between refreshes without asking the server.
+  var overdue = (function () {
+    var box = root.querySelector('[data-bd-overdue]');
+    if (!box || !live) return null;
+    var list = box.querySelector('[data-bd-od-list]');
+    var pageEl = box.querySelector('[data-bd-od-page]');
+    var rows = live.overdue.rows || [];
+    var page = 0, timer = null, hold = false, running = true;
+    var PER_PAGE = 3;
+
+    function minutes(iso) {
+      var m = Math.max(1, Math.floor((Date.now() - Date.parse(iso)) / 60000));
+      return m < 60 ? '+' + m + ' min' : '+' + Math.floor(m / 60) + 'h ' + (m % 60) + 'm';
+    }
+    function span(cls, text) {
+      var s = document.createElement('span');
+      s.className = cls;
+      s.textContent = text;
+      return s;
+    }
+    function pages() { return Math.max(1, Math.ceil(rows.length / PER_PAGE)); }
+    function render() {
+      if (page >= pages()) page = 0;
+      list.textContent = '';
+      if (!rows.length) {
+        var empty = document.createElement('li');
+        empty.className = 'bd-od-empty';
+        empty.textContent = 'No overdue vehicles';
+        list.appendChild(empty);
+      }
+      rows.slice(page * PER_PAGE, page * PER_PAGE + PER_PAGE).forEach(function (r) {
+        var a = document.createElement('a');
+        a.className = 'bd-od-row';
+        a.href = r.url;
+        var main = span('bd-od-main', '');
+        main.appendChild(span('bd-od-vehicle', r.vehicle));
+        main.appendChild(span('bd-od-station', r.station));
+        var who = span('bd-od-who', '');
+        who.appendChild(span('bd-od-name', r.customer));
+        who.appendChild(span('bd-od-phone', r.mobile));
+        var late = span('bd-od-late', minutes(r.due));
+        late.setAttribute('data-due', r.due);
+        a.appendChild(main);
+        a.appendChild(who);
+        a.appendChild(late);
+        var li = document.createElement('li');
+        li.appendChild(a);
+        list.appendChild(li);
+      });
+      pageEl.textContent = pages() > 1 ? (page + 1) + ' / ' + pages() : '';
+    }
+    function schedule() {
+      clearTimeout(timer);
+      if (running && !hold && pages() > 1) {
+        timer = setTimeout(function () { page = (page + 1) % pages(); render(); schedule(); }, SLIDE_MS);
+      }
+    }
+    function tick() {
+      list.querySelectorAll('[data-due]').forEach(function (el) { el.textContent = minutes(el.getAttribute('data-due')); });
+    }
+    function update(data) {
+      box.querySelectorAll('[data-live-overdue]').forEach(function (el) {
+        el.textContent = String(data[el.getAttribute('data-live-overdue')]);
+      });
+      var count = box.querySelector('.bd-od-count');
+      if (count) count.classList.toggle('is-late', data.overdue > 0);
+      rows = data.rows || [];
+      render();                                    // keeps the page when it still exists
+      schedule();
+    }
+
+    box.addEventListener('mouseenter', function () { hold = true; schedule(); });
+    box.addEventListener('mouseleave', function () { hold = false; schedule(); });
+    render();
+    schedule();
+    return {
+      update: update,
+      tick: tick,
+      run: function (on) { running = on; schedule(); }
+    };
+  })();
+
+  // One poller for the page. It asks only while someone is looking: never
+  // while the tab is hidden or the browser offline, and not after 10 minutes
+  // with no mouse, key, touch or scroll. Coming back costs one request, and
+  // only if the figures are over a minute old.
+  (function () {
+    var url = root.getAttribute('data-live-url');
+    if (!url || !live) return;
+    var MINUTE = 60000, IDLE = 10 * MINUTE, BACKOFF = [MINUTE, 2 * MINUTE, 5 * MINUTE];
+    var last = Date.now(), lastActive = Date.now();
+    var timer = null, inflight = null, fails = 0, stopped = false, wasActive = true;
+    var note = root.querySelector('[data-bd-updated]');
+    var dot = root.querySelector('.bd-live-dot');
+
+    function hhmm(t) {
+      return new Date(t).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    }
+    function active() {
+      return !stopped && document.visibilityState === 'visible' && navigator.onLine !== false
+        && Date.now() - lastActive < IDLE;
+    }
+    function label() {
+      var on = active();
+      if (note) note.textContent = stopped ? 'Signed out · updated ' + hhmm(last)
+        : (on ? 'Live · updated ' : 'Paused · updated ') + hhmm(last);
+      if (dot) {
+        dot.classList.toggle('is-paused', !on);
+        dot.lastChild.textContent = on ? 'Live' : 'Paused';
+      }
+    }
+    function schedule(delay) {
+      clearTimeout(timer);
+      if (active()) timer = setTimeout(load, Math.max(0, delay));
+    }
+    function load() {
+      if (inflight || !active()) return;
+      var ctrl = window.AbortController ? new AbortController() : null;
+      inflight = ctrl || {};
+      fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' }, signal: ctrl && ctrl.signal })
+        .then(function (r) {
+          if (r.status === 401) { stopped = true; throw new Error('signed out'); }
+          if (!r.ok) throw new Error(String(r.status));
+          return r.json();
+        })
+        .then(function (data) {
+          fails = 0;
+          last = Date.now();
+          if (carousel) carousel.update(data.branches || []);
+          if (overdue) overdue.update(data.overdue || { on_rent: 0, overdue: 0, rows: [] });
+        })
+        .catch(function (err) { if (!stopped && err.name !== 'AbortError') fails++; })
+        .then(function () {
+          inflight = null;
+          label();
+          schedule(fails ? BACKOFF[Math.min(fails, BACKOFF.length) - 1] : MINUTE);
+        });
+    }
+    // Visibility, network or activity changed: pause or resume everything.
+    function wake() {
+      var on = active();
+      if (on !== wasActive) {
+        wasActive = on;
+        if (carousel) carousel.run(on);
+        if (overdue) overdue.run(on);
+      }
+      label();
+      if (!on) {
+        clearTimeout(timer);
+        if (inflight && inflight.abort) inflight.abort();
+        return;
+      }
+      if (overdue) overdue.tick();
+      if (Date.now() - last >= MINUTE) load();
+      else if (!inflight) schedule(MINUTE - (Date.now() - last));
+    }
+    function touched() {
+      var idle = Date.now() - lastActive >= IDLE;
+      lastActive = Date.now();
+      if (idle) wake();
+    }
+
+    ['mousemove', 'pointerdown', 'keydown', 'wheel', 'touchstart', 'scroll'].forEach(function (name) {
+      window.addEventListener(name, touched, { passive: true });
+    });
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('online', wake);
+    window.addEventListener('offline', wake);
+    // Housekeeping every 30 s: the overdue minutes, and noticing the user went idle.
+    setInterval(function () {
+      if (document.visibilityState !== 'visible') return;
+      if (wasActive && !active()) { wake(); return; }
+      if (overdue) overdue.tick();
+    }, 30000);
+
+    label();
+    schedule(MINUTE);
   })();
 
   /* ── segmented range control (visual state only) ─────────────── */
@@ -46,13 +309,15 @@
   });
 
   /* ── monthly sales sparkline ─────────────────────────────────── */
+  // One point per day of the month so far, quiet days included. The peak
+  // and best-day labels come from the server.
   (function () {
     var svg = root.querySelector('#bd-spark');
-    var series = data.daily_revenue || [];
-    if (!svg || series.length < 2) return;
-    var labels = data.daily_labels || [];
-    var lo = Math.min.apply(null, series) * 0.9;
-    var hi = Math.max.apply(null, series) * 1.04;
+    var series = (data.daily_revenue || []).slice();
+    if (!svg || !series.length) return;
+    if (series.length === 1) series.push(series[0]);
+    var lo = Math.min.apply(null, series), hi = Math.max.apply(null, series);
+    if (hi <= lo) hi = lo + 1;                       // a flat month draws a flat line, not NaN
     var pts = series.map(function (v, i) {
       return [(i / (series.length - 1)) * 296 + 2, 92 - ((v - lo) / (hi - lo)) * 78];
     });
@@ -72,22 +337,12 @@
 
     var peakIdx = 0;
     series.forEach(function (v, i) { if (v > series[peakIdx]) peakIdx = i; });
+    if (series[peakIdx] <= 0) return;
     var px = pts[peakIdx][0].toFixed(1), py = pts[peakIdx][1].toFixed(1);
     var g = el('g', { class: 'bd-spark-marker' });
     g.appendChild(el('line', { x1: px, y1: '0', x2: px, y2: '96', stroke: '#1a1640', 'stroke-width': '.8', 'stroke-dasharray': '3 3', opacity: '.28' }));
     g.appendChild(el('circle', { cx: px, cy: py, r: '3.6', fill: RED, stroke: '#fff', 'stroke-width': '2' }));
     svg.appendChild(g);
-
-    var peakLabel = root.querySelector('#bd-spark-peak');
-    if (peakLabel) peakLabel.textContent = 'Peak ' + (labels[peakIdx] || '') + ' · ' + fmt(series[peakIdx]);
-
-    var weekend = 0, total = 0;
-    series.forEach(function (v, i) {
-      total += v;
-      if (series[i] > (lo + hi) / 2) weekend += v;
-    });
-    var aux = root.querySelector('#bd-spark-aux');
-    if (aux && total) aux.textContent = 'Busiest days = ' + Math.round((weekend / total) * 100) + '%';
   })();
 
   /* ── revenue reports: 12 month bars ──────────────────────────── */
