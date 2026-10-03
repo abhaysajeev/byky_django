@@ -131,15 +131,17 @@
 .bd-live-dot.is-paused i { background: #b9b6d3; }
 .bd-od-list { list-style: none; margin: 10px 0 0 !important; padding: 0 !important; display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; }
 .bd-od-row {
-  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) 66px; align-items: center; gap: 10px;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); align-items: center; gap: 10px;
   padding: 6px 10px; margin: 0 -10px; border-radius: 10px; color: inherit; transition: background 0.14s;
 }
 .bd-od-row:hover { background: #f8f7fc; }
 .bd-od-main, .bd-od-who { display: flex; flex-direction: column; min-width: 0; }
 .bd-od-vehicle, .bd-od-name { font-size: 12.5px; font-weight: 600; color: #1a1640; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bd-od-station, .bd-od-phone { font-size: 11px; color: #9490bb; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.bd-od-late { justify-self: end; font-size: 11px; font-weight: 600; color: #c2141a; background: #fdeced; padding: 3px 8px; border-radius: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.bd-od-empty { font-size: 12.5px; color: #14764a; background: #e9f8f0; padding: 12px; border-radius: 10px; text-align: center; margin-top: 6px; }
+.bd-od-list { position: relative; }
+.bd-od-filler { visibility: hidden; }
+/* laid over the three invisible slots, so an empty list keeps the same height */
+.bd-od-empty { position: absolute; inset: 0; display: grid; place-items: center; font-size: 12.5px; color: #14764a; background: #e9f8f0; border-radius: 10px; }
 .bd-od-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; padding-top: 10px; border-top: 1px solid #f0eff7; }
 .bd-od-page { font-size: 11px; color: #9490bb; font-variant-numeric: tabular-nums; }
 .bd-od-all { font-size: 12px; font-weight: 600; color: #c2141a; }

@@ -129,9 +129,8 @@
   })();
 
   // Overdue watch: pages of 3 (what the card's height holds), swapped in place
-  // with the carousel (SLIDE_MS) when there are more.
-  // The minutes overdue are worked out here from each booked end time, so
-  // they keep counting between refreshes without asking the server.
+  // with the carousel (SLIDE_MS) when there are more. How long each vehicle
+  // has been overdue is not shown until the tablets' clock offset is fixed.
   var overdue = (function () {
     var box = root.querySelector('[data-bd-overdue]');
     if (!box || !live) return null;
@@ -141,10 +140,6 @@
     var page = 0, timer = null, hold = false, running = true;
     var PER_PAGE = 3;
 
-    function minutes(iso) {
-      var m = Math.max(1, Math.floor((Date.now() - Date.parse(iso)) / 60000));
-      return m < 60 ? '+' + m + ' min' : '+' + Math.floor(m / 60) + 'h ' + (m % 60) + 'm';
-    }
     function span(cls, text) {
       var s = document.createElement('span');
       s.className = cls;
@@ -152,34 +147,43 @@
       return s;
     }
     function pages() { return Math.max(1, Math.ceil(rows.length / PER_PAGE)); }
+    function rowItem(r) {
+      var a = document.createElement('a');
+      a.className = 'bd-od-row';
+      var main = span('bd-od-main', '');
+      main.appendChild(span('bd-od-vehicle', r ? r.vehicle : '-'));
+      main.appendChild(span('bd-od-station', r ? r.station : '-'));
+      var who = span('bd-od-who', '');
+      who.appendChild(span('bd-od-name', r ? r.customer : '-'));
+      who.appendChild(span('bd-od-phone', r ? r.mobile : '-'));
+      a.appendChild(main);
+      a.appendChild(who);
+      var li = document.createElement('li');
+      if (r) {
+        a.href = r.url;
+      } else {
+        li.className = 'bd-od-filler';
+        li.setAttribute('aria-hidden', 'true');
+      }
+      li.appendChild(a);
+      return li;
+    }
+    // Always PER_PAGE slots: a short last page (or none at all) is padded with
+    // invisible rows of the same size. The first row's cards stretch to the
+    // tallest, so a list that changed height would resize the whole dashboard
+    // every time the page turned.
     function render() {
       if (page >= pages()) page = 0;
       list.textContent = '';
+      var shown = rows.slice(page * PER_PAGE, page * PER_PAGE + PER_PAGE);
+      shown.forEach(function (r) { list.appendChild(rowItem(r)); });
+      for (var k = shown.length; k < PER_PAGE; k++) list.appendChild(rowItem(null));
       if (!rows.length) {
         var empty = document.createElement('li');
         empty.className = 'bd-od-empty';
         empty.textContent = 'No overdue vehicles';
         list.appendChild(empty);
       }
-      rows.slice(page * PER_PAGE, page * PER_PAGE + PER_PAGE).forEach(function (r) {
-        var a = document.createElement('a');
-        a.className = 'bd-od-row';
-        a.href = r.url;
-        var main = span('bd-od-main', '');
-        main.appendChild(span('bd-od-vehicle', r.vehicle));
-        main.appendChild(span('bd-od-station', r.station));
-        var who = span('bd-od-who', '');
-        who.appendChild(span('bd-od-name', r.customer));
-        who.appendChild(span('bd-od-phone', r.mobile));
-        var late = span('bd-od-late', minutes(r.due));
-        late.setAttribute('data-due', r.due);
-        a.appendChild(main);
-        a.appendChild(who);
-        a.appendChild(late);
-        var li = document.createElement('li');
-        li.appendChild(a);
-        list.appendChild(li);
-      });
       pageEl.textContent = pages() > 1 ? (page + 1) + ' / ' + pages() : '';
     }
     function schedule() {
@@ -187,9 +191,6 @@
       if (running && !hold && pages() > 1) {
         timer = setTimeout(function () { page = (page + 1) % pages(); render(); schedule(); }, SLIDE_MS);
       }
-    }
-    function tick() {
-      list.querySelectorAll('[data-due]').forEach(function (el) { el.textContent = minutes(el.getAttribute('data-due')); });
     }
     function update(data) {
       box.querySelectorAll('[data-live-overdue]').forEach(function (el) {
@@ -208,7 +209,6 @@
     schedule();
     return {
       update: update,
-      tick: tick,
       run: function (on) { running = on; schedule(); }
     };
   })();
@@ -283,7 +283,6 @@
         if (inflight && inflight.abort) inflight.abort();
         return;
       }
-      if (overdue) overdue.tick();
       if (Date.now() - last >= MINUTE) load();
       else if (!inflight) schedule(MINUTE - (Date.now() - last));
     }
@@ -299,11 +298,10 @@
     document.addEventListener('visibilitychange', wake);
     window.addEventListener('online', wake);
     window.addEventListener('offline', wake);
-    // Housekeeping every 30 s: the overdue minutes, and noticing the user went idle.
+    // Every 30 s: notice the user went idle.
     setInterval(function () {
       if (document.visibilityState !== 'visible') return;
-      if (wasActive && !active()) { wake(); return; }
-      if (overdue) overdue.tick();
+      if (wasActive && !active()) wake();
     }, 30000);
 
     label();
