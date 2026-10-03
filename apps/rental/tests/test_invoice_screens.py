@@ -29,7 +29,7 @@ def receipt_no(shop, world, number):
 
 def issue(world, shop, number=231, *, fare=True, day=0, customer=None):
     """A settled order and its invoice: MO 41 back after 72 minutes (50.00 +
-    10.00 overtime), a 10% card discount, VAT 5% -- net 56.70."""
+    10.00 overtime), a 10% card discount -- net 54.00, VAT 5% included (2.57)."""
     order_no = receipt_no(shop, world, number)
     order = make_order(world, shop, order_no, lines=("returned",), day=day)
     if customer is not None:
@@ -40,19 +40,19 @@ def issue(world, shop, number=231, *, fare=True, day=0, customer=None):
         line.fare = make_fare({**world, "monaco": line.vehicle.vehicle_type}, package_minutes=60,
                               concurrent_fare=Decimal("10.00"), concurrent_interval_minutes=15)
         line.save(update_fields=["fare"])
-    settle(order, net="56.70", day=day, world=world)
+    settle(order, net="54.00", day=day, world=world)
     order.refresh_from_db()
     Payment.objects.create(id=uuid7(), order=order, kind=PaymentKind.ADVANCE, mode=shop["cash"],
-                           amount=Decimal("56.70"), paid_at=at(day, world=world))
+                           amount=Decimal("54.00"), paid_at=at(day, world=world))
     invoice = Invoice.objects.create(
         id=uuid7(), order=order, company=world["company"], branch=world["adc1"], device=shop["tablet"],
         issued_by=User.objects.get(username="sara.k"), invoice_no=order_no, issued_at=at(day, 17, 15, world=world),
         company_name="BYKY", company_trn="100297867200003", branch_name="Abu Dhabi Corniche 1",
         customer_name=order.customer_name, customer_mobile=order.customer_mobile,
         subtotal=Decimal("60.00"), discount_percentage=Decimal("10.00"), discount_amount=Decimal("6.00"),
-        tax_percentage=Decimal("5.00"), tax_amount=Decimal("2.70"), rounding_adjustment=Decimal("0.00"),
-        net_amount=Decimal("56.70"),
-        payments=[{"mode": "Cash", "kind": "advance", "amount": "56.70", "reference_no": ""}],
+        tax_percentage=Decimal("5.00"), tax_amount=Decimal("2.57"), rounding_adjustment=Decimal("0.00"),
+        net_amount=Decimal("54.00"),
+        payments=[{"mode": "Cash", "kind": "advance", "amount": "54.00", "reference_no": ""}],
     )
     InvoiceItem.objects.create(
         id=uuid7(), invoice=invoice, order_item=line, vehicle_identifier=line.vehicle.identifier,
@@ -80,11 +80,11 @@ def test_the_list_shows_this_companys_invoices(client_in, world, shop, invoice):
 
     [row] = response.context["rows"]
     assert (row["invoice_no"], row["customer"], row["station"], row["net_amount"], row["tax_amount"]) == (
-        invoice.invoice_no, "Ahmed Al Mansoori", "Abu Dhabi Corniche 1", Decimal("56.70"), Decimal("2.70"))
+        invoice.invoice_no, "Ahmed Al Mansoori", "Abu Dhabi Corniche 1", Decimal("54.00"), Decimal("2.57"))
     html = response.content.decode()
     assert f'data-invoice-receipt="/rental/invoice/{invoice.pk}/receipt/"' in html
     assert f'href="/rental/invoice/{invoice.pk}/"' in html          # the row menu's View
-    assert "AED 56.70" in html and "VAT AED 2.70" in html
+    assert "AED 54.00" in html and "VAT incl. AED 2.57" in html
 
 
 def test_search_and_filters_narrow_the_list(client_in, world, shop, invoice):
@@ -124,9 +124,9 @@ def test_the_receipt_reads_like_the_printed_tax_invoice(client_in, world, shop, 
     [line] = bill["lines"]
     assert (line["sno"], line["vehicle"], line["base_rate"], line["extra_rate"], line["duration"], line["amount"]) == (
         "01", "MO 41", "50.00/60 MINS", "10.00/15 MINS", "01:12", Decimal("60.00"))
-    assert (bill["taxable_amount"], bill["balance"], bill["time"]) == (Decimal("54.00"), Decimal("0.00"), "01:12")
-    for text in ("TAX INVOICE", "ABU DHABI CORNICHE 1", "TRN : 100297867200003", "VAT @5.0%", "NET TOTAL",
-                 "AED 56.70", "AED 6.00 (10.00%)", "AED 54.00", "Emirates ID", "784-1990-1234567-1",
+    assert (bill["taxable_amount"], bill["balance"], bill["time"]) == (Decimal("51.43"), Decimal("0.00"), "01:12")
+    for text in ("TAX INVOICE", "ABU DHABI CORNICHE 1", "TRN : 100297867200003", "VAT @5.0% incl.", "NET TOTAL",
+                 "AED 54.00", "AED 6.00 (10.00%)", "AED 51.43", "Emirates ID", "784-1990-1234567-1",
                  "Bike Rental Details"):
         assert text in html, text
 
@@ -159,7 +159,7 @@ def test_the_detail_page_shows_the_invoice(client_in, invoice):
 
     assert response.status_code == 200
     html = response.content.decode()
-    for text in ("100297867200003", "Abu Dhabi Corniche 1", "MO 41", "AED 60.00", "AED 56.70", "Cash",
+    for text in ("100297867200003", "Abu Dhabi Corniche 1", "MO 41", "AED 60.00", "AED 54.00", "Cash",
                  "data-invoice-modal", f"/rental/order/{invoice.order_id}/"):
         assert text in html, text
 

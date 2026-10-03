@@ -67,7 +67,7 @@
   </div>
   <div class="bill-row2">
     <div class="col-a"><span class="bill-kv-label">Rounded Off</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ bill.rounding }}</span></div>
-    <div class="col-b"><span class="bill-kv-label">VAT @{{ bill.tax_percentage|floatformat:1 }}%</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ bill.tax_amount }}</span></div>
+    <div class="col-b"><span class="bill-kv-label">VAT @{{ bill.tax_percentage|floatformat:1 }}% incl.</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ bill.tax_amount }}</span></div>
   </div>
 
   <hr class="bill-rule" />

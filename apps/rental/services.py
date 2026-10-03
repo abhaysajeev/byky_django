@@ -580,7 +580,12 @@ def settle_order(session, values, request_data, reply_for):
     Every vehicle must already be back. The tablet works out the whole bill
     and sends it; the server stores it as sent after the basic checks -- the
     subtotal is the returned lines' totals, the net adds up, and after this
-    call's payments the bill is paid in full (so `paid` is always true). In
+    call's payments the bill is paid in full (so `paid` is always true).
+
+    VAT is included in the fares (client, 3 Oct 2026): net_amount = subtotal
+    - discount_amount + rounding_adjustment, nothing added for VAT.
+    tax_percentage / tax_amount are the VAT *contained* in the net -- stored
+    as sent and shown on the tax invoice, never part of the sum. In
     one transaction: the card discount redeemed (and unused requests
     cancelled), the payments recorded, the order completed and the invoice
     issued. A zero bill settles too.
@@ -598,12 +603,13 @@ def settle_order(session, values, request_data, reply_for):
         lines_total = sum((item.total_amount for item in billed), Decimal("0"))
         if values["subtotal"] != lines_total:
             raise OrderRefused("amount_mismatch", f"subtotal must be the returned vehicles' total, {lines_total}.")
-        expected_net = (values["subtotal"] - discount_amount + values["tax_amount"]
-                        + values["rounding_adjustment"])
+        # VAT is inside the prices: it is not added here.
+        expected_net = values["subtotal"] - discount_amount + values["rounding_adjustment"]
         if values["net_amount"] != expected_net:
             raise OrderRefused(
                 "amount_mismatch",
-                f"net_amount must be subtotal - discount_amount + tax_amount + rounding_adjustment = {expected_net}.",
+                f"net_amount must be subtotal - discount_amount + rounding_adjustment = {expected_net} "
+                f"(VAT is included in the fares, not added).",
             )
 
         claim = None

@@ -66,7 +66,7 @@
             <td><span class="scr-co-name">{{ r.invoice_no }}</span><div class="scr-contact-sub">{{ r.issued_at|date:"d M Y, H:i" }}</div></td>
             <td><div class="scr-co-name">{{ r.customer|default:"—" }}</div><div class="scr-contact-sub">{{ r.mobile }}</div></td>
             <td><div class="scr-contact">{{ r.station }}</div><div class="scr-contact-sub">Tablet {{ r.tablet }} · {{ r.issued_by }}</div></td>
-            <td><div class="scr-co-name">AED {{ r.net_amount }}</div><div class="scr-contact-sub">VAT AED {{ r.tax_amount }}</div></td>
+            <td><div class="scr-co-name">AED {{ r.net_amount }}</div><div class="scr-contact-sub">VAT incl. AED {{ r.tax_amount }}</div></td>
             <td>
               <div class="scr-row-actions">
                 <div class="scr-menu-wrap">

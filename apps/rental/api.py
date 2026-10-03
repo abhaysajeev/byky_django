@@ -361,8 +361,9 @@ _ORDER_SAMPLE = {
 }
 
 # The same order once both bikes are back -- DC 02 on time, MO 41 twelve
-# minutes late -- and the bill settled: 10% card discount, VAT, the balance by
-# card (order_lifecycle_design.md 3.3, 3.4).
+# minutes late -- and the bill settled: 5% card discount, VAT included in the
+# fares (4.98 of the 104.50), the balance by card (order_lifecycle_design.md
+# 3.3, 3.4).
 _RETURNED_ITEMS = [
     {**_ORDER_SAMPLE["items"][0], "status": "returned", "run_minutes": 72, "end_time": "2026-10-02 17:12:00",
      "overtime_amount": "10.00", "total_amount": "60.00"},
@@ -373,17 +374,17 @@ _RETURNED_SAMPLE = {**_ORDER_SAMPLE, "items_out": 0, "items": _RETURNED_ITEMS}
 _SETTLED_SAMPLE = {
     **_RETURNED_SAMPLE, "status": "completed", "payment_status": "paid", "completed_at": "2026-10-02 17:13:30",
     "subtotal": "110.00",
-    "discount": {"claim_id": "01923e2a-11aa-7b22-8c33-d4e5f6a7b8c9", "discount_percentage": "10.00",
-                 "discount_amount": "11.00"},
-    "tax_percentage": "5.00", "tax_amount": "4.95", "rounding_adjustment": "0.05", "net_amount": "104.00",
-    "amount_received": "104.00", "paid_amount": "104.00", "balance_due": "0.00",
+    "discount": {"claim_id": "01923e2a-11aa-7b22-8c33-d4e5f6a7b8c9", "discount_percentage": "5.00",
+                 "discount_amount": "5.50"},
+    "tax_percentage": "5.00", "tax_amount": "4.98", "rounding_adjustment": "0.00", "net_amount": "104.50",
+    "amount_received": "104.50", "paid_amount": "104.50", "balance_due": "0.00",
     "payments": [
         *_ORDER_SAMPLE["payments"],
         {"sync_id": "01923e1c-0a16-7b22-8c33-d4e5f6a7b8c9", "kind": "settlement",
-         "payment_mode": {"id": 2, "name": "Card"}, "amount": "4.00", "reference_no": "4421",
+         "payment_mode": {"id": 2, "name": "Card"}, "amount": "4.50", "reference_no": "4421",
          "reference_date": "2026-10-02", "paid_at": "2026-10-02 17:13:30"},
     ],
-    "invoice": {"invoice_no": "DUBPP60182000231", "issued_at": "2026-10-02 17:13:30", "net_amount": "104.00"},
+    "invoice": {"invoice_no": "DUBPP60182000231", "issued_at": "2026-10-02 17:13:30", "net_amount": "104.50"},
 }
 
 _BOOK_ERRORS = (
@@ -429,7 +430,7 @@ card slip or cheque.
 |---|---|
 | item `base_fare` | booking |
 | item `run_minutes`, `overtime_amount`, `total_amount` (= base fare + overtime) | that vehicle is returned |
-| order `subtotal`, `discount`, `tax_percentage`, `tax_amount`, `rounding_adjustment`, `net_amount`, `balance_due` | the order is settled |
+| order `subtotal`, `discount`, `rounding_adjustment`, `net_amount`, `balance_due`; `tax_percentage`, `tax_amount` (the VAT included -- fares include VAT) | the order is settled |
 | order `amount_received`, `amount_refunded`, `paid_amount` | each payment, from booking on |
 
 Until then they are `null`. `payment_status` is `pending` while the order is
@@ -623,12 +624,16 @@ discount redeemed, the payments recorded, the order **completed** (payment
 status `paid`) and the **invoice** issued -- numbered by the order number.
 
 **The tablet works out the whole bill and sends it:** `subtotal`, `discount`,
-`tax_percentage`, `tax_amount`, `rounding_adjustment` (may be negative),
-`net_amount`. The server only checks that the figures agree
-(`amount_mismatch`):
+`rounding_adjustment` (may be negative), `net_amount`, and the VAT figures.
+The server only checks that the figures agree (`amount_mismatch`):
 - `subtotal` = the returned vehicles' `total_amount`s (replaced or removed
   vehicles are not billed);
-- `net_amount` = `subtotal` − `discount_amount` + `tax_amount` + `rounding_adjustment`.
+- `net_amount` = `subtotal` − `discount_amount` + `rounding_adjustment`.
+
+**VAT is included in the fares** -- nothing is added for it.
+`tax_percentage` and `tax_amount` are the VAT *contained* in `net_amount`
+(`net_amount` × rate / (100 + rate), to 2 places: 104.50 at 5% → 4.98); they
+are stored as sent and printed on the tax invoice, never part of the sum.
 
 **`discount`** (optional) -- the card discount applied, one of:
 - `{claim_id, discount_percentage, discount_amount}` -- an approval request

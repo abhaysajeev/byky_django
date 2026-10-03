@@ -459,7 +459,7 @@ def _receipt(invoice, zone):
         "closing_time": _clock(issued),
         "lines": lines,
         "subtotal": invoice.subtotal, "discount_percentage": invoice.discount_percentage,
-        "discount_amount": invoice.discount_amount, "taxable_amount": invoice.subtotal - invoice.discount_amount,
+        "discount_amount": invoice.discount_amount, "taxable_amount": invoice.net_amount - invoice.tax_amount,      # VAT is inside the net
         "tax_percentage": invoice.tax_percentage, "tax_amount": invoice.tax_amount,
         "rounding": invoice.rounding_adjustment, "net_amount": invoice.net_amount,
         "customer": invoice.customer_name or "—", "mobile": invoice.customer_mobile or "—",

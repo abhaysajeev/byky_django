@@ -102,6 +102,15 @@ window first -- so the first match is always the right one.
 **On the bill:** `fare_id`, `version`, and the season `id` and special price `id`
 used (null when not used).
 
+**A `price`** is five numbers, all used by the tablet, which works out the
+amounts it sends at return (the server stores them, it never recalculates):
+- `base_fare` -- the package price, **VAT included** (fares include VAT);
+- `grace_minutes` -- free minutes after the package ends before extra time starts;
+- `concurrent_interval_minutes` / `concurrent_fare` -- extra time is charged per
+  started interval at this price;
+- `concurrent_grace_minutes` -- the tablet's own grace within extra time, used in
+  its overtime calculation.
+
 **Formats:** weekdays Monday=0 ... Sunday=6; times `HH:MM` in the company's
 timezone, `"24:00"` is midnight; dates inclusive; money a 2-decimal string.
 An unknown vehicle type is an error; a known one with no fare is an empty list.

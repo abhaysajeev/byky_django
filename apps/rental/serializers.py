@@ -306,8 +306,10 @@ class SettleDiscountRequest(serializers.Serializer):
 
 class OrderSettleRequest(serializers.Serializer):
     """Close the bill. The tablet works out every amount; the server checks
-    only that the subtotal is the returned vehicles' total, the net adds up,
-    and the bill is paid in full after `payments`."""
+    only that the subtotal is the returned vehicles' total, the net adds up
+    (subtotal - discount + rounding: fares include VAT), and the bill is paid
+    in full after `payments`. tax_percentage / tax_amount are the VAT included
+    in the net, for the tax invoice."""
 
     sync_id = uuid7_field()
     order_id = _existing_id()

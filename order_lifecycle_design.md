@@ -38,7 +38,7 @@ kept, its bugs are not. Legacy sources are cited as proc names
    *Returned* with the real return time and its final amount (overtime
    included). The vehicle is free to rent at once.
 4. **Settle** — once every vehicle is back, the bill closes:
-   lines total − discounts + tax ± rounding = net. An approved card discount is
+   lines total − discount ± rounding = net (VAT is included in the fares). An approved card discount is
    applied and marked *Redeemed*; one still pending is *Cancelled*. Compared
    with what was paid: collect the **balance**, or record a **refund**. Order
    **Completed**; final receipt prints.
@@ -91,12 +91,15 @@ never guessed; until then they are blank (`null`):
 |---|---|
 | line `package_minutes`, `base_fare` (the package price agreed) | booking |
 | line `overtime_amount`, `total_amount` (= base fare + overtime) | that vehicle is returned |
-| order `subtotal`, `discount_*`, `tax_percentage`, `tax_amount`, `rounding_adjustment`, `net_amount`; `balance_due` | settle |
+| order `subtotal`, `discount_*`, `rounding_adjustment`, `net_amount`; `balance_due`; `tax_percentage`, `tax_amount` (the VAT included) | settle |
 | order `amount_received`, `amount_refunded`, `paid_amount` | each payment entry, from booking on |
 
-The bill: `net_amount` = `subtotal` − `discount_amount` + `tax_amount` ±
-`rounding_adjustment`. No discount and no VAT on a line: the one discount (the
-card discount) and VAT (one rate per bill) are on the order.
+The bill: `net_amount` = `subtotal` − `discount_amount` ±
+`rounding_adjustment`. **Fares include VAT** (client, 3 Oct 2026), so nothing
+is added for it: `tax_percentage` / `tax_amount` record the VAT *contained*
+in the net (net × rate / (100 + rate)) for the tax invoice, and are not part
+of the sum. No discount on a line: the one discount (the card discount) is on
+the order.
 
 **Payment status** follows the order: `pending` while active, `paid` once
 settled, blank once cancelled. Settle refuses unless the bill is paid in full
@@ -368,6 +371,13 @@ The tablet works out the run time and the amounts; the server checks only
 `total_amount` = `base_fare` + `overtime_amount`. Reply: the full order, the
 line `returned`, `items_out: 1`.
 
+How the tablet works them out, from the line's fare (`/fares`):
+`run_minutes` = returned − start; `late` = run − package − `grace_minutes`;
+overtime = 0 when `late` ≤ 0, otherwise every started
+`concurrent_interval_minutes` block costs `concurrent_fare`.
+`concurrent_grace_minutes` is the tablet's own grace within extra time
+(client, 3 Oct 2026). Fares include VAT, so the line total does too.
+
 MO 42 back 12 minutes late, AED 10 overtime:
 
 ```json
@@ -393,12 +403,11 @@ A return that reaches the server before its booking:
 
 ```
 subtotal     110.00   (DC 02 50.00 + MO 42 60.00; MO 41 replaced, not billed)
-card disc.   -11.00   (10%, approved)
-VAT 5%         4.95   (on 99.00)
-rounding       0.05
-net          104.00
+card disc.    -5.50   (5%, approved)
+rounding       0.00
+net          104.50   (VAT 5% included: 4.98)
 paid         100.00   (advance P-1)
-balance        4.00   → collected now by card
+balance        4.50   → collected now by card
 ```
 
 `POST /api/v1/operator/orders/settle`
@@ -407,9 +416,9 @@ balance        4.00   → collected now by card
 { "request_data": {
     "sync_id": "S-1", "order_id": "O-1", "settled_at": "2026-10-02 17:13:30",
     "subtotal": "110.00",
-    "discount": { "claim_id": "C-1", "discount_percentage": "10.00", "discount_amount": "11.00" },
-    "tax_percentage": "5.00", "tax_amount": "4.95", "rounding_adjustment": "0.05", "net_amount": "104.00",
-    "payments": [ { "sync_id": "P-2", "kind": "settlement", "payment_mode_id": 2, "amount": "4.00",
+    "discount": { "claim_id": "C-1", "discount_percentage": "5.00", "discount_amount": "5.50" },
+    "tax_percentage": "5.00", "tax_amount": "4.98", "rounding_adjustment": "0.00", "net_amount": "104.50",
+    "payments": [ { "sync_id": "P-2", "kind": "settlement", "payment_mode_id": 2, "amount": "4.50",
                     "reference_no": "4421", "paid_at": "2026-10-02 17:13:30" } ] } }
 ```
 
@@ -425,15 +434,16 @@ recorded as a new redemption.
 ```json
 { "code": "ok", "message": "Order settled.",
   "data": { "sync_id": "O-1", "status": "completed", "payment_status": "paid",
-            "subtotal": "110.00", "net_amount": "104.00",
-            "discount": { "claim_id": "C-1", "discount_percentage": "10.00", "discount_amount": "11.00" },
-            "paid_amount": "104.00", "balance_due": "0.00",
+            "subtotal": "110.00", "net_amount": "104.50", "tax_amount": "4.98",
+            "discount": { "claim_id": "C-1", "discount_percentage": "5.00", "discount_amount": "5.50" },
+            "paid_amount": "104.50", "balance_due": "0.00",
             "invoice": { "invoice_no": "DUBPP60182000231", "issued_at": "2026-10-02 17:13:30",
-                         "net_amount": "104.00" }, "...": "the rest of the order" } }
+                         "net_amount": "104.50" }, "...": "the rest of the order" } }
 ```
 
-Overpaid instead (advance 110): the payment is `{"kind": "refund", "amount": "6.00"}`
-and `paid_amount` still comes to 104.00.
+Overpaid instead (advance 110): the payment is `{"kind": "refund", "amount": "5.50"}`
+and `paid_amount` still comes to 104.50. The invoice prints Taxable Amount 99.52
+and VAT @5% incl. 4.98 under the net -- VAT shown, never added.
 
 ### 3.4b Payments on their own
 
@@ -537,7 +547,7 @@ Customer ─┐                         ┌─ CardDiscountClaim (apps.discount,
 | `discount_percentage` | decimal(5, 2), null | % applied, copied from the claim |
 | `discount_amount` | money, null | taken off the bill |
 | `tax_percentage` | decimal(5, 2), null | VAT % |
-| `tax_amount` | money, null | VAT on `subtotal − discount_amount` |
+| `tax_amount` | money, null | the VAT **included** in `net_amount` (fares include VAT) -- shown on the invoice, not added |
 | `rounding_adjustment` | decimal(6, 2), null | ± |
 | `net_amount` | money, null | what the customer pays |
 | `amount_received` | money, default 0 | Advance + Settlement entries; written only by the payment service |
@@ -724,7 +734,7 @@ One row per billed line (replaced and removed lines are not billed).
    full (`balance_not_settled`), so `paid` is always true. The tablet works out
    every amount; the basic checks are only that the figures agree: line total =
    base fare + overtime; subtotal = the returned lines' totals; net = subtotal −
-   discount + VAT ± rounding (`amount_mismatch`). Not checked yet: a refund
+   discount ± rounding (`amount_mismatch`). Not checked yet: a refund
    larger than what was paid.
 8. **Every order has a customer.** **No auto-block on a low rating** (legacy
    `Service_Save_SubmitExit_Order` blocked customers rated below 2).
@@ -733,6 +743,10 @@ One row per billed line (replaced and removed lines are not billed).
 10. **Operator app only** for these calls; cancel approval on the web first.
 11. **Not in this build:** reprint / discount / complimentary approvals, hotel
     room/guest details, loyalty points, online (customer-app) payment.
+12. **Fares include VAT** (client, 3 Oct 2026): no VAT is added at settle; the
+    VAT figures sent are the VAT contained in the net, for the tax invoice.
+    Always inclusive -- the company's `tax_type` setting is not consulted.
+    **Concurrent grace** is the tablet's own input to its overtime calculation.
 
 ---
 

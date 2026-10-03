@@ -57,14 +57,14 @@ def returned(client, token, booked):
 
 
 def bill(booked, shop, **overrides):
-    """3.4 without a discount: lines 110.00, VAT 5% 5.50, net 115.50 -- the
-    15.50 still owed by card."""
+    """3.4 without a discount: lines 110.00, VAT included (5.24 of it), net
+    110.00 -- 100.00 paid down, the 10.00 still owed by card."""
     data = {
         "sync_id": str(uuid7()), "order_id": booked["sync_id"], "settled_at": "2026-10-02 17:13:30",
-        "subtotal": "110.00", "tax_percentage": "5.00", "tax_amount": "5.50", "rounding_adjustment": "0.00",
-        "net_amount": "115.50",
+        "subtotal": "110.00", "tax_percentage": "5.00", "tax_amount": "5.24", "rounding_adjustment": "0.00",
+        "net_amount": "110.00",
         "payments": [{"sync_id": str(uuid7()), "kind": "settlement", "payment_mode_id": shop["card"].pk,
-                      "amount": "15.50", "reference_no": "4421", "paid_at": "2026-10-02 17:13:30"}],
+                      "amount": "10.00", "reference_no": "4421", "paid_at": "2026-10-02 17:13:30"}],
     }
     data.update(overrides)
     return data
@@ -75,9 +75,9 @@ def settle(client, token, request_data):
 
 
 def test_the_design_example_settles_redeems_and_invoices(client, world, token, shop, grade, returned):
-    """3.4: lines 110.00 (a replaced line not billed), 10% approved card
-    discount 11.00, VAT 4.95, rounding 0.05, net 104.00; 100.00 paid down,
-    4.00 by card now."""
+    """3.4: lines 110.00 (a replaced line not billed), 5% approved card
+    discount 5.50, net 104.50 with VAT 4.98 included; 100.00 paid down, 4.50
+    by card now."""
     order = Order.objects.get(pk=returned["sync_id"])
     replaced = OrderItem.objects.create(
         id=uuid7(), order=order, vehicle=shop["mo42"], status=OrderItemStatus.REPLACED, package_minutes=60,
@@ -87,10 +87,10 @@ def test_the_design_example_settles_redeems_and_invoices(client, world, token, s
     approved = make_claim(approval, shop["ahmed"], status=ClaimStatus.APPROVED, order=order)
     other = make_claim(approval, shop["ahmed"], status=ClaimStatus.PENDING, order=order)
     request_data = bill(
-        returned, shop, tax_amount="4.95", rounding_adjustment="0.05", net_amount="104.00",
-        discount={"claim_id": str(approved.pk), "discount_percentage": "10.00", "discount_amount": "11.00"},
+        returned, shop, tax_amount="4.98", net_amount="104.50",
+        discount={"claim_id": str(approved.pk), "discount_percentage": "5.00", "discount_amount": "5.50"},
     )
-    request_data["payments"][0]["amount"] = "4.00"
+    request_data["payments"][0]["amount"] = "4.50"
 
     body = settle(client, token, request_data)
 
@@ -99,29 +99,29 @@ def test_the_design_example_settles_redeems_and_invoices(client, world, token, s
     assert (data["status"], data["payment_status"], data["completed_at"]) == (
         "completed", "paid", "2026-10-02 17:13:30")
     assert (data["subtotal"], data["tax_amount"], data["rounding_adjustment"], data["net_amount"]) == (
-        "110.00", "4.95", "0.05", "104.00")
-    assert data["discount"] == {"claim_id": str(approved.pk), "discount_percentage": "10.00",
-                                "discount_amount": "11.00"}
-    assert (data["paid_amount"], data["balance_due"]) == ("104.00", "0.00")
+        "110.00", "4.98", "0.00", "104.50")
+    assert data["discount"] == {"claim_id": str(approved.pk), "discount_percentage": "5.00",
+                                "discount_amount": "5.50"}
+    assert (data["paid_amount"], data["balance_due"]) == ("104.50", "0.00")
     assert data["invoice"] == {"invoice_no": returned["order_no"], "issued_at": "2026-10-02 17:13:30",
-                               "net_amount": "104.00"}
+                               "net_amount": "104.50"}
 
     approved.refresh_from_db()
     assert (approved.status, approved.bill_amount, approved.discount_amount, approved.net_amount) == (
-        ClaimStatus.REDEEMED, Decimal("110.00"), Decimal("11.00"), Decimal("104.00"))
+        ClaimStatus.REDEEMED, Decimal("110.00"), Decimal("5.50"), Decimal("104.50"))
     assert approved.redeemed_at is not None
     other.refresh_from_db()
     assert (other.status, other.decided_at is not None) == (ClaimStatus.CANCELLED, True)
 
     invoice = Invoice.objects.get()
     assert (invoice.invoice_no, invoice.net_amount, invoice.discount_amount) == (
-        returned["order_no"], Decimal("104.00"), Decimal("11.00"))
+        returned["order_no"], Decimal("104.50"), Decimal("5.50"))
     assert (invoice.branch_name, invoice.customer_name) == ("Abu Dhabi Corniche 1", "Ahmed Al Mansoori")
     assert sorted((i.vehicle_name, i.run_minutes, i.total_amount) for i in invoice.items.all()) == [
         ("DC 02", 60, Decimal("50.00")), ("MO 41", 72, Decimal("60.00"))]
     assert not invoice.items.filter(order_item=replaced).exists()
     assert [(p["mode"], p["kind"], p["amount"]) for p in invoice.payments] == [
-        ("Cash", "advance", "60.00"), ("Card", "advance", "40.00"), ("Card", "settlement", "4.00")]
+        ("Cash", "advance", "60.00"), ("Card", "advance", "40.00"), ("Card", "settlement", "4.50")]
     assert OrderEvent.objects.get(pk=request_data["sync_id"]).action == "settle"
 
 
@@ -157,12 +157,12 @@ def test_a_direct_rental_is_returned_then_paid_at_settle(client, world, token, s
     for index in (0, 1):
         call(client, RETURN, back(request_data, index), token=token)
 
-    body = settle(client, token, bill(request_data, shop, subtotal="100.00", tax_amount="5.00", net_amount="105.00",
+    body = settle(client, token, bill(request_data, shop, subtotal="100.00", tax_amount="4.76", net_amount="100.00",
                                       payments=[{"sync_id": str(uuid7()), "kind": "settlement",
-                                                 "payment_mode_id": shop["cash"].pk, "amount": "105.00",
+                                                 "payment_mode_id": shop["cash"].pk, "amount": "100.00",
                                                  "paid_at": "2026-10-02 17:01:00"}]))
 
-    assert (body["code"], body["data"]["payment_status"], body["data"]["paid_amount"]) == ("ok", "paid", "105.00")
+    assert (body["code"], body["data"]["payment_status"], body["data"]["paid_amount"]) == ("ok", "paid", "100.00")
 
 
 def test_a_zero_bill_settles(client, world, token, shop, booked):
@@ -213,9 +213,11 @@ def test_every_vehicle_must_be_back(client, token, shop, booked):
 
 
 @pytest.mark.parametrize(("overrides", "names"), [
-    ({"subtotal": "100.00", "net_amount": "105.50"}, "subtotal"),
-    ({"net_amount": "116.00"}, "net_amount"),
-], ids=["subtotal-not-the-lines", "net-does-not-add-up"])
+    ({"subtotal": "100.00", "net_amount": "100.00"}, "subtotal"),
+    ({"net_amount": "111.00"}, "net_amount"),
+    # VAT is included in the fares: a net with VAT added on top is wrong.
+    ({"net_amount": "115.24"}, "VAT is included"),
+], ids=["subtotal-not-the-lines", "net-does-not-add-up", "vat-added-on-top"])
 def test_figures_that_do_not_agree_are_refused(client, token, shop, returned, overrides, names):
     body = settle(client, token, bill(returned, shop, **overrides))
 
@@ -225,11 +227,11 @@ def test_figures_that_do_not_agree_are_refused(client, token, shop, returned, ov
 
 def test_a_bill_not_paid_in_full_is_refused_and_nothing_written(client, token, shop, returned):
     request_data = bill(returned, shop)
-    request_data["payments"][0]["amount"] = "10.00"
+    request_data["payments"][0]["amount"] = "5.00"
 
     body = settle(client, token, request_data)
 
-    assert body["code"] == "balance_not_settled" and "105.50" not in body["message"]
+    assert body["code"] == "balance_not_settled" and "105.00" in body["message"]
     assert_nothing_settled(returned)
 
 
@@ -245,8 +247,8 @@ def test_only_an_approved_request_on_this_order_can_be_redeemed(client, world, t
     claim = make_claim(approval, shop["ahmed"], status=status or ClaimStatus.APPROVED, order=order,
                        when=timezone.now())
     request_data = bill(returned, shop, net_amount="104.50",
-                        discount={"claim_id": str(claim.pk), "discount_percentage": "10.00",
-                                  "discount_amount": "11.00"})
+                        discount={"claim_id": str(claim.pk), "discount_percentage": "5.00",
+                                  "discount_amount": "5.50"})
     request_data["payments"][0]["amount"] = "4.50"
 
     assert settle(client, token, request_data)["code"] == code
@@ -257,8 +259,8 @@ def test_only_an_approved_request_on_this_order_can_be_redeemed(client, world, t
 
 def test_an_unknown_card_discount_is_refused(client, token, shop, returned):
     request_data = bill(returned, shop, net_amount="104.50",
-                        discount={"card_discount_id": 999999, "discount_percentage": "10.00",
-                                  "discount_amount": "11.00"})
+                        discount={"card_discount_id": 999999, "discount_percentage": "5.00",
+                                  "discount_amount": "5.50"})
     request_data["payments"][0]["amount"] = "4.50"
 
     assert settle(client, token, request_data)["code"] == "unknown_card_discount"
