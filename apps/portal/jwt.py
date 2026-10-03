@@ -15,7 +15,9 @@ from django.conf import settings
 from django.utils import timezone
 
 ALGORITHM = "HS256"
-ACCESS_LIFETIME = timedelta(minutes=30)
+# 5 days for the client demo (3 Oct 2026); the design value is 30 minutes
+# (design/03-login.md section 6.2) -- put it back after the demo.
+ACCESS_LIFETIME = timedelta(days=5)
 REFRESH_LIFETIME = timedelta(days=30)
 
 
