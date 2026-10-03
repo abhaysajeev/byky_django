@@ -15,8 +15,8 @@
 
 {% block content %}
 {% comment %}
-Read-only. One row per employee per day; the chevron opens that day's punch-in /
-punch-out pairs. Punches arrive from the RMS app (QR scan) and the manager app
+Read-only. One row per employee per day; the row opens that day's detail page
+(crew/attendance_detail.html) with each punch-in / punch-out pair. Punches arrive from the RMS app (QR scan) and the manager app
 (self attendance) -- nothing here adds, edits or deletes them.
 {% endcomment %}
 <div class="scr">
@@ -43,27 +43,15 @@ punch-out pairs. Punches arrive from the RMS app (QR scan) and the manager app
 
   <div class="scr-tiles">
     <div class="scr-tile">
-      <span class="scr-tile-ico scr-tile-ico-green">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.4"></circle><path d="M5.5 20a6.5 6.5 0 0 1 13 0"></path></svg>
-      </span>
       <div><div class="scr-tile-val">{{ present_count }}</div><div class="scr-tile-lab">Present today</div></div>
     </div>
     <div class="scr-tile">
-      <span class="scr-tile-ico scr-tile-ico-blue">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M12 7v5l3.5 2"></path></svg>
-      </span>
       <div><div class="scr-tile-val">{{ on_duty_count }}</div><div class="scr-tile-lab">On duty now</div></div>
     </div>
     <div class="scr-tile">
-      <span class="scr-tile-ico scr-tile-ico-red">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"></path><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>
-      </span>
       <div><div class="scr-tile-val">{{ missing_count }}</div><div class="scr-tile-lab">Missing punch-outs</div></div>
     </div>
     <div class="scr-tile">
-      <span class="scr-tile-ico scr-tile-ico-amber">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"></rect><path d="M9 9h2v2H9zM13 13h2v2h-2z"></path></svg>
-      </span>
       <div><div class="scr-tile-val">{{ qr_today }} / {{ self_today }}</div><div class="scr-tile-lab">QR / Self today</div></div>
     </div>
   </div>
@@ -104,7 +92,6 @@ punch-out pairs. Punches arrive from the RMS app (QR scan) and the manager app
       <table>
         <thead>
           <tr>
-            <th class="scr-expand-col"></th>
             <th>Employee</th>
             <th>Date</th>
             <th>First in</th>
@@ -113,16 +100,12 @@ punch-out pairs. Punches arrive from the RMS app (QR scan) and the manager app
             <th>Shifts</th>
             <th>Branch</th>
             <th>Status</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
           {% for r in rows %}
-          <tr class="scr-expand-row">
-            <td class="scr-expand-col">
-              <button type="button" class="scr-expand-btn" data-scr-expand aria-expanded="false" aria-controls="{{ r.key }}" aria-label="Show punches">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
-              </button>
-            </td>
+          <tr class="scr-mon-row" data-scr-href="{{ r.detail_url }}">
             <td>
               <div class="scr-co">
                 <span class="scr-avatar {% cycle 'scr-avatar-0' 'scr-avatar-1' 'scr-avatar-2' 'scr-avatar-3' 'scr-avatar-4' %}">{{ r.name|slice:":1" }}</span>
@@ -140,48 +123,11 @@ punch-out pairs. Punches arrive from the RMS app (QR scan) and the manager app
               {% elif r.status == "on_duty" %}<span class="scr-badge scr-badge-anytime"><i></i>{{ r.status_label }}</span>
               {% else %}<span class="scr-badge scr-badge-approved"><i></i>{{ r.status_label }}</span>{% endif %}
             </td>
-          </tr>
-          <tr class="scr-expand-detail" id="{{ r.key }}" hidden>
-            <td colspan="9" class="scr-expand-cell">
-              <div class="scr-records-table-wrap">
-                <table class="scr-records-table">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>Punch in</th>
-                      <th>Punch out</th>
-                      <th>Worked</th>
-                      <th>Source</th>
-                      <th>Employee branch</th>
-                      <th>Scanned at</th>
-                      <th>Scanned by</th>
-                      <th>QR generated</th>
-                      <th>Devices</th>
-                      <th>GPS</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {% for s in r.sessions %}
-                    <tr>
-                      <td>{{ s.n }}</td>
-                      <td class="scr-mon-num">{{ s.in_time }}</td>
-                      <td class="scr-mon-num">
-                        {% if s.out_time %}{{ s.out_time }}{% if s.out_next_day %}<span class="scr-next-day">+1 day</span>{% endif %}
-                        {% elif s.status == "open" %}<span class="scr-badge scr-badge-anytime"><i></i>On duty</span>
-                        {% else %}<span class="scr-badge scr-badge-mandatory"><i></i>Missing</span>{% endif %}
-                      </td>
-                      <td class="scr-mon-num">{{ s.worked|default:"—" }}</td>
-                      <td>{{ s.source }}{% if s.out_source %}<div class="scr-contact-sub">Out: {{ s.out_source }}</div>{% endif %}</td>
-                      <td>{{ s.employee_branch }}</td>
-                      <td>{{ s.rms_branch|default:"—" }}{% if s.out_rms_branch and s.out_rms_branch != s.rms_branch %}<div class="scr-contact-sub">Out: {{ s.out_rms_branch }}</div>{% endif %}</td>
-                      <td>{% if s.scanned_by %}{{ s.scanned_by }}<div class="scr-contact-sub">{{ s.scanned_by_code }}</div>{% else %}—{% endif %}{% if s.out_scanned_by and s.out_scanned_by != s.scanned_by %}<div class="scr-contact-sub">Out: {{ s.out_scanned_by }}</div>{% endif %}</td>
-                      <td class="scr-mon-num">{{ s.qr_generated|default:"—" }}</td>
-                      <td>{% if s.employee_device %}<span class="scr-code" title="Employee phone">{{ s.employee_device|truncatechars:14 }}</span> {% endif %}<span class="scr-code" title="{% if s.employee_device %}RMS device{% else %}Manager phone{% endif %}">{{ s.rms_device|truncatechars:14 }}</span></td>
-                      <td>{% if s.employee_gps %}<div class="scr-contact-sub" title="Employee phone">{{ s.employee_gps }}</div>{% endif %}{% if s.rms_gps %}<div class="scr-contact-sub" title="{% if s.employee_device %}RMS device{% else %}Manager phone{% endif %}">{{ s.rms_gps }}</div>{% endif %}{% if not s.employee_gps and not s.rms_gps %}—{% endif %}</td>
-                    </tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
+            <td>
+              <div class="scr-row-actions">
+              <a class="scr-icon-btn" href="{{ r.detail_url }}" title="View attendance" aria-label="View {{ r.name }}, {{ r.day|date:'d M Y' }}">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+              </a>
               </div>
             </td>
           </tr>

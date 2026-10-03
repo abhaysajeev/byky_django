@@ -50,21 +50,12 @@
 
   <div class="scr-tiles">
     <button type="button" class="scr-tile" data-scr-kpi-filter="status:">
-      <span class="scr-tile-ico scr-tile-ico-blue">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17 20v-1.6a3.4 3.4 0 0 0-3.4-3.4H9.4A3.4 3.4 0 0 0 6 18.4V20M11.5 12a3.6 3.6 0 1 0 0-7.2 3.6 3.6 0 0 0 0 7.2M21 20v-1.4a3 3 0 0 0-2.3-2.9M16.6 5a3 3 0 0 1 0 5.8"></path></svg>
-      </span>
       <div><div class="scr-tile-val">{{ customers|length }}</div><div class="scr-tile-lab">Total Customers</div></div>
     </button>
     <button type="button" class="scr-tile" data-scr-kpi-filter="status:Active">
-      <span class="scr-tile-ico scr-tile-ico-green">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"></path></svg>
-      </span>
       <div><div class="scr-tile-val">{{ active_count }}</div><div class="scr-tile-lab">Active</div></div>
     </button>
     <button type="button" class="scr-tile" data-scr-kpi-filter="status:Blocked">
-      <span class="scr-tile-ico scr-tile-ico-amber">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18.4 5.6 5.6 18.4M5.6 5.6l12.8 12.8"></path></svg>
-      </span>
       <div><div class="scr-tile-val">{{ blocked_count }}</div><div class="scr-tile-lab">Blocked</div></div>
     </button>
   </div>
