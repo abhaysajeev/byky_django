@@ -618,7 +618,7 @@ def test_the_detail_page_shows_an_unclosed_punch_and_the_roster(client, world, m
     body = client_in(client, world).get(detail(world, "manager")).content.decode()
 
     assert "Missing punch-out" in body and "No punch-out within 24 hours." in body
-    assert "Working · Creek Park 2, 08:00–17:00" in body
+    assert "Working · Creek Park 2 · 08:00–17:00" in body
     assert "Manager phone" in body and "phone-m" in body
 
 
