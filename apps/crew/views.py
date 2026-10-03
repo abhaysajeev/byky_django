@@ -14,7 +14,7 @@ import datetime
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
 from django.db.models.functions import TruncDate
-from django.http import StreamingHttpResponse
+from django.http import Http404, StreamingHttpResponse
 from django.urls import reverse
 from django.utils import timezone
 
@@ -29,6 +29,7 @@ from apps.crew.models import (
     AttendanceSource,
     BlockAction,
     Designation,
+    DutyRoster,
     DutyRosterDayType,
     Employee,
     EmployeeAddress,
@@ -428,34 +429,43 @@ def _gps(lat, lng):
     return f"{lat}, {lng}" if lat is not None else ""
 
 
-def _session_row(index, session, day, zone):
-    punch_in, punch_out, status, worked = session
-    in_at = punch_in.rms_scan_time.astimezone(zone)
-    out_at = punch_out.rms_scan_time.astimezone(zone) if punch_out else None
-    return {
-        "n": index,
-        "in_time": in_at.strftime("%H:%M:%S"),
-        "out_time": out_at.strftime("%H:%M:%S") if out_at else "",
-        "out_next_day": bool(out_at and out_at.date() > day),
-        "worked": _duration(worked),
-        "status": status,
-        "source": punch_in.get_source_display(),
-        "out_source": punch_out.get_source_display() if punch_out and punch_out.source != punch_in.source else "",
-        "employee_branch": punch_in.employee_branch.name,
-        "rms_branch": punch_in.rms_branch.name if punch_in.rms_branch_id else "",
-        "out_rms_branch": punch_out.rms_branch.name if punch_out and punch_out.rms_branch_id else "",
-        "scanned_by": punch_in.rms_employee_name,
-        "scanned_by_code": punch_in.rms_employee_code,
-        "out_scanned_by": punch_out.rms_employee_name if punch_out else "",
-        "qr_generated": (
-            punch_in.qr_generation_time.astimezone(zone).strftime("%H:%M:%S")
-            if punch_in.qr_generation_time else ""
-        ),
-        "employee_device": punch_in.employee_installation_id,
-        "rms_device": punch_in.rms_installation_id,
-        "employee_gps": _gps(punch_in.employee_latitude, punch_in.employee_longitude),
-        "rms_gps": _gps(punch_in.rms_latitude, punch_in.rms_longitude),
-    }
+def _punch_detail(punch, zone, day):
+    """The rows one punch shows on the detail page -- the same for a punch-in
+    and its punch-out. A QR scan carries both phones; a self punch only the
+    manager's own."""
+    at = punch.rms_scan_time.astimezone(zone)
+    rows = [
+        ("Time", at.strftime("%H:%M:%S") + ("  (+1 day)" if at.date() > day else "")),
+        ("Source", punch.get_source_display()),
+        ("Employee branch", punch.employee_branch.name),
+    ]
+    if punch.source == AttendanceSource.QR_SCAN:
+        rows += [
+            ("Scanned at", punch.rms_branch.name if punch.rms_branch_id else "—"),
+            ("Scanned by", f"{punch.rms_employee_name} ({punch.rms_employee_code})"),
+            ("QR generated", punch.qr_generation_time.astimezone(zone).strftime("%H:%M:%S")
+             if punch.qr_generation_time else "—"),
+            ("Employee phone", punch.employee_installation_id or "—"),
+            ("Employee GPS", _gps(punch.employee_latitude, punch.employee_longitude) or "—"),
+            ("RMS device", punch.rms_installation_id),
+            ("RMS GPS", _gps(punch.rms_latitude, punch.rms_longitude) or "—"),
+        ]
+    else:
+        rows += [
+            ("Manager phone", punch.rms_installation_id),
+            ("Phone GPS", _gps(punch.rms_latitude, punch.rms_longitude) or "—"),
+        ]
+    # When the server got it -- far from Time means the phone's clock is off
+    # or the punch waited offline.
+    rows.append(("Received", punch.created_on.astimezone(zone).strftime("%d %b %Y, %H:%M:%S")))
+    return rows
+
+
+_SESSION_STATUS = {
+    services.SessionStatus.CLOSED: ("complete", "Complete"),
+    services.SessionStatus.OPEN: ("on_duty", "On duty"),
+    services.SessionStatus.MISSING_PUNCH_OUT: ("missing", "Missing punch-out"),
+}
 
 
 class AttendanceListView(CrewScreenView):
@@ -476,8 +486,9 @@ class AttendanceListView(CrewScreenView):
         sessions = _sessions_by_day(punch_ins, keys, zone) if keys else {}
         employees = Employee.objects.select_related("designation").in_bulk({employee for employee, _ in keys})
 
+        list_query = self.request.GET.urlencode()
         rows = []
-        for i, d in enumerate(page.object_list):
+        for d in page.object_list:
             employee = employees[d["employee"]]
             day_sessions = sessions.get((d["employee"], d["day"]), [])
             status, status_label = _day_status(d)
@@ -486,7 +497,6 @@ class AttendanceListView(CrewScreenView):
             last_out = max(outs) if outs else None
             worked = [s[3] for s in day_sessions if s[3] is not None]
             rows.append({
-                "key": f"att-{i}",
                 "name": employee.full_name,
                 "code": employee.employee_code,
                 "designation": employee.designation.title,
@@ -499,9 +509,8 @@ class AttendanceListView(CrewScreenView):
                 "branch": day_sessions[0][0].employee_branch.name if day_sessions else "",
                 "status": status,
                 "status_label": status_label,
-                "sessions": [
-                    _session_row(n, s, d["day"], zone) for n, s in enumerate(day_sessions, start=1)
-                ],
+                "detail_url": reverse("crew-attendance-detail", args=[d["employee"], d["day"].isoformat()])
+                + (f"?{list_query}" if list_query else ""),
             })
 
         query = self.request.GET.copy()
@@ -535,6 +544,83 @@ class AttendanceListView(CrewScreenView):
             "sources_list": [{"id": v, "name": label} for v, label in AttendanceSource.choices],
             "statuses_list": [{"id": v, "name": label} for v, label in DAY_STATUSES],
             "export_url": reverse("crew-attendance-export"),
+        })
+        return context
+
+
+class AttendanceDetailView(CrewScreenView):
+    """One employee's punches on one company-local day -- what a list row
+    stands for. Read-only, like the list."""
+
+    template_name = "crew/attendance_detail.html"
+    page_code = "crew.attendance"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        zone = zone_for(getattr(user, "company", None))
+        try:
+            day = datetime.date.fromisoformat(self.kwargs["day"])
+        except ValueError:
+            raise Http404("No such day.") from None
+        employee = (scoping.employees_for(user).select_related("designation", "branch")
+                    .filter(pk=self.kwargs["employee_id"]).first())
+        if employee is None:
+            raise Http404("No such employee.")
+
+        start = datetime.datetime.combine(day, datetime.time.min, tzinfo=zone)
+        punch_ins = (
+            scoping.attendance_for(user)
+            .filter(employee=employee, punch_type=PunchType.PUNCH_IN,
+                    rms_scan_time__gte=start, rms_scan_time__lt=start + datetime.timedelta(days=1))
+            .select_related("employee_branch", "rms_branch", "punch_out",
+                            "punch_out__employee_branch", "punch_out__rms_branch")
+            .order_by("rms_scan_time")
+        )
+        sessions = services.attendance_sessions(punch_ins)
+        if not sessions:
+            raise Http404("No attendance that day.")
+
+        shifts = []
+        for n, (punch_in, punch_out, status, worked) in enumerate(sessions, start=1):
+            key, label = _SESSION_STATUS[status]
+            shifts.append({
+                "n": n, "status": key, "status_label": label, "worked": _duration(worked),
+                "punch_in": _punch_detail(punch_in, zone, day),
+                "punch_out": _punch_detail(punch_out, zone, day) if punch_out else None,
+            })
+        statuses = {shift["status"] for shift in shifts}
+        day_status = next(s for s in ("missing", "on_duty", "complete") if s in statuses)
+        outs = [out.rms_scan_time.astimezone(zone) for _, out, _, _ in sessions if out is not None]
+        last_out = max(outs) if outs else None
+        worked = [w for *_, w in sessions if w is not None]
+
+        roster = DutyRoster.objects.filter(employee=employee, date=day).select_related("branch").first()
+        if roster is None:
+            rostered = "Not rostered"
+        else:
+            times = [f"{services._hhmm(a, zone)}–{services._hhmm(b, zone)}"
+                     for a, b in ((roster.shift1_start, roster.shift1_end), (roster.shift2_start, roster.shift2_end))
+                     if a and b]
+            rostered = " · ".join(
+                part for part in (roster.get_day_type_display(), roster.branch.name if roster.branch_id else "",
+                                  ", ".join(times)) if part
+            )
+
+        list_url = reverse("crew-attendance-list")
+        query = self.request.GET.urlencode()
+        context.update({
+            "employee": employee,
+            "day": day,
+            "status": day_status,
+            "status_label": dict(_SESSION_STATUS.values())[day_status],
+            "first_in": sessions[0][0].rms_scan_time.astimezone(zone).strftime("%H:%M"),
+            "last_out": last_out.strftime("%H:%M") if last_out else "",
+            "last_out_next_day": bool(last_out and last_out.date() > day),
+            "worked": _duration(sum(worked)) if worked else "",
+            "rostered": rostered,
+            "shifts": shifts,
+            "list_url": f"{list_url}?{query}" if query else list_url,
         })
         return context
 

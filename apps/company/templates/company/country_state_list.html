@@ -48,15 +48,9 @@
 
   <div class="scr-tiles">
     <div class="scr-tile">
-      <span class="scr-tile-ico scr-tile-ico-blue">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3c2.5 2.5 4 5.7 4 9s-1.5 6.5-4 9c-2.5-2.5-4-5.7-4-9s1.5-6.5 4-9z"></path></svg>
-      </span>
       <div><div class="scr-tile-val">{{ countries|length }}</div><div class="scr-tile-lab">Countries</div></div>
     </div>
     <div class="scr-tile">
-      <span class="scr-tile-ico scr-tile-ico-amber">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.5 7-12a7 7 0 0 0-14 0c0 5.5 7 12 7 12z"></path><circle cx="12" cy="9" r="2.5"></circle></svg>
-      </span>
       <div><div class="scr-tile-val">{{ states|length }}</div><div class="scr-tile-lab">States</div></div>
     </div>
     {% comment %}
@@ -66,23 +60,14 @@
     two grids directly below.
     {% endcomment %}
     <a class="scr-tile" href="{% url 'company-branch-list' %}" title="Open Branch Management">
-      <span class="scr-tile-ico scr-tile-ico-red">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V4.2A1.2 1.2 0 0 1 5.2 3h8.6A1.2 1.2 0 0 1 15 4.2V21M15 9h4.8A1.2 1.2 0 0 1 21 10.2V21M3 21h18M8 7h3M8 11h3"></path></svg>
-      </span>
       <div><div class="scr-tile-val">{{ total_branches }}</div><div class="scr-tile-lab">Total Branches</div></div>
       <svg class="scr-tile-go" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
     </a>
     <a class="scr-tile" title="Vehicle Management arrives with the fleet module">
-      <span class="scr-tile-ico scr-tile-ico-green">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5v10l-9 5-9-5V7l9-5M3.3 7 12 12l8.7-5M12 12v10"></path></svg>
-      </span>
       <div><div class="scr-tile-val">{{ total_fleet }}</div><div class="scr-tile-lab">Total Vehicles</div></div>
       <svg class="scr-tile-go" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
     </a>
     <a class="scr-tile" title="Asset Management arrives with the fleet module">
-      <span class="scr-tile-ico scr-tile-ico-purple">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16v12H4zM4 7l2-3h12l2 3M9 19v2M15 19v2"></path></svg>
-      </span>
       <div><div class="scr-tile-val">{{ total_assets }}</div><div class="scr-tile-lab">Total Assets</div></div>
       <svg class="scr-tile-go" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
     </a>

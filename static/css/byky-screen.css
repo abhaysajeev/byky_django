@@ -123,12 +123,6 @@
   padding: 16px 18px; display: flex; align-items: center; gap: 13px; box-shadow: 0 1px 2px rgba(26, 22, 64, 0.03);
   animation: cdFadeUp 0.3s ease-out both;
 }
-.scr-tile-ico { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; flex: 0 0 auto; }
-.scr-tile-ico-red { background: #fdeced; color: #d81f26; }
-.scr-tile-ico-green { background: #e9f8f0; color: #1f9d63; }
-.scr-tile-ico-amber { background: #fdf3e3; color: #e08700; }
-.scr-tile-ico-blue { background: #eaf1fd; color: #3b6fd4; }
-.scr-tile-ico-purple { background: #f1ecfd; color: #6d3fd6; }
 /* A tile that stands for a population held on another screen is a link to it,
    so the count and the list it counts are one click apart. Only tiles that
    genuinely lead somewhere get this -- a link that returns to the page it is
@@ -1034,6 +1028,9 @@ textarea.scr-drawer-input { height: auto; min-height: 72px; padding: 10px 13px; 
 .scr-mon-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start; }
 .scr-mon-grid-wide { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
 .scr-mon-body { padding-top: 6px; padding-bottom: 12px; }
+/* attendance detail: the Punch in / Punch out columns of a shift */
+.scr-att-col { margin: 6px 0 2px; font-size: 11px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: #6b6790; }
+.scr-att-none { margin: 10px 0 0; display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: #6b6790; }
 .scr-mon-wrap { min-width: 0; word-break: break-all; }
 .scr-mon-alert { display: flex; gap: 12px; align-items: flex-start; padding: 14px 18px; border-radius: 14px; background: #fdeced; border: 1px solid #f3c3c5; color: #c2141a; font-size: 12.5px; }
 .scr-mon-alert svg { flex: 0 0 auto; margin-top: 1px; }

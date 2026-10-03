@@ -19,7 +19,15 @@ from django.utils import timezone
 
 from apps.company.models import Branch, BranchType, Company, Country, Location, State
 from apps.crew import api
-from apps.crew.models import Attendance, AttendanceSource, Designation, Employee, PunchType
+from apps.crew.models import (
+    Attendance,
+    AttendanceSource,
+    Designation,
+    DutyRoster,
+    DutyRosterDayType,
+    Employee,
+    PunchType,
+)
 from apps.devices.models import Device, DeviceMapping, DeviceSettings, DeviceStatus
 from apps.fare.tests.test_api import shape
 from apps.portal.models import Role, RolePermission
@@ -577,12 +585,54 @@ def test_the_screen_shows_one_row_per_employee_day(client, world, operator, mana
     web = client_in(client, world)
     body = web.get("/crew/attendance/list/", {"from": "2026-08-29", "to": "2026-08-29"}).content.decode()
 
-    assert body.count('class="scr-expand-row"') == 2
+    assert body.count('class="scr-mon-row"') == 2
     assert "Anil K" in body and "Meera K" in body
-    assert "01:30:00" in body and "+1 day" in body            # the second shift's punch-out
+    assert f'data-scr-href="/crew/attendance/{world["staff"].pk}/2026-08-29/?' in body   # opens the day
+    assert "01:30" in body and "+1 day" in body               # last out, after midnight
     assert "12h 30m" in body                                  # worked: 4h + 8h30m
     assert 'scr-badge-mandatory"><i></i>Missing punch-out' in body   # Meera never punched out
     assert 'data-scr-open="attendance:add"' not in body        # read-only
+    assert "scr-expand" not in body                            # the detail page replaced the sub-table
+
+
+def detail(world, employee, day="2026-08-29"):
+    return f"/crew/attendance/{world[employee].pk}/{day}/"
+
+
+def test_the_detail_page_shows_each_shift_in_and_out(client, world, operator):
+    seed_day(client, operator)
+    body = client_in(client, world).get(detail(world, "staff")).content.decode()
+
+    for text in ("Anil K", "EMP001", "Cashier", "Not rostered", "Shift 1 · 4h 00m", "Shift 2 · 8h 30m",
+                 "09:00:00", "13:00:00", "17:00:00", "01:30:00  (+1 day)", "12h 30m",
+                 "Rashed K (OPR001)", "Creek Park 1", "phone-e", "till-1", "QR generated", "Received"):
+        assert text in body, text
+    assert "Complete" in body
+
+
+def test_the_detail_page_shows_an_unclosed_punch_and_the_roster(client, world, manager):
+    mark(client, manager, self_punch("punch_in", local(DAY, 8)), app="manager")
+    DutyRoster.objects.create(employee=world["manager"], date=DAY, day_type=DutyRosterDayType.WORKING,
+                              branch=world["auh2"],
+                              shift1_start=aware(local(DAY, 8)), shift1_end=aware(local(DAY, 17)))
+    body = client_in(client, world).get(detail(world, "manager")).content.decode()
+
+    assert "Missing punch-out" in body and "No punch-out within 24 hours." in body
+    assert "Working · Creek Park 2 · 08:00–17:00" in body
+    assert "Manager phone" in body and "phone-m" in body
+
+
+@pytest.mark.parametrize("path", ["{staff}/2026-08-30/", "{staff}/not-a-day/", "{outsider}/2026-08-29/"])
+def test_the_detail_page_is_not_found(client, world, operator, path):
+    seed_day(client, operator)
+    url = "/crew/attendance/" + path.format(staff=world["staff"].pk, outsider=world["outsider"].pk)
+    assert client_in(client, world).get(url).status_code == 404
+
+
+def test_the_detail_page_needs_read(client, world, operator):
+    seed_day(client, operator)
+    RolePermission.objects.filter(role=world["role"], page__code="crew.attendance").update(can_read=False)
+    assert client_in(client, world).get(detail(world, "staff")).status_code == 403
 
 
 @pytest.mark.parametrize("params, shown, hidden", [

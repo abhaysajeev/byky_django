@@ -1,0 +1,114 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Attendance {{ employee.full_name }} {{ day|date:"d M Y" }} - Crew{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+{% comment %}
+One employee's punches on one day -- a row of the Attendance list. Read-only:
+punches come from the RMS app (QR scan) and the manager app (self).
+{% endcomment %}
+<div class="scr">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Crew</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <a href="{{ list_url }}">Attendance</a>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>{{ employee.full_name }}</b>
+      </div>
+      <h1 class="scr-title">{{ employee.full_name }} · {{ day|date:"d M Y" }}</h1>
+    </div>
+    <div class="scr-head-actions">
+      <a href="{{ list_url }}" class="scr-btn-secondary">Back</a>
+    </div>
+  </div>
+
+  <div class="scr-mon-grid">
+    <div class="scr-card">
+      <div class="scr-form-head"><div class="scr-form-title-row"><h2 class="scr-form-title">Employee</h2></div></div>
+      <div class="scr-form-body scr-mon-body">
+        <div class="scr-detail-rows">
+          <div class="scr-detail-row"><span class="scr-detail-label">Name</span><span class="scr-detail-value">{{ employee.full_name }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Code</span><span class="scr-detail-value">{{ employee.employee_code }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Designation</span><span class="scr-detail-value">{{ employee.designation.title }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Home Branch</span><span class="scr-detail-value">{{ employee.branch.name|default:"—" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Rostered</span><span class="scr-detail-value">{{ rostered }}</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="scr-card">
+      <div class="scr-form-head">
+        <div class="scr-form-title-row">
+          <h2 class="scr-form-title">Day</h2>
+          {% if status == "missing" %}<span class="scr-badge scr-badge-mandatory"><i></i>{{ status_label }}</span>
+          {% elif status == "on_duty" %}<span class="scr-badge scr-badge-anytime"><i></i>{{ status_label }}</span>
+          {% else %}<span class="scr-badge scr-badge-approved"><i></i>{{ status_label }}</span>{% endif %}
+        </div>
+      </div>
+      <div class="scr-form-body scr-mon-body">
+        <div class="scr-detail-rows">
+          <div class="scr-detail-row"><span class="scr-detail-label">Date</span><span class="scr-detail-value">{{ day|date:"l, d M Y" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">First In</span><span class="scr-detail-value">{{ first_in }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Last Out</span><span class="scr-detail-value">{{ last_out|default:"—" }}{% if last_out_next_day %}<span class="scr-next-day">+1 day</span>{% endif %}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Worked</span><span class="scr-detail-value">{{ worked|default:"—" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Shifts</span><span class="scr-detail-value">{{ shifts|length }}</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% for s in shifts %}
+  <div class="scr-card">
+    <div class="scr-form-head">
+      <div class="scr-form-title-row">
+        <h2 class="scr-form-title">Shift {{ s.n }}{% if s.worked %} · {{ s.worked }}{% endif %}</h2>
+        {% if s.status == "missing" %}<span class="scr-badge scr-badge-mandatory"><i></i>{{ s.status_label }}</span>
+        {% elif s.status == "on_duty" %}<span class="scr-badge scr-badge-anytime"><i></i>{{ s.status_label }}</span>
+        {% else %}<span class="scr-badge scr-badge-approved"><i></i>{{ s.status_label }}</span>{% endif %}
+      </div>
+    </div>
+    <div class="scr-form-body scr-mon-body">
+      <div class="scr-mon-grid">
+        <div>
+          <h3 class="scr-att-col">Punch in</h3>
+          <div class="scr-detail-rows">
+            {% for label, value in s.punch_in %}
+            <div class="scr-detail-row"><span class="scr-detail-label">{{ label }}</span><span class="scr-detail-value scr-mon-wrap">{{ value }}</span></div>
+            {% endfor %}
+          </div>
+        </div>
+        <div>
+          <h3 class="scr-att-col">Punch out</h3>
+          {% if s.punch_out %}
+          <div class="scr-detail-rows">
+            {% for label, value in s.punch_out %}
+            <div class="scr-detail-row"><span class="scr-detail-label">{{ label }}</span><span class="scr-detail-value scr-mon-wrap">{{ value }}</span></div>
+            {% endfor %}
+          </div>
+          {% elif s.status == "on_duty" %}
+          <p class="scr-att-none"><span class="scr-badge scr-badge-anytime"><i></i>On duty</span> Not punched out yet.</p>
+          {% else %}
+          <p class="scr-att-none"><span class="scr-badge scr-badge-mandatory"><i></i>Missing punch-out</span> No punch-out within 24 hours.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+
+</div>
+{% endblock %}
