@@ -69,10 +69,10 @@
         <div class="scr-detail-rows">
           <div class="scr-detail-row"><span class="scr-detail-label">Subtotal</span><span class="scr-detail-value">AED {{ bill.subtotal }}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Card Discount</span><span class="scr-detail-value">{% if bill.discount_percentage %}{{ bill.discount_percentage }}% · {% endif %}−AED {{ bill.discount_amount }}</span></div>
-          <div class="scr-detail-row"><span class="scr-detail-label">Taxable Amount</span><span class="scr-detail-value">AED {{ bill.taxable_amount }}</span></div>
-          <div class="scr-detail-row"><span class="scr-detail-label">VAT</span><span class="scr-detail-value">{{ bill.tax_percentage }}% · AED {{ bill.tax_amount }}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Rounding</span><span class="scr-detail-value">AED {{ bill.rounding }}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label"><b>Net</b></span><span class="scr-detail-value"><b>AED {{ bill.net_amount }}</b></span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Taxable Amount</span><span class="scr-detail-value">AED {{ bill.taxable_amount }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">VAT (included)</span><span class="scr-detail-value">{{ bill.tax_percentage }}% · AED {{ bill.tax_amount }}</span></div>
         </div>
       </div>
     </div>

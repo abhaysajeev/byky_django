@@ -1,21 +1,21 @@
-/* Offer add/edit page (apps/fare/templates/fare/offer_form.html).
+/* Package add/edit page (apps/fare/templates/fare/package_form.html).
 
-   The whole offer lives here until Save posts it in one piece. Lighter than
+   The whole package lives here until Save posts it in one piece. Lighter than
    byky-fare.js: no live /check/ endpoint, no lock_version, no precedence
    engine -- nothing to resolve server-side until pricing/calculation is
-   designed (apps/fare/offer_services.py). The browser only draws the three
+   designed (apps/fare/package_services.py). The browser only draws the three
    grids, keeps number fields clean as they are typed, and toggles which
    fields show; the server checks everything again on save. */
 (function () {
   'use strict';
 
-  var root = document.querySelector('[data-offer]');
+  var root = document.querySelector('[data-package]');
   if (!root) return;
 
   var Crud = window.BykyCrud;
   var canSave = root.dataset.canSave === '1';
-  var initial = JSON.parse(document.getElementById('offer-initial').textContent);
-  var options = JSON.parse(document.getElementById('offer-options').textContent);
+  var initial = JSON.parse(document.getElementById('package-initial').textContent);
+  var options = JSON.parse(document.getElementById('package-options').textContent);
 
   var MAX_MINUTES = 1440;
   var MAX_MONEY = 9999999999.99;
@@ -23,7 +23,7 @@
     all_days: 'All Days', monday: 'Monday', tuesday: 'Tuesday', wednesday: 'Wednesday',
     thursday: 'Thursday', friday: 'Friday', saturday: 'Saturday', sunday: 'Sunday'
   };
-  var PROMOTION_LABEL = { quantity: 'Quantity', amount: 'Amount', percentage: 'Percentage', each: 'Each', offer_price: 'Offer Price' };
+  var PROMOTION_LABEL = { quantity: 'Quantity', amount: 'Amount', percentage: 'Percentage', each: 'Each', package_price: 'Package Price' };
   var VEHICLE_NAME = {};
   options.vehicle_types.forEach(function (v) { VEHICLE_NAME[v.id] = v.name; });
 
@@ -79,40 +79,40 @@
 
   // -- Static fields -------------------------------------------------------------
 
-  var company = $('[data-offer-field="company"]');
-  var offerCode = $('[data-offer-field="offer_code"]');
-  var offerName = $('[data-offer-field="offer_name"]');
-  var status = $('[data-offer-field="is_active"]');
-  var branch = $('[data-offer-field="branch"]');
-  var location = $('[data-offer-field="location"]');
-  var branchWrap = $('[data-offer-branch-wrap]');
-  var locationWrap = $('[data-offer-location-wrap]');
-  var validFrom = $('[data-offer-date="valid_from"]');
-  var validTo = $('[data-offer-date="valid_to"]');
-  var promotionFor = $('[data-offer-field="promotion_for"]');
-  var inventoryType = $('[data-offer-field="inventory_type"]');
-  var lowerValue = $('[data-offer-field="lower_value"]');
-  var upperValue = $('[data-offer-field="upper_value"]');
-  var promotionType = $('[data-offer-field="promotion_type"]');
-  var freeOrOfferPrice = $('[data-offer-field="free_or_offer_price"]');
-  var freeOrOfferPriceWrap = $('[data-offer-free-price-wrap]');
-  var timeSlabToggle = $('[data-offer-field="time_slab_applicable"]');
-  var freeItemToggle = $('[data-offer-field="free_item_selectable"]');
-  var freeNoteWrap = $('[data-offer-free-note-wrap]');
-  var freeNote = $('[data-offer-field="free_item_selectable_note"]');
-  var freeItemsCard = $('[data-offer-free-items-card]');
-  var timeSlabsCard = $('[data-offer-time-slabs-card]');
+  var company = $('[data-package-field="company"]');
+  var packageCode = $('[data-package-field="package_code"]');
+  var packageName = $('[data-package-field="package_name"]');
+  var status = $('[data-package-field="is_active"]');
+  var branch = $('[data-package-field="branch"]');
+  var location = $('[data-package-field="location"]');
+  var branchWrap = $('[data-package-branch-wrap]');
+  var locationWrap = $('[data-package-location-wrap]');
+  var validFrom = $('[data-package-date="valid_from"]');
+  var validTo = $('[data-package-date="valid_to"]');
+  var promotionFor = $('[data-package-field="promotion_for"]');
+  var inventoryType = $('[data-package-field="inventory_type"]');
+  var lowerValue = $('[data-package-field="lower_value"]');
+  var upperValue = $('[data-package-field="upper_value"]');
+  var promotionType = $('[data-package-field="promotion_type"]');
+  var freeOrPackagePrice = $('[data-package-field="free_or_package_price"]');
+  var freeOrPackagePriceWrap = $('[data-package-free-price-wrap]');
+  var timeSlabToggle = $('[data-package-field="time_slab_applicable"]');
+  var freeItemToggle = $('[data-package-field="free_item_selectable"]');
+  var freeNoteWrap = $('[data-package-free-note-wrap]');
+  var freeNote = $('[data-package-field="free_item_selectable_note"]');
+  var freeItemsCard = $('[data-package-free-items-card]');
+  var timeSlabsCard = $('[data-package-time-slabs-card]');
 
-  function level() { var on = $('[data-offer-field="level"]:checked'); return on ? on.value : ''; }
+  function level() { var on = $('[data-package-field="level"]:checked'); return on ? on.value : ''; }
   function toggledOn(el) { return el ? el.classList.contains('is-on') : false; }
   function setToggle(el, on) { if (el) el.classList.toggle('is-on', !!on); }
 
   function fillStatic() {
     if (company) company.value = initial.company || '';
-    offerCode.value = initial.offer_code || '';
-    offerName.value = initial.offer_name || '';
+    packageCode.value = initial.package_code || '';
+    packageName.value = initial.package_name || '';
     status.value = initial.is_active === false ? '0' : '1';
-    $$('[data-offer-field="level"]').forEach(function (r) { r.checked = r.value === initial.level; });
+    $$('[data-package-field="level"]').forEach(function (r) { r.checked = r.value === initial.level; });
     branch.value = initial.branch || '';
     location.value = initial.location || '';
     setIso(validFrom, initial.valid_from);
@@ -122,7 +122,7 @@
     lowerValue.value = initial.lower_value || '';
     upperValue.value = initial.upper_value || '';
     promotionType.value = initial.promotion_type || '';
-    freeOrOfferPrice.value = initial.free_or_offer_price || 'free';
+    freeOrPackagePrice.value = initial.free_or_package_price || 'free';
     setToggle(timeSlabToggle, initial.time_slab_applicable);
     setToggle(freeItemToggle, initial.free_item_selectable);
     freeNote.value = initial.free_item_selectable_note || '';
@@ -142,12 +142,12 @@
     var freeOn = toggledOn(freeItemToggle);
     var slabOn = toggledOn(timeSlabToggle);
     freeNoteWrap.hidden = !freeOn;
-    freeOrOfferPriceWrap.hidden = !(freeOn || slabOn);
+    freeOrPackagePriceWrap.hidden = !(freeOn || slabOn);
     freeItemsCard.hidden = !(type === 'quantity' && freeOn);
     timeSlabsCard.hidden = !slabOn;
     // The value column on Promotion Items is meaningless for Quantity -- the
     // mockup hides it entirely for that promotion type (models.py's own note).
-    root.classList.toggle('offer-hide-item-value', type === 'quantity');
+    root.classList.toggle('package-hide-item-value', type === 'quantity');
     renderItems();
   }
 
@@ -173,7 +173,7 @@
     return {
       pk: initial.pk,
       company: company ? company.value : initial.company,
-      offer_code: offerCode.value.trim(), offer_name: offerName.value.trim(),
+      package_code: packageCode.value.trim(), package_name: packageName.value.trim(),
       level: level(), branch: level() === 'branch' ? branch.value : '', location: level() === 'location' ? location.value : '',
       valid_from: isoOf(validFrom), valid_to: isoOf(validTo),
       is_active: status.value === '1',
@@ -181,7 +181,7 @@
       lower_value: lowerValue.value.trim(), upper_value: upperValue.value.trim(),
       promotion_type: promotionType.value,
       time_slab_applicable: toggledOn(timeSlabToggle), free_item_selectable: toggledOn(freeItemToggle),
-      free_item_selectable_note: freeNote.value.trim(), free_or_offer_price: freeOrOfferPrice.value,
+      free_item_selectable_note: freeNote.value.trim(), free_or_package_price: freeOrPackagePrice.value,
       items: state.items, free_items: state.free_items, time_slabs: state.time_slabs
     };
   }
@@ -189,14 +189,14 @@
   // -- Promotion Items grid -----------------------------------------------------------
 
   function renderItems() {
-    var host = $('[data-offer-items]');
+    var host = $('[data-package-items]');
     var showValue = promotionType.value !== 'quantity';
     if (!state.items.length) {
       host.innerHTML = '<div class="scr-fare-empty">No promotion items yet.</div>';
       return;
     }
     host.innerHTML = '<div class="scr-table-scroll scr-sb scr-fare-table"><table><thead><tr>' +
-      '<th>Vehicle Type</th><th class="scr-fare-num">Package</th>' + (showValue ? '<th class="scr-fare-num">Value</th>' : '') +
+      '<th>Vehicle Type</th><th class="scr-fare-num">Package Time</th>' + (showValue ? '<th class="scr-fare-num">Value</th>' : '') +
       (canSave ? '<th></th>' : '') + '</tr></thead><tbody>' + state.items.map(function (row) {
         return '<tr>' +
           '<td>' + esc(VEHICLE_NAME[row.vehicle_type] || 'Vehicle #' + row.vehicle_type) + '</td>' +
@@ -212,13 +212,13 @@
   }
 
   function renderFreeItems() {
-    var host = $('[data-offer-free-items]');
+    var host = $('[data-package-free-items]');
     if (!state.free_items.length) {
       host.innerHTML = '<div class="scr-fare-empty">No free items yet.</div>';
       return;
     }
     host.innerHTML = '<div class="scr-table-scroll scr-sb scr-fare-table"><table><thead><tr>' +
-      '<th>Vehicle Type</th><th class="scr-fare-num">Package</th><th class="scr-fare-num">Value</th>' +
+      '<th>Vehicle Type</th><th class="scr-fare-num">Package Time</th><th class="scr-fare-num">Value</th>' +
       (canSave ? '<th></th>' : '') + '</tr></thead><tbody>' + state.free_items.map(function (row) {
         return '<tr>' +
           '<td>' + esc(VEHICLE_NAME[row.vehicle_type] || 'Vehicle #' + row.vehicle_type) + '</td>' +
@@ -234,13 +234,13 @@
   }
 
   function renderSlabs() {
-    var host = $('[data-offer-time-slabs]');
+    var host = $('[data-package-time-slabs]');
     if (!state.time_slabs.length) {
       host.innerHTML = '<div class="scr-fare-empty">No time slabs yet.</div>';
       return;
     }
     host.innerHTML = '<div class="scr-table-scroll scr-sb scr-fare-table"><table><thead><tr>' +
-      '<th>Date</th><th>Day</th><th>Time</th><th>Vehicle Type</th><th class="scr-fare-num">Package</th><th class="scr-fare-num">Value</th>' +
+      '<th>Date</th><th>Day</th><th>Time</th><th>Vehicle Type</th><th class="scr-fare-num">Package Time</th><th class="scr-fare-num">Value</th>' +
       (canSave ? '<th></th>' : '') + '</tr></thead><tbody>' + state.time_slabs.map(function (row) {
         return '<tr>' +
           '<td>' + (row.date_mode === 'specific_date' ? esc(dateLabel(row.specific_date)) : 'All Dates') + '</td>' +
@@ -330,7 +330,7 @@
   // -- Item / free-item dialog ---------------------------------------------------
 
   var itemDialog = null;      // { list: 'items'|'free_items', key, isNew }
-  var itemBox = document.querySelector('[data-scr-modal="offer-item"]');
+  var itemBox = document.querySelector('[data-scr-modal="package-item"]');
   var itemVehicleType = itemBox.querySelector('[data-item-vehicle-type]');
   var itemPackage = itemBox.querySelector('[data-item-package]');
   var itemValue = itemBox.querySelector('[data-item-value]');
@@ -355,7 +355,7 @@
     itemErrors.hidden = true;
     itemErrors.innerHTML = '';
     markNumber(itemPackage, ''); markNumber(itemValue, '');
-    Crud.open('offer-item');
+    Crud.open('package-item');
   }
 
   function saveItem() {
@@ -375,7 +375,7 @@
     var at = list.map(function (r) { return r.key; }).indexOf(row.key);
     if (at === -1) list.push(row); else list[at] = row;
     state[itemDialog.list] = list;
-    Crud.close('offer-item');
+    Crud.close('package-item');
     renderItems(); renderFreeItems();
     changed();
   }
@@ -383,7 +383,7 @@
   // -- Time slab dialog -------------------------------------------------------------
 
   var slabDialog = null;
-  var slabBox = document.querySelector('[data-scr-modal="offer-slab"]');
+  var slabBox = document.querySelector('[data-scr-modal="package-slab"]');
   var slabDateWrap = slabBox.querySelector('[data-slab-date-wrap]');
   var slabDate = slabBox.querySelector('[data-slab-date]');
   var slabDay = slabBox.querySelector('[data-slab-day]');
@@ -420,7 +420,7 @@
     slabErrors.innerHTML = '';
     showSlabDateMode();
     markNumber(slabPackage, ''); markNumber(slabValue, '');
-    Crud.open('offer-slab');
+    Crud.open('package-slab');
   }
 
   function saveSlab() {
@@ -446,7 +446,7 @@
     var at = list.map(function (r) { return r.key; }).indexOf(row.key);
     if (at === -1) list.push(row); else list[at] = row;
     state.time_slabs = list;
-    Crud.close('offer-slab');
+    Crud.close('package-slab');
     renderSlabs();
     changed();
   }
@@ -454,10 +454,10 @@
   // -- Banner ------------------------------------------------------------------------
 
   function renderBanner() {
-    var host = document.querySelector('[data-offer-banner]');
+    var host = document.querySelector('[data-package-banner]');
     if (!errors.length) { host.innerHTML = ''; return; }
     host.innerHTML = '<ul class="scr-fare-banner is-error"><li class="scr-fare-banner-title">' +
-      (errors.length === 1 ? 'This offer can\'t be saved yet' : errors.length + ' things stop this offer from saving') + '</li>' +
+      (errors.length === 1 ? 'This package can\'t be saved yet' : errors.length + ' things stop this package from saving') + '</li>' +
       errors.map(function (e) {
         return '<li>' + (e.field ? '<span class="scr-msg-field">' + esc(e.field) + '</span> ' : '') + esc(e.message) + '</li>';
       }).join('') + '</ul>';
@@ -480,7 +480,7 @@
       errors = body.errors || [{ field: '', message: 'Something went wrong.' }];
       renderBanner();
       if (result.status === 404) {
-        Crud.showMessages({ title: 'This offer no longer exists', items: errors });
+        Crud.showMessages({ title: 'This package no longer exists', items: errors });
       } else if (result.status === 403) {
         Crud.showMessages({ title: 'Not allowed', items: errors });
       } else {
@@ -495,7 +495,7 @@
 
   root.addEventListener('click', function (e) {
     var t = e.target;
-    if (t.closest('[data-offer-add-item]')) { openItem('items', null); return; }
+    if (t.closest('[data-package-add-item]')) { openItem('items', null); return; }
     var editItem = t.closest('[data-item-edit]');
     if (editItem) { openItem('items', editItem.dataset.itemEdit); return; }
     var delItem = t.closest('[data-item-delete]');
@@ -504,7 +504,7 @@
       renderItems(); changed();
       return;
     }
-    if (t.closest('[data-offer-add-free-item]')) { openItem('free_items', null); return; }
+    if (t.closest('[data-package-add-free-item]')) { openItem('free_items', null); return; }
     var editFree = t.closest('[data-free-item-edit]');
     if (editFree) { openItem('free_items', editFree.dataset.freeItemEdit); return; }
     var delFree = t.closest('[data-free-item-delete]');
@@ -513,7 +513,7 @@
       renderFreeItems(); changed();
       return;
     }
-    if (t.closest('[data-offer-add-slab]')) { openSlab(null); return; }
+    if (t.closest('[data-package-add-slab]')) { openSlab(null); return; }
     var editSlab = t.closest('[data-slab-edit]');
     if (editSlab) { openSlab(editSlab.dataset.slabEdit); return; }
     var delSlab = t.closest('[data-slab-delete]');
@@ -522,12 +522,12 @@
       renderSlabs(); changed();
       return;
     }
-    var saveButton = t.closest('[data-offer-save]');
+    var saveButton = t.closest('[data-package-save]');
     if (saveButton) { save(saveButton); return; }
-    var cancel = t.closest('[data-offer-cancel]');
+    var cancel = t.closest('[data-package-cancel]');
     if (cancel && dirty) {
       e.preventDefault();
-      Crud.confirmThen({ title: 'Discard your changes?', subtitle: 'Offer',
+      Crud.confirmThen({ title: 'Discard your changes?', subtitle: 'Package',
                          body: 'Nothing you changed on this page has been saved.', action: 'Discard' },
         function () { dirty = false; window.location.href = cancel.href; });
     }
@@ -536,7 +536,7 @@
   root.addEventListener('change', function (e) {
     var t = e.target;
     if (t === company) applyFilters();
-    if (t.dataset.offerField === 'level') showLevel();
+    if (t.dataset.packageField === 'level') showLevel();
     if (t === promotionType) showRuleFields();
     changed();
   });
@@ -549,7 +549,7 @@
   // The toggle buttons themselves are wired by byky-screen.js's delegated
   // handler (adds/removes .is-on); this page only reacts once that happens.
   root.addEventListener('click', function (e) {
-    if (e.target.closest('[data-offer-field="time_slab_applicable"], [data-offer-field="free_item_selectable"]')) {
+    if (e.target.closest('[data-package-field="time_slab_applicable"], [data-package-field="free_item_selectable"]')) {
       setTimeout(function () { showRuleFields(); changed(); }, 0);
     }
   });

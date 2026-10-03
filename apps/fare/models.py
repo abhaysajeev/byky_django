@@ -247,7 +247,7 @@ class FareRule(PricedModel):
         return f"{self.get_kind_display()} {self.start_minute}-{self.end_minute}"
 
 
-# --- Offer / Promotion --------------------------------------------------------
+# --- Package / Promotion --------------------------------------------------------
 #
 # Built from the client's "Promotion And Offers Creation" mockup
 # (byky-main/byky Docs/Scheme_Creation.html) and
@@ -257,13 +257,13 @@ class FareRule(PricedModel):
 # the data model or the screen).
 #
 # Unlike Fare, there is no overlap/nesting invariant to enforce here (nothing
-# in the spec asks whether two offers may cover the same vehicle type/dates),
+# in the spec asks whether two packages may cover the same vehicle type/dates),
 # so this stays a plain parent + three child-row tables: no exclusion
 # constraints, no constraint triggers, no lock_version -- add any of those
 # later if the client's answers call for them.
 
 
-class OfferLevel(models.TextChoices):
+class PackageLevel(models.TextChoices):
     COMPANY = "company", "Company Wise"
     BRANCH = "branch", "Branch Wise"
     LOCATION = "location", "Location Wise"
@@ -285,12 +285,12 @@ class PromotionType(models.TextChoices):
     AMOUNT = "amount", "Amount"
     PERCENTAGE = "percentage", "Percentage"
     EACH = "each", "Each"
-    OFFER_PRICE = "offer_price", "Offer Price"
+    PACKAGE_PRICE = "package_price", "Package Price"
 
 
-class FreeOrOfferPrice(models.TextChoices):
+class FreeOrPackagePrice(models.TextChoices):
     FREE = "free", "Free"
-    OFFER_PRICE = "offer_price", "Offer Price"
+    PACKAGE_PRICE = "package_price", "Package Price"
 
 
 class SlabDateMode(models.TextChoices):
@@ -309,24 +309,26 @@ class SlabDay(models.TextChoices):
     SUNDAY = "sunday", "Sunday"
 
 
-class Offer(ApprovalMixin, TimeStampedModel):
-    """A promotion: for rentals within a scope and validity, whose quantity or
-    amount falls inside a band, gives a discount on selected packages or
-    gives free items. "Package" here is always a plain package_minutes
-    number, matching Fare.package_minutes -- no separate Package model
-    exists, and offers never re-price a package, only refer to one that
-    already exists in Fare Entry."""
+class Package(ApprovalMixin, TimeStampedModel):
+    """A package (called an offer until 2 Oct 2026): for rentals within a
+    scope and validity, whose quantity or amount falls inside a band, gives a
+    discount on selected package times or gives free items.
 
-    company = models.ForeignKey("company.Company", on_delete=models.PROTECT, related_name="offers")
-    offer_code = models.CharField("Promotion Code", max_length=30)
-    offer_name = models.CharField("Promotion Name", max_length=100)
+    Not to be confused with a fare's *package time* -- the plain
+    package_minutes number on Fare and on this model's rows, which a package
+    only refers to (it never re-prices one; the time must already exist in
+    Fare Entry)."""
 
-    level = models.CharField("Promotion Level", max_length=10, choices=OfferLevel.choices, default=OfferLevel.COMPANY)
+    company = models.ForeignKey("company.Company", on_delete=models.PROTECT, related_name="packages")
+    package_code = models.CharField("Package Code", max_length=30)
+    package_name = models.CharField("Package Name", max_length=100)
+
+    level = models.CharField("Package Level", max_length=10, choices=PackageLevel.choices, default=PackageLevel.COMPANY)
     branch = models.ForeignKey(
-        "company.Branch", on_delete=models.PROTECT, null=True, blank=True, related_name="offers",
+        "company.Branch", on_delete=models.PROTECT, null=True, blank=True, related_name="packages",
     )
     location = models.ForeignKey(
-        "company.Location", on_delete=models.PROTECT, null=True, blank=True, related_name="offers",
+        "company.Location", on_delete=models.PROTECT, null=True, blank=True, related_name="packages",
     )
 
     valid_from = models.DateField("Valid From")
@@ -338,7 +340,7 @@ class Offer(ApprovalMixin, TimeStampedModel):
     lower_value = models.DecimalField("Lower Promotion Value", max_digits=12, decimal_places=2)
     upper_value = models.DecimalField("Upper Promotion Value", max_digits=12, decimal_places=2)
 
-    promotion_type = models.CharField("Promotion Type", max_length=12, choices=PromotionType.choices)
+    promotion_type = models.CharField("Promotion Type", max_length=15, choices=PromotionType.choices)
 
     # Number of Promotion Items / Number of Free Items are deliberately not
     # fields here -- they are how many rows to render, and the rows
@@ -354,116 +356,116 @@ class Offer(ApprovalMixin, TimeStampedModel):
     # One scheme-wide mode, not per-row: the mockup states this "applies to
     # the Free Promotion Items value field", reused for the common time
     # slabs' value column too.
-    free_or_offer_price = models.CharField(
-        "Free / Offer Price", max_length=12, choices=FreeOrOfferPrice.choices, default=FreeOrOfferPrice.FREE,
+    free_or_package_price = models.CharField(
+        "Free / Package Price", max_length=15, choices=FreeOrPackagePrice.choices, default=FreeOrPackagePrice.FREE,
     )
 
     class Meta:
-        db_table = "offer"
-        ordering = ["-valid_from", "offer_name"]
+        db_table = "package"
+        ordering = ["-valid_from", "package_name"]
         constraints = [
-            UniqueConstraint(fields=["company", "offer_code"], name="uniq_offer_code_per_company"),
-            CheckConstraint(condition=Q(valid_to__gte=F("valid_from")), name="offer_valid_dates"),
-            CheckConstraint(condition=Q(upper_value__gte=F("lower_value")), name="offer_value_band"),
+            UniqueConstraint(fields=["company", "package_code"], name="uniq_package_code_per_company"),
+            CheckConstraint(condition=Q(valid_to__gte=F("valid_from")), name="package_valid_dates"),
+            CheckConstraint(condition=Q(upper_value__gte=F("lower_value")), name="package_value_band"),
             # Exactly the FK matching the chosen level -- the other stays null.
             CheckConstraint(
                 condition=(
-                    Q(level=OfferLevel.COMPANY, branch__isnull=True, location__isnull=True)
-                    | Q(level=OfferLevel.BRANCH, branch__isnull=False, location__isnull=True)
-                    | Q(level=OfferLevel.LOCATION, branch__isnull=True, location__isnull=False)
+                    Q(level=PackageLevel.COMPANY, branch__isnull=True, location__isnull=True)
+                    | Q(level=PackageLevel.BRANCH, branch__isnull=False, location__isnull=True)
+                    | Q(level=PackageLevel.LOCATION, branch__isnull=True, location__isnull=False)
                 ),
-                name="offer_scope_matches_level",
+                name="package_scope_matches_level",
             ),
         ]
 
     def __str__(self):
-        return f"{self.offer_code} · {self.offer_name}"
+        return f"{self.package_code} · {self.package_name}"
 
 
-class OfferItem(models.Model):
-    """One Promotion Item: a vehicle type + package this offer applies to.
+class PackageItem(models.Model):
+    """One Promotion Item: a vehicle type + package this package applies to.
     Plain child row, same shape as FareRule/FareSeason -- no audit fields of
-    its own (PricedModel doesn't carry them either); the parent Offer's own
+    its own (PricedModel doesn't carry them either); the parent Package's own
     audit trail covers it, and every save rewrites every child row wholesale
-    (offer_services.save_offer), so per-row history isn't meaningful.
+    (package_services.save_package), so per-row history isn't meaningful.
 
-    value is null when the offer's promotion_type is Quantity (the mockup
+    value is null when the package's promotion_type is Quantity (the mockup
     hides the value column entirely for that type); otherwise it's a
-    discount amount, a percentage, or an offer price depending on
+    discount amount, a percentage, or a package price depending on
     promotion_type -- label/meaning only, same number either way.
     """
 
-    offer = models.ForeignKey(Offer, on_delete=models.CASCADE, related_name="items")
-    vehicle_type = models.ForeignKey("fleet.VehicleType", on_delete=models.PROTECT, related_name="offer_items")
+    package = models.ForeignKey(Package, on_delete=models.CASCADE, related_name="items")
+    vehicle_type = models.ForeignKey("fleet.VehicleType", on_delete=models.PROTECT, related_name="package_items")
     package_minutes = models.PositiveSmallIntegerField()
     value = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
 
     class Meta:
-        db_table = "offer_item"
+        db_table = "package_item"
         constraints = [
             CheckConstraint(condition=Q(package_minutes__gt=0, package_minutes__lte=MAX_MINUTES),
-                             name="offer_item_package_range"),
-            CheckConstraint(condition=Q(value__isnull=True) | Q(value__gte=0), name="offer_item_value_not_negative"),
+                             name="package_item_package_range"),
+            CheckConstraint(condition=Q(value__isnull=True) | Q(value__gte=0), name="package_item_value_not_negative"),
         ]
 
     def __str__(self):
         return f"{self.vehicle_type} · {self.package_minutes} min"
 
 
-class OfferFreeItem(models.Model):
-    """One Free Promotion Item: only relevant when the offer's promotion_type
-    is Quantity. Independent of OfferItem -- its own vehicle type, package
+class PackageFreeItem(models.Model):
+    """One Free Promotion Item: only relevant when the package's promotion_type
+    is Quantity. Independent of PackageItem -- its own vehicle type, package
     and count, a buy-this-get-that. value is a whole free quantity when
-    Offer.free_or_offer_price is Free, or an offer price (AED) when it's
-    Offer Price -- meaning follows the parent's single scheme-wide mode."""
+    Package.free_or_package_price is Free, or a package price (AED) when it's
+    Package Price -- meaning follows the parent's single scheme-wide mode."""
 
-    offer = models.ForeignKey(Offer, on_delete=models.CASCADE, related_name="free_items")
-    vehicle_type = models.ForeignKey("fleet.VehicleType", on_delete=models.PROTECT, related_name="offer_free_items")
+    package = models.ForeignKey(Package, on_delete=models.CASCADE, related_name="free_items")
+    vehicle_type = models.ForeignKey("fleet.VehicleType", on_delete=models.PROTECT, related_name="package_free_items")
     package_minutes = models.PositiveSmallIntegerField()
     value = models.DecimalField(max_digits=12, decimal_places=2)
 
     class Meta:
-        db_table = "offer_free_item"
+        db_table = "package_free_item"
         constraints = [
             CheckConstraint(condition=Q(package_minutes__gt=0, package_minutes__lte=MAX_MINUTES),
-                             name="offer_free_item_package_range"),
-            CheckConstraint(condition=Q(value__gte=0), name="offer_free_item_value_not_negative"),
+                             name="package_free_item_package_range"),
+            CheckConstraint(condition=Q(value__gte=0), name="package_free_item_value_not_negative"),
         ]
 
     def __str__(self):
         return f"{self.vehicle_type} · {self.package_minutes} min"
 
 
-class OfferFreeItemTimeSlab(models.Model):
-    """One row of the offer's common 'Free Item Time Slabs' -- shared across
-    the whole offer, not per Promotion Item (the mockup is explicit: "time
+class PackageFreeItemTimeSlab(models.Model):
+    """One row of the package's common 'Free Item Time Slabs' -- shared across
+    the whole package, not per Promotion Item (the mockup is explicit: "time
     slab is COMMON FOR THE WHOLE SCHEME"). Only relevant when
-    Offer.time_slab_applicable is set. Day is a single choice here, unlike
+    Package.time_slab_applicable is set. Day is a single choice here, unlike
     FareRule.weekdays' multi-select array -- the mockup's Common Time Slab
     grid has one Day dropdown per row, not a multi-day picker."""
 
-    offer = models.ForeignKey(Offer, on_delete=models.CASCADE, related_name="time_slabs")
+    package = models.ForeignKey(Package, on_delete=models.CASCADE, related_name="time_slabs")
     date_mode = models.CharField(max_length=15, choices=SlabDateMode.choices, default=SlabDateMode.ALL_DATES)
     specific_date = models.DateField(null=True, blank=True)
     day = models.CharField(max_length=10, choices=SlabDay.choices, default=SlabDay.ALL_DAYS)
     from_time = models.TimeField()
     to_time = models.TimeField()
-    vehicle_type = models.ForeignKey("fleet.VehicleType", on_delete=models.PROTECT, related_name="offer_time_slabs")
+    vehicle_type = models.ForeignKey("fleet.VehicleType", on_delete=models.PROTECT, related_name="package_time_slabs")
     package_minutes = models.PositiveSmallIntegerField()
     value = models.DecimalField(max_digits=12, decimal_places=2)
 
     class Meta:
-        db_table = "offer_free_item_time_slab"
+        db_table = "package_free_item_time_slab"
         constraints = [
-            CheckConstraint(condition=Q(to_time__gt=F("from_time")), name="offer_slab_time_order"),
+            CheckConstraint(condition=Q(to_time__gt=F("from_time")), name="package_slab_time_order"),
             CheckConstraint(
                 condition=Q(date_mode=SlabDateMode.ALL_DATES, specific_date__isnull=True)
                 | Q(date_mode=SlabDateMode.SPECIFIC_DATE, specific_date__isnull=False),
-                name="offer_slab_date_matches_mode",
+                name="package_slab_date_matches_mode",
             ),
             CheckConstraint(condition=Q(package_minutes__gt=0, package_minutes__lte=MAX_MINUTES),
-                             name="offer_slab_package_range"),
-            CheckConstraint(condition=Q(value__gte=0), name="offer_slab_value_not_negative"),
+                             name="package_slab_package_range"),
+            CheckConstraint(condition=Q(value__gte=0), name="package_slab_value_not_negative"),
         ]
 
     def __str__(self):

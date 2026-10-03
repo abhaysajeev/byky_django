@@ -270,11 +270,9 @@ def test_only_returned_vehicles_are_billed_and_invoiced(client, token, shop, boo
     for item_id in (swap["new_item"]["sync_id"], booked["items"][1]["sync_id"]):
         assert call(client, RETURN, back(booked, item_id=item_id), token=token).json()["code"] == "ok"
 
-    # Lines 50.00 + 50.00; VAT 5.00; net 105.00, 100.00 down, 5.00 by card.
-    body = call(client, SETTLE, bill(booked, shop, subtotal="100.00", tax_amount="5.00", net_amount="105.00",
-                                     payments=[{"sync_id": str(uuid7()), "kind": "settlement",
-                                                "payment_mode_id": shop["card"].pk, "amount": "5.00",
-                                                "paid_at": "2026-10-02 17:13:30"}]), token=token).json()
+    # Lines 50.00 + 50.00, VAT included (4.76 of it); net 100.00 -- the 100.00 down covers it.
+    body = call(client, SETTLE, bill(booked, shop, subtotal="100.00", tax_amount="4.76", net_amount="100.00",
+                                     payments=[]), token=token).json()
 
     assert body["code"] == "ok", body
     invoice = Invoice.objects.get()

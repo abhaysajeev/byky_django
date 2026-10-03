@@ -148,7 +148,8 @@ class Customer(ApprovalMixin, TimeStampedModel):
 # No bill before the ride ends (order_lifecycle_design.md 1 "Money"):
 #   booking  -- a line's package and agreed base_fare; any advance paid;
 #   return   -- that line's overtime_amount and total_amount;
-#   settle   -- the order's bill: subtotal, discount, VAT, rounding, net_amount.
+#   settle   -- the order's bill: subtotal, discount, rounding, net_amount, and the
+#               VAT included in it (fares include VAT -- client, 3 Oct 2026).
 # Until then those fields are blank (NULL), never a guess.
 #
 # Money collected: amount_received / amount_refunded are running totals of the
@@ -209,7 +210,8 @@ class Order(TimeStampedModel):
     cancelled_at = models.DateTimeField(null=True, blank=True)
 
     # The bill -- blank until settle. net_amount = subtotal - discount_amount
-    # + tax_amount + rounding_adjustment: what the customer pays.
+    # + rounding_adjustment: what the customer pays. Fares include VAT, so
+    # nothing is added for it; tax_* record the VAT contained in net_amount.
     subtotal = models.DecimalField(**MONEY, null=True, blank=True)            # billed line totals
     # The one discount is a card discount, on the whole bill; discount_claim is
     # the claim applied (CardDiscountClaim.order lists every claim raised).
@@ -220,7 +222,7 @@ class Order(TimeStampedModel):
     discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     discount_amount = models.DecimalField(**MONEY, null=True, blank=True)
     tax_percentage = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)   # VAT %
-    tax_amount = models.DecimalField(**MONEY, null=True, blank=True)          # VAT on subtotal - discount
+    tax_amount = models.DecimalField(**MONEY, null=True, blank=True)          # VAT included in net_amount
     rounding_adjustment = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
     net_amount = models.DecimalField(**MONEY, null=True, blank=True)
 
@@ -284,9 +286,11 @@ class OrderItem(TimeStampedModel):
     status = models.CharField(max_length=20, choices=OrderItemStatus.choices, default=OrderItemStatus.ACTIVE)
 
     # Traceability only -- the amounts below are what bills, and stay right if
-    # the fare or offer is edited later.
+    # the fare or package is edited later.
     fare = models.ForeignKey("fare.Fare", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
-    offer = models.ForeignKey("fare.Offer", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    # The package applied (named offer until the rename; the tablet API still
+    # sends it as offer_id).
+    offer = models.ForeignKey("fare.Package", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
     package_minutes = models.PositiveSmallIntegerField()
 
     start_time = models.DateTimeField()
@@ -294,8 +298,8 @@ class OrderItem(TimeStampedModel):
     end_time = models.DateTimeField(null=True, blank=True)   # returned / replaced / removed (tablet time)
 
     base_fare = models.DecimalField(**MONEY)        # the package price agreed at booking
-    # Blank until the vehicle is returned. No discount and no VAT here: both
-    # are on the order's bill.
+    # Blank until the vehicle is returned. No discount here (it is on the
+    # order's bill); VAT is inside the fare, shown once on the bill.
     run_minutes = models.PositiveIntegerField(null=True, blank=True)     # how long it actually ran
     overtime_amount = models.DecimalField(**MONEY, null=True, blank=True)
     total_amount = models.DecimalField(**MONEY, null=True, blank=True)   # base_fare + overtime
@@ -485,7 +489,7 @@ class Invoice(TimeStampedModel):
     discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     discount_amount = models.DecimalField(**MONEY)
     tax_percentage = models.DecimalField(max_digits=5, decimal_places=2)
-    tax_amount = models.DecimalField(**MONEY)
+    tax_amount = models.DecimalField(**MONEY)                    # VAT included in net_amount
     rounding_adjustment = models.DecimalField(max_digits=6, decimal_places=2)
     net_amount = models.DecimalField(**MONEY)
     payments = models.JSONField(default=list)      # [{mode, kind, amount, reference_no}] at issue

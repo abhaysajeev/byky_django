@@ -1,7 +1,7 @@
 {% extends layout_path %}
 {% load static %}
 
-{% block title %}{% if is_edit %}Edit Fare{% else %}Add Fare{% endif %} - Fare &amp; Offers{% endblock title %}
+{% block title %}{% if is_edit %}Edit Fare{% else %}Add Fare{% endif %} - Fare &amp; Packages{% endblock title %}
 
 {% block vendor_css %}
 {{ block.super }}
@@ -39,7 +39,7 @@ the server's check endpoint, never from the browser.
   <div class="scr-head">
     <div>
       <div class="scr-crumb">
-        <span>Fare &amp; Offers</span>
+        <span>Fare &amp; Packages</span>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
         <a href="{{ list_url }}">Fares</a>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
