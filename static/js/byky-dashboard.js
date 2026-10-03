@@ -152,34 +152,46 @@
       return s;
     }
     function pages() { return Math.max(1, Math.ceil(rows.length / PER_PAGE)); }
+    function rowItem(r) {
+      var a = document.createElement('a');
+      a.className = 'bd-od-row';
+      var main = span('bd-od-main', '');
+      main.appendChild(span('bd-od-vehicle', r ? r.vehicle : '-'));
+      main.appendChild(span('bd-od-station', r ? r.station : '-'));
+      var who = span('bd-od-who', '');
+      who.appendChild(span('bd-od-name', r ? r.customer : '-'));
+      who.appendChild(span('bd-od-phone', r ? r.mobile : '-'));
+      var late = span('bd-od-late', r ? minutes(r.due) : '+0 min');
+      a.appendChild(main);
+      a.appendChild(who);
+      a.appendChild(late);
+      var li = document.createElement('li');
+      if (r) {
+        a.href = r.url;
+        late.setAttribute('data-due', r.due);
+      } else {
+        li.className = 'bd-od-filler';
+        li.setAttribute('aria-hidden', 'true');
+      }
+      li.appendChild(a);
+      return li;
+    }
+    // Always PER_PAGE slots: a short last page (or none at all) is padded with
+    // invisible rows of the same size. The first row's cards stretch to the
+    // tallest, so a list that changed height would resize the whole dashboard
+    // every time the page turned.
     function render() {
       if (page >= pages()) page = 0;
       list.textContent = '';
+      var shown = rows.slice(page * PER_PAGE, page * PER_PAGE + PER_PAGE);
+      shown.forEach(function (r) { list.appendChild(rowItem(r)); });
+      for (var k = shown.length; k < PER_PAGE; k++) list.appendChild(rowItem(null));
       if (!rows.length) {
         var empty = document.createElement('li');
         empty.className = 'bd-od-empty';
         empty.textContent = 'No overdue vehicles';
         list.appendChild(empty);
       }
-      rows.slice(page * PER_PAGE, page * PER_PAGE + PER_PAGE).forEach(function (r) {
-        var a = document.createElement('a');
-        a.className = 'bd-od-row';
-        a.href = r.url;
-        var main = span('bd-od-main', '');
-        main.appendChild(span('bd-od-vehicle', r.vehicle));
-        main.appendChild(span('bd-od-station', r.station));
-        var who = span('bd-od-who', '');
-        who.appendChild(span('bd-od-name', r.customer));
-        who.appendChild(span('bd-od-phone', r.mobile));
-        var late = span('bd-od-late', minutes(r.due));
-        late.setAttribute('data-due', r.due);
-        a.appendChild(main);
-        a.appendChild(who);
-        a.appendChild(late);
-        var li = document.createElement('li');
-        li.appendChild(a);
-        list.appendChild(li);
-      });
       pageEl.textContent = pages() > 1 ? (page + 1) + ' / ' + pages() : '';
     }
     function schedule() {
