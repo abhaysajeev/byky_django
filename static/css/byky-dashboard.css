@@ -64,10 +64,6 @@
 .bd-hero-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; position: relative; }
 .bd-hero-title { font-size: 17px; font-weight: 600; letter-spacing: -0.2px; }
 .bd-hero-sub { font-size: 12px; font-weight: 400; color: rgba(255, 255, 255, 0.82); margin-top: 4px !important; }
-.bd-hero-val { display: inline-block; font-size: 19px; font-weight: 600; letter-spacing: -0.4px; font-variant-numeric: tabular-nums; background: rgba(0, 0, 0, 0.14); border-radius: 8px; padding: 5px 10px; line-height: 1.15; transition: background 0.4s; }
-.bd-hero-val.is-changed { background: rgba(255, 255, 255, 0.3); }
-.bd-hero-lab { font-size: 11.5px; font-weight: 400; color: rgba(255, 255, 255, 0.86); margin-top: 7px; letter-spacing: 0.2px; }
-
 /* branch carousel: one track, moved with transform (no reflow) */
 .bd-car-nav { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
 .bd-car-btn {
@@ -79,20 +75,30 @@
 .bd-car-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .bd-car-count { font-size: 11.5px; font-weight: 600; color: rgba(255, 255, 255, 0.86); font-variant-numeric: tabular-nums; min-width: 44px; text-align: center; }
 .bd-car-viewport { overflow: hidden; margin-top: 14px; position: relative; flex: 1 1 auto; display: flex; }
-.bd-car-track { display: flex; flex: 1 1 auto; transition: transform 0.45s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.2s; will-change: transform; }
-.bd-car-track.is-instant { transition: none; }
-.bd-car-viewport.is-fading .bd-car-track { opacity: 0; }
-.bd-car-slide { flex: 0 0 100%; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 16px; }
+/* every slide shares one grid cell; only .is-on (and one leaving) is painted */
+.bd-car-track { flex: 1 1 auto; display: grid; }
+.bd-car-slide { grid-area: 1 / 1; visibility: hidden; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 12px; }
+.bd-car-slide.is-on { visibility: visible; }
 .bd-car-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
 .bd .bd-car-name { font-size: 18px; font-weight: 700; letter-spacing: -0.4px; line-height: 1.2; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .bd-car-hours { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; font-size: 12px; color: rgba(255, 255, 255, 0.86); font-variant-numeric: tabular-nums; }
 .bd-car-state { font-size: 10.5px; font-weight: 600; letter-spacing: 0.3px; padding: 3px 8px; border-radius: 99px; }
 .bd-car-state.is-open { background: #fff; color: #14764a; }
 .bd-car-state.is-closed { background: rgba(0, 0, 0, 0.22); color: #fff; }
-.bd-car-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
-@media (max-width: 560px) { .bd-car-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+/* revenue leads; the counts sit in one quiet strip below */
+.bd-car-revenue { display: flex; flex-direction: column; gap: 4px; }
+.bd-car-amt { display: flex; align-items: baseline; gap: 6px; font-size: 22px; font-weight: 700; letter-spacing: -0.6px; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.bd-car-amt small { font-size: 10.5px; font-weight: 600; letter-spacing: 0.8px; color: rgba(255, 255, 255, 0.72); }
+.bd-car-sub { font-size: 11px; color: rgba(255, 255, 255, 0.76); letter-spacing: 0.2px; }
+.bd-car-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.bd-car-stat { display: flex; flex-direction: column; gap: 3px; padding: 0 16px; min-width: 0; border-left: 1px solid rgba(255, 255, 255, 0.2); }
+.bd-car-stat:first-child { border-left: 0; padding-left: 0; }
+.bd-car-num { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; line-height: 1.2; font-variant-numeric: tabular-nums; transition: opacity 0.4s; }
+.bd-car-num.is-changed { opacity: 0.55; }
+.bd-car-lab { font-size: 11px; color: rgba(255, 255, 255, 0.76); letter-spacing: 0.2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 560px) { .bd-car-stat { padding: 0 10px; } }
 @media (prefers-reduced-motion: reduce) {
-  .bd-car-track, .bd-hero-val { transition: none; }
+  .bd-car-num { transition: none; }
 }
 
 /* ── monthly sales ────────────────────────────────────────────────── */

@@ -86,7 +86,7 @@ satellite), which a bubble plot on a blank grid cannot show.
       <div class="bd-car-viewport">
         <div class="bd-car-track" data-bd-track>
           {% for b in live.branches %}
-          <section class="bd-car-slide" data-branch="{{ b.id }}" aria-roledescription="slide" aria-label="{{ b.name }}">
+          <section class="bd-car-slide{% if forloop.first %} is-on{% endif %}" data-branch="{{ b.id }}" aria-roledescription="slide" aria-label="{{ b.name }}">
             <div class="bd-car-head">
               <h3 class="bd-car-name">{{ b.name }}</h3>
               <div class="bd-car-hours">
@@ -94,16 +94,19 @@ satellite), which a bubble plot on a blank grid cannot show.
                 {% if b.state != "not_set" %}<span class="bd-car-state is-{{ b.state }}" data-live="state">{% if b.state == "open" %}Open{% else %}Closed{% endif %}</span>{% endif %}
               </div>
             </div>
+            <div class="bd-car-revenue">
+              <span class="bd-car-amt"><small>AED</small><span data-live="revenue">{{ b.revenue }}</span></span>
+              <span class="bd-car-sub">Revenue today</span>
+            </div>
             <div class="bd-car-stats">
-              <div><span class="bd-hero-val" data-live="on_rent">{{ b.on_rent }}</span><div class="bd-hero-lab">On rent</div></div>
-              <div><span class="bd-hero-val" data-live="invoices">{{ b.invoices }}</span><div class="bd-hero-lab">Invoices</div></div>
-              <div><span class="bd-hero-val" data-live="revenue">{{ b.revenue }}</span><div class="bd-hero-lab">AED today</div></div>
-              <div><span class="bd-hero-val" data-live="devices">{{ b.devices }}</span><div class="bd-hero-lab">Devices</div></div>
-              <div><span class="bd-hero-val" data-live="staff">{{ b.staff }}</span><div class="bd-hero-lab">On duty</div></div>
+              <div class="bd-car-stat"><span class="bd-car-num" data-live="on_rent">{{ b.on_rent }}</span><span class="bd-car-lab">On rent</span></div>
+              <div class="bd-car-stat"><span class="bd-car-num" data-live="invoices">{{ b.invoices }}</span><span class="bd-car-lab">Invoices</span></div>
+              <div class="bd-car-stat"><span class="bd-car-num" data-live="devices">{{ b.devices }}</span><span class="bd-car-lab">Devices</span></div>
+              <div class="bd-car-stat"><span class="bd-car-num" data-live="staff">{{ b.staff }}</span><span class="bd-car-lab">On duty</span></div>
             </div>
           </section>
           {% empty %}
-          <section class="bd-car-slide">
+          <section class="bd-car-slide is-on">
             <div class="bd-car-head"><h3 class="bd-car-name">No stations yet</h3></div>
             <p class="bd-hero-sub">Stations appear here once they are added.</p>
           </section>

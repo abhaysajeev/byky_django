@@ -23,53 +23,64 @@
   var liveNode = document.getElementById('bd-live');
   var live = liveNode ? JSON.parse(liveNode.textContent) : null;
   var REDUCED = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-  var SLIDE_MS = 10000;
+  var SLIDE_MS = 7000;
 
-  // Branch carousel: one slide per station, busiest first. The track moves by
-  // transform; the loop back to the first slide fades instead of rewinding
-  // across every station. A new busiest-first order is applied only there.
+  // Branch carousel: one slide per station, busiest first. The slides are
+  // stacked in one grid cell and only two are ever painted: the one leaving
+  // and the one arriving, moved by the browser's compositor. A new
+  // busiest-first order is applied only when the loop comes back to the start.
   var carousel = (function () {
     var box = root.querySelector('[data-bd-carousel]');
     if (!box) return null;
-    var viewport = box.querySelector('.bd-car-viewport');
     var track = box.querySelector('[data-bd-track]');
     var pos = box.querySelector('[data-bd-pos]');
-    var i = 0, timer = null, hold = false, running = true, nextOrder = null;
+    var i = 0, timer = null, hold = false, running = true, nextOrder = null, moving = [];
+    var MOTION = { duration: 700, easing: 'cubic-bezier(0.33, 0, 0.2, 1)' };
 
     function slides() { return track.querySelectorAll('.bd-car-slide'); }
-    function place(n) {
-      i = n;
-      track.style.transform = 'translateX(' + (-100 * i) + '%)';
-      if (pos) pos.textContent = String(i + 1);
-    }
     function reorder(ids) {
       var byId = {};
       slides().forEach(function (s) { byId[s.getAttribute('data-branch')] = s; });
       ids.forEach(function (id) { if (byId[id]) track.appendChild(byId[id]); });
     }
-    function go(n) {
-      var count = slides().length;
+    function go(n, dir) {
+      var all = slides(), count = all.length;
       if (count < 2) return;
-      var wraps = n >= count || n < 0;
+      moving.forEach(function (m) { m.finish(); });     // a quick second click completes the first
+      moving = [];
+      var from = all[i];
+      if (n >= count && nextOrder) {
+        reorder(nextOrder);
+        nextOrder = null;
+        all = slides();
+        n = 0;
+      }
       var target = ((n % count) + count) % count;
-      if (!wraps || REDUCED) { place(target); return; }
-      viewport.classList.add('is-fading');
-      setTimeout(function () {
-        if (nextOrder && target === 0) { reorder(nextOrder); nextOrder = null; }
-        track.classList.add('is-instant');
-        place(target);
-        void track.offsetWidth;                 // apply the jump before re-enabling the slide
-        track.classList.remove('is-instant');
-        viewport.classList.remove('is-fading');
-      }, 200);
+      var to = all[target];
+      i = target;
+      if (pos) pos.textContent = String(i + 1);
+      if (to === from) return;
+      to.classList.add('is-on');
+      if (REDUCED || !from.animate) { from.classList.remove('is-on'); return; }
+      // A short glide with motion blur: the leaving station blurs and fades as
+      // it moves off, the arriving one sharpens into place.
+      var still = { transform: 'translateX(0)', opacity: 1, filter: 'blur(0)' };
+      var out = from.animate([still, {
+        transform: 'translateX(' + (-32 * dir) + '%)', opacity: 0, filter: 'blur(8px)'
+      }], MOTION);
+      var into = to.animate([{
+        transform: 'translateX(' + (32 * dir) + '%)', opacity: 0, filter: 'blur(8px)'
+      }, still], MOTION);
+      moving = [out, into];
+      out.onfinish = function () { if (from !== slides()[i]) from.classList.remove('is-on'); };
     }
     function schedule() {
       clearTimeout(timer);
       if (running && !hold && !REDUCED && slides().length > 1) {
-        timer = setTimeout(function () { go(i + 1); schedule(); }, SLIDE_MS);
+        timer = setTimeout(function () { go(i + 1, 1); schedule(); }, SLIDE_MS);
       }
     }
-    function step(d) { go(i + d); schedule(); }
+    function step(d) { go(i + d, d); schedule(); }
 
     var prev = box.querySelector('[data-bd-prev]'), next = box.querySelector('[data-bd-next]');
     if (prev) prev.addEventListener('click', function () { step(-1); });
@@ -87,7 +98,7 @@
       value = String(value);
       if (!el || el.textContent === value) return;
       el.textContent = value;
-      if (el.classList.contains('bd-hero-val')) {
+      if (el.classList.contains('bd-car-num')) {
         el.classList.add('is-changed');
         setTimeout(function () { el.classList.remove('is-changed'); }, 1200);
       }
@@ -110,7 +121,6 @@
       nextOrder = ids.join() === shown.join() ? null : ids;
     }
 
-    place(0);
     schedule();
     return {
       update: update,
@@ -119,7 +129,7 @@
   })();
 
   // Overdue watch: pages of 3 (what the card's height holds), swapped in place
-  // every 10 s when there are more.
+  // with the carousel (SLIDE_MS) when there are more.
   // The minutes overdue are worked out here from each booked end time, so
   // they keep counting between refreshes without asking the server.
   var overdue = (function () {
