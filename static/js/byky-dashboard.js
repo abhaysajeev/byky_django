@@ -129,9 +129,8 @@
   })();
 
   // Overdue watch: pages of 3 (what the card's height holds), swapped in place
-  // with the carousel (SLIDE_MS) when there are more.
-  // The minutes overdue are worked out here from each booked end time, so
-  // they keep counting between refreshes without asking the server.
+  // with the carousel (SLIDE_MS) when there are more. How long each vehicle
+  // has been overdue is not shown until the tablets' clock offset is fixed.
   var overdue = (function () {
     var box = root.querySelector('[data-bd-overdue]');
     if (!box || !live) return null;
@@ -141,10 +140,6 @@
     var page = 0, timer = null, hold = false, running = true;
     var PER_PAGE = 3;
 
-    function minutes(iso) {
-      var m = Math.max(1, Math.floor((Date.now() - Date.parse(iso)) / 60000));
-      return m < 60 ? '+' + m + ' min' : '+' + Math.floor(m / 60) + 'h ' + (m % 60) + 'm';
-    }
     function span(cls, text) {
       var s = document.createElement('span');
       s.className = cls;
@@ -161,14 +156,11 @@
       var who = span('bd-od-who', '');
       who.appendChild(span('bd-od-name', r ? r.customer : '-'));
       who.appendChild(span('bd-od-phone', r ? r.mobile : '-'));
-      var late = span('bd-od-late', r ? minutes(r.due) : '+0 min');
       a.appendChild(main);
       a.appendChild(who);
-      a.appendChild(late);
       var li = document.createElement('li');
       if (r) {
         a.href = r.url;
-        late.setAttribute('data-due', r.due);
       } else {
         li.className = 'bd-od-filler';
         li.setAttribute('aria-hidden', 'true');
@@ -200,9 +192,6 @@
         timer = setTimeout(function () { page = (page + 1) % pages(); render(); schedule(); }, SLIDE_MS);
       }
     }
-    function tick() {
-      list.querySelectorAll('[data-due]').forEach(function (el) { el.textContent = minutes(el.getAttribute('data-due')); });
-    }
     function update(data) {
       box.querySelectorAll('[data-live-overdue]').forEach(function (el) {
         el.textContent = String(data[el.getAttribute('data-live-overdue')]);
@@ -220,7 +209,6 @@
     schedule();
     return {
       update: update,
-      tick: tick,
       run: function (on) { running = on; schedule(); }
     };
   })();
@@ -295,7 +283,6 @@
         if (inflight && inflight.abort) inflight.abort();
         return;
       }
-      if (overdue) overdue.tick();
       if (Date.now() - last >= MINUTE) load();
       else if (!inflight) schedule(MINUTE - (Date.now() - last));
     }
@@ -311,11 +298,10 @@
     document.addEventListener('visibilitychange', wake);
     window.addEventListener('online', wake);
     window.addEventListener('offline', wake);
-    // Housekeeping every 30 s: the overdue minutes, and noticing the user went idle.
+    // Every 30 s: notice the user went idle.
     setInterval(function () {
       if (document.visibilityState !== 'visible') return;
-      if (wasActive && !active()) { wake(); return; }
-      if (overdue) overdue.tick();
+      if (wasActive && !active()) wake();
     }, 30000);
 
     label();
