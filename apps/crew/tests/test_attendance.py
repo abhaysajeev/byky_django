@@ -523,13 +523,18 @@ def test_the_endpoints_are_in_the_docs(client, world):
 # -- Manager login ---------------------------------------------------------------------
 
 
-def test_manager_login_returns_the_tokens_only(client, world):
+def test_manager_login_returns_the_tokens_and_the_manager(client, world):
     response = call(client, "/api/v1/manager/auth/login",
                     {"username": "MGR001", "password": PASSWORD, "installation_id": "phone-m"})
     body = response.json()
     assert body["code"] == "ok"
-    assert set(body["data"]) == {"tokens"}
+    assert body["message"] == "Welcome, Meera K."
+    assert set(body["data"]) == {"tokens", "employee"}            # no roster: managers are not rostered
     assert set(body["data"]["tokens"]) == {"access", "refresh", "access_expires_at", "refresh_expires_at"}
+    employee = body["data"]["employee"]
+    assert (employee["employee_code"], employee["full_name"], employee["designation"]) == (
+        "MGR001", "Meera K", "Manager")
+    assert employee["branch_id"] is None and employee["branch"] is None
     session = AppSession.objects.get(user__username="mgr001", logged_out_at__isnull=True)
     assert session.channel == Channel.MANAGER and session.branch is None
 
