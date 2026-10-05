@@ -149,7 +149,8 @@ def _operator_login(request, form):
 
 
 def _manager_login(request, form):
-    """Tokens only -- the manager app asks for nothing else at login yet."""
+    """The tokens and who signed in -- the same `employee` block as the
+    employee login. No roster: managers are not rostered."""
     installation_id = (form.validated_data.get("installation_id") or "").strip()
     if not installation_id:
         return envelope(
@@ -166,7 +167,12 @@ def _manager_login(request, form):
     except auth.LoginRefused as refused:
         return envelope(refused.code, refused.message, http_status=refused.status)
 
-    return envelope("ok", "Logged in.", {"tokens": _issue_tokens(user, session)})
+    employee = user.employee
+    data = {
+        "tokens": _issue_tokens(user, session),
+        "employee": crew_services.employee_profile(employee),
+    }
+    return envelope("ok", f"Welcome, {employee.full_name}.", data)
 
 
 _LOGIN_BY_CHANNEL = {
@@ -223,6 +229,12 @@ _MANAGER_LOGIN_SUCCESS_DATA = {
         "access_expires_at": "2026-09-21T05:46:16.131807+00:00",
         "refresh_expires_at": "2026-10-21T05:16:16.131807+00:00",
     },
+    "employee": {
+        "employee_code": "MGR001", "full_name": "Meera K", "first_name": "Meera",
+        "middle_name": "", "last_name": "K", "designation": "Manager", "role": None,
+        "branch_id": None, "branch": None, "mobile": "0500000000", "email": "meera@byky.test", "photo_url": None,
+        "company": "BY KY SPORT & LEISURE EQUIPMENT RENTAL & TRADING LLC",
+    },
 }
 
 
@@ -245,7 +257,9 @@ class LoginView(PublicAPIView):
             "`installation_id`: Employee and Manager check it's "
             "registered/approved/not-blocked/not-retired; Operator additionally "
             "requires it be mapped to a branch with receipt settings configured. "
-            "Manager gets the tokens only. See the success examples below for "
+            "Manager gets the tokens and its `employee` block (the same as the employee "
+            "login, no roster -- managers are not rostered; `branch_id` is the home "
+            "branch, null when none). See the success examples below for "
             "the different response shapes. Operator's `branch.branch_id` is the "
             "station's id in the database -- use it when building the station QR code. "
             "design/login/login-for-employee.md, design/login/login-for-operator.md."
@@ -254,7 +268,7 @@ class LoginView(PublicAPIView):
         responses=envelope_responses(
             (200, "ok", "Welcome, Rashed K.", _EMPLOYEE_LOGIN_SUCCESS_DATA, "ok (employee)"),
             (200, "ok", "Logged in.", _OPERATOR_LOGIN_SUCCESS_DATA, "ok (operator)"),
-            (200, "ok", "Logged in.", _MANAGER_LOGIN_SUCCESS_DATA, "ok (manager)"),
+            (200, "ok", "Welcome, Meera K.", _MANAGER_LOGIN_SUCCESS_DATA, "ok (manager)"),
             (400, "invalid_request", "installation_id is required.",
              {"errors": {"installation_id": "is required"}}),
             (401, "invalid_credentials", "Wrong username or password.", {}),

@@ -437,7 +437,7 @@ def _punch_detail(punch, zone, day):
     rows = [
         ("Time", at.strftime("%H:%M:%S") + ("  (+1 day)" if at.date() > day else "")),
         ("Source", punch.get_source_display()),
-        ("Employee branch", punch.employee_branch.name),
+        ("Employee branch", punch.employee_branch.name if punch.employee_branch_id else "—"),
     ]
     if punch.source == AttendanceSource.QR_SCAN:
         rows += [
@@ -506,7 +506,8 @@ class AttendanceListView(CrewScreenView):
                 "last_out_next_day": bool(last_out and last_out.date() > d["day"]),
                 "worked": _duration(sum(worked)) if worked else "",
                 "shifts": d["shifts"],
-                "branch": day_sessions[0][0].employee_branch.name if day_sessions else "",
+                "branch": day_sessions[0][0].employee_branch.name
+                if day_sessions and day_sessions[0][0].employee_branch_id else "",
                 "status": status,
                 "status_label": status_label,
                 "detail_url": reverse("crew-attendance-detail", args=[d["employee"], d["day"].isoformat()])
@@ -666,7 +667,8 @@ class AttendanceExport(CrewScreenView):
                         day.isoformat(), punch_in.employee_code, punch_in.employee_name,
                         stamp(punch_in.rms_scan_time), stamp(punch_out.rms_scan_time) if punch_out else "",
                         worked if worked is not None else "", status,
-                        punch_in.get_source_display(), punch_in.employee_branch.name,
+                        punch_in.get_source_display(),
+                        punch_in.employee_branch.name if punch_in.employee_branch_id else "",
                         punch_in.rms_branch.name if punch_in.rms_branch_id else "",
                         punch_in.rms_employee_code, punch_in.rms_employee_name,
                         stamp(punch_in.qr_generation_time),

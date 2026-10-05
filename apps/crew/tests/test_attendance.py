@@ -223,6 +223,39 @@ def test_self_attendance_from_the_manager_app(client, world, manager):
     assert punch_out.punch_in == punch_in
 
 
+def test_a_manager_punch_needs_only_the_time(client, world, manager):
+    data = {"sync_id": str(uuid7()), "punch_type": "punch_in", "rms_scan_time": fmt(local(DAY, 9))}
+    response = mark(client, manager, data, app="manager")
+    assert response.json()["code"] == "ok", response.json()
+
+    row = Attendance.objects.get()
+    assert row.employee == world["manager"] and row.employee_code == "MGR001" and row.employee_name == "Meera K"
+    assert row.employee_branch is None                  # no home branch, none sent: covers every station
+    assert row.rms_installation_id == "phone-m"         # the signed-in phone
+
+
+def test_a_manager_punch_uses_the_home_branch_when_none_is_sent(client, world, manager):
+    Employee.objects.filter(pk=world["manager"].pk).update(branch=world["auh1"])
+    data = {"sync_id": str(uuid7()), "punch_type": "punch_in", "rms_scan_time": fmt(local(DAY, 9))}
+    assert mark(client, manager, data, app="manager").json()["code"] == "ok"
+    assert Attendance.objects.get().employee_branch == world["auh1"]
+
+
+def test_a_manager_marks_only_their_own_attendance(client, world, manager):
+    response = mark(client, manager, self_punch("punch_in", local(DAY, 9), employee_code="EMP001"), app="manager")
+    assert response.status_code == 403
+    assert response.json()["code"] == "not_your_attendance"
+    assert not Attendance.objects.exists()
+
+
+def test_a_qr_scan_still_needs_the_employee_branch(client, world, operator):
+    data = qr("punch_in", local(DAY, 9))
+    del data["employee_branch_code"]
+    response = mark(client, operator, data)
+    assert response.status_code == 400
+    assert response.json()["data"]["errors"]["employee_branch_code"]
+
+
 def test_qr_fields_sent_by_the_manager_app_are_not_stored(client, world, manager):
     data = self_punch("punch_in", local(DAY, 9), rms_employee_code="OPR001", qr_generation_time=fmt(local(DAY, 9)))
     assert mark(client, manager, data, app="manager").json()["code"] == "ok"
@@ -490,13 +523,18 @@ def test_the_endpoints_are_in_the_docs(client, world):
 # -- Manager login ---------------------------------------------------------------------
 
 
-def test_manager_login_returns_the_tokens_only(client, world):
+def test_manager_login_returns_the_tokens_and_the_manager(client, world):
     response = call(client, "/api/v1/manager/auth/login",
                     {"username": "MGR001", "password": PASSWORD, "installation_id": "phone-m"})
     body = response.json()
     assert body["code"] == "ok"
-    assert set(body["data"]) == {"tokens"}
+    assert body["message"] == "Welcome, Meera K."
+    assert set(body["data"]) == {"tokens", "employee"}            # no roster: managers are not rostered
     assert set(body["data"]["tokens"]) == {"access", "refresh", "access_expires_at", "refresh_expires_at"}
+    employee = body["data"]["employee"]
+    assert (employee["employee_code"], employee["full_name"], employee["designation"]) == (
+        "MGR001", "Meera K", "Manager")
+    assert employee["branch_id"] is None and employee["branch"] is None
     session = AppSession.objects.get(user__username="mgr001", logged_out_at__isnull=True)
     assert session.channel == Channel.MANAGER and session.branch is None
 
