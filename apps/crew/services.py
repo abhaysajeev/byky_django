@@ -236,12 +236,17 @@ def _open_punch_in(employee, at):
     )
 
 
-def mark_attendance(user, source, values):
+def mark_attendance(user, source, values, device=None):
     """Record one punch. Returns (row, created) -- created is False when this
     sync_id was already stored, which the app treats as success.
 
     `values` is the validated request_data, times already aware in company
-    time. Refusals raise AttendanceRefused; nothing is written then.
+    time. `device` is the signed-in phone, used for a self punch that does not
+    name one. Refusals raise AttendanceRefused; nothing is written then.
+
+    A self punch (manager app) is always the signed-in manager's own: a code
+    naming anyone else is refused. A manager covers every station, so its
+    branch is optional -- the manager's home branch when not sent, else none.
     """
     company = user.employee.company
     sync_id = values["sync_id"]
@@ -252,7 +257,21 @@ def mark_attendance(user, source, values):
             raise AttendanceRefused("sync_id_conflict", "That sync_id is already used.")
         return existing, False
 
-    employee = _employee_by_code(company, values["employee_code"], "unknown_employee")
+    branch_code = (values.get("employee_branch_code") or "").strip()
+    if source == AttendanceSource.SELF:
+        employee = user.employee
+        code = (values.get("employee_code") or "").strip()
+        if code and code != employee.employee_code:
+            raise AttendanceRefused("not_your_attendance", "A manager marks only their own attendance.",
+                                    status=403)
+        employee_branch = (_branch_by_code(company, branch_code, "employee_branch_code")
+                           if branch_code else employee.branch)
+        installation_id = (values.get("rms_installation_id") or "").strip() or (
+            device.installation_id if device is not None else "")
+    else:
+        employee = _employee_by_code(company, values["employee_code"], "unknown_employee")
+        employee_branch = _branch_by_code(company, branch_code, "employee_branch_code")
+        installation_id = values["rms_installation_id"]
     if employee.is_blocked:
         raise AttendanceRefused("employee_blocked", "This employee is blocked.", status=403)
     if not employee.is_active:
@@ -263,11 +282,11 @@ def mark_attendance(user, source, values):
         source=source,
         punch_type=values["punch_type"],
         employee=employee,
-        employee_code=values["employee_code"],
+        employee_code=employee.employee_code,
         # From the master, never the request: the name always matches the employee.
         employee_name=employee.full_name,
-        employee_branch=_branch_by_code(company, values["employee_branch_code"], "employee_branch_code"),
-        rms_installation_id=values["rms_installation_id"],
+        employee_branch=employee_branch,
+        rms_installation_id=installation_id,
         rms_scan_time=values["rms_scan_time"],
         rms_latitude=values.get("rms_latitude"),
         rms_longitude=values.get("rms_longitude"),

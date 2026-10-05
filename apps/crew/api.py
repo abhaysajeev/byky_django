@@ -10,7 +10,7 @@ and has no attendance endpoint.
 """
 
 from django.utils import timezone
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiExample, PolymorphicProxySerializer, extend_schema
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
@@ -68,9 +68,15 @@ One punch -- the same call for **punch_in** and **punch_out**.
 
 * `operator` (RMS app): an employee's QR code was scanned. Send the employee
   side from the QR code and the RMS side from this device.
-* `manager`: the manager's own **Mark attendance** button. Send only the
-  employee side (the manager), `rms_installation_id`, `rms_scan_time` (the
-  button press) and optionally `rms_latitude/longitude`.
+* `manager`: the manager's own **Mark attendance** button -- always the
+  signed-in manager's own punch. Send `sync_id`, `punch_type`, `rms_scan_time`
+  (the button press) and optionally `rms_latitude/longitude`. The manager and
+  the phone come from the session. `employee_code` is optional (if sent it must
+  be the manager's own, else `not_your_attendance`); `employee_branch_code` is
+  optional (a manager covers every station -- the manager's home branch is
+  used when it is not sent, or none); `rms_installation_id` is optional.
+
+The request bodies differ per app: see the two schemas and examples below.
 
 **sync_id** -- a **UUIDv7** made on the device for this punch and resent
 **unchanged** on every retry. It becomes the record's id; a second call with
@@ -109,7 +115,30 @@ class AttendanceMarkView(APIView):
         tags=["Operator Attendance", "Manager Attendance"],
         summary="Record a punch in or punch out",
         description=_MARK_DESCRIPTION,
-        request=envelope_request("AttendanceMarkEnvelope", QrAttendanceRequest),
+        request=PolymorphicProxySerializer(
+            component_name="AttendanceMarkEnvelope",
+            serializers=[
+                envelope_request("OperatorAttendanceMarkEnvelope", QrAttendanceRequest),
+                envelope_request("ManagerAttendanceMarkEnvelope", SelfAttendanceRequest),
+            ],
+            resource_type_field_name=None,
+        ),
+        examples=[
+            OpenApiExample("operator (QR scan)", request_only=True, value={"credentials": {}, "request_data": {
+                "sync_id": "01a1013d-fa97-7179-93ae-3ae25842f1ce", "punch_type": "punch_in",
+                "employee_code": "BYKY014", "employee_branch_code": "AUH01",
+                "employee_installation_id": "4b22c896-27f9-40eb-afab-3546f2105ae6",
+                "qr_generation_time": "2026-10-05 09:01:40",
+                "employee_latitude": "24.4539", "employee_longitude": "54.3773",
+                "rms_employee_code": "BYKY003", "rms_branch_code": "AUH01",
+                "rms_installation_id": "7a77cf72-1aef-4931-ab4f-faed221d236f",
+                "rms_scan_time": "2026-10-05 09:02:00", "rms_latitude": "24.4539", "rms_longitude": "54.3773",
+            }}),
+            OpenApiExample("manager (own punch)", request_only=True, value={"credentials": {}, "request_data": {
+                "sync_id": "01a1013d-fa97-7179-93ae-3ae25842f1cf", "punch_type": "punch_in",
+                "rms_scan_time": "2026-10-05 09:02:00", "rms_latitude": "25.2415", "rms_longitude": "55.3283",
+            }}),
+        ],
         responses=envelope_responses(
             (200, "ok", "Punch in recorded.", _MARK_IN_SAMPLE, "ok (punch_in)"),
             (200, "ok", "Punch out recorded.", _MARK_SAMPLE, "ok (punch_out)"),
@@ -122,6 +151,8 @@ class AttendanceMarkView(APIView):
             (403, "wrong_channel", "Not allowed on this app.", {}),
             (403, "employee_blocked", "This employee is blocked.", {}),
             (403, "employee_inactive", "This employee is not active.", {}),
+            (403, "not_your_attendance", "A manager marks only their own attendance.", {},
+             "not_your_attendance (manager)"),
             (409, "punch_in_open", "Already punched in. Punch out first.", {}),
             (409, "no_open_punch_in", "No punch in to close. Punch in first.", {}),
             (409, "punch_out_before_punch_in", "Punch out is earlier than the punch in.", {}),
@@ -152,7 +183,7 @@ class AttendanceMarkView(APIView):
                 values[key] = timezone.make_aware(values[key], zone)
 
         try:
-            row, created = services.mark_attendance(request.user, source, values)
+            row, created = services.mark_attendance(request.user, source, values, device=request.auth.device)
         except services.AttendanceRefused as refusal:
             return envelope(refusal.code, refusal.message, http_status=refusal.status)
 
@@ -283,7 +314,7 @@ class AttendanceHistoryView(APIView):
 def _punch_json(row, zone):
     return {
         "sync_id": str(row.pk), "time": _local(row.rms_scan_time, zone), "source": row.source,
-        "employee_branch_code": row.employee_branch.short_code,
+        "employee_branch_code": row.employee_branch.short_code if row.employee_branch_id else None,
         "rms_branch_code": row.rms_branch.short_code if row.rms_branch_id else None,
         "rms_employee_code": row.rms_employee_code or None,
         "rms_employee_name": row.rms_employee_name or None,

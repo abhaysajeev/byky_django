@@ -30,18 +30,22 @@ def _pairs(values, *prefixes):
 
 
 class SelfAttendanceRequest(serializers.Serializer):
-    """Manager app: the person marking is the person marked."""
+    """Manager app: the signed-in manager's own punch. Who and which phone come
+    from the session; a manager covers every station, so the branch is optional
+    (the manager's home branch, if any, when not sent)."""
 
     sync_id = uuid7_field()
     punch_type = serializers.ChoiceField(choices=PunchType.choices, error_messages=PUNCH_TYPE)
 
-    employee_code = text_field(max_length=20)
+    # Optional: if sent it must be the signed-in manager's own code.
+    employee_code = text_field(max_length=20, required=False, allow_blank=True)
     # Optional and ignored: the server records the name from the employee
     # master, so a punch's name always matches the employee it is linked to.
     employee_name = text_field(max_length=150, required=False, allow_blank=True)
-    employee_branch_code = text_field(max_length=10)
+    employee_branch_code = text_field(max_length=10, required=False, allow_blank=True)
 
-    rms_installation_id = text_field(max_length=64)
+    # Optional: the signed-in phone's installation id when not sent.
+    rms_installation_id = text_field(max_length=64, required=False, allow_blank=True)
     rms_scan_time = datetime_field()
     rms_latitude = coordinate_field(limit=90, required=False, allow_null=True)
     rms_longitude = coordinate_field(limit=180, required=False, allow_null=True)
@@ -52,6 +56,11 @@ class SelfAttendanceRequest(serializers.Serializer):
 
 class QrAttendanceRequest(SelfAttendanceRequest):
     """Operator (RMS) app: the employee side is what the QR code carried."""
+
+    # Required here, unlike the manager's own punch.
+    employee_code = text_field(max_length=20)
+    employee_branch_code = text_field(max_length=10)
+    rms_installation_id = text_field(max_length=64)
 
     employee_installation_id = text_field(max_length=64)
     qr_generation_time = datetime_field()

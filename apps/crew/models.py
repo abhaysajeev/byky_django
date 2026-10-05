@@ -358,8 +358,10 @@ class Attendance(TimeStampedModel):
     employee = models.ForeignKey(Employee, on_delete=models.PROTECT, related_name="attendance")
     employee_code = models.CharField(max_length=20)
     employee_name = models.CharField(max_length=150)
+    # Always set for a QR scan. A manager's own punch may have none: managers
+    # cover every station (5 Oct 2026).
     employee_branch = models.ForeignKey(
-        "company.Branch", on_delete=models.PROTECT, related_name="attendance",
+        "company.Branch", null=True, blank=True, on_delete=models.PROTECT, related_name="attendance",
     )
     employee_installation_id = models.CharField(max_length=64, blank=True)
     qr_generation_time = models.DateTimeField(null=True, blank=True)
@@ -409,6 +411,12 @@ class Attendance(TimeStampedModel):
                 condition=models.Q(punch_type=PunchType.PUNCH_IN, punch_in__isnull=True)
                 | models.Q(punch_type=PunchType.PUNCH_OUT, punch_in__isnull=False),
                 name="attendance_out_has_in",
+            ),
+            # A QR scan always names the employee's branch; only a manager's
+            # own punch may leave it empty.
+            models.CheckConstraint(
+                condition=models.Q(source=AttendanceSource.SELF) | models.Q(employee_branch__isnull=False),
+                name="attendance_qr_has_employee_branch",
             ),
             # One QR code records one punch in and one punch out, whatever
             # sync_id a second scan arrives with.
