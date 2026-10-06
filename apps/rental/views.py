@@ -6,7 +6,7 @@ import datetime
 from decimal import Decimal
 
 from django.core.paginator import Paginator
-from django.db.models import Case, Count, IntegerField, Q, Sum, Value, When
+from django.db.models import Count, Q, Sum
 from django.http import Http404
 from django.shortcuts import render
 from django.urls import reverse
@@ -584,12 +584,16 @@ class InvoiceDetailView(RentalScreenView):
 # -- Credit notes (requested on a tablet or issued here; apps/rental/credit_notes.py) --
 
 CREDIT_NOTES_PER_PAGE = 50
-_CREDIT_NOTE_STATUSES = [{"id": value, "name": label} for value, label in CreditNoteStatus.choices]
+# The list's tabs, one per state -- as the Card Discount Approval screen.
+CREDIT_NOTE_TABS = [
+    (CreditNoteStatus.PENDING, "Pending"), (CreditNoteStatus.APPROVED, "Approved"),
+    (CreditNoteStatus.REJECTED, "Rejected"), (CreditNoteStatus.CANCELLED, "Cancelled"),
+]
 
 
 def _credit_notes(request, zone):
-    """The credit notes the list shows, narrowed by the query string --
-    waiting requests first, then the newest."""
+    """The credit notes the list's filters match, every state -- the tab
+    picks the state, so its counts come from the same filters."""
     params = request.GET
     notes = scoping.credit_notes_for(request.user).select_related("order", "invoice", "branch")
     text = params.get("q", "").strip()
@@ -597,8 +601,6 @@ def _credit_notes(request, zone):
         notes = notes.filter(Q(order__order_no__icontains=text) | Q(credit_note_no__icontains=text)
                              | Q(invoice__customer_name__icontains=text)
                              | Q(invoice__customer_mobile__icontains=text))
-    if params.get("status") in CreditNoteStatus.values:
-        notes = notes.filter(status=params["status"])
     if params.get("source") in CreditNoteSource.values:
         notes = notes.filter(source=params["source"])
     if params.get("branch", "").isdigit():
@@ -608,9 +610,7 @@ def _credit_notes(request, zone):
         notes = notes.filter(created_on__gte=_day_bounds(start, zone)[0])
     if end:
         notes = notes.filter(created_on__lt=_day_bounds(end, zone)[1])
-    waiting_first = Case(When(status=CreditNoteStatus.PENDING, then=Value(0)), default=Value(1),
-                         output_field=IntegerField())
-    return notes.order_by(waiting_first, "-created_on")
+    return notes
 
 
 class CreditNoteListView(RentalScreenView):
@@ -621,10 +621,25 @@ class CreditNoteListView(RentalScreenView):
         context = super().get_context_data(**kwargs)
         user, params = self.request.user, self.request.GET
         zone = zone_for(getattr(user, "company", None))
-        page = Paginator(_credit_notes(self.request, zone), CREDIT_NOTES_PER_PAGE).get_page(params.get("page"))
-        query = params.copy()
-        query.pop("page", None)
+        tab = params.get("tab", CreditNoteStatus.PENDING)
+        if tab not in dict(CREDIT_NOTE_TABS):
+            tab = CreditNoteStatus.PENDING
+        notes = _credit_notes(self.request, zone)
+        counts = dict(notes.order_by().values_list("status").annotate(n=Count("pk")))
+        page = Paginator(notes.filter(status=tab).order_by("-created_on"),
+                         CREDIT_NOTES_PER_PAGE).get_page(params.get("page"))
+        # Tabs keep the other filters; the pager keeps the tab too.
+        filters = params.copy()
+        for key in ("page", "tab"):
+            filters.pop(key, None)
+        query = filters.copy()
+        query["tab"] = tab
         context.update({
+            "tab": tab,
+            "tab_label": dict(CREDIT_NOTE_TABS)[tab],
+            "tabs": [{"value": value, "label": label, "count": counts.get(value, 0)}
+                     for value, label in CREDIT_NOTE_TABS],
+            "filter_query": filters.urlencode(),
             "rows": [
                 {
                     "number": note.credit_note_no or "Request", "created_on": note.created_on.astimezone(zone),
@@ -638,9 +653,8 @@ class CreditNoteListView(RentalScreenView):
                 for note in page.object_list
             ],
             "page": page, "query": query.urlencode(), "params": params,
-            "filtered": any(params.get(k) for k in ("q", "status", "source", "branch", "from", "to")),
+            "filtered": any(params.get(k) for k in ("q", "source", "branch", "from", "to")),
             "branches": list(branches_for(user).filter(is_active=True).order_by("name").values("id", "name")),
-            "statuses": _CREDIT_NOTE_STATUSES,
         })
         return context
 
