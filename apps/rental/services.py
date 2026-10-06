@@ -128,6 +128,12 @@ ORDER_ERRORS = {
     "unknown_card_claim": (404, "That card-discount request is not on this order.", False),
     "card_claim_not_approved": (409, "That card-discount request is not approved.", False),
     "unknown_card_discount": (404, "No card discount with that id.", False),
+    # Credit notes (apps/rental/credit_notes.py).
+    "order_not_settled": (409, "A credit note needs a settled order.", False),
+    "credit_note_pending": (409, "A credit note request is already waiting for this order.", False),
+    "credit_note_issued": (409, "This order already has a credit note.", False),
+    "unknown_credit_note": (404, "No credit note request with that id.", False),
+    "credit_note_closed": (409, "That credit note request is already approved or rejected.", False),
 }
 
 
@@ -149,6 +155,8 @@ _CONSTRAINT_REFUSALS = {
     "order_pkey": "sync_id_conflict",
     "order_item_pkey": "item_id_used",
     "payment_pkey": "payment_id_used",
+    "credit_note_pkey": "sync_id_conflict",
+    "uniq_live_credit_note_per_order": "credit_note_pending",
 }
 
 

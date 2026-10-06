@@ -416,6 +416,8 @@ class OrderAction(models.TextChoices):
     CANCEL_REQUEST = "cancel_request", "Cancel requested"
     CANCEL_APPROVED = "cancel_approved", "Cancel approved"
     CANCEL_REJECTED = "cancel_rejected", "Cancel rejected"
+    CREDIT_NOTE_REQUEST = "credit_note_request", "Credit note requested"
+    CREDIT_NOTE_CANCEL = "credit_note_cancel", "Credit note request cancelled"
 
 
 class OrderEvent(models.Model):
@@ -530,3 +532,104 @@ class InvoiceItem(models.Model):
 
     def __str__(self):
         return f"{self.vehicle_name} on {self.invoice}"
+
+
+class CreditNoteStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    APPROVED = "approved", "Approved"
+    REJECTED = "rejected", "Rejected"
+    CANCELLED = "cancelled", "Cancelled"
+
+
+class CreditNoteSource(models.TextChoices):
+    DEVICE = "device", "Device request"
+    WEB = "web", "Issued on the web"
+
+
+# The two states that hold an order: a request waiting, or a credit note issued.
+CREDIT_NOTE_LIVE = (CreditNoteStatus.PENDING, CreditNoteStatus.APPROVED)
+
+
+class CreditNote(TimeStampedModel):
+    """A partial refund on a settled order, issued against its invoice
+    (analysis/rental/credit-note.md; replaces DMSCreditNoteRequest and the
+    DMSOrder.CreditNote* columns).
+
+    A tablet asks (`source=device`, pending, its sync_id is the id) and the back
+    office approves with the amount or rejects; or the back office issues one
+    directly (`source=web`, approved at once). Approved is final. The order, its
+    invoice, payments and card-discount claims are never changed by it.
+
+    Money: `net_amount` is what is given back, VAT included; the VAT inside it
+    is worked out from the invoice's rate (credit_notes.vat_split).
+    """
+
+    id = models.UUIDField(primary_key=True, editable=False)
+    company = models.ForeignKey("company.Company", on_delete=models.PROTECT, related_name="credit_notes")
+    branch = models.ForeignKey("company.Branch", on_delete=models.PROTECT, related_name="credit_notes")
+    order = models.ForeignKey(Order, on_delete=models.PROTECT, related_name="credit_notes")
+    invoice = models.ForeignKey(Invoice, on_delete=models.PROTECT, related_name="credit_notes")
+
+    source = models.CharField(max_length=10, choices=CreditNoteSource.choices)
+    status = models.CharField(max_length=10, choices=CreditNoteStatus.choices)
+    reason = models.TextField(blank=True)
+
+    # The tablet's request.
+    device = models.ForeignKey("devices.Device", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    requested_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    requested_at = models.DateTimeField(null=True, blank=True)                      # tablet time
+
+    # The back office's decision (or the tablet's cancel: decided_by is then null).
+    decided_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    decided_at = models.DateTimeField(null=True, blank=True)
+    decision_remark = models.TextField(blank=True)
+
+    # Once approved.
+    credit_note_no = models.CharField(max_length=40, blank=True)                     # order_no + "CN"
+    net_amount = models.DecimalField(**MONEY, null=True, blank=True)                 # VAT included
+    tax_percentage = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    tax_amount = models.DecimalField(**MONEY, null=True, blank=True)                 # VAT inside net_amount
+    taxable_amount = models.DecimalField(**MONEY, null=True, blank=True)
+
+    class Meta:
+        db_table = "credit_note"
+        ordering = ["-created_on"]
+        constraints = [
+            # One request waiting or one credit note issued per order, never both
+            # and never two: a rejected or cancelled one leaves room for another.
+            models.UniqueConstraint(
+                fields=["order"], condition=models.Q(status__in=CREDIT_NOTE_LIVE),
+                name="uniq_live_credit_note_per_order",
+            ),
+            models.UniqueConstraint(
+                fields=["company", "credit_note_no"], condition=~models.Q(credit_note_no=""),
+                name="uniq_credit_note_no_per_company",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(status=CreditNoteStatus.APPROVED, decided_at__isnull=False,
+                             net_amount__gt=0, tax_percentage__isnull=False, tax_amount__isnull=False,
+                             taxable_amount__isnull=False, net_amount=models.F("taxable_amount")
+                             + models.F("tax_amount")) & ~models.Q(credit_note_no="")
+                ) | (
+                    ~models.Q(status=CreditNoteStatus.APPROVED)
+                    & models.Q(credit_note_no="", net_amount__isnull=True, tax_amount__isnull=True,
+                               taxable_amount__isnull=True)
+                ),
+                name="credit_note_amounts_only_when_approved",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(status=CreditNoteStatus.PENDING, decided_at__isnull=True, decided_by__isnull=True)
+                | (~models.Q(status=CreditNoteStatus.PENDING) & models.Q(decided_at__isnull=False)),
+                name="credit_note_decided_unless_pending",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(source=CreditNoteSource.WEB, status=CreditNoteStatus.APPROVED)
+                | models.Q(source=CreditNoteSource.DEVICE),
+                name="credit_note_web_is_issued",
+            ),
+        ]
+        indexes = [models.Index(fields=["branch", "status"]), models.Index(fields=["status", "created_on"])]
+
+    def __str__(self):
+        return self.credit_note_no or f"Credit note request {self.pk}"

@@ -52,7 +52,7 @@
   function failure() {
     var box = document.createElement('div');
     box.className = 'bill-state';
-    box.textContent = 'Could not load the invoice. Close and try again.';
+    box.textContent = 'Could not load it. Close and try again.';
     return box;
   }
 

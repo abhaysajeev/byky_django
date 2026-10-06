@@ -1,0 +1,52 @@
+{% load static %}
+<div class="bill">
+  <div class="bill-head">
+    <div class="bill-head-text">
+      <div class="station">{{ invoice.branch_name|upper }}</div>
+      <div class="emirate">{{ emirate|upper }}</div>
+    </div>
+    <img class="bill-logo" src="{% static 'img/branding/byky-logo.png' %}" alt="BYKY" />
+  </div>
+  <div class="bill-title-block">
+    <div class="bill-title">TAX CREDIT NOTE</div>
+    <div class="bill-trn">TRN : {{ invoice.company_trn|default:"—" }}</div>
+  </div>
+
+  <hr class="bill-rule" />
+
+  <div class="bill-row2">
+    <div class="col-a"><span class="bill-kv-label">CN No</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">{{ note.credit_note_no }}</span></div>
+    <div class="col-b"><span class="bill-kv-label">Date</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">{{ date }}</span></div>
+  </div>
+  <div class="bill-row2">
+    <div class="col-a"><span class="bill-kv-label">Inv No</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">{{ invoice.invoice_no }}</span></div>
+    <div class="col-b"><span class="bill-kv-label">Inv Date</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">{{ invoice_date }}</span></div>
+  </div>
+  <div class="bill-row2">
+    <div class="col-a"><span class="bill-kv-label">Name</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">{{ invoice.customer_name|default:"—" }}</span></div>
+    <div class="col-b"><span class="bill-kv-label">Mobile</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">{{ invoice.customer_mobile|default:"—" }}</span></div>
+  </div>
+  <div class="bill-row2">
+    <div class="col-a"><span class="bill-kv-label">Issued By</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">{{ issued_by }}</span></div>
+    <div class="col-b"><span class="bill-kv-label">Inv Net</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ invoice.net_amount }}</span></div>
+  </div>
+  {% if note.reason %}
+  <div class="bill-row2">
+    <div class="col-a" style="flex:1 1 100%"><span class="bill-kv-label">Reason</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">{{ note.reason }}</span></div>
+  </div>
+  {% endif %}
+
+  <hr class="bill-rule" />
+
+  <div class="bill-row2">
+    <div class="col-a"><span class="bill-kv-label">Taxable Amt</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ note.taxable_amount }}</span></div>
+    <div class="col-b"><span class="bill-kv-label">VAT @{{ note.tax_percentage|floatformat:1 }}% incl.</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ note.tax_amount }}</span></div>
+  </div>
+
+  <hr class="bill-rule" />
+
+  <div class="bill-net">
+    <span>CREDIT TOTAL :</span>
+    <span>AED {{ note.net_amount }}</span>
+  </div>
+</div>

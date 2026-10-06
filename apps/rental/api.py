@@ -24,9 +24,12 @@ from rest_framework.views import APIView
 from apps.devices import services as devices_services
 from apps.devices.models import BillKind
 from apps.portal.authentication import AppJWTAuthentication
-from apps.rental import services
+from apps.rental import credit_notes, services
 from apps.rental.models import Invoice, OrderItemStatus
 from apps.rental.serializers import (
+    CreditNoteCancelRequest,
+    CreditNoteRequest,
+    CreditNoteStatusRequest,
     CustomerCreateRequest,
     CustomerLookupRequest,
     OrderAddRequest,
@@ -976,3 +979,155 @@ class OrderPaymentsView(_ChangeView):
 
     def change(self, *args):
         return services.record_payments(*args)
+
+
+# -- Credit notes ---------------------------------------------------------------------
+
+_CREDIT_NOTE_PENDING_SAMPLE = {
+    "credit_note_id": "01a1013d-fa97-7179-93ae-3ae25842f1ce", "order_id": "01a0fbf0-cd1e-7002-a9e6-6c4c162129a7",
+    "order_no": "CF0011017000003", "source": "device", "status": "pending", "credit_note_no": None,
+    "net_amount": None, "tax_amount": None, "taxable_amount": None, "reason": "Bike chain broke after 10 minutes",
+    "decision_remark": "", "decided_at": None,
+}
+_CREDIT_NOTE_APPROVED_SAMPLE = {
+    **_CREDIT_NOTE_PENDING_SAMPLE, "status": "approved", "credit_note_no": "CF0011017000003CN",
+    "net_amount": "21.00", "tax_amount": "1.00", "taxable_amount": "20.00",
+    "decision_remark": "Half refund agreed", "decided_at": "2026-10-06T10:42:00+00:00",
+}
+_CREDIT_NOTE_WEB_SAMPLE = {
+    **_CREDIT_NOTE_APPROVED_SAMPLE, "credit_note_id": "01a1020a-1b2c-7d3e-8f40-5a6b7c8d9e0f",
+    "order_id": "01a0fbf1-0000-7000-8000-000000000001", "order_no": "CF0011017000004",
+    "credit_note_no": "CF0011017000004CN", "source": "web", "reason": "Complaint by phone",
+    "decision_remark": "",
+}
+
+_CREDIT_NOTE_REQUEST_ERRORS = (
+    "order_not_synced", "sync_id_conflict", "order_not_settled", "credit_note_pending", "credit_note_issued",
+)
+_CREDIT_NOTE_CANCEL_ERRORS = ("sync_id_conflict", "unknown_credit_note", "credit_note_closed")
+
+_CREDIT_NOTE_RULES = """
+**A credit note** is a partial refund on a **settled** order, issued against its
+invoice. The tablet only **asks**: the back office sets the amount when it
+approves, or rejects. The back office can also issue one directly on the web
+(`source: web`) -- the tablet sees those through `credit-notes/status`.
+Nothing here changes the order, its invoice or its payments.
+
+`status`: `pending` (waiting) · `approved` (issued: `credit_note_no` and the
+amounts are filled -- `net_amount` is given back, VAT included, `tax_amount` the
+VAT inside it) · `rejected` (see `decision_remark`) · `cancelled` (the tablet
+withdrew it). After a rejection or a cancel the order may be asked again; while
+one is pending, or once one is approved, it may not.
+"""
+
+_CREDIT_NOTE_REQUEST_DESCRIPTION = _CREDIT_NOTE_RULES + """
+**This call** asks for one. `sync_id` is a UUIDv7 made on the tablet and resent
+unchanged on retry -- it **becomes the credit note's id** (`credit_note_id`).
+`order_id` is the settled order's sync_id; `requested_at` the tablet's time;
+`reason` optional free text. Any tablet of the company may ask, for any order.
+""" + _error_table(*_CREDIT_NOTE_REQUEST_ERRORS)
+
+_CREDIT_NOTE_CANCEL_DESCRIPTION = _CREDIT_NOTE_RULES + """
+**This call** withdraws a request that is still `pending`. `sync_id` is this
+call's own UUIDv7; `credit_note_id` the request's. Cancelling one already
+cancelled answers the same; an approved or rejected one is `credit_note_closed`.
+""" + _error_table(*_CREDIT_NOTE_CANCEL_ERRORS)
+
+_CREDIT_NOTE_STATUS_DESCRIPTION = _CREDIT_NOTE_RULES + """
+**This call** reads where they stand: send the `order_ids` (1-100) and get every
+credit note on those orders, newest first -- the tablet's own requests and those
+issued on the web. Orders with none are simply absent. Read-only.
+"""
+
+
+class CreditNoteRequestView(_OperatorView):
+    """POST /api/v1/{app}/orders/credit-notes -- operator app only."""
+
+    @extend_schema(
+        tags=["Operator Credit Notes"],
+        summary="Ask for a credit note on a settled order",
+        description=_CREDIT_NOTE_REQUEST_DESCRIPTION,
+        request=envelope_request("CreditNoteRequestEnvelope", CreditNoteRequest),
+        responses=envelope_responses(
+            (200, "ok", "Credit note requested.", _CREDIT_NOTE_PENDING_SAMPLE),
+            (200, "duplicate", "Already recorded.", _CREDIT_NOTE_PENDING_SAMPLE),
+            (400, "invalid_request", "order_id is required.", {"errors": {"order_id": "is required"}}),
+            *_error_rows(*_CREDIT_NOTE_REQUEST_ERRORS),
+            *_COMMON,
+        ),
+    )
+    def post(self, request, app):
+        branch, refused = self.station(request, app)
+        if refused:
+            return refused
+        _, request_data = request_parts(request)
+        form = CreditNoteRequest(data=request_data)
+        form.is_valid(raise_exception=True)
+        values = form.validated_data
+        values["requested_at"] = timezone.make_aware(values["requested_at"], zone_for(branch.company))
+        try:
+            data, done = credit_notes.request_credit_note(request.auth, values, request_data)
+        except services.OrderRefused as refusal:
+            return _refused(refusal)
+        return (envelope("ok", "Credit note requested.", data) if done
+                else envelope("duplicate", "Already recorded.", data))
+
+
+class CreditNoteCancelView(_OperatorView):
+    """POST /api/v1/{app}/orders/credit-notes/cancel -- operator app only."""
+
+    @extend_schema(
+        tags=["Operator Credit Notes"],
+        summary="Withdraw a credit note request still waiting",
+        description=_CREDIT_NOTE_CANCEL_DESCRIPTION,
+        request=envelope_request("CreditNoteCancelEnvelope", CreditNoteCancelRequest),
+        responses=envelope_responses(
+            (200, "ok", "Credit note request cancelled.", {**_CREDIT_NOTE_PENDING_SAMPLE, "status": "cancelled",
+                                                          "decided_at": "2026-10-06T09:15:00+00:00"}),
+            (200, "duplicate", "Already recorded.", {**_CREDIT_NOTE_PENDING_SAMPLE, "status": "cancelled"}),
+            (400, "invalid_request", "credit_note_id is required.", {"errors": {"credit_note_id": "is required"}}),
+            *_error_rows(*_CREDIT_NOTE_CANCEL_ERRORS),
+            *_COMMON,
+        ),
+    )
+    def post(self, request, app):
+        branch, refused = self.station(request, app)
+        if refused:
+            return refused
+        _, request_data = request_parts(request)
+        form = CreditNoteCancelRequest(data=request_data)
+        form.is_valid(raise_exception=True)
+        values = form.validated_data
+        values["cancelled_at"] = timezone.make_aware(values["cancelled_at"], zone_for(branch.company))
+        try:
+            data, done = credit_notes.cancel_credit_note(request.auth, values, request_data)
+        except services.OrderRefused as refusal:
+            return _refused(refusal)
+        return (envelope("ok", "Credit note request cancelled.", data) if done
+                else envelope("duplicate", "Already recorded.", data))
+
+
+class CreditNoteStatusView(_OperatorView):
+    """POST /api/v1/{app}/orders/credit-notes/status -- operator app only."""
+
+    @extend_schema(
+        tags=["Operator Credit Notes"],
+        summary="Where credit notes on these orders stand",
+        description=_CREDIT_NOTE_STATUS_DESCRIPTION,
+        request=envelope_request("CreditNoteStatusEnvelope", CreditNoteStatusRequest),
+        responses=envelope_responses(
+            (200, "ok", "Credit notes.", {"credit_notes": [_CREDIT_NOTE_APPROVED_SAMPLE, _CREDIT_NOTE_WEB_SAMPLE]}),
+            (400, "invalid_request", "send at least one order_id.",
+             {"errors": {"order_ids": "send at least one order_id"}}),
+            *_COMMON,
+        ),
+    )
+    def post(self, request, app):
+        branch, refused = self.station(request, app)
+        if refused:
+            return refused
+        _, request_data = request_parts(request)
+        form = CreditNoteStatusRequest(data=request_data)
+        form.is_valid(raise_exception=True)
+        notes = credit_notes.credit_notes_for_orders(branch.company, form.validated_data["order_ids"])
+        return envelope("ok", "Credit notes.", {"credit_notes": [credit_notes.note_json(note) for note in notes]})

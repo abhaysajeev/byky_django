@@ -17,4 +17,7 @@ urlpatterns = [
     path("orders/replace", api.OrderReplaceView.as_view(), name="api-app-order-replace"),
     path("orders/remove", api.OrderRemoveView.as_view(), name="api-app-order-remove"),
     path("orders/payments", api.OrderPaymentsView.as_view(), name="api-app-order-payments"),
+    path("orders/credit-notes", api.CreditNoteRequestView.as_view(), name="api-app-credit-note-request"),
+    path("orders/credit-notes/cancel", api.CreditNoteCancelView.as_view(), name="api-app-credit-note-cancel"),
+    path("orders/credit-notes/status", api.CreditNoteStatusView.as_view(), name="api-app-credit-note-status"),
 ]

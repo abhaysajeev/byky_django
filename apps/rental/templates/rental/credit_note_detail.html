@@ -1,0 +1,152 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Credit Note {{ note.credit_note_no|default:"request" }} - Rental{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+<link rel="stylesheet" href="{% static 'css/byky-invoice-receipt.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+<script src="{% static 'js/byky-invoice-print.js' %}"></script>
+<script src="{% static 'js/byky-credit-note.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr" data-credit-note data-approve-url="{{ approve_url }}" data-reject-url="{{ reject_url }}">
+
+  <div class="scr-head no-print">
+    <div>
+      <div class="scr-crumb">
+        <span>Rental</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <a href="{{ list_url }}">Credit Notes</a>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>{{ note.credit_note_no|default:"Request" }}</b>
+      </div>
+      <h1 class="scr-title">{% if note.credit_note_no %}{{ note.credit_note_no }}{% else %}Credit note request{% endif %}</h1>
+      <p class="scr-sub">On invoice {{ invoice.invoice_no }} · {{ note.branch.name }}</p>
+    </div>
+    <div class="scr-head-actions">
+      <a href="{{ list_url }}" class="scr-btn-secondary">Back</a>
+      {% if note.status == "pending" and perm.approve %}
+      <button type="button" class="scr-btn-danger" data-scr-modal-open="credit-note-reject">Reject</button>
+      <button type="button" class="scr-btn-primary" data-scr-modal-open="credit-note-approve">Approve</button>
+      {% endif %}
+      {% if note.status == "approved" and perm.print %}
+      <button type="button" class="scr-btn" data-invoice-receipt="{{ receipt_url }}" data-invoice-no="{{ note.credit_note_no }}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6M6 18H4a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-2M6 14h12v7H6z"></path></svg>
+        Print
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="scr-mon-grid no-print">
+    <div class="scr-card">
+      <div class="scr-form-head">
+        <div class="scr-form-title-row">
+          <h2 class="scr-form-title">Credit Note</h2>
+          {% include "rental/partials/credit_note_status.html" with status=note.status %}
+        </div>
+      </div>
+      <div class="scr-form-body scr-mon-body">
+        <div class="scr-detail-rows">
+          <div class="scr-detail-row"><span class="scr-detail-label">Number</span><span class="scr-detail-value">{{ note.credit_note_no|default:"— (given when approved)" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Source</span><span class="scr-detail-value">{% if note.source == "device" %}Tablet request{% if tablet %} · Tablet {{ tablet }}{% endif %}{% else %}Issued on the web{% endif %}</span></div>
+          {% if note.source == "device" %}
+          <div class="scr-detail-row"><span class="scr-detail-label">Requested</span><span class="scr-detail-value">{{ requested_at|date:"d M Y, H:i" }}{% if requested_by %} · {{ requested_by }}{% endif %}</span></div>
+          {% endif %}
+          <div class="scr-detail-row"><span class="scr-detail-label">Reason</span><span class="scr-detail-value scr-mon-wrap">{{ note.reason|default:"—" }}</span></div>
+          {% if note.status != "pending" %}
+          <div class="scr-detail-row"><span class="scr-detail-label">{% if note.status == "approved" %}Issued{% elif note.status == "rejected" %}Rejected{% else %}Cancelled{% endif %}</span><span class="scr-detail-value">{{ decided_at|date:"d M Y, H:i" }}{% if decided_by %} · {{ decided_by }}{% elif note.status == "cancelled" %} · by the tablet{% endif %}</span></div>
+          {% endif %}
+          {% if note.decision_remark %}
+          <div class="scr-detail-row"><span class="scr-detail-label">Remark</span><span class="scr-detail-value scr-mon-wrap">{{ note.decision_remark }}</span></div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="scr-card">
+      <div class="scr-form-head"><div class="scr-form-title-row"><h2 class="scr-form-title">Order &amp; Invoice</h2></div></div>
+      <div class="scr-form-body scr-mon-body">
+        <div class="scr-detail-rows">
+          <div class="scr-detail-row"><span class="scr-detail-label">Invoice</span><span class="scr-detail-value"><a class="scr-link-blue" href="{{ invoice_url }}">{{ invoice.invoice_no }}</a> · {{ invoice_issued_at|date:"d M Y, H:i" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Order</span><span class="scr-detail-value"><a class="scr-link-blue" href="{{ order_url }}">{{ order.order_no }}</a></span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Customer</span><span class="scr-detail-value">{{ invoice.customer_name|default:"—" }}{% if invoice.customer_mobile %} · {{ invoice.customer_mobile }}{% endif %}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Invoice Net</span><span class="scr-detail-value">AED {{ invoice.net_amount }} · VAT {{ invoice.tax_percentage }}% incl.</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Paid</span><span class="scr-detail-value">AED {{ paid_amount }}</span></div>
+        </div>
+      </div>
+      {% if note.status == "approved" %}
+      <div class="scr-form-head" style="border-top:1px solid #f0eff7"><div class="scr-form-title-row"><h2 class="scr-form-title">Credit</h2></div></div>
+      <div class="scr-form-body scr-mon-body">
+        <div class="scr-detail-rows">
+          <div class="scr-detail-row"><span class="scr-detail-label"><b>Net (VAT incl.)</b></span><span class="scr-detail-value"><b>AED {{ note.net_amount }}</b></span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Taxable Amount</span><span class="scr-detail-value">AED {{ note.taxable_amount }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">VAT (included)</span><span class="scr-detail-value">{{ note.tax_percentage }}% · AED {{ note.tax_amount }}</span></div>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if note.status == "pending" and perm.approve %}
+  <div class="scr-modal-veil" data-scr-modal-veil="credit-note-approve" hidden></div>
+  <div class="scr-modal" data-scr-modal="credit-note-approve" hidden>
+    <div class="scr-modal-head">
+      <div>
+        <div class="scr-modal-title">Approve credit note</div>
+        <p class="scr-modal-sub">Invoice {{ invoice.invoice_no }} · net AED {{ max_amount }}</p>
+      </div>
+      <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+      </button>
+    </div>
+    <div class="scr-modal-body">
+      {% include "rental/partials/credit_note_amount.html" with max_amount=max_amount tax_percentage=invoice.tax_percentage %}
+      <div class="scr-field">
+        <label class="scr-label" for="cn-approve-remarks">Remarks</label>
+        <textarea id="cn-approve-remarks" class="scr-input scr-textarea" rows="3" maxlength="500" data-cn-remarks></textarea>
+      </div>
+    </div>
+    <div class="scr-modal-foot">
+      <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+      <button type="button" class="scr-btn-primary" data-cn-go="approve">Approve</button>
+    </div>
+  </div>
+
+  <div class="scr-modal-veil" data-scr-modal-veil="credit-note-reject" hidden></div>
+  <div class="scr-modal" data-scr-modal="credit-note-reject" hidden>
+    <div class="scr-modal-head">
+      <div>
+        <div class="scr-modal-title">Reject credit note request</div>
+        <p class="scr-modal-sub">The tablet can ask again after a rejection.</p>
+      </div>
+      <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+      </button>
+    </div>
+    <div class="scr-modal-body">
+      <div class="scr-field">
+        <label class="scr-label" for="cn-reject-remarks">Reason for rejecting</label>
+        <textarea id="cn-reject-remarks" class="scr-input scr-textarea" rows="3" maxlength="500" data-cn-remarks></textarea>
+      </div>
+    </div>
+    <div class="scr-modal-foot">
+      <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+      <button type="button" class="scr-btn-danger" data-cn-go="reject">Reject</button>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{% comment %}Outside .scr on purpose: the screen-wide table rules must not reach the receipt.{% endcomment %}
+{% include "rental/partials/invoice_print_modal.html" with print_noun="Credit note" %}
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}

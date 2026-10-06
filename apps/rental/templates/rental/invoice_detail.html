@@ -13,6 +13,7 @@
 {{ block.super }}
 <script src="{% static 'js/byky-screen.js' %}"></script>
 <script src="{% static 'js/byky-invoice-print.js' %}"></script>
+<script src="{% static 'js/byky-credit-note.js' %}"></script>
 {% endblock page_js %}
 
 {% block content %}
@@ -32,6 +33,9 @@
     </div>
     <div class="scr-head-actions">
       <a href="{{ list_url }}" class="scr-btn-secondary">Back</a>
+      {% if can_issue_credit_note %}
+      <button type="button" class="scr-btn-secondary" data-scr-modal-open="credit-note-issue">Issue credit note</button>
+      {% endif %}
       <button type="button" class="scr-btn" data-invoice-receipt="{{ bill.receipt_url }}" data-invoice-no="{{ bill.invoice_no }}">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6M6 18H4a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-2M6 14h12v7H6z"></path></svg>
         Print
@@ -51,6 +55,7 @@
           <div class="scr-detail-row"><span class="scr-detail-label">Tablet</span><span class="scr-detail-value">{{ bill.tablet }}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Opened</span><span class="scr-detail-value">{{ bill.starting_time }} · {{ bill.open_by }}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Closed</span><span class="scr-detail-value">{{ bill.closing_time }} · {{ bill.closed_by }}</span></div>
+          {% if bill.credit_note %}<div class="scr-detail-row"><span class="scr-detail-label">Credit Note</span><span class="scr-detail-value"><a class="scr-link-blue" href="{{ bill.credit_note.url }}">{{ bill.credit_note.label }}</a>{% if bill.credit_note.net_amount is not None %} · AED {{ bill.credit_note.net_amount }}{% endif %} · {{ bill.credit_note.status_label }}</span></div>{% endif %}
         </div>
       </div>
     </div>
@@ -142,4 +147,32 @@
 
 {% comment %}Outside .scr on purpose: the screen-wide table rules (.scr th / td) must not reach the receipt.{% endcomment %}
 {% include "rental/partials/invoice_print_modal.html" %}
+{% if can_issue_credit_note %}
+<div class="scr" data-credit-note data-issue-url="{{ issue_credit_note_url }}">
+  <div class="scr-modal-veil" data-scr-modal-veil="credit-note-issue" hidden></div>
+  <div class="scr-modal" data-scr-modal="credit-note-issue" hidden>
+    <div class="scr-modal-head">
+      <div>
+        <div class="scr-modal-title">Issue credit note</div>
+        <p class="scr-modal-sub">Invoice {{ bill.invoice_no }} · issued at once, no tablet request</p>
+      </div>
+      <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+      </button>
+    </div>
+    <div class="scr-modal-body">
+      {% include "rental/partials/credit_note_amount.html" with max_amount=issue_max tax_percentage=issue_tax_percentage %}
+      <div class="scr-field">
+        <label class="scr-label" for="cn-issue-reason">Reason</label>
+        <textarea id="cn-issue-reason" class="scr-input scr-textarea" rows="3" maxlength="500" data-cn-reason></textarea>
+      </div>
+    </div>
+    <div class="scr-modal-foot">
+      <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+      <button type="button" class="scr-btn-primary" data-cn-go="issue">Issue</button>
+    </div>
+  </div>
+</div>
+{% include "byky/partials/message_modal.html" %}
+{% endif %}
 {% endblock %}

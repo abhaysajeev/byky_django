@@ -21,6 +21,9 @@ from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
 from apps.rental import drawers, forms, scoping
 from apps.rental.models import (
+    CREDIT_NOTE_LIVE,
+    CreditNoteSource,
+    CreditNoteStatus,
     Customer,
     Gender,
     IdType,
@@ -36,7 +39,7 @@ from core.timezones import business_date_for, zone_for
 from theme import drawers as theme_drawers
 from theme.views import ThemedTemplateView
 
-ACTIONS = ("create", "read", "update", "delete", "print")
+ACTIONS = ("create", "read", "update", "delete", "print", "approve")
 
 
 class RentalScreenView(PagePermissionMixin, ThemedTemplateView):
@@ -397,9 +400,23 @@ class OrderDetailView(RentalScreenView):
                 for event in order.events.select_related("user", "device", "item__vehicle", "new_item__vehicle")
                 .order_by("happened_at", "received_at")
             ],
+            "credit_note": credit_note_link(order),
             "list_url": reverse("rental-order-list"),
         })
         return context
+
+
+def credit_note_link(order):
+    """The order's credit note -- waiting or issued -- for the order and
+    invoice pages: number (or "Requested"), amount, status and its page."""
+    note = order.credit_notes.filter(status__in=CREDIT_NOTE_LIVE).first()
+    if note is None:
+        return None
+    return {
+        "label": note.credit_note_no or "Requested", "status": note.status, "status_label": note.get_status_display(),
+        "net_amount": note.net_amount, "tax_amount": note.tax_amount,
+        "url": reverse("rental-credit-note-detail", args=[note.pk]),
+    }
 
 
 # -- Invoices (read-only: issued at settle, never edited) ---------------------------
@@ -468,6 +485,7 @@ def _receipt(invoice, zone):
         "payments": invoice.payments,
         "order_no": order.order_no, "tablet": invoice.device.device_registration_id,
         "receipt_url": reverse("rental-invoice-receipt", args=[invoice.pk]),
+        "credit_note": credit_note_link(order),
     }
 
 
@@ -549,9 +567,156 @@ class InvoiceDetailView(RentalScreenView):
         invoice = _invoices_for_receipt(self.request.user).filter(pk=self.kwargs["pk"]).first()
         if invoice is None:
             raise Http404("No such invoice.")
+        bill = _receipt(invoice, zone_for(getattr(self.request.user, "company", None)))
         context.update({
-            "bill": _receipt(invoice, zone_for(getattr(self.request.user, "company", None))),
+            "bill": bill,
             "list_url": reverse("rental-invoice-list"),
             "order_url": reverse("rental-order-detail", args=[invoice.order_id]),
+            "can_issue_credit_note": bill["credit_note"] is None
+            and has_permission(self.request.user, "rental.credit_note", "create"),
+            "issue_credit_note_url": reverse("rental-credit-note-issue", args=[invoice.pk]),
+            "issue_max": invoice.order.net_amount,
+            "issue_tax_percentage": invoice.tax_percentage,
         })
         return context
+
+
+# -- Credit notes (requested on a tablet or issued here; apps/rental/credit_notes.py) --
+
+CREDIT_NOTES_PER_PAGE = 50
+# The list's tabs, one per state -- as the Card Discount Approval screen.
+CREDIT_NOTE_TABS = [
+    (CreditNoteStatus.PENDING, "Pending"), (CreditNoteStatus.APPROVED, "Approved"),
+    (CreditNoteStatus.REJECTED, "Rejected"), (CreditNoteStatus.CANCELLED, "Cancelled"),
+]
+
+
+def _credit_notes(request, zone):
+    """The credit notes the list's filters match, every state -- the tab
+    picks the state, so its counts come from the same filters."""
+    params = request.GET
+    notes = scoping.credit_notes_for(request.user).select_related("order", "invoice", "branch")
+    text = params.get("q", "").strip()
+    if text:
+        notes = notes.filter(Q(order__order_no__icontains=text) | Q(credit_note_no__icontains=text)
+                             | Q(invoice__customer_name__icontains=text)
+                             | Q(invoice__customer_mobile__icontains=text))
+    if params.get("source") in CreditNoteSource.values:
+        notes = notes.filter(source=params["source"])
+    if params.get("branch", "").isdigit():
+        notes = notes.filter(branch_id=int(params["branch"]))
+    start, end = _date_param(params.get("from")), _date_param(params.get("to"))
+    if start:
+        notes = notes.filter(created_on__gte=_day_bounds(start, zone)[0])
+    if end:
+        notes = notes.filter(created_on__lt=_day_bounds(end, zone)[1])
+    return notes
+
+
+class CreditNoteListView(RentalScreenView):
+    template_name = "rental/credit_note_list.html"
+    page_code = "rental.credit_note"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user, params = self.request.user, self.request.GET
+        zone = zone_for(getattr(user, "company", None))
+        tab = params.get("tab", CreditNoteStatus.PENDING)
+        if tab not in dict(CREDIT_NOTE_TABS):
+            tab = CreditNoteStatus.PENDING
+        notes = _credit_notes(self.request, zone)
+        counts = dict(notes.order_by().values_list("status").annotate(n=Count("pk")))
+        page = Paginator(notes.filter(status=tab).order_by("-created_on"),
+                         CREDIT_NOTES_PER_PAGE).get_page(params.get("page"))
+        # Tabs keep the other filters; the pager keeps the tab too.
+        filters = params.copy()
+        for key in ("page", "tab"):
+            filters.pop(key, None)
+        query = filters.copy()
+        query["tab"] = tab
+        context.update({
+            "tab": tab,
+            "tab_label": dict(CREDIT_NOTE_TABS)[tab],
+            "tabs": [{"value": value, "label": label, "count": counts.get(value, 0)}
+                     for value, label in CREDIT_NOTE_TABS],
+            "filter_query": filters.urlencode(),
+            "rows": [
+                {
+                    "number": note.credit_note_no or "Request", "created_on": note.created_on.astimezone(zone),
+                    "invoice_no": note.invoice.invoice_no, "customer": note.invoice.customer_name,
+                    "mobile": note.invoice.customer_mobile, "station": note.branch.name,
+                    "source": note.source, "source_label": "Tablet" if note.source == CreditNoteSource.DEVICE
+                    else "Web", "net_amount": note.net_amount, "status": note.status,
+                    "status_label": note.get_status_display(),
+                    "detail_url": reverse("rental-credit-note-detail", args=[note.pk]),
+                }
+                for note in page.object_list
+            ],
+            "page": page, "query": query.urlencode(), "params": params,
+            "filtered": any(params.get(k) for k in ("q", "source", "branch", "from", "to")),
+            "branches": list(branches_for(user).filter(is_active=True).order_by("name").values("id", "name")),
+        })
+        return context
+
+
+def _credit_note_for(user, pk):
+    note = (scoping.credit_notes_for(user)
+            .select_related("order", "invoice", "branch", "device", "requested_by", "decided_by", "created_by")
+            .filter(pk=pk).first())
+    if note is None:
+        raise Http404("No such credit note.")
+    return note
+
+
+class CreditNoteDetailView(RentalScreenView):
+    template_name = "rental/credit_note_detail.html"
+    page_code = "rental.credit_note"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        zone = zone_for(getattr(user, "company", None))
+        note = _credit_note_for(user, self.kwargs["pk"])
+        order, invoice = note.order, note.invoice
+
+        def local(moment):
+            return moment.astimezone(zone) if moment else None
+
+        context.update({
+            "note": note,
+            "requested_at": local(note.requested_at), "decided_at": local(note.decided_at),
+            "created_on": local(note.created_on),
+            "requested_by": note.requested_by.display_name if note.requested_by_id else "",
+            "tablet": note.device.device_registration_id if note.device_id else "",
+            "decided_by": note.decided_by.display_name if note.decided_by_id else "",
+            "invoice": invoice, "invoice_issued_at": local(invoice.issued_at), "order": order,
+            "paid_amount": order.paid_amount,
+            "invoice_url": reverse("rental-invoice-detail", args=[invoice.pk]),
+            "order_url": reverse("rental-order-detail", args=[order.pk]),
+            "list_url": reverse("rental-credit-note-list"),
+            "approve_url": reverse("rental-credit-note-approve", args=[note.pk]),
+            "reject_url": reverse("rental-credit-note-reject", args=[note.pk]),
+            "receipt_url": reverse("rental-credit-note-receipt", args=[note.pk]),
+            "max_amount": order.net_amount,
+        })
+        return context
+
+
+class CreditNoteReceiptView(PagePermissionMixin, View):
+    """The printed credit note alone -- an HTML fragment for the print preview."""
+
+    page_code = "rental.credit_note"
+    required_action = "print"
+
+    def get(self, request, pk):
+        note = _credit_note_for(request.user, pk)
+        if note.status != CreditNoteStatus.APPROVED:
+            raise Http404("Only an issued credit note prints.")
+        zone = zone_for(getattr(request.user, "company", None))
+        invoice = note.invoice
+        return render(request, "rental/partials/credit_note_receipt.html", {
+            "note": note, "invoice": invoice, "date": note.decided_at.astimezone(zone).strftime("%d-%m-%Y"),
+            "invoice_date": invoice.issued_at.astimezone(zone).strftime("%d-%m-%Y"),
+            "emirate": invoice.branch.location.state.name, "issued_by": note.decided_by.display_name
+            if note.decided_by_id else "—",
+        })
