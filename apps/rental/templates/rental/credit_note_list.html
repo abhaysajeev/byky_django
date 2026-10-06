@@ -1,0 +1,106 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Credit Notes - Rental{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+{% comment %}
+Credit notes: a tablet's requests waiting for a decision (first), and every
+credit note issued -- approved requests and those issued on an invoice here.
+The row opens its page, where it is approved, rejected or printed.
+{% endcomment %}
+<div class="scr">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Rental</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Credit Notes</b>
+      </div>
+      <h1 class="scr-title">Credit Notes</h1>
+      <p class="scr-sub">Partial refunds on settled orders: tablet requests to decide, and credit notes issued.</p>
+    </div>
+  </div>
+
+  <div class="scr-card" data-scr-server-paged>
+    <form method="get" class="scr-toolbar scr-mon-toolbar" data-scr-autosubmit>
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="text" name="q" value="{{ params.q }}" placeholder="Order, credit note, customer or phone" aria-label="Search" />
+      </div>
+      <div class="scr-mon-dates">
+        <input type="date" name="from" class="scr-input" value="{{ params.from }}" aria-label="From" title="From" />
+        <span>to</span>
+        <input type="date" name="to" class="scr-input" value="{{ params.to }}" aria-label="To" title="To" />
+      </div>
+      <select name="status" class="scr-input scr-list-select" aria-label="Status">
+        <option value="">All status</option>
+        {% for s in statuses %}<option value="{{ s.id }}"{% if params.status == s.id %} selected{% endif %}>{{ s.name }}</option>{% endfor %}
+      </select>
+      <select name="source" class="scr-input scr-list-select" aria-label="Source">
+        <option value="">Tablet and web</option>
+        <option value="device"{% if params.source == "device" %} selected{% endif %}>Tablet request</option>
+        <option value="web"{% if params.source == "web" %} selected{% endif %}>Issued on the web</option>
+      </select>
+      <select name="branch" class="scr-input scr-list-select" aria-label="Station">
+        <option value="">All stations</option>
+        {% for b in branches %}<option value="{{ b.id }}"{% if params.branch == b.id|stringformat:"s" %} selected{% endif %}>{{ b.name }}</option>{% endfor %}
+      </select>
+      <button type="submit" class="scr-btn">Filter</button>
+      {% if filtered %}<a href="{% url 'rental-credit-note-list' %}" class="scr-btn-secondary">Clear</a>{% endif %}
+      <span class="scr-toolbar-count">{{ page.paginator.count }} credit note{{ page.paginator.count|pluralize }}</span>
+    </form>
+
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Credit Note</th>
+            <th>Invoice</th>
+            <th>Customer</th>
+            <th>Station</th>
+            <th>Amount</th>
+            <th>Status</th>
+            <th class="scr-th-actions"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr class="scr-mon-row" data-scr-href="{{ r.detail_url }}">
+            <td><a class="scr-mon-time" href="{{ r.detail_url }}">{{ r.number }}<span>{{ r.created_on|date:"d M Y, H:i" }} · {{ r.source_label }}</span></a></td>
+            <td class="scr-state">{{ r.invoice_no }}</td>
+            <td><div class="scr-co-name">{{ r.customer|default:"—" }}</div><div class="scr-contact-sub">{{ r.mobile }}</div></td>
+            <td class="scr-state">{{ r.station }}</td>
+            <td class="scr-state">{% if r.net_amount is not None %}AED {{ r.net_amount }}{% else %}—{% endif %}</td>
+            <td>{% include "rental/partials/credit_note_status.html" with status=r.status %}</td>
+            <td>
+              <div class="scr-row-actions">
+                <a class="scr-icon-btn" href="{{ r.detail_url }}" title="View credit note" aria-label="View credit note {{ r.number }}">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                </a>
+              </div>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7" style="padding:0"><div class="scr-empty"><div><div class="scr-empty-title">{% if filtered %}No credit notes match{% else %}No credit notes yet{% endif %}</div><p class="scr-empty-sub">Tablets ask for them on settled orders; one can also be issued from an invoice.</p></div></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% include "byky/partials/server_pager.html" %}
+  </div>
+
+</div>
+{% endblock %}

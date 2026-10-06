@@ -7,13 +7,13 @@ puts only the receipt on paper.
 <div class="scr-modal-veil no-print" data-scr-modal-veil="invoice-print" hidden>
   <div class="bill-loader" data-invoice-loader role="status" aria-live="polite" hidden>
     <span class="bill-loader-spin" aria-hidden="true"></span>
-    Loading invoice…
+    Loading {{ print_noun|default:"invoice"|lower }}…
   </div>
 </div>
 <div class="scr-modal bill-modal" data-scr-modal="invoice-print" data-invoice-modal hidden role="dialog" aria-modal="true" aria-labelledby="invoice-print-title">
   <div class="scr-modal-head no-print">
     <div>
-      <div class="scr-modal-title" id="invoice-print-title">Invoice <span data-invoice-modal-no></span></div>
+      <div class="scr-modal-title" id="invoice-print-title">{{ print_noun|default:"Invoice" }} <span data-invoice-modal-no></span></div>
       <p class="scr-modal-sub">Print preview · prints at the station receipt width (100 mm)</p>
     </div>
     <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
@@ -21,7 +21,7 @@ puts only the receipt on paper.
     </button>
   </div>
   <div class="scr-modal-body" data-invoice-modal-body>
-    <div class="bill-state">Loading the invoice…</div>
+    <div class="bill-state">Loading the {{ print_noun|default:"invoice"|lower }}…</div>
   </div>
   <div class="scr-modal-foot no-print" style="justify-content:flex-end">
     <button type="button" class="bill-btn" data-scr-modal-close>Close</button>

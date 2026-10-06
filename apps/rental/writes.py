@@ -9,11 +9,13 @@ more than the generic path handles.
 from django.db import transaction
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
+from django.urls import reverse
 
+from apps.company.scoping import companies_for
 from apps.company.writes import WriteView, _errors, _payload
-from apps.rental import services
+from apps.rental import credit_notes, services
 from apps.rental.forms import CustomerForm
-from apps.rental.models import Customer
+from apps.rental.models import CreditNote, Customer
 from apps.rental.scoping import customers_for
 
 
@@ -45,3 +47,59 @@ class CustomerSave(WriteView):
             customer.save()
 
         return JsonResponse({"ok": True, "pk": customer.pk, "message": "Customer saved."})
+
+
+# -- Credit notes ----------------------------------------------------------------------
+
+
+class _CreditNoteWrite(WriteView):
+    model = CreditNote
+    page_code = "rental.credit_note"
+    action = "approve"
+
+    def company_ids(self):
+        return list(companies_for(self.request.user).values_list("id", flat=True))
+
+    def answer(self, act):
+        if not self.may(self.action):
+            return self.refused()
+        try:
+            note = act(_payload(self.request))
+        except credit_notes.CreditNoteRefused as refused:
+            return JsonResponse({"ok": False, "code": "invalid", "errors": [{"field": "", "message": str(refused)}]},
+                                status=400)
+        return JsonResponse({"ok": True, "message": self.done(note),
+                             "redirect": reverse("rental-credit-note-detail", args=[note.pk])})
+
+
+class CreditNoteApprove(_CreditNoteWrite):
+    """Issue a tablet's request with the amount typed here."""
+
+    def done(self, note):
+        return f"Credit note {note.credit_note_no} issued."
+
+    def post(self, request, pk):
+        return self.answer(lambda data: credit_notes.approve(
+            request.user, pk, self.company_ids(), data.get("net_amount"), str(data.get("remarks") or "")))
+
+
+class CreditNoteReject(_CreditNoteWrite):
+    def done(self, note):
+        return "Credit note request rejected."
+
+    def post(self, request, pk):
+        return self.answer(lambda data: credit_notes.reject(
+            request.user, pk, self.company_ids(), str(data.get("remarks") or "")))
+
+
+class CreditNoteIssue(_CreditNoteWrite):
+    """Issue a credit note on an invoice directly, with no tablet request."""
+
+    action = "create"
+
+    def done(self, note):
+        return f"Credit note {note.credit_note_no} issued."
+
+    def post(self, request, invoice_pk):
+        return self.answer(lambda data: credit_notes.issue_directly(
+            request.user, invoice_pk, self.company_ids(), data.get("net_amount"), str(data.get("reason") or "")))

@@ -331,3 +331,34 @@ class OrderSettleRequest(serializers.Serializer):
         if _repeated(payment["sync_id"] for payment in payments):
             raise serializers.ValidationError("Each payment needs its own sync_id.")
         return payments
+
+
+class CreditNoteRequest(serializers.Serializer):
+    """A tablet asks for a credit note on a settled order. `sync_id` is this
+    call's id and becomes the credit note's id; the amount is set on the web."""
+
+    sync_id = uuid7_field()
+    order_id = _existing_id()
+    requested_at = datetime_field()
+    reason = serializers.CharField(max_length=500, required=False, allow_blank=True,
+                                   error_messages={"max_length": "must be at most 500 characters"})
+
+
+class CreditNoteCancelRequest(serializers.Serializer):
+    """A tablet withdraws its request while it is still waiting."""
+
+    sync_id = uuid7_field()
+    credit_note_id = _existing_id()
+    cancelled_at = datetime_field()
+
+
+class CreditNoteStatusRequest(serializers.Serializer):
+    """Every credit note on these orders -- requested on a tablet or issued on
+    the web."""
+
+    order_ids = serializers.ListField(
+        child=serializers.UUIDField(error_messages={"invalid": "must be an order's sync_id"}),
+        min_length=1, max_length=100,
+        error_messages={**REQUIRED, "min_length": "send at least one order_id",
+                        "max_length": "send at most 100 order_ids", "not_a_list": "must be a list"},
+    )

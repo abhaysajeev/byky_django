@@ -1,6 +1,6 @@
-"""Which customers, orders and invoices a user may see."""
+"""Which customers, orders, invoices and credit notes a user may see."""
 
-from apps.rental.models import Customer, Invoice, Order
+from apps.rental.models import CreditNote, Customer, Invoice, Order
 from core.scoping import scoped_to
 
 
@@ -14,3 +14,7 @@ def orders_for(user):
 
 def invoices_for(user):
     return scoped_to(Invoice.objects.all(), user)
+
+
+def credit_notes_for(user):
+    return scoped_to(CreditNote.objects.all(), user)

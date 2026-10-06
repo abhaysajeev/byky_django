@@ -76,6 +76,12 @@
     <span>NET TOTAL :</span>
     <span>AED {{ bill.net_amount }}</span>
   </div>
+  {% if bill.credit_note.status == "approved" %}
+  <div class="bill-row2">
+    <div class="col-a"><span class="bill-kv-label">Credit Note</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">{{ bill.credit_note.label }}</span></div>
+    <div class="col-b"><span class="bill-kv-label">Credited</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ bill.credit_note.net_amount }}</span></div>
+  </div>
+  {% endif %}
 
   <hr class="bill-rule" />
 
