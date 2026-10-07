@@ -41,7 +41,7 @@ def test_a_vehicle_back_on_time_closes_its_line(client, token, booked):
     assert body["code"] == "ok", body
     line = next(item for item in body["data"]["items"] if item["sync_id"] == booked["items"][0]["sync_id"])
     assert (line["status"], line["end_time"], line["run_minutes"]) == ("returned", "2026-10-02 17:00:00", 60)
-    assert (line["base_fare"], line["overtime_amount"], line["total_amount"]) == ("50.00", "0.00", "50.00")
+    assert (line["base_fare"], line["overtime_amount"], line["total_amount"]) == ("50.000", "0.000", "50.000")
     assert body["data"]["items_out"] == 1
     # Still no bill: that comes at settle.
     assert (body["data"]["status"], body["data"]["net_amount"]) == ("active", None)

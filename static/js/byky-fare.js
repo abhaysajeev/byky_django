@@ -5,7 +5,7 @@
    the Test fare answer all come from the server's check endpoint
    (apps.fare.services.check), which runs the same code as the save. The
    browser only draws, keeps number fields clean as they are typed (digits
-   only, no leading zeros, two decimals), and checks that a time looks like
+   only, no leading zeros, three decimals), and checks that a time looks like
    HH:MM -- the server checks all of it again. */
 (function () {
   'use strict';
@@ -97,7 +97,7 @@
     var end = rule.end === '00:00' ? '24:00' : rule.end;
     return rule.start === '00:00' && end === '24:00' ? 'All day' : rule.start + ' – ' + end;
   }
-  function money(value) { var n = parseFloat(value); return isNaN(n) ? '—' : n.toFixed(2); }
+  function money(value) { var n = parseFloat(value); return isNaN(n) ? '—' : n.toFixed(3); }
 
   // -- Static fields ---------------------------------------------------------
 
@@ -123,7 +123,7 @@
       var minutes = f[2] === 'min';
       var attrs = minutes
         ? 'inputmode="numeric" maxlength="4" data-num="minutes" data-min="' + f[3] + '" data-max="' + MAX_MINUTES + '" placeholder="0"'
-        : 'inputmode="decimal" maxlength="13" data-num="money" placeholder="0.00"';
+        : 'inputmode="decimal" maxlength="14" data-num="money" placeholder="0.000"';
       return '<div class="scr-field"><label class="scr-label" for="' + id + '">' + f[1] + ' (' + f[2] + ')' +
         '<span class="scr-required">*</span></label><input id="' + id + '" class="scr-input" autocomplete="off" ' + attrs +
         ' data-price="' + f[0] + '" value="' + esc(price[f[0]]) + '" /></div>' +
@@ -371,7 +371,7 @@
 
   // -- Number fields -------------------------------------------------------------
   // Cleaned as they are typed, so "010" never happens: minutes keep digits
-  // only and lose leading zeros; money keeps one point and two decimals.
+  // only and lose leading zeros; money keeps one point and three decimals.
 
   function cleanNumber(el) {
     var v = el.value;
@@ -380,14 +380,14 @@
     } else {
       v = v.replace(/[^\d.]/g, '');
       var dot = v.indexOf('.');
-      if (dot !== -1) v = v.slice(0, dot + 1) + v.slice(dot + 1).replace(/\./g, '').slice(0, 2);
+      if (dot !== -1) v = v.slice(0, dot + 1) + v.slice(dot + 1).replace(/\./g, '').slice(0, 3);
       v = v.replace(/^0+(?=\d)/, '');
       if (v.charAt(0) === '.') v = '0' + v;
     }
     if (v !== el.value) el.value = v;
   }
 
-  /* '' when fine, else what is wrong. Money is tidied to two decimals. */
+  /* '' when fine, else what is wrong. Money is tidied to three decimals. */
   function numberProblem(el) {
     var v = el.value.trim();
     if (!v) return 'Required.';
@@ -417,7 +417,7 @@
   function checkNumber(el) {
     var problem = numberProblem(el);
     if (!problem && el.dataset.num === 'money') {
-      var tidy = parseFloat(el.value).toFixed(2);
+      var tidy = parseFloat(el.value).toFixed(3);
       if (tidy !== el.value) { el.value = tidy; el.dispatchEvent(new Event('input', { bubbles: true })); }
     }
     markNumber(el, problem);

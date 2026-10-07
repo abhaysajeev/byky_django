@@ -454,4 +454,4 @@ def test_the_station_flags_are_saved(client_in, world):
     assert response.status_code == 200, response.content
     branch = Branch.objects.get(short_code="C1")
     assert (branch.is_hotel, branch.accepts_app_payment, branch.is_multi_device, branch.allows_test_ride,
-            str(branch.hotel_commission)) == (True, True, True, True, "12.50")
+            str(branch.hotel_commission)) == (True, True, True, True, "12.500")

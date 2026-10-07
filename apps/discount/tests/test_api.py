@@ -399,7 +399,7 @@ def test_a_pending_request(client, world, token, requested):
     assert body["data"] == {
         "sync_id": data["sync_id"], "order_id": data["order_id"], "status": "pending",
         "card_discount_id": requested["current"].pk, "card_type_name": "Corporate", "card_grade_name": "Gold",
-        "bill_amount": "120.00", "discount_percent": "15.00", "discount_amount": "18.00", "net_amount": "102.00",
+        "bill_amount": "120.000", "discount_percent": "15.00", "discount_amount": "18.000", "net_amount": "102.000",
         "requested_at": "2026-09-30 17:05:00", "decided_at": None, "remarks": "",
     }
     assert shape({**body["data"], "decided_at": "x"}) == shape(api._STATUS_SAMPLE)

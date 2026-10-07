@@ -128,16 +128,16 @@ def test_the_days_fares_come_whole_in_first_match_order(client, world, token):
     assert [f["fare_id"] for f in package["fares"]] == [own.pk, fare.pk]          # the station's first
     company = package["fares"][1]
     assert set(company) == {"fare_id", "version", "valid_from", "valid_to", "price", "special_prices", "seasons"}
-    assert company["price"] == {"base_fare": "50.00", "grace_minutes": 5, "concurrent_interval_minutes": 10,
-                                "concurrent_fare": "10.00", "concurrent_grace_minutes": 0}
+    assert company["price"] == {"base_fare": "50.000", "grace_minutes": 5, "concurrent_interval_minutes": 10,
+                                "concurrent_fare": "10.000", "concurrent_grace_minutes": 0}
     order = [(r["kind"], r["start"], r["end"]) for r in company["special_prices"]]
     assert order == [("single_date", "12:00", "22:00"), ("selected_days", "14:00", "24:00"),
                      ("every_day", "12:00", "14:00"), ("every_day", "08:00", "20:00")]
     assert company["special_prices"][1] == {
         "id": company["special_prices"][1]["id"], "kind": "selected_days", "on_date": None,
         "weekdays": [5, 6], "start": "14:00", "end": "24:00",
-        "price": {"base_fare": "50.00", "grace_minutes": 5, "concurrent_interval_minutes": 10,
-                  "concurrent_fare": "10.00", "concurrent_grace_minutes": 0},
+        "price": {"base_fare": "50.000", "grace_minutes": 5, "concurrent_interval_minutes": 10,
+                  "concurrent_fare": "10.000", "concurrent_grace_minutes": 0},
     }
     assert [s["name"] for s in company["seasons"]] == ["Eid", "Summer"]            # the shorter first
     assert company["seasons"][1]["special_prices"][0]["start"] == "16:00"

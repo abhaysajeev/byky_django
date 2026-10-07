@@ -217,9 +217,9 @@ class CardDiscountClaim(TimeStampedModel):
     card_photo = models.CharField(max_length=500, blank=True)
 
     order = models.ForeignKey("rental.Order", on_delete=models.PROTECT, related_name="card_claims")
-    bill_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
-    discount_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
-    net_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    bill_amount = models.DecimalField(max_digits=13, decimal_places=3, null=True, blank=True)
+    discount_amount = models.DecimalField(max_digits=13, decimal_places=3, null=True, blank=True)
+    net_amount = models.DecimalField(max_digits=13, decimal_places=3, null=True, blank=True)
     branch = models.ForeignKey("company.Branch", null=True, blank=True, on_delete=models.PROTECT,
                                related_name="card_claims")
     requested_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT,

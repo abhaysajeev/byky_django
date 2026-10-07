@@ -139,23 +139,23 @@ def test_a_decided_request_cannot_be_cancelled(client, token, settled, web):
 def test_status_by_order_shows_tablet_and_web_credit_notes(client, token, settled, web):
     request_data = ask(settled)
     call(client, REQUEST, request_data, token=token)
-    post(web, f"/rental/credit-note/{request_data['sync_id']}/approve/", {"net_amount": "21.00", "remarks": "Half"})
+    post(web, f"/rental/credit-note/{request_data['sync_id']}/approve/", {"net_amount": "21.000", "remarks": "Half"})
 
     body = call(client, STATUS, {"order_ids": [str(settled.pk), str(uuid7())]}, token=token).json()
 
     assert body["code"] == "ok", body
     [note] = body["data"]["credit_notes"]
     assert (note["status"], note["source"], note["credit_note_no"]) == ("approved", "device", f"{settled.order_no}CN")
-    assert (note["net_amount"], note["tax_amount"], note["taxable_amount"]) == ("21.00", "1.00", "20.00")
+    assert (note["net_amount"], note["tax_amount"], note["taxable_amount"]) == ("21.000", "1.000", "20.000")
     assert note["decision_remark"] == "Half"
 
 
 def test_status_sees_a_credit_note_issued_on_the_web(client, token, settled, web):
-    response = post(web, f"/rental/credit-note/issue/{settled.invoice.pk}/", {"net_amount": "10.50", "reason": "Call"})
+    response = post(web, f"/rental/credit-note/issue/{settled.invoice.pk}/", {"net_amount": "10.500", "reason": "Call"})
     assert response.json()["ok"], response.json()
 
     [note] = call(client, STATUS, {"order_ids": [str(settled.pk)]}, token=token).json()["data"]["credit_notes"]
-    assert (note["source"], note["status"], note["net_amount"], note["tax_amount"]) == ("web", "approved", "10.50", "0.50")
+    assert (note["source"], note["status"], note["net_amount"], note["tax_amount"]) == ("web", "approved", "10.500", "0.500")
 
 
 def test_status_needs_order_ids(client, token):
@@ -226,7 +226,8 @@ def test_web_actions_need_their_permission(client, token, settled, web, url, fla
 
 def test_vat_split_adds_back_to_net():
     assert credit_notes.vat_split(Decimal("21.00"), Decimal("5")) == (Decimal("1.00"), Decimal("20.00"))
-    assert credit_notes.vat_split(Decimal("10.01"), Decimal("5")) == (Decimal("0.48"), Decimal("9.53"))
+    assert credit_notes.vat_split(Decimal("10.01"), Decimal("5")) == (Decimal("0.477"), Decimal("9.533"))
+    assert credit_notes.vat_split(Decimal("21.125"), Decimal("5")) == (Decimal("1.006"), Decimal("20.119"))
     assert credit_notes.vat_split(Decimal("10.00"), Decimal("0")) == (Decimal("0.00"), Decimal("10.00"))
 
 

@@ -43,33 +43,49 @@ def set_status(booked, status):
 
 def test_an_extra_advance_by_cash_and_card(client, token, shop, booked):
     request_data = money(booked, shop, entries=[
-        entry(shop), entry(shop, "card", "20.00", reference_no="448901", reference_date="2026-10-02")])
+        entry(shop), entry(shop, "card", "20.000", reference_no="448901", reference_date="2026-10-02")])
 
     body = call(client, PAYMENTS, request_data, token=token).json()
 
     assert body["code"] == "ok", body
-    assert (body["data"]["amount_received"], body["data"]["paid_amount"]) == ("170.00", "170.00")
+    assert (body["data"]["amount_received"], body["data"]["paid_amount"]) == ("170.000", "170.000")
     new = Payment.objects.filter(pk__in=[p["sync_id"] for p in request_data["payments"]]).order_by("amount")
     assert [(p.kind, p.mode.name, p.amount, p.reference_no) for p in new] == [
-        ("advance", "Card", Decimal("20.00"), "448901"), ("advance", "Cash", Decimal("50.00"), "")]
+        ("advance", "Card", Decimal("20.000"), "448901"), ("advance", "Cash", Decimal("50.000"), "")]
     event = OrderEvent.objects.get(pk=request_data["sync_id"])
-    assert (event.action, event.detail) == ("payment", {"kind": "advance", "total": "70.00", "count": 2})
+    assert (event.action, event.detail) == ("payment", {"kind": "advance", "total": "70.000", "count": 2})
 
 
 def test_part_of_an_advance_handed_back(client, token, shop, booked):
-    body = call(client, PAYMENTS, money(booked, shop, "refund", [entry(shop, amount="40.00")]),
+    body = call(client, PAYMENTS, money(booked, shop, "refund", [entry(shop, amount="40.000")]),
                 token=token).json()
 
-    assert (body["code"], body["data"]["amount_refunded"], body["data"]["paid_amount"]) == ("ok", "40.00", "60.00")
+    assert (body["code"], body["data"]["amount_refunded"], body["data"]["paid_amount"]) == ("ok", "40.000", "60.000")
+
+
+def test_amounts_carry_three_decimals(client, token, shop, booked):
+    """AED to the 3rd decimal (7 Oct 2026): stored and answered exactly."""
+    body = call(client, PAYMENTS, money(booked, shop, entries=[entry(shop, amount="10.125")]), token=token).json()
+
+    assert body["code"] == "ok", body
+    assert (body["data"]["amount_received"], body["data"]["paid_amount"]) == ("110.125", "110.125")
+    assert Payment.objects.get(amount=Decimal("10.125")).kind == "advance"
+
+
+def test_a_fourth_decimal_is_refused(client, token, shop, booked):
+    body = call(client, PAYMENTS, money(booked, shop, entries=[entry(shop, amount="10.1255")]), token=token).json()
+
+    assert body["code"] == "invalid_request"
+    assert "at most 3 decimal places" in str(body["data"]["errors"])
 
 
 def test_money_handed_back_after_a_cancel(client, token, shop, booked):
     set_status(booked, OrderStatus.CANCELLED)
 
-    body = call(client, PAYMENTS, money(booked, shop, "refund", [entry(shop, amount="100.00")]),
+    body = call(client, PAYMENTS, money(booked, shop, "refund", [entry(shop, amount="100.000")]),
                 token=token).json()
 
-    assert (body["code"], body["data"]["paid_amount"], body["data"]["payment_status"]) == ("ok", "0.00", None)
+    assert (body["code"], body["data"]["paid_amount"], body["data"]["payment_status"]) == ("ok", "0.000", None)
 
 
 @pytest.mark.parametrize(("status", "kind"), [

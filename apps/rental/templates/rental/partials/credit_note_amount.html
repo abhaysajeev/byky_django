@@ -5,6 +5,6 @@ by Approve on a request and Issue on an invoice.
 {% endcomment %}
 <div class="scr-field" data-cn-amount data-cn-rate="{{ tax_percentage }}" data-cn-max="{{ max_amount }}">
   <label class="scr-label" for="cn-net">Credit amount, VAT included (AED) <span class="scr-required">*</span></label>
-  <input id="cn-net" type="number" class="scr-input" min="0.01" step="0.01" max="{{ max_amount }}" inputmode="decimal" placeholder="0.00" data-cn-net />
+  <input id="cn-net" type="number" class="scr-input" min="0.001" step="0.001" max="{{ max_amount }}" inputmode="decimal" placeholder="0.000" data-cn-net />
   <p class="scr-help" data-cn-split>Up to AED {{ max_amount }} · VAT {{ tax_percentage }}% included</p>
 </div>

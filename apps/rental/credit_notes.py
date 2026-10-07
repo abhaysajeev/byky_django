@@ -33,7 +33,7 @@ from apps.rental.models import (
 from apps.rental.services import OrderRefused, run_once
 from core.ids import uuid7
 
-CENT = Decimal("0.01")
+CENT = Decimal("0.001")          # money is kept to the 3rd decimal
 
 
 class CreditNoteRefused(Exception):
@@ -42,7 +42,7 @@ class CreditNoteRefused(Exception):
 
 def vat_split(net, rate):
     """(tax, taxable) inside a VAT-inclusive `net` at `rate` percent:
-    tax = net x rate / (100 + rate), to the fil; taxable = net - tax, so the
+    tax = net x rate / (100 + rate), to the 3rd decimal; taxable = net - tax, so the
     two always add back to net."""
     net, rate = Decimal(net), Decimal(rate or 0)
     tax = (net * rate / (100 + rate)).quantize(CENT, rounding=ROUND_HALF_UP) if rate else Decimal("0.00")

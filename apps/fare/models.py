@@ -55,10 +55,10 @@ class PricedModel(models.Model):
     a rule. Constraints are added per model (price_checks), since a child's own
     Meta.constraints would replace any declared here."""
 
-    base_fare = models.DecimalField("Basic Fare", max_digits=12, decimal_places=2)
+    base_fare = models.DecimalField("Basic Fare", max_digits=13, decimal_places=3)
     grace_minutes = models.PositiveSmallIntegerField("Grace Period", default=0)
     concurrent_interval_minutes = models.PositiveSmallIntegerField("Concurrent Interval")
-    concurrent_fare = models.DecimalField("Concurrent Fare", max_digits=12, decimal_places=2)
+    concurrent_fare = models.DecimalField("Concurrent Fare", max_digits=13, decimal_places=3)
     concurrent_grace_minutes = models.PositiveSmallIntegerField("Concurrent Grace", default=0)
 
     class Meta:
@@ -337,8 +337,8 @@ class Package(ApprovalMixin, TimeStampedModel):
     inventory_type = models.CharField(
         "Inventory Type", max_length=20, choices=InventoryType.choices, default=InventoryType.VEHICLE_TYPE,
     )
-    lower_value = models.DecimalField("Lower Promotion Value", max_digits=12, decimal_places=2)
-    upper_value = models.DecimalField("Upper Promotion Value", max_digits=12, decimal_places=2)
+    lower_value = models.DecimalField("Lower Promotion Value", max_digits=13, decimal_places=3)
+    upper_value = models.DecimalField("Upper Promotion Value", max_digits=13, decimal_places=3)
 
     promotion_type = models.CharField("Promotion Type", max_length=15, choices=PromotionType.choices)
 
@@ -398,7 +398,7 @@ class PackageItem(models.Model):
     package = models.ForeignKey(Package, on_delete=models.CASCADE, related_name="items")
     vehicle_type = models.ForeignKey("fleet.VehicleType", on_delete=models.PROTECT, related_name="package_items")
     package_minutes = models.PositiveSmallIntegerField()
-    value = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    value = models.DecimalField(max_digits=13, decimal_places=3, null=True, blank=True)
 
     class Meta:
         db_table = "package_item"
@@ -422,7 +422,7 @@ class PackageFreeItem(models.Model):
     package = models.ForeignKey(Package, on_delete=models.CASCADE, related_name="free_items")
     vehicle_type = models.ForeignKey("fleet.VehicleType", on_delete=models.PROTECT, related_name="package_free_items")
     package_minutes = models.PositiveSmallIntegerField()
-    value = models.DecimalField(max_digits=12, decimal_places=2)
+    value = models.DecimalField(max_digits=13, decimal_places=3)
 
     class Meta:
         db_table = "package_free_item"
@@ -452,7 +452,7 @@ class PackageFreeItemTimeSlab(models.Model):
     to_time = models.TimeField()
     vehicle_type = models.ForeignKey("fleet.VehicleType", on_delete=models.PROTECT, related_name="package_time_slabs")
     package_minutes = models.PositiveSmallIntegerField()
-    value = models.DecimalField(max_digits=12, decimal_places=2)
+    value = models.DecimalField(max_digits=13, decimal_places=3)
 
     class Meta:
         db_table = "package_free_item_time_slab"

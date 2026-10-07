@@ -216,7 +216,7 @@ def test_the_check_answers_test_fare_without_saving(world, user):
     sent = data(world, rules=[days("n1", [SAT, SUN], "14:00", "22:00", 80)])
     answer = services.check(user, sent, {"date": "2026-09-26", "time": "15:00"})   # a Saturday
     assert answer["errors"] == []
-    assert answer["test"]["price"]["base_fare"] == "80.00"
+    assert answer["test"]["price"]["base_fare"] == "80.000"
     assert answer["test"]["source"]["label"] == "Selected days · Sun, Sat · 14:00 – 22:00"
     assert [s["from"] for s in answer["test"]["schedule"]] == ["00:00", "14:00", "22:00"]
     assert not Fare.objects.exists()
@@ -297,7 +297,7 @@ def test_package_time_is_one_minute_to_a_day(value):
 
 
 @pytest.mark.parametrize("value,result", [
-    ("50", "50.00"), ("050.5", "50.50"), ("0", "0.00"), ("12.345", None), ("-1", None),
+    ("50", "50.000"), ("050.5", "50.500"), ("0", "0.000"), ("12.345", "12.345"), ("12.3456", None), ("-1", None),
     ("1e3", None), ("abc", None), ("Infinity", None), ("99999999999", None),
 ])
 def test_amounts_are_plain_decimals(value, result):

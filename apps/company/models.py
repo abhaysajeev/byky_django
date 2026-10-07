@@ -256,7 +256,7 @@ class Branch(ApprovalMixin, TimeStampedModel):
     allows_test_ride = models.BooleanField(default=False)
     is_hotel = models.BooleanField(default=False)
     accepts_app_payment = models.BooleanField(default=False)
-    hotel_commission = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    hotel_commission = models.DecimalField(max_digits=13, decimal_places=3, default=0)
 
     departments = models.ManyToManyField(Department, blank=True, related_name="branches")
 

@@ -123,10 +123,10 @@ def test_the_receipt_reads_like_the_printed_tax_invoice(client_in, world, shop, 
     assert (bill["trans_no"], bill["trn"], bill["invoice_no"]) == (231, "100297867200003", invoice.invoice_no)
     [line] = bill["lines"]
     assert (line["sno"], line["vehicle"], line["base_rate"], line["extra_rate"], line["duration"], line["amount"]) == (
-        "01", "MO 41", "50.00/60 MINS", "10.00/15 MINS", "01:12", Decimal("60.00"))
-    assert (bill["taxable_amount"], bill["balance"], bill["time"]) == (Decimal("51.43"), Decimal("0.00"), "01:12")
+        "01", "MO 41", "50.000/60 MINS", "10.000/15 MINS", "01:12", Decimal("60.000"))
+    assert (bill["taxable_amount"], bill["balance"], bill["time"]) == (Decimal("51.430"), Decimal("0.000"), "01:12")
     for text in ("TAX INVOICE", "ABU DHABI CORNICHE 1", "TRN : 100297867200003", "VAT @5.0% incl.", "NET TOTAL",
-                 "AED 54.00", "AED 6.00 (10.00%)", "AED 51.43", "Emirates ID", "784-1990-1234567-1",
+                 "AED 54.000", "AED 6.000 (10.00%)", "AED 51.430", "Emirates ID", "784-1990-1234567-1",
                  "Bike Rental Details"):
         assert text in html, text
 

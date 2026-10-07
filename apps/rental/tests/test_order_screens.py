@@ -163,14 +163,14 @@ def test_the_newest_booking_comes_first_and_the_list_pages(client_in, world, sho
 def test_the_kpis_are_now_and_today(client_in, world, shop):
     make_order(world, shop, "OUT-2", lines=("active", "active"))
     make_order(world, shop, "BACK", lines=())
-    settle(make_order(world, shop, "TODAY-1", lines=()), net="63.00", world=world)
-    settle(make_order(world, shop, "TODAY-2", lines=()), net="40.00", world=world)
-    settle(make_order(world, shop, "YESTERDAY", day=-1, lines=()), net="99.00", day=-1, world=world)
+    settle(make_order(world, shop, "TODAY-1", lines=()), net="63.000", world=world)
+    settle(make_order(world, shop, "TODAY-2", lines=()), net="40.000", world=world)
+    settle(make_order(world, shop, "YESTERDAY", day=-1, lines=()), net="99.000", day=-1, world=world)
 
     kpis = {k["label"]: k["value"] for k in client_in.get(LIST).context["kpis"]}
 
     assert kpis == {"Active orders now": 2, "Vehicles out now": 2, "Settled today": 2,
-                    "Settled revenue today": "AED 103.00"}
+                    "Settled revenue today": "AED 103.000"}
 
 
 def test_the_list_needs_read(client_in):
