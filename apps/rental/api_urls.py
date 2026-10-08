@@ -1,6 +1,7 @@
-"""/api/v1/{app}/customers/... and /api/v1/{app}/orders for the operator app.
-`{app}` is checked by the URL converter in config/urls.py; the views narrow it
-to `operator`."""
+"""/api/v1/{app}/customers/... and /api/v1/{app}/orders for the operator app,
+and /api/v1/{app}/requests/... for the manager app. `{app}` is checked by the
+URL converter in config/urls.py; the views narrow it to `operator` or
+`manager`."""
 
 from django.urls import path
 
@@ -20,4 +21,13 @@ urlpatterns = [
     path("orders/credit-notes", api.CreditNoteRequestView.as_view(), name="api-app-credit-note-request"),
     path("orders/credit-notes/cancel", api.CreditNoteCancelView.as_view(), name="api-app-credit-note-cancel"),
     path("orders/credit-notes/status", api.CreditNoteStatusView.as_view(), name="api-app-credit-note-status"),
+    path("orders/requests", api.OrderRequestView.as_view(), name="api-app-order-request"),
+    path("orders/requests/withdraw", api.OrderRequestWithdrawView.as_view(), name="api-app-order-request-withdraw"),
+    path("orders/requests/used", api.OrderRequestUsedView.as_view(), name="api-app-order-request-used"),
+    path("orders/requests/status", api.OrderRequestStatusView.as_view(), name="api-app-order-request-status"),
+    # Manager app.
+    path("requests/list", api.ManagerRequestListView.as_view(), name="api-app-request-list"),
+    path("requests/approve", api.ManagerRequestApproveView.as_view(), name="api-app-request-approve"),
+    path("requests/reject", api.ManagerRequestRejectView.as_view(), name="api-app-request-reject"),
+    path("requests/revoke", api.ManagerRequestRevokeView.as_view(), name="api-app-request-revoke"),
 ]

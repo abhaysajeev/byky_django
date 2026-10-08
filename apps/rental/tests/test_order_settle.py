@@ -88,7 +88,7 @@ def test_the_design_example_settles_redeems_and_invoices(client, world, token, s
     other = make_claim(approval, shop["ahmed"], status=ClaimStatus.PENDING, order=order)
     request_data = bill(
         returned, shop, tax_amount="4.980", net_amount="104.500",
-        discount={"claim_id": str(approved.pk), "discount_percentage": "5.00", "discount_amount": "5.500"},
+        card_discount={"request_sync_id": str(approved.pk), "discount_percentage": "5.00", "discount_amount": "5.500"},
     )
     request_data["payments"][0]["amount"] = "4.500"
 
@@ -100,8 +100,8 @@ def test_the_design_example_settles_redeems_and_invoices(client, world, token, s
         "completed", "paid", "2026-10-02 17:13:30")
     assert (data["subtotal"], data["tax_amount"], data["rounding_adjustment"], data["net_amount"]) == (
         "110.000", "4.980", "0.000", "104.500")
-    assert data["discount"] == {"claim_id": str(approved.pk), "discount_percentage": "5.00",
-                                "discount_amount": "5.500"}
+    assert data["discount"] == {"source": "card", "request_sync_id": str(approved.pk),
+                                "discount_percentage": "5.00", "discount_amount": "5.500"}
     assert (data["paid_amount"], data["balance_due"]) == ("104.500", "0.000")
     assert data["invoice"] == {"invoice_no": returned["order_no"], "issued_at": "2026-10-02 17:13:30",
                                "net_amount": "104.500"}
@@ -132,7 +132,7 @@ def test_an_automatic_discount_is_recorded_and_an_overpayment_refunded(client, w
     automatic = make_discount(grade, percent="20")
     request_data = bill(
         returned, shop, tax_percentage="0.00", tax_amount="0.000", net_amount="88.000",
-        discount={"card_discount_id": automatic.pk, "card_number": "FAM-0091", "discount_percentage": "20.00",
+        card_discount={"card_discount_id": automatic.pk, "card_number": "FAM-0091", "discount_percentage": "20.00",
                   "discount_amount": "22.000"},
         payments=[{"sync_id": str(uuid7()), "kind": "refund", "payment_mode_id": shop["cash"].pk,
                    "amount": "12.000", "reference_no": "R-17", "reference_date": "2026-10-02",
@@ -145,10 +145,13 @@ def test_an_automatic_discount_is_recorded_and_an_overpayment_refunded(client, w
     assert (claim.status, claim.requires_approval, claim.card_number, claim.discount_amount) == (
         ClaimStatus.REDEEMED, False, "FAM-0091", Decimal("22.000"))
     assert (str(claim.order_id), claim.redeemed_at is not None) == (returned["sync_id"], True)
-    assert (data["discount"]["claim_id"], data["amount_refunded"], data["paid_amount"]) == (
-        str(claim.pk), "12.000", "88.000")
-    # The Swagger example is exactly what a tablet gets.
-    assert shape(data) == shape(api._SETTLED_SAMPLE)
+    # An automatic discount had no request: nothing for request_sync_id.
+    assert (data["discount"]["source"], data["discount"]["request_sync_id"]) == ("card", None)
+    assert (data["amount_refunded"], data["paid_amount"]) == ("12.000", "88.000")
+    # The Swagger example is exactly what a tablet gets (bar the request id).
+    expected = shape(api._SETTLED_SAMPLE)
+    expected["discount"]["request_sync_id"] = "NoneType"
+    assert shape(data) == expected
 
 
 def test_a_direct_rental_is_returned_then_paid_at_settle(client, world, token, shop):
@@ -247,7 +250,7 @@ def test_only_an_approved_request_on_this_order_can_be_redeemed(client, world, t
     claim = make_claim(approval, shop["ahmed"], status=status or ClaimStatus.APPROVED, order=order,
                        when=timezone.now())
     request_data = bill(returned, shop, net_amount="104.50",
-                        discount={"claim_id": str(claim.pk), "discount_percentage": "5.00",
+                        card_discount={"request_sync_id": str(claim.pk), "discount_percentage": "5.00",
                                   "discount_amount": "5.50"})
     request_data["payments"][0]["amount"] = "4.50"
 
@@ -259,7 +262,7 @@ def test_only_an_approved_request_on_this_order_can_be_redeemed(client, world, t
 
 def test_an_unknown_card_discount_is_refused(client, token, shop, returned):
     request_data = bill(returned, shop, net_amount="104.50",
-                        discount={"card_discount_id": 999999, "discount_percentage": "5.00",
+                        card_discount={"card_discount_id": 999999, "discount_percentage": "5.00",
                                   "discount_amount": "5.50"})
     request_data["payments"][0]["amount"] = "4.50"
 
@@ -268,13 +271,14 @@ def test_an_unknown_card_discount_is_refused(client, token, shop, returned):
 
 @pytest.mark.parametrize("discount", [
     {"discount_percentage": "10.00", "discount_amount": "11.00"},
-    {"claim_id": str(uuid7()), "card_discount_id": 1, "discount_percentage": "10.00", "discount_amount": "11.00"},
+    {"request_sync_id": str(uuid7()), "card_discount_id": 1, "discount_percentage": "10.00",
+     "discount_amount": "11.00"},
     {"card_discount_id": 1, "discount_percentage": "0", "discount_amount": "0.00"},
 ], ids=["neither", "both", "zero-percent"])
 def test_the_discount_names_one_source(client, token, shop, returned, discount):
-    body = settle(client, token, bill(returned, shop, discount=discount))
+    body = settle(client, token, bill(returned, shop, card_discount=discount))
 
-    assert body["code"] == "invalid_request" and "discount" in body["data"]["errors"]
+    assert body["code"] == "invalid_request" and "card_discount" in body["data"]["errors"]
 
 
 def test_a_payment_kind_other_than_settlement_or_refund_is_refused(client, token, shop, returned):

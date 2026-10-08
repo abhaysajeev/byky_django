@@ -27,7 +27,7 @@ from apps.discount.models import (
     UsageType,
 )
 from apps.discount.scoping import card_discounts_for, card_grades_for
-from apps.rental.models import Customer, Order
+from apps.rental.models import REQUEST_LIVE, Customer, Order, OrderRequest, OrderRequestKind
 from core.ids import uuid7
 from core.timezones import business_date_for, zone_for
 
@@ -291,8 +291,10 @@ def request_approval(session, values):
     Returns (claim, created): created is False when this sync_id was already
     stored, and the claim carries its current status.
 
-    The bill figures are the device's, stored as sent. The only rule beyond
-    the lookups: one pending request per order at a time.
+    The bill figures are the device's, stored as sent. Beyond the lookups:
+    one pending request per order at a time, and none while the order has a
+    manager discount request waiting or approved (apps/rental/requests.py) --
+    the order row is locked so the two never pass each other.
     """
     company = session.branch.company
     sync_id = values["sync_id"]
@@ -302,9 +304,21 @@ def request_approval(session, values):
             raise DiscountRefused("sync_id_conflict", "That sync_id is already used.", 409)
         return existing, False
 
-    order = Order.objects.filter(pk=values["order_id"], company=company).first()
+    with transaction.atomic():
+        return _request_approval(session, values, company, sync_id)
+
+
+def _request_approval(session, values, company, sync_id):
+    order = Order.objects.select_for_update().filter(pk=values["order_id"], company=company).first()
     if order is None:
         raise DiscountRefused("unknown_order", "No order with that id.", 404)
+    held = set(OrderRequest.objects.filter(
+        order=order, kind__in=[OrderRequestKind.DISCOUNT, OrderRequestKind.COMPLIMENTARY], status__in=REQUEST_LIVE,
+    ).values_list("kind", flat=True))
+    if OrderRequestKind.DISCOUNT in held:
+        raise DiscountRefused("discount_requested", "This order already has a manager discount request.", 409)
+    if OrderRequestKind.COMPLIMENTARY in held:
+        raise DiscountRefused("complimentary_requested", "This order already has a complimentary request.", 409)
     customer = _customer_by_full_number(company, values["full_number"])
     discount = (CardDiscount.objects.select_related("card_grade__card_type")
                 .filter(pk=values["card_discount_id"], company=company).first())
@@ -366,7 +380,7 @@ def redeem_for_order(session, order, discount, *, at, bill_amount, net_amount):
     """The card discount the tablet applied to `order`'s bill, redeemed.
     Returns the claim.
 
-    An approval-mode discount names its approved claim (`claim_id`), which
+    An approval-mode discount names its approved claim (`request_sync_id`), which
     becomes redeemed. An automatic one names the discount
     (`card_discount_id`): there was no request, so a new claim is written,
     redeemed at once -- the claim table is the redemption history the usage
@@ -378,8 +392,9 @@ def redeem_for_order(session, order, discount, *, at, bill_amount, net_amount):
         "bill_amount": bill_amount, "discount_percent": discount["discount_percentage"],
         "discount_amount": discount["discount_amount"], "net_amount": net_amount,
     }
-    if discount.get("claim_id"):
-        claim = CardDiscountClaim.objects.select_for_update().filter(pk=discount["claim_id"], order=order).first()
+    if discount.get("request_sync_id"):
+        claim = (CardDiscountClaim.objects.select_for_update()
+                 .filter(pk=discount["request_sync_id"], order=order).first())
         if claim is None:
             raise RedeemRefused("unknown_card_claim")
         if claim.status != ClaimStatus.APPROVED:

@@ -129,6 +129,8 @@ PAGES = [
     # create = issue directly on the web; approve = approve or reject a tablet's request.
     ("rental.credit_note", "rental", "Credit Notes", "rental-credit-note-list",
      ["create", "read", "print", "approve"], 2, False),
+    # approve = approve, reject or revoke an operator's request (web and manager app).
+    ("rental.request", "rental", "Requests", "rental-request-list", ["read", "approve"], 2, False),
     ("rental.customer", "rental", "Customer", "rental-customer-list", CRUD_PRINT, 2, False),
     ("rental.payment_mode", "rental", "Payment Mode", "rental-payment-mode-list", CRUD_PRINT, 3, False),
     ("rental.privileges", "rental", "Privileges", "rental-privileges", ["read", "update"], 9, False),

@@ -265,7 +265,11 @@ digits only). The bill figures -- `bill_amount`, `discount_percent`,
 `card_photo` is the link to the photo the device uploaded. `requested_at` is
 `YYYY-MM-DD HH:MM:SS`, company time.
 
-One pending request per order at a time.
+One pending request per order at a time, and none while the order has a manager
+discount or complimentary request waiting or approved (`discount_requested`,
+`complimentary_requested`) -- an order takes a
+card discount, a manager discount or a complimentary, never two. Once approved, apply it at
+settle in `card_discount` with this `sync_id` as `request_sync_id`.
 """
 
 
@@ -290,6 +294,8 @@ class ApprovalRequestView(APIView):
             (404, "unknown_card_discount", "No card discount with that id.", {}),
             (403, "customer_blocked", "The customer is blocked.", {}),
             (409, "request_pending", "This order already has a pending approval request.", {}),
+            (409, "discount_requested", "This order already has a manager discount request.", {}),
+            (409, "complimentary_requested", "This order already has a complimentary request.", {}),
             (409, "sync_id_conflict", "That sync_id is already used.", {}),
             (401, "not_authenticated", "Sign in first.", {}),
             (403, "wrong_channel", "Not allowed on this app.", {}),
