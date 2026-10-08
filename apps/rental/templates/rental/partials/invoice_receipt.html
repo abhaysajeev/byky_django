@@ -9,6 +9,7 @@
   </div>
   <div class="bill-title-block">
     <div class="bill-title">TAX INVOICE</div>
+    {% if bill.discount_source == "complimentary" %}<div class="bill-title">COMPLIMENTARY</div>{% endif %}
     <div class="bill-trn">TRN : {{ bill.trn }}</div>
   </div>
 
@@ -62,7 +63,7 @@
   </table>
 
   <div class="bill-row2" style="margin-top:2mm">
-    <div class="col-a"><span class="bill-kv-label">Card Disc.</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ bill.discount_amount }}{% if bill.discount_percentage %} ({{ bill.discount_percentage }}%){% endif %}</span></div>
+    <div class="col-a"><span class="bill-kv-label">{{ bill.discount_label }}</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ bill.discount_amount }}{% if bill.discount_percentage %} ({{ bill.discount_percentage }}%){% endif %}</span></div>
     <div class="col-b"><span class="bill-kv-label">Taxable Amt</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ bill.taxable_amount }}</span></div>
   </div>
   <div class="bill-row2">

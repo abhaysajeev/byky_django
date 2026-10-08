@@ -1,8 +1,9 @@
 /* Requests (apps/rental/templates/rental/request_detail.html). Approve,
    Reject and Revoke each have a dialog (byky-screen.js opens and closes them);
-   this posts the one clicked. Approve takes a rule -- a percentage (up to 100,
-   2 decimals) or an AED amount (3 decimals) -- the same checks as
-   apps/rental/requests.py::parse_rule, which has the last word. */
+   this posts the one clicked. Approving a discount takes a rule -- a
+   percentage (up to 100, 2 decimals) or an AED amount (3 decimals) -- the same
+   checks as apps/rental/requests.py::parse_rule, which has the last word; a
+   complimentary or a reprint is approved with a note only. */
 (function () {
   'use strict';
 
@@ -44,7 +45,8 @@
                   revoke: root.dataset.revokeUrl }[action];
       var note = modal.querySelector('[data-rq-note]');
       var payload = { note: note ? note.value.trim() : '' };
-      if (action === 'approve') {
+      // Only a discount carries a rule; a complimentary or a reprint is approved as it is.
+      if (action === 'approve' && root.dataset.kind === 'discount') {
         payload.discount_type = chosenType();
         payload.discount_value = value.value.trim();
       }

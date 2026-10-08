@@ -23,6 +23,7 @@ urlpatterns = [
     path("orders/credit-notes/status", api.CreditNoteStatusView.as_view(), name="api-app-credit-note-status"),
     path("orders/requests", api.OrderRequestView.as_view(), name="api-app-order-request"),
     path("orders/requests/withdraw", api.OrderRequestWithdrawView.as_view(), name="api-app-order-request-withdraw"),
+    path("orders/requests/used", api.OrderRequestUsedView.as_view(), name="api-app-order-request-used"),
     path("orders/requests/status", api.OrderRequestStatusView.as_view(), name="api-app-order-request-status"),
     # Manager app.
     path("requests/list", api.ManagerRequestListView.as_view(), name="api-app-request-list"),

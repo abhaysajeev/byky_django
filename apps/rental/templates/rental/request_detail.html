@@ -15,7 +15,7 @@
 {% endblock page_js %}
 
 {% block content %}
-<div class="scr" data-order-request data-approve-url="{{ approve_url }}" data-reject-url="{{ reject_url }}" data-revoke-url="{{ revoke_url }}">
+<div class="scr" data-order-request data-kind="{{ req.kind }}" data-approve-url="{{ approve_url }}" data-reject-url="{{ reject_url }}" data-revoke-url="{{ revoke_url }}">
 
   <div class="scr-head">
     <div>
@@ -32,10 +32,10 @@
     <div class="scr-head-actions">
       <a href="{{ list_url }}" class="scr-btn-secondary">Back</a>
       {% if perm.approve %}
-      {% if req.status == "pending" and order_running %}
+      {% if req.status == "pending" and decidable %}
       <button type="button" class="scr-btn-danger" data-scr-modal-open="request-reject">Reject</button>
       <button type="button" class="scr-btn-primary" data-scr-modal-open="request-approve">Approve</button>
-      {% elif req.status == "approved" and order_running %}
+      {% elif req.status == "approved" and order_running and revocable %}
       <button type="button" class="scr-btn-danger" data-scr-modal-open="request-revoke">Revoke</button>
       {% endif %}
       {% endif %}
@@ -57,8 +57,12 @@
           {% if req.decided_at %}
           <div class="scr-detail-row"><span class="scr-detail-label">{% if req.status == "rejected" %}Rejected{% else %}Approved{% endif %}</span><span class="scr-detail-value">{{ decided_at|date:"d M Y, H:i" }}{% if decided_by %} · {{ decided_by }}{% endif %} · {{ req.get_decided_channel_display }}</span></div>
           {% endif %}
-          {% if rule %}
+          {% if req.kind == "discount" and rule %}
           <div class="scr-detail-row"><span class="scr-detail-label"><b>Discount</b></span><span class="scr-detail-value"><b>{{ rule }}</b> · {{ req.get_discount_type_display }}</span></div>
+          {% elif req.kind == "complimentary" %}
+          <div class="scr-detail-row"><span class="scr-detail-label"><b>For</b></span><span class="scr-detail-value"><b>The whole bill</b> · net 0, any advance refunded</span></div>
+          {% elif req.kind == "reprint" %}
+          <div class="scr-detail-row"><span class="scr-detail-label"><b>For</b></span><span class="scr-detail-value"><b>One reprint</b> of the settled bill</span></div>
           {% endif %}
           {% if req.decision_note %}
           <div class="scr-detail-row"><span class="scr-detail-label">Note</span><span class="scr-detail-value scr-mon-wrap">{{ req.decision_note }}</span></div>
@@ -69,6 +73,9 @@
           {% endif %}
           {% if req.closed_at %}
           <div class="scr-detail-row"><span class="scr-detail-label">{% if req.status == "withdrawn" %}Withdrawn{% else %}Closed{% endif %}</span><span class="scr-detail-value">{{ closed_at|date:"d M Y, H:i" }} · {% if req.status == "withdrawn" %}by the tablet{% else %}the order was settled while it waited{% endif %}</span></div>
+          {% endif %}
+          {% if req.used_at %}
+          <div class="scr-detail-row"><span class="scr-detail-label">Printed</span><span class="scr-detail-value">{{ used_at|date:"d M Y, H:i" }} · by the tablet</span></div>
           {% endif %}
           {% if req.applied_at %}
           <div class="scr-detail-row"><span class="scr-detail-label">Applied</span><span class="scr-detail-value">AED {{ req.applied_amount }} · at settle, {{ applied_at|date:"d M Y, H:i" }}</span></div>
@@ -115,20 +122,21 @@
     </div>
   </div>
 
-  {% if perm.approve and order_running %}
-  {% if req.status == "pending" %}
+  {% if perm.approve %}
+  {% if req.status == "pending" and decidable %}
   <div class="scr-modal-veil" data-scr-modal-veil="request-approve" hidden></div>
   <div class="scr-modal" data-scr-modal="request-approve" hidden>
     <div class="scr-modal-head">
       <div>
-        <div class="scr-modal-title">Approve discount</div>
-        <p class="scr-modal-sub">The bill is not made yet: approve a percentage or a fixed amount. The tablet applies it at settle.</p>
+        <div class="scr-modal-title">Approve {{ req.get_kind_display|lower }}</div>
+        <p class="scr-modal-sub">{% if req.kind == "discount" %}The bill is not made yet: approve a percentage or a fixed amount. The tablet applies it at settle.{% elif req.kind == "complimentary" %}The whole bill of {{ order.order_no }} becomes free: it settles at net 0, and any advance is refunded.{% else %}The tablet may print the bill of {{ order.order_no }} once more.{% endif %}</p>
       </div>
       <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
       </button>
     </div>
     <div class="scr-modal-body">
+      {% if req.kind == "discount" %}
       <div class="scr-field">
         <span class="scr-label">Discount as <span class="scr-required">*</span></span>
         <div class="scr-radio-row">
@@ -141,6 +149,7 @@
         <input id="rq-value" type="number" class="scr-input" min="0.01" max="100" step="0.01" inputmode="decimal" placeholder="0.00" data-rq-value />
         <p class="scr-help" data-rq-help>Up to 100%, two decimals.</p>
       </div>
+      {% endif %}
       <div class="scr-field">
         <label class="scr-label" for="rq-approve-note">Note</label>
         <textarea id="rq-approve-note" class="scr-input scr-textarea" rows="3" maxlength="500" data-rq-note></textarea>
@@ -174,13 +183,13 @@
       <button type="button" class="scr-btn-danger" data-rq-go="reject">Reject</button>
     </div>
   </div>
-  {% elif req.status == "approved" %}
+  {% elif req.status == "approved" and order_running and revocable %}
   <div class="scr-modal-veil" data-scr-modal-veil="request-revoke" hidden></div>
   <div class="scr-modal" data-scr-modal="request-revoke" hidden>
     <div class="scr-modal-head">
       <div>
         <div class="scr-modal-title">Revoke approval</div>
-        <p class="scr-modal-sub">{{ rule }} will no longer be allowed at settle. The tablet can ask again.</p>
+        <p class="scr-modal-sub">{% if req.kind == "complimentary" %}The order will no longer settle as complimentary{% else %}{{ rule }} will no longer be allowed at settle{% endif %}. The tablet can ask again.</p>
       </div>
       <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>

@@ -321,6 +321,13 @@ class SettleCardDiscountRequest(serializers.Serializer):
         return values
 
 
+class SettleComplimentaryRequest(serializers.Serializer):
+    """An approved complimentary ride (`request_sync_id` -- the sync_id sent to
+    orders/requests). The whole subtotal is the discount: net 0, VAT 0."""
+
+    request_sync_id = serializers.UUIDField(error_messages={**REQUIRED, "invalid": "must be a UUID"})
+
+
 class SettleManagerDiscountRequest(serializers.Serializer):
     """A manager's approved discount (`request_sync_id` -- the sync_id sent to
     orders/requests). For a percentage approval send the same
@@ -344,6 +351,7 @@ class OrderSettleRequest(serializers.Serializer):
     subtotal = _money_field()
     card_discount = SettleCardDiscountRequest(required=False, allow_null=True)
     manager_discount = SettleManagerDiscountRequest(required=False, allow_null=True)
+    complimentary = SettleComplimentaryRequest(required=False, allow_null=True)
     tax_percentage = serializers.DecimalField(
         max_digits=5, decimal_places=2, min_value=Decimal(0),
         error_messages={**REQUIRED, "invalid": "must be a number", "min_value": "must be 0 or more"},
@@ -363,9 +371,10 @@ class OrderSettleRequest(serializers.Serializer):
         return payments
 
     def validate(self, values):
-        if values.get("card_discount") and values.get("manager_discount"):
+        sent = [key for key in ("card_discount", "manager_discount", "complimentary") if values.get(key)]
+        if len(sent) > 1:
             raise serializers.ValidationError(
-                {"manager_discount": "send one discount: card_discount or manager_discount, not both"})
+                {sent[-1]: "send one: card_discount, manager_discount or complimentary"})
         return values
 
 
@@ -411,7 +420,7 @@ class OrderRequestCreateRequest(serializers.Serializer):
     order_id = _existing_id()
     kind = serializers.ChoiceField(
         choices=OrderRequestKind.choices,
-        error_messages={**REQUIRED, "invalid_choice": "must be one of: discount"},
+        error_messages={**REQUIRED, "invalid_choice": "must be one of: discount, complimentary, reprint"},
     )
     reason = serializers.CharField(max_length=500, required=False, allow_blank=True,
                                    error_messages={"max_length": "must be at most 500 characters"})
@@ -427,6 +436,15 @@ class OrderRequestWithdrawRequest(serializers.Serializer):
     withdrawn_at = datetime_field()
 
 
+class OrderRequestUsedRequest(serializers.Serializer):
+    """The tablet printed the bill under an approved reprint. `sync_id` is this
+    call's own id; `request_sync_id` the reprint request's."""
+
+    sync_id = uuid7_field()
+    request_sync_id = serializers.UUIDField(error_messages={**REQUIRED, "invalid": "must be a UUID"})
+    used_at = datetime_field()
+
+
 class OrderRequestStatusRequest(CreditNoteStatusRequest):
     """Every request on these orders."""
 
@@ -434,6 +452,10 @@ class OrderRequestStatusRequest(CreditNoteStatusRequest):
 class ManagerRequestListRequest(serializers.Serializer):
     pending = serializers.BooleanField(required=False, default=False,
                                        error_messages={"invalid": "must be true or false"})
+    kind = serializers.ChoiceField(
+        choices=OrderRequestKind.choices, required=False, allow_blank=True,
+        error_messages={"invalid_choice": "must be one of: discount, complimentary, reprint"},
+    )
     branch_id = whole_number_field(min_value=1, required=False, allow_null=True)
     page = whole_number_field(min_value=1, required=False, default=1)
 
@@ -447,15 +469,16 @@ class ManagerRequestDecisionRequest(serializers.Serializer):
 
 
 class ManagerRequestApproveRequest(ManagerRequestDecisionRequest):
-    """Approve a discount as a rule: `percent` (up to 100, 2 decimals) or
-    `amount` (AED, 3 decimals) -- the bill is not made yet."""
+    """Approve a request. A discount takes its rule: `percent` (up to 100, 2
+    decimals) or `amount` (AED, 3 decimals) -- the bill is not made yet. A
+    complimentary or a reprint takes none."""
 
     discount_type = serializers.ChoiceField(
-        choices=DiscountType.choices,
-        error_messages={**REQUIRED, "invalid_choice": "must be percent or amount"},
+        choices=DiscountType.choices, required=False, allow_null=True,
+        error_messages={"invalid_choice": "must be percent or amount"},
     )
     discount_value = serializers.DecimalField(
-        max_digits=13, decimal_places=3, min_value=Decimal("0.001"),
+        max_digits=13, decimal_places=3, min_value=Decimal("0.001"), required=False, allow_null=True,
         error_messages={**REQUIRED, "invalid": "must be a number", "min_value": "must be more than 0",
                         "max_decimal_places": "must have at most 3 decimal places"},
     )

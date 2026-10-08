@@ -420,6 +420,7 @@ class OrderAction(models.TextChoices):
     CREDIT_NOTE_CANCEL = "credit_note_cancel", "Credit note request cancelled"
     REQUEST = "request", "Request sent"
     REQUEST_WITHDRAW = "request_withdraw", "Request withdrawn"
+    REQUEST_USED = "request_used", "Reprint printed"
 
 
 class OrderEvent(models.Model):
@@ -471,6 +472,12 @@ class OrderEvent(models.Model):
 # time, so editing the order changed an invoice already issued.
 
 
+class DiscountSource(models.TextChoices):
+    CARD = "card", "Card discount"
+    MANAGER = "manager", "Discount"
+    COMPLIMENTARY = "complimentary", "Complimentary"
+
+
 class Invoice(TimeStampedModel):
     id = models.UUIDField(primary_key=True, editable=False)
     order = models.OneToOneField(Order, on_delete=models.PROTECT, related_name="invoice")
@@ -492,6 +499,9 @@ class Invoice(TimeStampedModel):
     subtotal = models.DecimalField(**MONEY)
     discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     discount_amount = models.DecimalField(**MONEY)
+    # Where the discount came from -- a card, a manager's approval, or a
+    # complimentary ride (printed as COMPLIMENTARY); blank without one.
+    discount_source = models.CharField(max_length=15, choices=DiscountSource.choices, blank=True)
     tax_percentage = models.DecimalField(max_digits=5, decimal_places=2)
     tax_amount = models.DecimalField(**MONEY)                    # VAT included in net_amount
     rounding_adjustment = models.DecimalField(max_digits=7, decimal_places=3)
@@ -642,6 +652,8 @@ class CreditNote(TimeStampedModel):
 
 class OrderRequestKind(models.TextChoices):
     DISCOUNT = "discount", "Discount"
+    COMPLIMENTARY = "complimentary", "Complimentary"     # the whole running order free
+    REPRINT = "reprint", "Reprint"                       # one more print of a settled bill
 
 
 class OrderRequestStatus(models.TextChoices):
@@ -651,6 +663,7 @@ class OrderRequestStatus(models.TextChoices):
     WITHDRAWN = "withdrawn", "Withdrawn"      # the operator took it back while pending
     CLOSED = "closed", "Closed"               # still pending when the order settled
     REVOKED = "revoked", "Revoked"            # approved, then taken back by a manager
+    USED = "used", "Used"                     # an approved reprint, printed
 
 
 class DiscountType(models.TextChoices):
@@ -673,16 +686,20 @@ class OrderRequest(TimeStampedModel):
     DMSRequests -- Service_Save_RequestApproval, Approve_Request,
     Reject_Request, Service_Get_Request_Approval_By_OrderNo).
 
-    Only `discount` so far. The tablet asks (its sync_id is the id); the
-    manager approves with a rule -- a percentage or a fixed AED amount, since
-    the bill is not known yet -- or rejects; an approval can be revoked while
-    the order runs. The tablet applies the discount itself at settle, and the
-    settle is checked against the approval (`applied_*`). A request still
-    pending at settle is closed.
+    The tablet asks (its sync_id is the id); the manager approves or rejects.
+    - `discount` (running order): approved with a rule -- a percentage or a
+      fixed AED amount, since the bill is not known yet.
+    - `complimentary` (running order): the whole bill free; no value.
+    - `reprint` (settled order): one more print of the bill; the tablet
+      reports it printed and the request becomes `used`.
+    A discount or complimentary approval can be revoked while the order runs;
+    the tablet applies it itself at settle, checked against the approval
+    (`applied_*`). A request still pending at settle is closed.
 
     Rules agreed with the owner (8 Oct 2026): one pending or approved request
-    per order and kind; rejected, withdrawn and revoked ones leave room for a
-    new one; a manager discount and a card discount never share an order.
+    per order and kind; rejected, withdrawn, revoked and used ones leave room
+    for a new one; a manager discount, a complimentary and a card discount
+    never share an order.
     """
 
     id = models.UUIDField(primary_key=True, editable=False)
@@ -717,6 +734,9 @@ class OrderRequest(TimeStampedModel):
     # Withdrawn by the operator, or closed by the settle.
     closed_at = models.DateTimeField(null=True, blank=True)
 
+    # An approved reprint, printed (tablet time).
+    used_at = models.DateTimeField(null=True, blank=True)
+
     # The discount the settle applied under this approval.
     applied_amount = models.DecimalField(**MONEY, null=True, blank=True)
     applied_at = models.DateTimeField(null=True, blank=True)
@@ -732,15 +752,18 @@ class OrderRequest(TimeStampedModel):
             models.CheckConstraint(
                 condition=(
                     models.Q(status=OrderRequestStatus.PENDING, decided_at__isnull=True, decided_by__isnull=True,
-                             revoked_at__isnull=True, closed_at__isnull=True)
+                             revoked_at__isnull=True, closed_at__isnull=True, used_at__isnull=True)
                     | models.Q(status=OrderRequestStatus.APPROVED, decided_at__isnull=False,
-                               revoked_at__isnull=True, closed_at__isnull=True)
+                               revoked_at__isnull=True, closed_at__isnull=True, used_at__isnull=True)
                     | models.Q(status=OrderRequestStatus.REJECTED, decided_at__isnull=False,
-                               revoked_at__isnull=True, closed_at__isnull=True)
+                               revoked_at__isnull=True, closed_at__isnull=True, used_at__isnull=True)
                     | models.Q(status=OrderRequestStatus.REVOKED, decided_at__isnull=False,
-                               revoked_at__isnull=False, closed_at__isnull=True)
+                               revoked_at__isnull=False, closed_at__isnull=True, used_at__isnull=True)
                     | models.Q(status__in=[OrderRequestStatus.WITHDRAWN, OrderRequestStatus.CLOSED],
-                               decided_at__isnull=True, closed_at__isnull=False)
+                               decided_at__isnull=True, closed_at__isnull=False, used_at__isnull=True)
+                    | models.Q(status=OrderRequestStatus.USED, kind=OrderRequestKind.REPRINT,
+                               decided_at__isnull=False, used_at__isnull=False, revoked_at__isnull=True,
+                               closed_at__isnull=True)
                 ),
                 name="order_request_status_fields",
             ),

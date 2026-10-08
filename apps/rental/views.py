@@ -32,6 +32,7 @@ from apps.rental.models import (
     OrderAction,
     OrderItem,
     OrderItemStatus,
+    OrderRequestKind,
     OrderRequestStatus,
     OrderStatus,
     PaymentKind,
@@ -403,20 +404,23 @@ class OrderDetailView(RentalScreenView):
                 .order_by("happened_at", "received_at")
             ],
             "credit_note": credit_note_link(order),
-            "discount_request": discount_request_link(order),
+            "requests": request_links(order),
             "list_url": reverse("rental-order-list"),
         })
         return context
 
 
-def discount_request_link(order):
-    """The order's latest discount request, for the order page: the approved
-    rule (or its state) and its page."""
-    req = order.requests.order_by("-requested_at").first()
-    if req is None:
-        return None
-    return {"label": rule_label(req) or req.get_kind_display(), "status_label": req.get_status_display(),
-            "applied_amount": req.applied_amount, "url": reverse("rental-request-detail", args=[req.pk])}
+def request_links(order):
+    """The order's latest request of each kind, for the order page: the kind,
+    the approved rule (or its state) and its page."""
+    latest = {}
+    for req in order.requests.order_by("-requested_at"):
+        latest.setdefault(req.kind, req)
+    return [
+        {"kind": req.get_kind_display(), "label": rule_label(req), "status_label": req.get_status_display(),
+         "applied_amount": req.applied_amount, "url": reverse("rental-request-detail", args=[req.pk])}
+        for req in latest.values()
+    ]
 
 
 def credit_note_link(order):
@@ -489,7 +493,10 @@ def _receipt(invoice, zone):
         "closing_time": _clock(issued),
         "lines": lines,
         "subtotal": invoice.subtotal, "discount_percentage": invoice.discount_percentage,
-        "discount_amount": invoice.discount_amount, "taxable_amount": invoice.net_amount - invoice.tax_amount,      # VAT is inside the net
+        "discount_amount": invoice.discount_amount, "discount_source": invoice.discount_source,
+        "discount_label": {"card": "Card Disc.", "manager": "Discount", "complimentary": "Complimentary"}.get(
+            invoice.discount_source, "Discount"),
+        "taxable_amount": invoice.net_amount - invoice.tax_amount,      # VAT is inside the net
         "tax_percentage": invoice.tax_percentage, "tax_amount": invoice.tax_amount,
         "rounding": invoice.rounding_adjustment, "net_amount": invoice.net_amount,
         "customer": invoice.customer_name or "—", "mobile": invoice.customer_mobile or "—",
@@ -743,7 +750,8 @@ REQUESTS_PER_PAGE = 50
 # withdrawn by the tablet and closed by the settle.
 REQUEST_TABS = [
     ("pending", "Pending", (OrderRequestStatus.PENDING,)),
-    ("approved", "Approved", (OrderRequestStatus.APPROVED,)),
+    # A reprint once printed stays with the approvals.
+    ("approved", "Approved", (OrderRequestStatus.APPROVED, OrderRequestStatus.USED)),
     ("rejected", "Rejected", (OrderRequestStatus.REJECTED,)),
     ("revoked", "Revoked", (OrderRequestStatus.REVOKED,)),
     ("closed", "Closed", (OrderRequestStatus.WITHDRAWN, OrderRequestStatus.CLOSED)),
@@ -751,7 +759,13 @@ REQUEST_TABS = [
 
 
 def rule_label(req):
-    """An approved discount as one phrase: "10.00%" or "AED 15.000"."""
+    """What the request is for, in a phrase: an approved discount ("10.00%",
+    "AED 15.000"), "Whole bill" for a complimentary, "One print" for a
+    reprint; blank for a discount not approved yet."""
+    if req.kind == OrderRequestKind.COMPLIMENTARY:
+        return "Whole bill"
+    if req.kind == OrderRequestKind.REPRINT:
+        return "One print"
     if req.discount_value is None:
         return ""
     if req.discount_type == "percent":
@@ -770,6 +784,8 @@ def _requests(request, zone):
                            | Q(order__customer_mobile__icontains=text))
     if params.get("branch", "").isdigit():
         rows = rows.filter(branch_id=int(params["branch"]))
+    if params.get("kind") in OrderRequestKind.values:
+        rows = rows.filter(kind=params["kind"])
     start, end = _date_param(params.get("from")), _date_param(params.get("to"))
     if start:
         rows = rows.filter(requested_at__gte=_day_bounds(start, zone)[0])
@@ -820,8 +836,9 @@ class RequestListView(RentalScreenView):
                 for req in page.object_list
             ],
             "page": page, "query": query.urlencode(), "params": params,
-            "filtered": any(params.get(k) for k in ("q", "branch", "from", "to")),
+            "filtered": any(params.get(k) for k in ("q", "kind", "branch", "from", "to")),
             "branches": list(branches_for(user).filter(is_active=True).order_by("name").values("id", "name")),
+            "kinds": OrderRequestKind.choices,
         })
         return context
 
@@ -860,6 +877,11 @@ class RequestDetailView(RentalScreenView):
         context.update({
             "req": req, "order": order, "lines": lines, "rule": rule_label(req),
             "order_running": order.status == OrderStatus.ACTIVE,
+            # A discount or complimentary is decided while the order runs, a reprint once it is settled.
+            "decidable": (order.status == OrderStatus.COMPLETED if req.kind == OrderRequestKind.REPRINT
+                          else order.status == OrderStatus.ACTIVE),
+            "revocable": req.kind in (OrderRequestKind.DISCOUNT, OrderRequestKind.COMPLIMENTARY),
+            "used_at": local(req.used_at),
             "requested_at": local(req.requested_at), "decided_at": local(req.decided_at),
             "revoked_at": local(req.revoked_at), "closed_at": local(req.closed_at),
             "applied_at": local(req.applied_at), "booked_at": local(order.booked_at),

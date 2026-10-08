@@ -17,6 +17,7 @@ from apps.fleet.models import Vehicle
 from apps.rental.models import (
     MONEY_IN,
     Customer,
+    DiscountSource,
     Invoice,
     InvoiceItem,
     Order,
@@ -145,6 +146,19 @@ ORDER_ERRORS = {
     "discount_request_not_approved": (409, "That discount request is not approved.", False),
     "discount_mismatch": (400, "The discount is not the one approved.", False),
     "approved_discount_not_applied": (409, "This order has an approved discount that must be applied.", False),
+    # Complimentary and reprint requests.
+    "complimentary_request_pending": (409, "A complimentary request is already waiting for this order.", False),
+    "complimentary_approved": (409, "This order is already approved as complimentary.", False),
+    "complimentary_requested": (409, "This order already has a complimentary request.", False),
+    "discount_requested": (409, "This order already has a manager discount request.", False),
+    "reprint_request_pending": (409, "A reprint request is already waiting for this order.", False),
+    "reprint_approved": (409, "A reprint is already approved for this order -- print it first.", False),
+    "request_not_approved": (409, "That request is not approved.", False),
+    "request_used": (409, "That reprint has already been printed.", False),
+    "unknown_complimentary_request": (404, "That complimentary request is not on this order.", False),
+    "complimentary_request_not_approved": (409, "That complimentary request is not approved.", False),
+    "approved_complimentary_not_applied": (409, "This order is approved as complimentary and must settle "
+                                                "as complimentary.", False),
 }
 
 
@@ -608,13 +622,15 @@ def settle_order(session, values, request_data, reply_for):
     tax_percentage / tax_amount are the VAT *contained* in the net -- stored
     as sent and shown on the tax invoice, never part of the sum.
 
-    The one discount is either a card discount (`card_discount`) or a
-    manager's approved discount (`manager_discount`, checked against the
-    approval -- apps/rental/requests.py::check_at_settle). An approved manager
-    discount must be applied. In one transaction: the card discount redeemed
-    (and unused card requests cancelled), the manager approval marked applied
-    (and waiting requests closed), the payments recorded, the order completed
-    and the invoice issued. A zero bill settles too.
+    The one discount is a card discount (`card_discount`), a manager's
+    approved discount (`manager_discount`) or an approved complimentary ride
+    (`complimentary`: the whole subtotal off, net 0, any advance refunded in
+    `payments`) -- the last two checked against the approval
+    (apps/rental/requests.py::check_at_settle), and an approval must be
+    applied. In one transaction: the card discount redeemed (and unused card
+    requests cancelled), the approval marked applied (and waiting requests
+    closed), the payments recorded, the order completed and the invoice
+    issued. A zero bill settles too.
     """
     from apps.rental import requests as order_requests  # it imports this module
 
@@ -626,8 +642,11 @@ def settle_order(session, values, request_data, reply_for):
 
         billed = [item for item in items if item.status == OrderItemStatus.RETURNED]
         card, manager = values.get("card_discount"), values.get("manager_discount")
+        free = values.get("complimentary")
         discount = card or manager
-        discount_amount = discount["discount_amount"] if discount else Decimal("0")
+        # A complimentary ride: the whole subtotal is the discount, net 0.
+        discount_amount = (values["subtotal"] if free else
+                           discount["discount_amount"] if discount else Decimal("0"))
         lines_total = sum((item.total_amount for item in billed), Decimal("0"))
         if values["subtotal"] != lines_total:
             raise OrderRefused("amount_mismatch", f"subtotal must be the returned vehicles' total, {lines_total}.")
@@ -640,7 +659,7 @@ def settle_order(session, values, request_data, reply_for):
                 f"(VAT is included in the fares, not added).",
             )
 
-        approval = order_requests.check_at_settle(order, manager, values["subtotal"])
+        approval = order_requests.check_at_settle(order, values)
         claim = None
         if card:
             try:
@@ -669,14 +688,17 @@ def settle_order(session, values, request_data, reply_for):
         order_requests.close_at_settle(order, approval, discount_amount, values["settled_at"], session.user)
 
         order.discount_claim = claim
-        order.discount_percentage = discount.get("discount_percentage") if discount else None
+        order.discount_percentage = (Decimal("100") if free else
+                                     discount.get("discount_percentage") if discount else None)
         order.discount_amount = discount_amount
         order.status, order.completed_at = OrderStatus.COMPLETED, values["settled_at"]
         order.modified_by = session.user
         order.save()
         order.refresh_from_db()            # payment_status, balance_due: computed by the database
 
-        issue_invoice(order, billed, session, at=values["settled_at"])
+        source = (DiscountSource.CARD if card else DiscountSource.MANAGER if manager
+                  else DiscountSource.COMPLIMENTARY if free else "")
+        issue_invoice(order, billed, session, at=values["settled_at"], discount_source=source)
         event = {
             "action": OrderAction.SETTLE, "happened_at": values["settled_at"],
             "device": session.device, "user": session.user,
@@ -717,7 +739,7 @@ def _record_payments(session, order, payments, modes):
         )
 
 
-def issue_invoice(order, billed_items, session, *, at):
+def issue_invoice(order, billed_items, session, *, at, discount_source=""):
     """The invoice for a settled order: a frozen copy of the bill, numbered by
     the order, issued by the settling tablet and operator. Only returned lines
     are billed -- replaced and removed ones are not copied."""
@@ -728,7 +750,8 @@ def issue_invoice(order, billed_items, session, *, at):
         company_name=company.name, company_trn=company.income_tax_number or "", branch_name=branch.name,
         customer_name=order.customer_name, customer_mobile=order.customer_mobile,
         subtotal=order.subtotal, discount_percentage=order.discount_percentage,
-        discount_amount=order.discount_amount, tax_percentage=order.tax_percentage, tax_amount=order.tax_amount,
+        discount_amount=order.discount_amount, discount_source=discount_source,
+        tax_percentage=order.tax_percentage, tax_amount=order.tax_amount,
         rounding_adjustment=order.rounding_adjustment, net_amount=order.net_amount,
         payments=[
             {"mode": payment.mode.name, "kind": payment.kind, "amount": str(payment.amount),

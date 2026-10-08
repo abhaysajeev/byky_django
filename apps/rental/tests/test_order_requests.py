@@ -412,7 +412,7 @@ def test_an_approved_discount_must_be_applied(client, token, manager, shop, book
     body = call(client, SETTLE, bill(booked, shop), token=token).json()
 
     assert body["code"] == "approved_discount_not_applied"
-    assert body["data"] == {"retry": False, "request_sync_id": request_id, "discount_type": "amount",
+    assert body["data"] == {"retry": False, "request_sync_id": request_id, "kind": "discount", "discount_type": "amount",
                             "discount_value": "15.000"}
     assert Order.objects.get(pk=booked["sync_id"]).status == OrderStatus.ACTIVE
 

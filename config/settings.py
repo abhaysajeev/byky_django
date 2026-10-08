@@ -249,6 +249,11 @@ SPECTACULAR_SETTINGS = {
     # not a page anyone opens by hand -- keep it out of its own UI listing.
     "SERVE_INCLUDE_SCHEMA": False,
     "SORT_OPERATIONS": False,
+    # Two different choice sets are both called `kind`: a payment's and a request's.
+    "ENUM_NAME_OVERRIDES": {
+        "PaymentKindEnum": "apps.rental.models.PaymentKind",
+        "OrderRequestKindEnum": "apps.rental.models.OrderRequestKind",
+    },
 }
 
 # Lifetimes from design/03-login.md section 6.2.

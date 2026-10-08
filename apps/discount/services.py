@@ -312,8 +312,13 @@ def _request_approval(session, values, company, sync_id):
     order = Order.objects.select_for_update().filter(pk=values["order_id"], company=company).first()
     if order is None:
         raise DiscountRefused("unknown_order", "No order with that id.", 404)
-    if OrderRequest.objects.filter(order=order, kind=OrderRequestKind.DISCOUNT, status__in=REQUEST_LIVE).exists():
+    held = set(OrderRequest.objects.filter(
+        order=order, kind__in=[OrderRequestKind.DISCOUNT, OrderRequestKind.COMPLIMENTARY], status__in=REQUEST_LIVE,
+    ).values_list("kind", flat=True))
+    if OrderRequestKind.DISCOUNT in held:
         raise DiscountRefused("discount_requested", "This order already has a manager discount request.", 409)
+    if OrderRequestKind.COMPLIMENTARY in held:
+        raise DiscountRefused("complimentary_requested", "This order already has a complimentary request.", 409)
     customer = _customer_by_full_number(company, values["full_number"])
     discount = (CardDiscount.objects.select_related("card_grade__card_type")
                 .filter(pk=values["card_discount_id"], company=company).first())

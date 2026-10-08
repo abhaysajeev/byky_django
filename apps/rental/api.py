@@ -46,6 +46,7 @@ from apps.rental.serializers import (
     OrderReplaceRequest,
     OrderRequestCreateRequest,
     OrderRequestStatusRequest,
+    OrderRequestUsedRequest,
     OrderRequestWithdrawRequest,
     OrderReturnRequest,
     OrderSettleRequest,
@@ -246,8 +247,8 @@ def _money(value):
 
 def _discount_json(order):
     """The discount the settle applied: a card discount (its approved request,
-    or none for an automatic one) or a manager's approved discount -- null
-    without one."""
+    or none for an automatic one), a manager's approved discount or an approved
+    complimentary ride -- null without one."""
     if order.discount_claim_id:
         claim = order.discount_claim
         source, request_id = "card", str(claim.pk) if claim.requires_approval else None
@@ -255,7 +256,8 @@ def _discount_json(order):
         applied = order.requests.filter(applied_at__isnull=False).first()
         if applied is None:
             return None
-        source, request_id = "manager", str(applied.pk)
+        source = "complimentary" if applied.kind == "complimentary" else "manager"
+        request_id = str(applied.pk)
     return {
         "source": source, "request_sync_id": request_id,
         "discount_percentage": _money(order.discount_percentage), "discount_amount": _money(order.discount_amount),
@@ -643,7 +645,8 @@ _SETTLE_ERRORS = (
     "order_not_synced", "sync_id_conflict", "order_closed", "items_still_out", "amount_mismatch",
     "balance_not_settled", "unknown_card_claim", "card_claim_not_approved", "unknown_card_discount",
     "unknown_discount_request", "discount_request_not_approved", "discount_mismatch",
-    "approved_discount_not_applied", "unknown_payment_mode", "payment_id_used",
+    "approved_discount_not_applied", "unknown_complimentary_request", "complimentary_request_not_approved",
+    "approved_complimentary_not_applied", "unknown_payment_mode", "payment_id_used",
 )
 
 _SETTLE_DESCRIPTION = """
@@ -664,7 +667,8 @@ The server only checks that the figures agree (`amount_mismatch`):
 (`net_amount` × rate / (100 + rate), to 2 places: 104.50 at 5% → 4.98); they
 are stored as sent and printed on the tax invoice, never part of the sum.
 
-**The discount** (optional) -- **at most one** of two blocks; both is
+**The discount** (optional) -- **at most one** of three blocks:
+`card_discount`, `manager_discount` or `complimentary`; two is
 `invalid_request`. `discount_amount` is what the net check above uses.
 
 **`card_discount`** -- a card discount, one of:
@@ -694,6 +698,17 @@ An order **with an approved manager discount must apply it**: settling without
 `approved_discount_not_applied`, with `request_sync_id`, `discount_type` and
 `discount_value` in `data`. A request still pending at settle is closed.
 
+**`complimentary`** -- an approved complimentary ride (`orders/requests`, kind
+`complimentary`): `{request_sync_id}`. The **whole subtotal** is the discount:
+send `net_amount` 0, `tax_amount` 0 and `rounding_adjustment` 0
+(`amount_mismatch`). Any advance taken goes back as **`refund`** entries in
+`payments`, so the bill ends paid 0 and the payment history keeps them. It must
+be this order's approved complimentary request
+(`unknown_complimentary_request`, `complimentary_request_not_approved`); an
+order approved as complimentary must settle with it
+(`approved_complimentary_not_applied`). The invoice prints as usual, marked
+COMPLIMENTARY.
+
 **`payments`** -- `settlement` for the balance, `refund` for money handed back
 when the customer paid more than the bill. After them the bill must be paid
 in full: what was received minus refunded = `net_amount`
@@ -702,7 +717,7 @@ in full: what was received minus refunded = `net_amount`
 """ + _error_table(*_SETTLE_ERRORS)
 
 
-def _settle_example(name, discount):
+def _settle_example(name, discount, **bill):
     body = {
         "sync_id": "01923e1c-0a15-7b22-8c33-d4e5f6a7b8c9", "order_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9",
         "settled_at": "2026-10-02 17:13:30", "subtotal": "110.000", **discount,
@@ -711,6 +726,7 @@ def _settle_example(name, discount):
         "payments": [{"sync_id": "01923e1c-0a16-7b22-8c33-d4e5f6a7b8c9", "kind": "settlement",
                       "payment_mode_id": 2, "amount": "4.500", "reference_no": "4421",
                       "reference_date": "2026-10-02", "paid_at": "2026-10-02 17:13:30"}],
+        **bill,
     }
     return OpenApiExample(name, request_only=True, value={"credentials": {}, "request_data": body})
 
@@ -727,6 +743,13 @@ _SETTLE_EXAMPLES = [
     _settle_example("automatic card discount", {"card_discount": {
         "card_discount_id": 7, "card_number": "4111 22** **** 3344", "discount_percentage": "5.00",
         "discount_amount": "5.500"}}),
+    _settle_example(
+        "complimentary, the AED 100 advance refunded",
+        {"complimentary": {"request_sync_id": "01923e2b-99cc-7b22-8c33-d4e5f6a7b8c9"}},
+        tax_amount="0.000", net_amount="0.000",
+        payments=[{"sync_id": "01923e1c-0a16-7b22-8c33-d4e5f6a7b8c9", "kind": "refund", "payment_mode_id": 1,
+                   "amount": "100.000", "reference_no": "", "paid_at": "2026-10-02 17:13:30"}],
+    ),
 ]
 
 
@@ -1212,6 +1235,7 @@ class CreditNoteStatusView(_OperatorView):
 # -- Requests: the operator asks, a manager decides (apps/rental/requests.py) ------------
 
 _REQUEST_PENDING_SAMPLE = {
+    "used_at": None,
     "request_sync_id": "01923e2b-77aa-7b22-8c33-d4e5f6a7b8c9", "order_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9",
     "order_no": "DUBPP60182000231", "kind": "discount", "status": "pending", "reason": "Regular customer",
     "requested_at": "2026-10-08 16:40:00", "discount_type": None, "discount_value": None,
@@ -1223,6 +1247,11 @@ _REQUEST_APPROVED_SAMPLE = {
     **_REQUEST_PENDING_SAMPLE, "status": "approved", "discount_type": "percent", "discount_value": "10.00",
     "decided_by": "Sara K", "decided_channel": "manager", "decided_at": "2026-10-08 16:43:12",
 }
+_REPRINT_USED_SAMPLE = {
+    **_REQUEST_PENDING_SAMPLE, "request_sync_id": "01923e2b-aacc-7b22-8c33-d4e5f6a7b8c9", "kind": "reprint",
+    "status": "used", "reason": "Customer lost the receipt", "decided_by": "Sara K", "decided_channel": "web",
+    "decided_at": "2026-10-08 18:02:00", "used_at": "2026-10-08 18:03:10",
+}
 _REQUEST_AMOUNT_SAMPLE = {
     **_REQUEST_APPROVED_SAMPLE, "request_sync_id": "01923e2b-88bb-7b22-8c33-d4e5f6a7b8c9",
     "order_id": "01923e1c-0b22-7b22-8c33-d4e5f6a7b8c9", "order_no": "DUBPP60182000232",
@@ -1230,39 +1259,64 @@ _REQUEST_AMOUNT_SAMPLE = {
 }
 
 _REQUEST_RULES = """
-**Requests** -- the operator asks a manager about a **running** order; the
-manager decides on the web or in the manager app. Only `kind: discount` so far.
+**Requests** -- the operator asks a manager about an order; the manager
+decides on the web or in the manager app. Three kinds:
 
-A **discount** request carries no amount: the bill is not made yet. The manager
-approves a **rule** -- `discount_type` `percent` (`discount_value` e.g.
-`"10.00"`) or `amount` (AED, e.g. `"15.000"`) -- or rejects it. An approval can
-be **revoked** while the order runs. The tablet applies an approved discount
-itself at settle, in `manager_discount` (see `orders/settle`); the server checks
-it against the approval, and an order with an approved discount **must** apply
-it.
+- **`discount`** -- a **running** order. It carries no amount: the bill is not
+  made yet. The manager approves a **rule** -- `discount_type` `percent`
+  (`discount_value` e.g. `"10.00"`) or `amount` (AED, e.g. `"15.000"`) -- or
+  rejects it. The tablet applies it at settle in `manager_discount`.
+- **`complimentary`** -- a **running** order, the whole bill free. Approved
+  with no value. The tablet settles it in `complimentary` (net 0, any advance
+  refunded).
+- **`reprint`** -- a **settled** order: one more print of its bill. Once
+  `approved`, the tablet may print it **once** and then reports it with
+  `orders/requests/used`, which makes it `used`. Another reprint needs a new
+  request. A reprint is approved or rejected, never revoked.
+
+A discount or complimentary approval can be **revoked** while the order runs;
+the server checks the settle against the approval, and an order with one
+**must** apply it (see `orders/settle`).
 
 `status`: `pending` · `approved` · `rejected` (see `decision_note`) ·
 `withdrawn` (the tablet took it back) · `closed` (still pending when the order
-settled) · `revoked` (approved, then taken back -- see `revoke_note`).
-`decided_channel` / `revoked_channel`: `web` or `manager`. After rejected,
-withdrawn or revoked the order may be asked again; while one is pending or
-approved it may not. An order takes a manager discount **or** a card discount,
-never both (`card_discount_requested`). Times are company time.
+settled) · `revoked` (approved, then taken back -- see `revoke_note`) · `used`
+(a reprint, printed -- `used_at`). `decided_channel` / `revoked_channel`: `web`
+or `manager`. One pending or approved request per order and kind; after
+rejected, withdrawn, revoked or used the order may be asked again. A manager
+discount, a complimentary and a card discount never share an order
+(`discount_requested`, `complimentary_requested`, `card_discount_requested`).
+Times are company time.
 """
 
 _REQUEST_CREATE_ERRORS = (
-    "order_not_synced", "sync_id_conflict", "order_closed", "discount_request_pending", "discount_approved",
+    "order_not_synced", "sync_id_conflict", "order_closed", "order_not_settled",
+    "discount_request_pending", "discount_approved", "complimentary_request_pending", "complimentary_approved",
+    "reprint_request_pending", "reprint_approved", "discount_requested", "complimentary_requested",
     "card_discount_requested",
+)
+_REQUEST_USED_ERRORS = (
+    "order_not_synced", "sync_id_conflict", "unknown_request", "request_not_approved", "request_used",
 )
 _REQUEST_WITHDRAW_ERRORS = ("order_not_synced", "sync_id_conflict", "unknown_request", "request_closed")
 
 _REQUEST_CREATE_DESCRIPTION = _REQUEST_RULES + """
 **This call** asks. `sync_id` is a UUIDv7 made on the tablet and resent
 unchanged on retry -- it **becomes the request's id** (`request_sync_id`).
-`order_id` is the running order's sync_id; `kind` is `discount`; `reason`
-optional free text; `requested_at` the tablet's time. Any tablet at the order's
-station may ask. A settled or cancelled order is `order_closed`.
+`order_id` is the order's sync_id; `kind` is `discount`, `complimentary` or
+`reprint`; `reason` optional free text; `requested_at` the tablet's time. Any
+tablet at the order's station may ask. A discount or complimentary on a settled
+or cancelled order is `order_closed`; a reprint of an order not settled is
+`order_not_settled`.
 """ + _error_table(*_REQUEST_CREATE_ERRORS)
+
+_REQUEST_USED_DESCRIPTION = _REQUEST_RULES + """
+**This call** reports that the bill was printed under an approved **reprint**:
+the request becomes `used` and the approval is spent. `sync_id` is this call's
+own UUIDv7; `request_sync_id` the reprint request's; `used_at` the tablet's
+time. Before approval it is `request_not_approved`; a second report is
+`request_used`. Any tablet at the order's station may report.
+""" + _error_table(*_REQUEST_USED_ERRORS)
 
 _REQUEST_WITHDRAW_DESCRIPTION = _REQUEST_RULES + """
 **This call** takes back a request still `pending`. `sync_id` is this call's own
@@ -1283,14 +1337,14 @@ class OrderRequestView(_OperatorView):
 
     @extend_schema(
         tags=["Operator Requests"],
-        summary="Ask a manager about a running order (discount)",
+        summary="Ask a manager: a discount, a complimentary or a reprint",
         description=_REQUEST_CREATE_DESCRIPTION,
         request=envelope_request("OrderRequestEnvelope", OrderRequestCreateRequest),
         responses=envelope_responses(
             (200, "ok", "Request sent.", _REQUEST_PENDING_SAMPLE),
             (200, "duplicate", "Already recorded.", _REQUEST_PENDING_SAMPLE),
-            (400, "invalid_request", "kind must be one of: discount.",
-             {"errors": {"kind": "must be one of: discount"}}),
+            (400, "invalid_request", "kind must be one of: discount, complimentary, reprint.",
+             {"errors": {"kind": "must be one of: discount, complimentary, reprint"}}),
             *_error_rows(*_REQUEST_CREATE_ERRORS),
             *_COMMON,
         ),
@@ -1305,7 +1359,7 @@ class OrderRequestView(_OperatorView):
         values = form.validated_data
         values["requested_at"] = timezone.make_aware(values["requested_at"], zone_for(branch.company))
         try:
-            data, done = order_requests.request_discount(request.auth, values, request_data)
+            data, done = order_requests.create_request(request.auth, values, request_data)
         except services.OrderRefused as refusal:
             return _refused(refusal)
         return envelope("ok", "Request sent.", data) if done else envelope("duplicate", "Already recorded.", data)
@@ -1345,6 +1399,40 @@ class OrderRequestWithdrawView(_OperatorView):
                 else envelope("duplicate", "Already recorded.", data))
 
 
+class OrderRequestUsedView(_OperatorView):
+    """POST /api/v1/{app}/orders/requests/used -- operator app only."""
+
+    @extend_schema(
+        tags=["Operator Requests"],
+        summary="Report an approved reprint printed",
+        description=_REQUEST_USED_DESCRIPTION,
+        request=envelope_request("OrderRequestUsedEnvelope", OrderRequestUsedRequest),
+        responses=envelope_responses(
+            (200, "ok", "Reprint recorded.", _REPRINT_USED_SAMPLE),
+            (200, "duplicate", "Already recorded.", _REPRINT_USED_SAMPLE),
+            (400, "invalid_request", "request_sync_id is required.",
+             {"errors": {"request_sync_id": "is required"}}),
+            *_error_rows(*_REQUEST_USED_ERRORS),
+            *_COMMON,
+        ),
+    )
+    def post(self, request, app):
+        branch, refused = self.station(request, app)
+        if refused:
+            return refused
+        _, request_data = request_parts(request)
+        form = OrderRequestUsedRequest(data=request_data)
+        form.is_valid(raise_exception=True)
+        values = form.validated_data
+        values["used_at"] = timezone.make_aware(values["used_at"], zone_for(branch.company))
+        try:
+            data, done = order_requests.mark_used(request.auth, values, request_data)
+        except services.OrderRefused as refusal:
+            return _refused(refusal)
+        return (envelope("ok", "Reprint recorded.", data) if done
+                else envelope("duplicate", "Already recorded.", data))
+
+
 class OrderRequestStatusView(_OperatorView):
     """POST /api/v1/{app}/orders/requests/status -- operator app only."""
 
@@ -1381,6 +1469,7 @@ _MANAGER_SAMPLE = {
     "order": {
         "order_no": "DUBPP60182000231", "status": "active", "customer_name": "Ahmed Al Mansoori",
         "customer_mobile": "971501234567", "booked_at": "2026-10-08 16:00:00", "advance_paid": "100.000",
+        "net_amount": None,
         "vehicles": [
             {"vehicle": "MO 41", "identifier": "VB1241", "vehicle_type": "Monaco", "status": "active",
              "start_time": "2026-10-08 16:00:00", "expected_end_time": "2026-10-08 17:00:00",
@@ -1412,15 +1501,17 @@ decision is recorded against you, with `decided_channel` / `revoked_channel`
 
 _MANAGER_LIST_DESCRIPTION = _MANAGER_RULES + """
 **This call** lists requests, newest first, 50 a page (`page`, from 1). Send
-`"pending": true` for only those waiting, and `branch_id` for one station. Each
+`"pending": true` for only those waiting, `kind` for one kind, and `branch_id`
+for one station. Each
 row carries the order: customer, advance paid so far, and every vehicle out or
 back with the minutes run so far (`minutes_run`; for one still out, up to now).
 """
 
 _MANAGER_APPROVE_DESCRIPTION = _MANAGER_RULES + """
-**This call** approves a pending discount request as a rule: `discount_type`
-`percent` (`discount_value` above 0, at most 100, 2 decimals) or `amount` (AED
-above 0, 3 decimals). `note` optional.
+**This call** approves a pending request. A **discount** takes its rule:
+`discount_type` `percent` (`discount_value` above 0, at most 100, 2 decimals)
+or `amount` (AED above 0, 3 decimals). A **complimentary** or a **reprint**
+takes none -- leave both out. `note` optional.
 """
 
 _MANAGER_REJECT_DESCRIPTION = _MANAGER_RULES + """
@@ -1429,9 +1520,10 @@ as `decision_note`.
 """
 
 _MANAGER_REVOKE_DESCRIPTION = _MANAGER_RULES + """
-**This call** takes back an **approved** request while its order still runs
-(`request_not_approved`, `order_closed`). The tablet sees `revoked`; the settle
-then refuses that discount. `note` optional (`revoke_note`).
+**This call** takes back an **approved** discount or complimentary while its
+order still runs (`request_not_approved`, `order_closed`); a reprint is never
+revoked (`request_not_revocable`). The tablet sees `revoked`; the settle then
+refuses it. `note` optional (`revoke_note`).
 """
 
 
@@ -1502,8 +1594,8 @@ class ManagerRequestListView(_ManagerView):
         form.is_valid(raise_exception=True)
         values = form.validated_data
         rows, page = order_requests.manager_list(
-            self.company_ids(request), pending_only=values["pending"], branch_id=values.get("branch_id"),
-            page=values["page"],
+            self.company_ids(request), pending_only=values["pending"], kind=values.get("kind") or None,
+            branch_id=values.get("branch_id"), page=values["page"],
         )
         return envelope("ok", "Requests.", {"requests": rows, "page": page.number,
                                              "pages": page.paginator.num_pages, "total": page.paginator.count})
@@ -1526,7 +1618,7 @@ class ManagerRequestApproveView(_ManagerView):
     def post(self, request, app):
         return self.decide(request, app, ManagerRequestApproveRequest, lambda v, companies: order_requests.approve(
             request.user, v["request_sync_id"], companies, DecisionChannel.MANAGER,
-            v["discount_type"], v["discount_value"], v.get("note", "")), "Request approved.")
+            v.get("discount_type"), v.get("discount_value"), v.get("note", "")), "Request approved.")
 
 
 class ManagerRequestRejectView(_ManagerView):
@@ -1565,6 +1657,7 @@ class ManagerRequestRevokeView(_ManagerView):
              {"errors": {"request_sync_id": "is required"}}),
             (404, "unknown_request", "No request with that id.", {}),
             (409, "request_not_approved", "Only an approved request can be revoked.", {}),
+            (409, "request_not_revocable", "A reprint is approved or rejected, not revoked.", {}),
             _ORDER_CLOSED, *_MANAGER_COMMON,
         ),
     )
