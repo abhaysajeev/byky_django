@@ -119,11 +119,11 @@ def test_each_slide_counts_only_its_station_and_today(user, world, shop):
     zoo = second_station(world)
 
     make_order(world, shop, "OUT-1")                                    # one bike out at Corniche 1
-    bill(world, shop, local(world, day, 9), "60.00")
-    bill(world, shop, local(world, day, 12), "40.50")
-    bill(world, shop, local(world, day, 6, 30), "500.00")              # before opening
-    bill(world, shop, local(world, day, 9) - datetime.timedelta(days=1), "70.00")    # yesterday
-    bill(world, shop, local(world, day, 9), "25.00", branch=zoo)
+    bill(world, shop, local(world, day, 9), "60.000")
+    bill(world, shop, local(world, day, 12), "40.500")
+    bill(world, shop, local(world, day, 6, 30), "500.000")              # before opening
+    bill(world, shop, local(world, day, 9) - datetime.timedelta(days=1), "70.000")    # yesterday
+    bill(world, shop, local(world, day, 9), "25.000", branch=zoo)
 
     tablet = shop["tablet"]
     DeviceMapping.objects.create(device=tablet, branch=adc1, from_date=now - datetime.timedelta(days=3))
@@ -145,10 +145,10 @@ def test_each_slide_counts_only_its_station_and_today(user, world, shop):
     slides = {s["name"]: s for s in dashboard.branch_live(user, now)}
 
     corniche = slides["Abu Dhabi Corniche 1"]
-    assert (corniche["on_rent"], corniche["invoices"], corniche["revenue"]) == (1, 2, "100.50")
+    assert (corniche["on_rent"], corniche["invoices"], corniche["revenue"]) == (1, 2, "100.500")
     assert (corniche["devices"], corniche["staff"], corniche["hours"], corniche["state"]) == (
         1, 1, "07:00–23:00", "open")
-    assert (slides["Al Ain Zoo"]["invoices"], slides["Al Ain Zoo"]["revenue"]) == (1, "25.00")
+    assert (slides["Al Ain Zoo"]["invoices"], slides["Al Ain Zoo"]["revenue"]) == (1, "25.000")
     assert "Their Station" not in slides
 
 

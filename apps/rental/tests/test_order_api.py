@@ -111,16 +111,16 @@ def test_a_booking_saves_the_order_its_vehicles_and_payments(client, world, toke
         request_data["sync_id"], request_data["order_no"], "active")
     # No bill yet -- only the money taken.
     assert (data["subtotal"], data["discount"], data["net_amount"], data["balance_due"]) == (None, None, None, None)
-    assert (data["amount_received"], data["paid_amount"]) == ("100.00", "100.00")
+    assert (data["amount_received"], data["paid_amount"]) == ("100.000", "100.000")
     assert data["payment_status"] == PaymentStatus.PENDING and data["items_out"] == 2
     assert [(item["base_fare"], item["overtime_amount"], item["total_amount"]) for item in data["items"]] == [
-        ("50.00", None, None), ("50.00", None, None)]
+        ("50.000", None, None), ("50.000", None, None)]
     assert data["customer"] == {"id": shop["ahmed"].pk, "name": "Ahmed Al Mansoori", "mobile": "971501234567"}
     assert data["booked_at"] == "2026-10-02 16:00:05"
     assert [item["sync_id"] for item in data["items"]] == [item["sync_id"] for item in request_data["items"]]
     assert {item["vehicle"]["name"] for item in data["items"]} == {"MO 41", "DC 02"}
     assert [(p["payment_mode"]["name"], p["amount"], p["reference_no"]) for p in data["payments"]] == [
-        ("Cash", "60.00", ""), ("Card", "40.00", "448812")]
+        ("Cash", "60.000", ""), ("Card", "40.000", "448812")]
     # The tablet's ids are the rows' ids.
     assert set(map(str, OrderItem.objects.values_list("id", flat=True))) == {
         item["sync_id"] for item in request_data["items"]}
@@ -129,7 +129,7 @@ def test_a_booking_saves_the_order_its_vehicles_and_payments(client, world, toke
     # One history row, holding the reply.
     event = OrderEvent.objects.get()
     assert (str(event.pk), event.action, event.response) == (request_data["sync_id"], OrderAction.BOOK, data)
-    assert event.detail == {"items": 2, "advance": "100.00"}
+    assert event.detail == {"items": 2, "advance": "100.000"}
     # The receipt counter moved up to the number used.
     assert counter(world, shop) == 231 and data["next_order_number"] == 232
     # The Swagger example is exactly what a tablet gets.

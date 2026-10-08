@@ -41,7 +41,7 @@
   }
   function copy(value) { return JSON.parse(JSON.stringify(value)); }
   function newKey(prefix) { counter += 1; return prefix + 'n' + counter; }
-  function money(value) { var n = parseFloat(value); return isNaN(n) ? '—' : n.toFixed(2); }
+  function money(value) { var n = parseFloat(value); return isNaN(n) ? '—' : n.toFixed(3); }
 
   // -- Dates and times ---------------------------------------------------------------
 
@@ -267,7 +267,7 @@
     } else {
       v = v.replace(/[^\d.]/g, '');
       var dot = v.indexOf('.');
-      if (dot !== -1) v = v.slice(0, dot + 1) + v.slice(dot + 1).replace(/\./g, '').slice(0, 2);
+      if (dot !== -1) v = v.slice(0, dot + 1) + v.slice(dot + 1).replace(/\./g, '').slice(0, 3);
       v = v.replace(/^0+(?=\d)/, '');
       if (v.charAt(0) === '.') v = '0' + v;
     }
@@ -303,7 +303,7 @@
   function checkNumber(el) {
     var problem = el.disabled ? '' : numberProblem(el);
     if (!problem && el.dataset.num === 'money' && el.value.trim()) {
-      var tidy = parseFloat(el.value).toFixed(2);
+      var tidy = parseFloat(el.value).toFixed(3);
       if (tidy !== el.value) el.value = tidy;
     }
     markNumber(el, problem);

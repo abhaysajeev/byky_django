@@ -77,9 +77,11 @@ class CustomerCreateRequest(PhoneFields):
 
 
 def _money_field(min_value=Decimal(0), **kwargs):
+    """An AED amount, to the 3rd decimal (7 Oct 2026)."""
     return serializers.DecimalField(
-        max_digits=12, decimal_places=2, min_value=min_value,
-        error_messages={**REQUIRED, "invalid": "must be a number", "min_value": f"must be {min_value} or more"},
+        max_digits=13, decimal_places=3, min_value=min_value,
+        error_messages={**REQUIRED, "invalid": "must be a number", "min_value": f"must be {min_value} or more",
+                        "max_decimal_places": "must have at most 3 decimal places"},
         **kwargs,
     )
 
@@ -322,7 +324,9 @@ class OrderSettleRequest(serializers.Serializer):
     )
     tax_amount = _money_field()
     rounding_adjustment = serializers.DecimalField(
-        max_digits=6, decimal_places=2, error_messages={**REQUIRED, "invalid": "must be a number"},
+        max_digits=7, decimal_places=3,
+        error_messages={**REQUIRED, "invalid": "must be a number",
+                        "max_decimal_places": "must have at most 3 decimal places"},
     )
     net_amount = _money_field()
     payments = SettlePaymentRequest(many=True, required=False)

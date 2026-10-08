@@ -42,8 +42,8 @@ MAX_MINUTES = 1440
 TIME = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 WHOLE = re.compile(r"^\d+$")
 AMOUNT = re.compile(r"^-?\d+(\.\d+)?$")
-MAX_MONEY = Decimal("9999999999.99")
-CENTS = Decimal("0.01")
+MAX_MONEY = Decimal("9999999999.999")
+CENTS = Decimal("0.001")          # money to the 3rd decimal (7 Oct 2026)
 
 
 @dataclass(frozen=True)
@@ -145,8 +145,8 @@ class _Reader:
             return self.fail(key, where, "Enter an amount, such as 50.00.")
         if amount < 0:
             return self.fail(key, where, "The amount cannot be negative.")
-        if amount.as_tuple().exponent < -2 and amount != amount.quantize(CENTS):
-            return self.fail(key, where, "Use at most two decimal places.")
+        if amount.as_tuple().exponent < -3 and amount != amount.quantize(CENTS):
+            return self.fail(key, where, "Use at most three decimal places.")
         if amount > MAX_MONEY:
             return self.fail(key, where, "That amount is too large.")
         return amount.quantize(CENTS)

@@ -91,7 +91,7 @@ def can_rent(client, token, vehicle):
 
 def test_a_vehicle_joins_the_order_with_its_advance(client, token, shop, booked, mo50):
     request_data = add(booked, mo50, shop, payments=[
-        {"sync_id": str(uuid7()), "kind": "advance", "payment_mode_id": shop["cash"].pk, "amount": "30.00",
+        {"sync_id": str(uuid7()), "kind": "advance", "payment_mode_id": shop["cash"].pk, "amount": "30.000",
          "paid_at": "2026-10-02 16:30:00"}])
 
     body = call(client, ADD, request_data, token=token).json()
@@ -99,8 +99,8 @@ def test_a_vehicle_joins_the_order_with_its_advance(client, token, shop, booked,
     assert body["code"] == "ok", body
     line = line_of(body["data"], request_data["item"]["sync_id"])
     assert (line["status"], line["vehicle"]["name"], line["base_fare"], line["total_amount"]) == (
-        "active", "MO 50", "30.00", None)
-    assert (body["data"]["items_out"], body["data"]["paid_amount"]) == (3, "130.00")
+        "active", "MO 50", "30.000", None)
+    assert (body["data"]["items_out"], body["data"]["paid_amount"]) == (3, "130.000")
     assert Payment.objects.filter(order_id=booked["sync_id"]).count() == 3
     event = OrderEvent.objects.get(pk=request_data["sync_id"])
     assert (event.action, str(event.new_item_id)) == ("add", request_data["item"]["sync_id"])
@@ -110,7 +110,7 @@ def test_a_vehicle_joins_the_order_with_its_advance(client, token, shop, booked,
 def test_a_vehicle_joins_with_no_money_taken(client, token, shop, booked, mo50):
     body = call(client, ADD, add(booked, mo50, shop), token=token).json()
 
-    assert (body["code"], body["data"]["paid_amount"], body["data"]["items_out"]) == ("ok", "100.00", 3)
+    assert (body["code"], body["data"]["paid_amount"], body["data"]["items_out"]) == ("ok", "100.000", 3)
 
 
 @pytest.mark.parametrize(("vehicle", "code"), [
@@ -161,7 +161,7 @@ def test_a_broken_vehicle_is_swapped(client, token, shop, booked):
     assert (old["status"], old["end_time"], old["reason"], old["total_amount"]) == (
         "replaced", "2026-10-02 16:20:00", "Chain broken", None)
     assert (new["status"], new["vehicle"]["name"], new["replaced_item_id"], new["base_fare"]) == (
-        "active", "MO 42", old["sync_id"], "50.00")
+        "active", "MO 42", old["sync_id"], "50.000")
     assert body["data"]["items_out"] == 2
     assert can_rent(client, token, shop["mo41"]) is True
     assert can_rent(client, token, shop["mo42"]) is False

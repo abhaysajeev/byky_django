@@ -120,7 +120,7 @@ def test_login_returns_the_full_response_shape(client, app_user, device, world):
     assert branch["name"] == "Creek Park 1"
     assert branch["branch_code"] == "AUH01"
     assert branch["is_hotel"] is True
-    assert branch["hotel_commission"] == "12.50"
+    assert branch["hotel_commission"] == "12.500"
     assert branch["accepts_app_payment"] is True
     assert branch["is_multi_device"] is True
     assert branch["allows_test_ride"] is True

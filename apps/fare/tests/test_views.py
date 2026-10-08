@@ -120,7 +120,7 @@ def test_check_answers_test_fare_for_an_unsaved_fare(client_in, world):
     response = post(client_in, CHECK, {"fare": fare_data(world), "test": {"date": "2026-06-01", "time": "10:00"}})
     body = response.json()
     assert body["ok"] is True
-    assert body["test"]["price"]["base_fare"] == "50.00"
+    assert body["test"]["price"]["base_fare"] == "50.000"
     assert body["test"]["source"]["label"] == "Base fare"
     assert not Fare.objects.exists()
 

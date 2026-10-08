@@ -19,9 +19,9 @@ def _full_number():
 
 def _money(**kwargs):
     return serializers.DecimalField(
-        max_digits=12, decimal_places=2, min_value=Decimal(0),
+        max_digits=13, decimal_places=3, min_value=Decimal(0),
         error_messages={**REQUIRED, "invalid": "must be a number", "min_value": "must be 0 or more",
-                        "max_decimal_places": "must have at most 2 decimal places"},
+                        "max_decimal_places": "must have at most 3 decimal places"},
         **kwargs,
     )
 

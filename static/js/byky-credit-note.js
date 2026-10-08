@@ -9,7 +9,7 @@
   var root = document.querySelector('[data-credit-note]');
   if (!root) return;
 
-  function money(value) { return (Math.round(value * 100) / 100).toFixed(2); }
+  function money(value) { return (Math.round(value * 1000) / 1000).toFixed(3); }
 
   root.querySelectorAll('[data-cn-amount]').forEach(function (field) {
     var input = field.querySelector('[data-cn-net]');
@@ -26,7 +26,7 @@
         note.classList.add('is-error');
         return;
       }
-      var tax = rate ? Math.round(net * rate / (100 + rate) * 100) / 100 : 0;
+      var tax = rate ? Math.round(net * rate / (100 + rate) * 1000) / 1000 : 0;
       note.textContent = 'VAT ' + rate + '% included: AED ' + money(tax) + ' · taxable AED ' + money(net - tax);
     });
   });

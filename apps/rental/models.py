@@ -179,7 +179,7 @@ class OrderItemStatus(models.TextChoices):
     CANCELLED = "cancelled", "Cancelled"  # the whole order was cancelled
 
 
-MONEY = {"max_digits": 12, "decimal_places": 2}
+MONEY = {"max_digits": 13, "decimal_places": 3}       # AED to the 3rd decimal (7 Oct 2026)
 
 PAID = F("amount_received") - F("amount_refunded")
 
@@ -223,7 +223,7 @@ class Order(TimeStampedModel):
     discount_amount = models.DecimalField(**MONEY, null=True, blank=True)
     tax_percentage = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)   # VAT %
     tax_amount = models.DecimalField(**MONEY, null=True, blank=True)          # VAT included in net_amount
-    rounding_adjustment = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    rounding_adjustment = models.DecimalField(max_digits=7, decimal_places=3, null=True, blank=True)
     net_amount = models.DecimalField(**MONEY, null=True, blank=True)
 
     # Money collected, from booking on.
@@ -492,7 +492,7 @@ class Invoice(TimeStampedModel):
     discount_amount = models.DecimalField(**MONEY)
     tax_percentage = models.DecimalField(max_digits=5, decimal_places=2)
     tax_amount = models.DecimalField(**MONEY)                    # VAT included in net_amount
-    rounding_adjustment = models.DecimalField(max_digits=6, decimal_places=2)
+    rounding_adjustment = models.DecimalField(max_digits=7, decimal_places=3)
     net_amount = models.DecimalField(**MONEY)
     payments = models.JSONField(default=list)      # [{mode, kind, amount, reference_no}] at issue
 

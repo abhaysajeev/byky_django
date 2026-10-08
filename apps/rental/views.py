@@ -209,7 +209,7 @@ def _status_key(order, items_out):
 
 
 def _aed(value):
-    return f"AED {value:,.2f}" if value is not None else None
+    return f"AED {value:,.3f}" if value is not None else None
 
 
 def _day_bounds(day, zone):
@@ -433,7 +433,7 @@ def _clock(moment):
 
 
 def _rate(amount, minutes):
-    return f"{amount:.2f}/{minutes} MINS"
+    return f"{amount:.3f}/{minutes} MINS"
 
 
 def _receipt(invoice, zone):

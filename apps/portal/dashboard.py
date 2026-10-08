@@ -46,7 +46,7 @@ def _midnight(day, zone):
 
 
 def _aed(amount):
-    return f"{(amount or Decimal('0')):,.2f}"
+    return f"{(amount or Decimal('0')):,.3f}"
 
 
 def format_mobile(mobile):

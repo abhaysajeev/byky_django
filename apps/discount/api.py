@@ -349,6 +349,12 @@ cancelled); `remarks` is "" when none. Times `YYYY-MM-DD HH:MM:SS`, company time
 
 
 def _amount(value):
+    """Money: AED to the 3rd decimal."""
+    return None if value is None else f"{value:.3f}"
+
+
+def _percent(value):
+    """A percentage: 2 decimals."""
     return None if value is None else f"{value:.2f}"
 
 
@@ -397,7 +403,7 @@ class ApprovalStatusView(APIView):
             "sync_id": str(claim.pk), "order_id": str(claim.order_id), "status": claim.status,
             "card_discount_id": claim.card_discount_id,
             "card_type_name": claim.card_type.name, "card_grade_name": claim.card_grade.name,
-            "bill_amount": _amount(claim.bill_amount), "discount_percent": _amount(claim.discount_percent),
+            "bill_amount": _amount(claim.bill_amount), "discount_percent": _percent(claim.discount_percent),
             "discount_amount": _amount(claim.discount_amount), "net_amount": _amount(claim.net_amount),
             "requested_at": claim.requested_at.astimezone(zone).strftime("%Y-%m-%d %H:%M:%S"),
             "decided_at": claim.decided_at.astimezone(zone).strftime("%Y-%m-%d %H:%M:%S")
