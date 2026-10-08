@@ -10,6 +10,7 @@ from django.db.models import Count, Q, Sum
 from django.http import Http404
 from django.shortcuts import render
 from django.urls import reverse
+from django.utils import timezone
 from django.views import View
 
 from apps.company import writes as company_writes
@@ -31,6 +32,7 @@ from apps.rental.models import (
     OrderAction,
     OrderItem,
     OrderItemStatus,
+    OrderRequestStatus,
     OrderStatus,
     PaymentKind,
 )
@@ -401,9 +403,20 @@ class OrderDetailView(RentalScreenView):
                 .order_by("happened_at", "received_at")
             ],
             "credit_note": credit_note_link(order),
+            "discount_request": discount_request_link(order),
             "list_url": reverse("rental-order-list"),
         })
         return context
+
+
+def discount_request_link(order):
+    """The order's latest discount request, for the order page: the approved
+    rule (or its state) and its page."""
+    req = order.requests.order_by("-requested_at").first()
+    if req is None:
+        return None
+    return {"label": rule_label(req) or req.get_kind_display(), "status_label": req.get_status_display(),
+            "applied_amount": req.applied_amount, "url": reverse("rental-request-detail", args=[req.pk])}
 
 
 def credit_note_link(order):
@@ -720,3 +733,144 @@ class CreditNoteReceiptView(PagePermissionMixin, View):
             "emirate": invoice.branch.location.state.name, "issued_by": note.decided_by.display_name
             if note.decided_by_id else "—",
         })
+
+
+
+# -- Requests (operator asks on a tablet, a manager decides; apps/rental/requests.py) --
+
+REQUESTS_PER_PAGE = 50
+# One tab per state; Closed holds both endings that were nobody's decision --
+# withdrawn by the tablet and closed by the settle.
+REQUEST_TABS = [
+    ("pending", "Pending", (OrderRequestStatus.PENDING,)),
+    ("approved", "Approved", (OrderRequestStatus.APPROVED,)),
+    ("rejected", "Rejected", (OrderRequestStatus.REJECTED,)),
+    ("revoked", "Revoked", (OrderRequestStatus.REVOKED,)),
+    ("closed", "Closed", (OrderRequestStatus.WITHDRAWN, OrderRequestStatus.CLOSED)),
+]
+
+
+def rule_label(req):
+    """An approved discount as one phrase: "10.00%" or "AED 15.000"."""
+    if req.discount_value is None:
+        return ""
+    if req.discount_type == "percent":
+        return f"{req.discount_value.quantize(Decimal('0.01'))}%"
+    return f"AED {req.discount_value}"
+
+
+def _requests(request, zone):
+    """The requests the list's filters match, every state -- the tab picks the
+    state, so its counts come from the same filters."""
+    params = request.GET
+    rows = scoping.requests_for(request.user).select_related("order", "branch", "requested_by")
+    text = params.get("q", "").strip()
+    if text:
+        rows = rows.filter(Q(order__order_no__icontains=text) | Q(order__customer_name__icontains=text)
+                           | Q(order__customer_mobile__icontains=text))
+    if params.get("branch", "").isdigit():
+        rows = rows.filter(branch_id=int(params["branch"]))
+    start, end = _date_param(params.get("from")), _date_param(params.get("to"))
+    if start:
+        rows = rows.filter(requested_at__gte=_day_bounds(start, zone)[0])
+    if end:
+        rows = rows.filter(requested_at__lt=_day_bounds(end, zone)[1])
+    return rows
+
+
+class RequestListView(RentalScreenView):
+    template_name = "rental/request_list.html"
+    page_code = "rental.request"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user, params = self.request.user, self.request.GET
+        zone = zone_for(getattr(user, "company", None))
+        tabs = {value: (label, states) for value, label, states in REQUEST_TABS}
+        tab = params.get("tab", "pending")
+        if tab not in tabs:
+            tab = "pending"
+        rows = _requests(self.request, zone)
+        by_status = dict(rows.order_by().values_list("status").annotate(n=Count("pk")))
+        # Waiting ones oldest first -- the longest wait is answered first.
+        ordering = "requested_at" if tab == "pending" else "-requested_at"
+        page = Paginator(rows.filter(status__in=tabs[tab][1]).order_by(ordering),
+                         REQUESTS_PER_PAGE).get_page(params.get("page"))
+        filters = params.copy()
+        for key in ("page", "tab"):
+            filters.pop(key, None)
+        query = filters.copy()
+        query["tab"] = tab
+        context.update({
+            "tab": tab, "tab_label": tabs[tab][0],
+            "tabs": [{"value": value, "label": label, "count": sum(by_status.get(s, 0) for s in states)}
+                     for value, label, states in REQUEST_TABS],
+            "filter_query": filters.urlencode(),
+            "rows": [
+                {
+                    "requested_at": req.requested_at.astimezone(zone), "kind": req.get_kind_display(),
+                    "order_no": req.order.order_no, "order_url": reverse("rental-order-detail", args=[req.order_id]),
+                    "customer": req.order.customer_name, "mobile": req.order.customer_mobile,
+                    "station": req.branch.name,
+                    "requested_by": req.requested_by.display_name if req.requested_by_id else "",
+                    "reason": req.reason, "rule": rule_label(req), "applied_amount": req.applied_amount,
+                    "status": req.status,
+                    "detail_url": reverse("rental-request-detail", args=[req.pk]),
+                }
+                for req in page.object_list
+            ],
+            "page": page, "query": query.urlencode(), "params": params,
+            "filtered": any(params.get(k) for k in ("q", "branch", "from", "to")),
+            "branches": list(branches_for(user).filter(is_active=True).order_by("name").values("id", "name")),
+        })
+        return context
+
+
+class RequestDetailView(RentalScreenView):
+    template_name = "rental/request_detail.html"
+    page_code = "rental.request"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        zone = zone_for(getattr(user, "company", None))
+        req = (scoping.requests_for(user)
+               .select_related("order", "branch", "device", "requested_by", "decided_by", "revoked_by")
+               .filter(pk=self.kwargs["pk"]).first())
+        if req is None:
+            raise Http404("No such request.")
+        order = req.order
+
+        def local(moment):
+            return moment.astimezone(zone) if moment else None
+
+        now = timezone.now()
+        lines = []
+        for item in order.items.select_related("vehicle__vehicle_type").order_by("start_time", "created_on"):
+            if item.status not in (OrderItemStatus.ACTIVE, OrderItemStatus.RETURNED):
+                continue
+            end = item.end_time or now
+            lines.append({
+                "vehicle": item.vehicle.vehicle_name, "identifier": item.vehicle.identifier,
+                "vehicle_type": item.vehicle.vehicle_type.vehicle_type_name, "status": item.status,
+                "status_label": item.get_status_display(), "start_time": local(item.start_time),
+                "end_time": local(item.end_time),
+                "minutes": max(int((end - item.start_time).total_seconds() // 60), 0),
+            })
+        context.update({
+            "req": req, "order": order, "lines": lines, "rule": rule_label(req),
+            "order_running": order.status == OrderStatus.ACTIVE,
+            "requested_at": local(req.requested_at), "decided_at": local(req.decided_at),
+            "revoked_at": local(req.revoked_at), "closed_at": local(req.closed_at),
+            "applied_at": local(req.applied_at), "booked_at": local(order.booked_at),
+            "requested_by": req.requested_by.display_name if req.requested_by_id else "",
+            "decided_by": req.decided_by.display_name if req.decided_by_id else "",
+            "revoked_by": req.revoked_by.display_name if req.revoked_by_id else "",
+            "tablet": req.device.device_registration_id if req.device_id else "",
+            "order_url": reverse("rental-order-detail", args=[order.pk]),
+            "list_url": reverse("rental-request-list"),
+            "approve_url": reverse("rental-request-approve", args=[req.pk]),
+            "reject_url": reverse("rental-request-reject", args=[req.pk]),
+            "revoke_url": reverse("rental-request-revoke", args=[req.pk]),
+        })
+        return context

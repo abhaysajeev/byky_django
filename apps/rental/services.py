@@ -134,6 +134,17 @@ ORDER_ERRORS = {
     "credit_note_issued": (409, "This order already has a credit note.", False),
     "unknown_credit_note": (404, "No credit note request with that id.", False),
     "credit_note_closed": (409, "That credit note request is already approved or rejected.", False),
+    # Requests (apps/rental/requests.py).
+    "discount_request_pending": (409, "A discount request is already waiting for this order.", False),
+    "discount_approved": (409, "This order already has an approved discount.", False),
+    "card_discount_requested": (409, "This order already has a card-discount request.", False),
+    "unknown_request": (404, "No request with that id at this station.", False),
+    "request_closed": (409, "That request is already decided or closed.", False),
+    # A manager discount at settle.
+    "unknown_discount_request": (404, "That discount request is not on this order.", False),
+    "discount_request_not_approved": (409, "That discount request is not approved.", False),
+    "discount_mismatch": (400, "The discount is not the one approved.", False),
+    "approved_discount_not_applied": (409, "This order has an approved discount that must be applied.", False),
 }
 
 
@@ -141,9 +152,9 @@ class OrderRefused(Exception):
     """One of ORDER_ERRORS. `message` overrides the catalogue's when the
     refusal can say which id it was about."""
 
-    def __init__(self, code, message=None):
+    def __init__(self, code, message=None, data=None):
         self.status, default, self.retry = ORDER_ERRORS[code]
-        self.code, self.message = code, message or default
+        self.code, self.message, self.data = code, message or default, data or {}
         super().__init__(self.message)
 
 
@@ -157,6 +168,8 @@ _CONSTRAINT_REFUSALS = {
     "payment_pkey": "payment_id_used",
     "credit_note_pkey": "sync_id_conflict",
     "uniq_live_credit_note_per_order": "credit_note_pending",
+    "order_request_pkey": "sync_id_conflict",
+    "uniq_live_request_per_order_kind": "discount_request_pending",
 }
 
 
@@ -593,11 +606,17 @@ def settle_order(session, values, request_data, reply_for):
     VAT is included in the fares (client, 3 Oct 2026): net_amount = subtotal
     - discount_amount + rounding_adjustment, nothing added for VAT.
     tax_percentage / tax_amount are the VAT *contained* in the net -- stored
-    as sent and shown on the tax invoice, never part of the sum. In
-    one transaction: the card discount redeemed (and unused requests
-    cancelled), the payments recorded, the order completed and the invoice
-    issued. A zero bill settles too.
+    as sent and shown on the tax invoice, never part of the sum.
+
+    The one discount is either a card discount (`card_discount`) or a
+    manager's approved discount (`manager_discount`, checked against the
+    approval -- apps/rental/requests.py::check_at_settle). An approved manager
+    discount must be applied. In one transaction: the card discount redeemed
+    (and unused card requests cancelled), the manager approval marked applied
+    (and waiting requests closed), the payments recorded, the order completed
+    and the invoice issued. A zero bill settles too.
     """
+    from apps.rental import requests as order_requests  # it imports this module
 
     def apply():
         order = _open_order(session, values["order_id"])
@@ -606,7 +625,8 @@ def settle_order(session, values, request_data, reply_for):
             raise OrderRefused("items_still_out")
 
         billed = [item for item in items if item.status == OrderItemStatus.RETURNED]
-        discount = values.get("discount")
+        card, manager = values.get("card_discount"), values.get("manager_discount")
+        discount = card or manager
         discount_amount = discount["discount_amount"] if discount else Decimal("0")
         lines_total = sum((item.total_amount for item in billed), Decimal("0"))
         if values["subtotal"] != lines_total:
@@ -620,11 +640,12 @@ def settle_order(session, values, request_data, reply_for):
                 f"(VAT is included in the fares, not added).",
             )
 
+        approval = order_requests.check_at_settle(order, manager, values["subtotal"])
         claim = None
-        if discount:
+        if card:
             try:
                 claim = discount_services.redeem_for_order(
-                    session, order, discount, at=values["settled_at"],
+                    session, order, card, at=values["settled_at"],
                     bill_amount=values["subtotal"], net_amount=values["net_amount"],
                 )
             except discount_services.RedeemRefused as refused:
@@ -645,8 +666,10 @@ def settle_order(session, values, request_data, reply_for):
         order.subtotal, order.tax_percentage = values["subtotal"], values["tax_percentage"]
         order.tax_amount, order.rounding_adjustment = values["tax_amount"], values["rounding_adjustment"]
         order.net_amount = values["net_amount"]
+        order_requests.close_at_settle(order, approval, discount_amount, values["settled_at"], session.user)
+
         order.discount_claim = claim
-        order.discount_percentage = discount["discount_percentage"] if discount else None
+        order.discount_percentage = discount.get("discount_percentage") if discount else None
         order.discount_amount = discount_amount
         order.status, order.completed_at = OrderStatus.COMPLETED, values["settled_at"]
         order.modified_by = session.user

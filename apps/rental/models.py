@@ -418,6 +418,8 @@ class OrderAction(models.TextChoices):
     CANCEL_REJECTED = "cancel_rejected", "Cancel rejected"
     CREDIT_NOTE_REQUEST = "credit_note_request", "Credit note requested"
     CREDIT_NOTE_CANCEL = "credit_note_cancel", "Credit note request cancelled"
+    REQUEST = "request", "Request sent"
+    REQUEST_WITHDRAW = "request_withdraw", "Request withdrawn"
 
 
 class OrderEvent(models.Model):
@@ -633,3 +635,139 @@ class CreditNote(TimeStampedModel):
 
     def __str__(self):
         return self.credit_note_no or f"Credit note request {self.pk}"
+
+
+# -- Requests: an operator asks, a manager decides -----------------------------------
+
+
+class OrderRequestKind(models.TextChoices):
+    DISCOUNT = "discount", "Discount"
+
+
+class OrderRequestStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    APPROVED = "approved", "Approved"
+    REJECTED = "rejected", "Rejected"
+    WITHDRAWN = "withdrawn", "Withdrawn"      # the operator took it back while pending
+    CLOSED = "closed", "Closed"               # still pending when the order settled
+    REVOKED = "revoked", "Revoked"            # approved, then taken back by a manager
+
+
+class DiscountType(models.TextChoices):
+    PERCENT = "percent", "Percentage"
+    AMOUNT = "amount", "Amount (AED)"
+
+
+class DecisionChannel(models.TextChoices):
+    WEB = "web", "Web"
+    MANAGER = "manager", "Manager app"
+
+
+# A request that holds its order: waiting, or approved and not yet taken back.
+REQUEST_LIVE = (OrderRequestStatus.PENDING, OrderRequestStatus.APPROVED)
+
+
+class OrderRequest(TimeStampedModel):
+    """An operator's request on a running order, decided by a manager on the
+    web or in the manager app (Request Management, 8; replaces legacy
+    DMSRequests -- Service_Save_RequestApproval, Approve_Request,
+    Reject_Request, Service_Get_Request_Approval_By_OrderNo).
+
+    Only `discount` so far. The tablet asks (its sync_id is the id); the
+    manager approves with a rule -- a percentage or a fixed AED amount, since
+    the bill is not known yet -- or rejects; an approval can be revoked while
+    the order runs. The tablet applies the discount itself at settle, and the
+    settle is checked against the approval (`applied_*`). A request still
+    pending at settle is closed.
+
+    Rules agreed with the owner (8 Oct 2026): one pending or approved request
+    per order and kind; rejected, withdrawn and revoked ones leave room for a
+    new one; a manager discount and a card discount never share an order.
+    """
+
+    id = models.UUIDField(primary_key=True, editable=False)
+    kind = models.CharField(max_length=20, choices=OrderRequestKind.choices)
+    company = models.ForeignKey("company.Company", on_delete=models.PROTECT, related_name="order_requests")
+    branch = models.ForeignKey("company.Branch", on_delete=models.PROTECT, related_name="order_requests")
+    order = models.ForeignKey(Order, on_delete=models.PROTECT, related_name="requests")
+    status = models.CharField(max_length=10, choices=OrderRequestStatus.choices)
+
+    # The tablet's request.
+    device = models.ForeignKey("devices.Device", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    requested_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    requested_at = models.DateTimeField()                                           # tablet time
+    reason = models.TextField(blank=True)
+
+    # The approval: a rule, not an amount -- the bill is not made yet.
+    discount_type = models.CharField(max_length=10, choices=DiscountType.choices, blank=True)
+    discount_value = models.DecimalField(**MONEY, null=True, blank=True)            # % or AED
+
+    # The manager's decision, and where it was made.
+    decided_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    decided_channel = models.CharField(max_length=10, choices=DecisionChannel.choices, blank=True)
+    decided_at = models.DateTimeField(null=True, blank=True)
+    decision_note = models.TextField(blank=True)
+
+    # An approval taken back.
+    revoked_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    revoked_channel = models.CharField(max_length=10, choices=DecisionChannel.choices, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    revoke_note = models.TextField(blank=True)
+
+    # Withdrawn by the operator, or closed by the settle.
+    closed_at = models.DateTimeField(null=True, blank=True)
+
+    # The discount the settle applied under this approval.
+    applied_amount = models.DecimalField(**MONEY, null=True, blank=True)
+    applied_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "order_request"
+        ordering = ["-requested_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["order", "kind"], condition=models.Q(status__in=REQUEST_LIVE),
+                name="uniq_live_request_per_order_kind",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(status=OrderRequestStatus.PENDING, decided_at__isnull=True, decided_by__isnull=True,
+                             revoked_at__isnull=True, closed_at__isnull=True)
+                    | models.Q(status=OrderRequestStatus.APPROVED, decided_at__isnull=False,
+                               revoked_at__isnull=True, closed_at__isnull=True)
+                    | models.Q(status=OrderRequestStatus.REJECTED, decided_at__isnull=False,
+                               revoked_at__isnull=True, closed_at__isnull=True)
+                    | models.Q(status=OrderRequestStatus.REVOKED, decided_at__isnull=False,
+                               revoked_at__isnull=False, closed_at__isnull=True)
+                    | models.Q(status__in=[OrderRequestStatus.WITHDRAWN, OrderRequestStatus.CLOSED],
+                               decided_at__isnull=True, closed_at__isnull=False)
+                ),
+                name="order_request_status_fields",
+            ),
+            # Approved (and later revoked) discounts carry their rule; nothing else does.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(kind=OrderRequestKind.DISCOUNT,
+                             status__in=[OrderRequestStatus.APPROVED, OrderRequestStatus.REVOKED],
+                             discount_type__in=DiscountType.values, discount_value__gt=0)
+                    | (~models.Q(kind=OrderRequestKind.DISCOUNT,
+                                 status__in=[OrderRequestStatus.APPROVED, OrderRequestStatus.REVOKED])
+                       & models.Q(discount_type="", discount_value__isnull=True))
+                ),
+                name="order_request_discount_rule",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(discount_type=DiscountType.PERCENT) | models.Q(discount_value__lte=100),
+                name="order_request_percent_at_most_100",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(applied_at__isnull=True, applied_amount__isnull=True)
+                | models.Q(status=OrderRequestStatus.APPROVED, applied_at__isnull=False,
+                           applied_amount__isnull=False),
+                name="order_request_applied_only_when_approved",
+            ),
+        ]
+        indexes = [models.Index(fields=["status", "requested_at"]), models.Index(fields=["branch", "status"])]
+
+    def __str__(self):
+        return f"{self.get_kind_display()} request on {self.order_id}"

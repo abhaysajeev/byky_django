@@ -1,0 +1,205 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}{{ req.get_kind_display }} request {{ order.order_no }} - Rental{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+<script src="{% static 'js/byky-request.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr" data-order-request data-approve-url="{{ approve_url }}" data-reject-url="{{ reject_url }}" data-revoke-url="{{ revoke_url }}">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Rental</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <a href="{{ list_url }}">Requests</a>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>{{ order.order_no }}</b>
+      </div>
+      <h1 class="scr-title">{{ req.get_kind_display }} request</h1>
+      <p class="scr-sub">On order {{ order.order_no }} · {{ req.branch.name }}</p>
+    </div>
+    <div class="scr-head-actions">
+      <a href="{{ list_url }}" class="scr-btn-secondary">Back</a>
+      {% if perm.approve %}
+      {% if req.status == "pending" and order_running %}
+      <button type="button" class="scr-btn-danger" data-scr-modal-open="request-reject">Reject</button>
+      <button type="button" class="scr-btn-primary" data-scr-modal-open="request-approve">Approve</button>
+      {% elif req.status == "approved" and order_running %}
+      <button type="button" class="scr-btn-danger" data-scr-modal-open="request-revoke">Revoke</button>
+      {% endif %}
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="scr-mon-grid">
+    <div class="scr-card">
+      <div class="scr-form-head">
+        <div class="scr-form-title-row">
+          <h2 class="scr-form-title">Request</h2>
+          {% include "rental/partials/request_status.html" with status=req.status %}
+        </div>
+      </div>
+      <div class="scr-form-body scr-mon-body">
+        <div class="scr-detail-rows">
+          <div class="scr-detail-row"><span class="scr-detail-label">Requested</span><span class="scr-detail-value">{{ requested_at|date:"d M Y, H:i" }}{% if requested_by %} · {{ requested_by }}{% endif %}{% if tablet %} · Tablet {{ tablet }}{% endif %}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Reason</span><span class="scr-detail-value scr-mon-wrap">{{ req.reason|default:"—" }}</span></div>
+          {% if req.decided_at %}
+          <div class="scr-detail-row"><span class="scr-detail-label">{% if req.status == "rejected" %}Rejected{% else %}Approved{% endif %}</span><span class="scr-detail-value">{{ decided_at|date:"d M Y, H:i" }}{% if decided_by %} · {{ decided_by }}{% endif %} · {{ req.get_decided_channel_display }}</span></div>
+          {% endif %}
+          {% if rule %}
+          <div class="scr-detail-row"><span class="scr-detail-label"><b>Discount</b></span><span class="scr-detail-value"><b>{{ rule }}</b> · {{ req.get_discount_type_display }}</span></div>
+          {% endif %}
+          {% if req.decision_note %}
+          <div class="scr-detail-row"><span class="scr-detail-label">Note</span><span class="scr-detail-value scr-mon-wrap">{{ req.decision_note }}</span></div>
+          {% endif %}
+          {% if req.revoked_at %}
+          <div class="scr-detail-row"><span class="scr-detail-label">Revoked</span><span class="scr-detail-value">{{ revoked_at|date:"d M Y, H:i" }}{% if revoked_by %} · {{ revoked_by }}{% endif %} · {{ req.get_revoked_channel_display }}</span></div>
+          {% if req.revoke_note %}<div class="scr-detail-row"><span class="scr-detail-label">Revoke Note</span><span class="scr-detail-value scr-mon-wrap">{{ req.revoke_note }}</span></div>{% endif %}
+          {% endif %}
+          {% if req.closed_at %}
+          <div class="scr-detail-row"><span class="scr-detail-label">{% if req.status == "withdrawn" %}Withdrawn{% else %}Closed{% endif %}</span><span class="scr-detail-value">{{ closed_at|date:"d M Y, H:i" }} · {% if req.status == "withdrawn" %}by the tablet{% else %}the order was settled while it waited{% endif %}</span></div>
+          {% endif %}
+          {% if req.applied_at %}
+          <div class="scr-detail-row"><span class="scr-detail-label">Applied</span><span class="scr-detail-value">AED {{ req.applied_amount }} · at settle, {{ applied_at|date:"d M Y, H:i" }}</span></div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="scr-card">
+      <div class="scr-form-head"><div class="scr-form-title-row"><h2 class="scr-form-title">Order</h2>{% include "rental/partials/order_status.html" with status=order.status %}</div></div>
+      <div class="scr-form-body scr-mon-body">
+        <div class="scr-detail-rows">
+          <div class="scr-detail-row"><span class="scr-detail-label">Order</span><span class="scr-detail-value"><a class="scr-link-blue" href="{{ order_url }}">{{ order.order_no }}</a> · {{ booked_at|date:"d M Y, H:i" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Customer</span><span class="scr-detail-value">{{ order.customer_name|default:"—" }}{% if order.customer_mobile %} · {{ order.customer_mobile }}{% endif %}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Advance Paid</span><span class="scr-detail-value">AED {{ order.paid_amount }}</span></div>
+          {% if order.net_amount is not None %}
+          <div class="scr-detail-row"><span class="scr-detail-label">Bill</span><span class="scr-detail-value">Subtotal AED {{ order.subtotal }} · discount AED {{ order.discount_amount }} · net AED {{ order.net_amount }}</span></div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="scr-card" style="margin-top:20px">
+    <div class="scr-form-head"><div class="scr-form-title-row"><h2 class="scr-form-title">Vehicles</h2></div></div>
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead><tr><th>Vehicle</th><th>Type</th><th>Start</th><th>Back</th><th>Minutes</th><th>Status</th></tr></thead>
+        <tbody>
+          {% for line in lines %}
+          <tr>
+            <td><div class="scr-co-name">{{ line.vehicle }}</div><div class="scr-contact-sub">{{ line.identifier }}</div></td>
+            <td class="scr-state">{{ line.vehicle_type }}</td>
+            <td class="scr-state">{{ line.start_time|date:"H:i" }}</td>
+            <td class="scr-state">{% if line.end_time %}{{ line.end_time|date:"H:i" }}{% else %}Out{% endif %}</td>
+            <td class="scr-state">{{ line.minutes }}</td>
+            <td class="scr-state">{{ line.status_label }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="6" class="scr-state">No vehicles.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {% if perm.approve and order_running %}
+  {% if req.status == "pending" %}
+  <div class="scr-modal-veil" data-scr-modal-veil="request-approve" hidden></div>
+  <div class="scr-modal" data-scr-modal="request-approve" hidden>
+    <div class="scr-modal-head">
+      <div>
+        <div class="scr-modal-title">Approve discount</div>
+        <p class="scr-modal-sub">The bill is not made yet: approve a percentage or a fixed amount. The tablet applies it at settle.</p>
+      </div>
+      <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+      </button>
+    </div>
+    <div class="scr-modal-body">
+      <div class="scr-field">
+        <span class="scr-label">Discount as <span class="scr-required">*</span></span>
+        <div class="scr-radio-row">
+          <label class="scr-radio-label"><input type="radio" class="scr-radio" name="rq-type" value="percent" checked data-rq-type /> Percentage (%)</label>
+          <label class="scr-radio-label"><input type="radio" class="scr-radio" name="rq-type" value="amount" data-rq-type /> Amount (AED)</label>
+        </div>
+      </div>
+      <div class="scr-field">
+        <label class="scr-label" for="rq-value" data-rq-value-label>Percentage <span class="scr-required">*</span></label>
+        <input id="rq-value" type="number" class="scr-input" min="0.01" max="100" step="0.01" inputmode="decimal" placeholder="0.00" data-rq-value />
+        <p class="scr-help" data-rq-help>Up to 100%, two decimals.</p>
+      </div>
+      <div class="scr-field">
+        <label class="scr-label" for="rq-approve-note">Note</label>
+        <textarea id="rq-approve-note" class="scr-input scr-textarea" rows="3" maxlength="500" data-rq-note></textarea>
+      </div>
+    </div>
+    <div class="scr-modal-foot">
+      <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+      <button type="button" class="scr-btn-primary" data-rq-go="approve">Approve</button>
+    </div>
+  </div>
+
+  <div class="scr-modal-veil" data-scr-modal-veil="request-reject" hidden></div>
+  <div class="scr-modal" data-scr-modal="request-reject" hidden>
+    <div class="scr-modal-head">
+      <div>
+        <div class="scr-modal-title">Reject request</div>
+        <p class="scr-modal-sub">The tablet can ask again after a rejection.</p>
+      </div>
+      <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+      </button>
+    </div>
+    <div class="scr-modal-body">
+      <div class="scr-field">
+        <label class="scr-label" for="rq-reject-note">Reason for rejecting</label>
+        <textarea id="rq-reject-note" class="scr-input scr-textarea" rows="3" maxlength="500" data-rq-note></textarea>
+      </div>
+    </div>
+    <div class="scr-modal-foot">
+      <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+      <button type="button" class="scr-btn-danger" data-rq-go="reject">Reject</button>
+    </div>
+  </div>
+  {% elif req.status == "approved" %}
+  <div class="scr-modal-veil" data-scr-modal-veil="request-revoke" hidden></div>
+  <div class="scr-modal" data-scr-modal="request-revoke" hidden>
+    <div class="scr-modal-head">
+      <div>
+        <div class="scr-modal-title">Revoke approval</div>
+        <p class="scr-modal-sub">{{ rule }} will no longer be allowed at settle. The tablet can ask again.</p>
+      </div>
+      <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+      </button>
+    </div>
+    <div class="scr-modal-body">
+      <div class="scr-field">
+        <label class="scr-label" for="rq-revoke-note">Reason for revoking</label>
+        <textarea id="rq-revoke-note" class="scr-input scr-textarea" rows="3" maxlength="500" data-rq-note></textarea>
+      </div>
+    </div>
+    <div class="scr-modal-foot">
+      <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+      <button type="button" class="scr-btn-danger" data-rq-go="revoke">Revoke</button>
+    </div>
+  </div>
+  {% endif %}
+  {% endif %}
+</div>
+
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}

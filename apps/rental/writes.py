@@ -14,8 +14,9 @@ from django.urls import reverse
 from apps.company.scoping import companies_for
 from apps.company.writes import WriteView, _errors, _payload
 from apps.rental import credit_notes, services
+from apps.rental import requests as order_requests
 from apps.rental.forms import CustomerForm
-from apps.rental.models import CreditNote, Customer
+from apps.rental.models import CreditNote, Customer, DecisionChannel, OrderRequest
 from apps.rental.scoping import customers_for
 
 
@@ -103,3 +104,49 @@ class CreditNoteIssue(_CreditNoteWrite):
     def post(self, request, invoice_pk):
         return self.answer(lambda data: credit_notes.issue_directly(
             request.user, invoice_pk, self.company_ids(), data.get("net_amount"), str(data.get("reason") or "")))
+
+
+
+# -- Requests: decided here, as in the manager app (apps/rental/requests.py) --------
+
+
+class _RequestWrite(WriteView):
+    model = OrderRequest
+    page_code = "rental.request"
+
+    def company_ids(self):
+        return list(companies_for(self.request.user).values_list("id", flat=True))
+
+    def answer(self, act, message):
+        if not self.may("approve"):
+            return self.refused()
+        try:
+            req = act(_payload(self.request))
+        except order_requests.RequestRefused as refused:
+            return JsonResponse({"ok": False, "code": "invalid", "errors": [{"field": "", "message": refused.message}]},
+                                status=400)
+        return JsonResponse({"ok": True, "message": message,
+                             "redirect": reverse("rental-request-detail", args=[req.pk])})
+
+
+class RequestApprove(_RequestWrite):
+    """Approve a discount request with a rule: a percentage or an AED amount."""
+
+    def post(self, request, pk):
+        return self.answer(lambda data: order_requests.approve(
+            request.user, pk, self.company_ids(), DecisionChannel.WEB, data.get("discount_type"),
+            data.get("discount_value"), str(data.get("note") or "")), "Discount approved.")
+
+
+class RequestReject(_RequestWrite):
+    def post(self, request, pk):
+        return self.answer(lambda data: order_requests.reject(
+            request.user, pk, self.company_ids(), DecisionChannel.WEB, str(data.get("note") or "")),
+            "Request rejected.")
+
+
+class RequestRevoke(_RequestWrite):
+    def post(self, request, pk):
+        return self.answer(lambda data: order_requests.revoke(
+            request.user, pk, self.company_ids(), DecisionChannel.WEB, str(data.get("note") or "")),
+            "Approval revoked.")
