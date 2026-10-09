@@ -25,7 +25,6 @@ from apps.company.scoping import companies_for
 from apps.devices import services as devices_services
 from apps.devices.models import BillKind
 from apps.portal.authentication import AppJWTAuthentication
-from apps.portal.services import has_permission
 from apps.rental import credit_notes, services
 from apps.rental import requests as order_requests
 from apps.rental.models import DecisionChannel, Invoice, OrderItemStatus
@@ -52,7 +51,7 @@ from apps.rental.serializers import (
     OrderReturnRequest,
     OrderSettleRequest,
 )
-from core.api import envelope, request_parts, session_station
+from core.api import envelope, manager_only, request_parts, session_station
 from core.enums import Channel
 from core.schema import SERVER_ERROR, envelope_request, envelope_responses
 from core.timezones import zone_for
@@ -1437,7 +1436,9 @@ class OrderRequestUsedView(_OperatorView):
 _REQUEST_LIST_DESCRIPTION = _REQUEST_RULES + """
 **This call** lists **this station's** requests -- every tablet's, newest
 first, 50 a page (`page`, from 1) -- for a Requests screen. Send
-`"pending": true` for only those waiting, `kind` for one kind. Each row is the
+`"pending": true` for only those waiting, `kind` for one kind, `from_date` /
+`to_date` (`YYYY-MM-DD`, company time, both included, either may be left out)
+for when they were asked. Each row is the
 same as in `orders/requests/status`, plus `customer_name`. Read-only.
 """
 
@@ -1467,8 +1468,9 @@ class OrderRequestListView(_OperatorView):
         form = OperatorRequestListRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
-        rows, page = order_requests.station_list(branch, pending_only=values["pending"],
-                                                 kind=values.get("kind") or None, page=values["page"])
+        rows, page = order_requests.station_list(
+            branch, pending_only=values["pending"], kind=values.get("kind") or None,
+            from_date=values.get("from_date"), to_date=values.get("to_date"), page=values["page"])
         return envelope("ok", "Requests.", {"requests": rows, "page": page.number,
                                              "pages": page.paginator.num_pages, "total": page.paginator.count})
 
@@ -1502,7 +1504,6 @@ class OrderRequestStatusView(_OperatorView):
 
 # -- Manager app --------------------------------------------------------------------
 
-REQUEST_PAGE = "rental.request"
 
 _MANAGER_SAMPLE = {
     **_REQUEST_PENDING_SAMPLE, "branch_id": 3, "station": "Creek Park 1", "requested_by": "Rashed K",
@@ -1527,13 +1528,12 @@ _MANAGER_DECIDED = {
 _MANAGER_COMMON = (
     (401, "not_authenticated", "Sign in first.", {}),
     (403, "wrong_channel", "Not allowed on this app.", {}),
-    (403, "forbidden", "You do not have permission to do that.", {}),
     SERVER_ERROR,
 )
 
 _MANAGER_RULES = _REQUEST_RULES + """
-**Manager app.** Requests from **every station** of your company. Deciding needs
-the **Approve** right on the Requests page (listing needs **Read**); the
+**Manager app.** Requests from **every station** of your company. Any signed-in
+manager may list and decide -- the manager-app login is the permission. The
 decision is recorded against you, with `decided_channel` / `revoked_channel`
 `manager`. A request already decided -- here or on the web -- answers
 `request_decided`.
@@ -1541,8 +1541,10 @@ decision is recorded against you, with `decided_channel` / `revoked_channel`
 
 _MANAGER_LIST_DESCRIPTION = _MANAGER_RULES + """
 **This call** lists requests, newest first, 50 a page (`page`, from 1). Send
-`"pending": true` for only those waiting, `kind` for one kind, and `branch_id`
-for one station. Each
+`"pending": true` for only those waiting, `kind` for one kind, `state_id` for
+one state's stations, `branch_id` for one station (with `state_id`, it must be
+in that state, else the list is empty), and `from_date` / `to_date` (`YYYY-MM-DD`, company time, both
+days included, either may be left out) for when they were asked. Each
 row carries the order: customer, advance paid so far, and every vehicle out or
 back with the minutes run so far (`minutes_run`; for one still out, up to now).
 """
@@ -1568,20 +1570,16 @@ refuses it. `note` optional (`revoke_note`).
 
 
 class _ManagerView(APIView):
-    """Manager app only, with the Requests page right; scoped to the
-    companies the user may see."""
+    """Manager app only; scoped to the companies the user may see. Any
+    signed-in manager may list and decide -- the manager-app login is the
+    permission, as for the reports (owner, 9 Oct 2026). The web screen keeps
+    its page rights."""
 
     authentication_classes = [AppJWTAuthentication]
     permission_classes = [IsAuthenticated]
-    action = "approve"
 
     def refusal(self, request, app):
-        # The session too, not only the URL: an operator's token cannot decide.
-        if app != Channel.MANAGER or request.auth.channel != Channel.MANAGER:
-            return envelope("wrong_channel", "Not allowed on this app.", http_status=403)
-        if not has_permission(request.user, REQUEST_PAGE, self.action):
-            return envelope("forbidden", "You do not have permission to do that.", http_status=403)
-        return None
+        return manager_only(request, app)
 
     def company_ids(self, request):
         return list(companies_for(request.user).values_list("id", flat=True))
@@ -1612,7 +1610,6 @@ _ORDER_CLOSED = (409, "order_closed", "This order is already completed or cancel
 class ManagerRequestListView(_ManagerView):
     """POST /api/v1/{app}/requests/list -- manager app only."""
 
-    action = "read"
 
     @extend_schema(
         tags=["Manager Requests"],
@@ -1635,7 +1632,9 @@ class ManagerRequestListView(_ManagerView):
         values = form.validated_data
         rows, page = order_requests.manager_list(
             self.company_ids(request), pending_only=values["pending"], kind=values.get("kind") or None,
-            branch_id=values.get("branch_id"), page=values["page"],
+            state_id=values.get("state_id"), branch_id=values.get("branch_id"),
+            from_date=values.get("from_date"), to_date=values.get("to_date"),
+            zone=zone_for(getattr(request.user, "company", None)), page=values["page"],
         )
         return envelope("ok", "Requests.", {"requests": rows, "page": page.number,
                                              "pages": page.paginator.num_pages, "total": page.paginator.count})
