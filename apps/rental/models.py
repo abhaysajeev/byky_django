@@ -268,6 +268,8 @@ class Order(TimeStampedModel):
             models.Index(fields=["customer"]),
             models.Index(fields=["device"]),
             models.Index(fields=["booked_at"]),
+            # The manager app's order details: one station, a booking-date window.
+            models.Index(fields=["branch", "booked_at"]),
         ]
 
     def __str__(self):

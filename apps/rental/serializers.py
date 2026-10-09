@@ -482,3 +482,45 @@ class ManagerRequestApproveRequest(ManagerRequestDecisionRequest):
         error_messages={**REQUIRED, "invalid": "must be a number", "min_value": "must be more than 0",
                         "max_decimal_places": "must have at most 3 decimal places"},
     )
+
+
+# -- Manager app: masters and reports (apps/rental/manager_api.py) ------------------
+
+
+class ManagerStatesRequest(serializers.Serializer):
+    """No fields -- the states of the signed-in manager's company."""
+
+
+class ManagerBranchesRequest(serializers.Serializer):
+    state_id = whole_number_field(min_value=1, required=False, allow_null=True)
+
+
+class DateRangeRequest(serializers.Serializer):
+    """Both dates required, company time, both included."""
+
+    from_date = date_field()
+    to_date = date_field()
+
+    def validate(self, values):
+        if values["from_date"] > values["to_date"]:
+            raise serializers.ValidationError({"to_date": "must not be before from_date"})
+        return values
+
+
+class CollectionsByStateRequest(DateRangeRequest):
+    pass
+
+
+class CollectionsByBranchRequest(DateRangeRequest):
+    state_id = whole_number_field(min_value=1)
+
+
+class BranchOrdersRequest(DateRangeRequest):
+    branch_id = whole_number_field(min_value=1)
+    order_status = serializers.ChoiceField(
+        choices=["all", "running", "partially_received", "awaiting_settlement", "fully_received", "cancelled"],
+        required=False, default="all",
+        error_messages={"invalid_choice": "must be one of: all, running, partially_received, "
+                                          "awaiting_settlement, fully_received, cancelled"},
+    )
+    page = whole_number_field(min_value=1, required=False, default=1)
