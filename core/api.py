@@ -73,6 +73,15 @@ def session_station(request):
     return branch, None
 
 
+def manager_only(request, app):
+    """The reply refusing a call that is not the manager app's, or None. The
+    session's own channel is checked too, not only the URL: an operator's
+    token on a /manager/ URL is refused."""
+    if app != Channel.MANAGER or request.auth.channel != Channel.MANAGER:
+        return envelope("wrong_channel", "Not allowed on this app.", http_status=403)
+    return None
+
+
 def request_parts(request):
     """(credentials, request_data) from the body.
 

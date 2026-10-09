@@ -5,7 +5,7 @@ URL converter in config/urls.py; the views narrow it to `operator` or
 
 from django.urls import path
 
-from apps.rental import api
+from apps.rental import api, manager_api
 
 urlpatterns = [
     path("customers/lookup", api.CustomerLookupView.as_view(), name="api-app-customer-lookup"),
@@ -30,4 +30,11 @@ urlpatterns = [
     path("requests/approve", api.ManagerRequestApproveView.as_view(), name="api-app-request-approve"),
     path("requests/reject", api.ManagerRequestRejectView.as_view(), name="api-app-request-reject"),
     path("requests/revoke", api.ManagerRequestRevokeView.as_view(), name="api-app-request-revoke"),
+    path("states", manager_api.StatesView.as_view(), name="api-app-states"),
+    path("branches", manager_api.BranchesView.as_view(), name="api-app-branches"),
+    path("reports/collections/states", manager_api.CollectionsByStateView.as_view(),
+         name="api-app-collections-states"),
+    path("reports/collections/branches", manager_api.CollectionsByBranchView.as_view(),
+         name="api-app-collections-branches"),
+    path("reports/orders", manager_api.BranchOrdersView.as_view(), name="api-app-report-orders"),
 ]
