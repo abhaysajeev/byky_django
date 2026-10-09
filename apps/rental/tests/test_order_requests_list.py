@@ -65,3 +65,16 @@ def test_only_the_operator_app(client, manager):
 
 def test_the_list_is_in_the_api_docs(client, db):
     assert "/api/v1/{app}/orders/requests/list" in client.get("/api/schema/").content.decode()
+
+
+def test_both_lists_filter_by_request_date(client, token, manager, booked):
+    asked(client, token, booked, requested_at="2026-10-02 23:30:00")       # late on 2 Oct, company time
+    on_the_day = {"from_date": "2026-10-02", "to_date": "2026-10-02"}
+
+    assert len(listed(client, token, **on_the_day)["requests"]) == 1
+    assert listed(client, token, from_date="2026-10-03")["requests"] == []
+    managers = call(client, rq.LIST, on_the_day, token=manager).json()["data"]["requests"]
+    assert len(managers) == 1
+    assert call(client, rq.LIST, {"to_date": "2026-10-01"}, token=manager).json()["data"]["requests"] == []
+    body = call(client, rq.LIST, {"from_date": "2026-10-05", "to_date": "2026-10-01"}, token=manager).json()
+    assert body["code"] == "invalid_request" and "to_date" in body["data"]["errors"]

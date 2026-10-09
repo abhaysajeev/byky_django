@@ -26,6 +26,7 @@ Rules agreed with the owner (8 Oct 2026):
 - One reprint per approval: the tablet reports it printed (`used`).
 """
 
+import datetime
 from decimal import Decimal, InvalidOperation
 
 from django.core.paginator import Paginator
@@ -236,17 +237,29 @@ def mark_used(session, values, request_data):
     return run_once(event_id=values["sync_id"], company=company, request_data=request_data, apply=apply)
 
 
-def station_list(branch, *, pending_only=False, kind=None, page=1):
+def _requested_between(rows, zone, from_date=None, to_date=None):
+    """Requests asked on or after `from_date` and on or before `to_date`
+    (company-local days, both included); either may be left out."""
+    if from_date:
+        rows = rows.filter(requested_at__gte=datetime.datetime.combine(from_date, datetime.time.min, tzinfo=zone))
+    if to_date:
+        rows = rows.filter(requested_at__lt=datetime.datetime.combine(
+            to_date + datetime.timedelta(days=1), datetime.time.min, tzinfo=zone))
+    return rows
+
+
+def station_list(branch, *, pending_only=False, kind=None, from_date=None, to_date=None, page=1):
     """(rows, page) of one station's requests, newest first -- the operator
     app's Requests screen. Each row is the tablet's view plus the customer."""
-    rows = (OrderRequest.objects.filter(branch=branch)
-            .select_related("order", "decided_by", "revoked_by").order_by("-requested_at"))
+    zone = zone_for(branch.company)
+    rows = _requested_between(
+        OrderRequest.objects.filter(branch=branch).select_related("order", "decided_by", "revoked_by")
+        .order_by("-requested_at"), zone, from_date, to_date)
     if pending_only:
         rows = rows.filter(status=OrderRequestStatus.PENDING)
     if kind:
         rows = rows.filter(kind=kind)
     page = Paginator(rows, PAGE_SIZE).get_page(page)
-    zone = zone_for(branch.company)
     return [{**request_json(req, zone), "customer_name": req.order.customer_name}
             for req in page.object_list], page
 
@@ -409,9 +422,12 @@ def manager_row(request_id):
     return _manager_rows().get(pk=request_id)
 
 
-def manager_list(company_ids, *, pending_only=False, kind=None, branch_id=None, page=1):
+def manager_list(company_ids, *, pending_only=False, kind=None, branch_id=None, from_date=None, to_date=None,
+                 zone=None, page=1):
     """(rows, page) of requests across the companies, newest first."""
     rows = _manager_rows().filter(company_id__in=company_ids).order_by("-requested_at")
+    if zone is not None:
+        rows = _requested_between(rows, zone, from_date, to_date)
     if pending_only:
         rows = rows.filter(status=OrderRequestStatus.PENDING)
     if kind:

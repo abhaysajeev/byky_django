@@ -449,8 +449,22 @@ class OrderRequestStatusRequest(CreditNoteStatusRequest):
     """Every request on these orders."""
 
 
-class OperatorRequestListRequest(serializers.Serializer):
-    """This station's requests: optionally only those waiting, or one kind."""
+class _RequestDatesMixin(serializers.Serializer):
+    """Optional request-date range, company time, both days included."""
+
+    from_date = date_field(required=False, allow_null=True)
+    to_date = date_field(required=False, allow_null=True)
+
+    def validate(self, values):
+        start, end = values.get("from_date"), values.get("to_date")
+        if start and end and start > end:
+            raise serializers.ValidationError({"to_date": "must not be before from_date"})
+        return values
+
+
+class OperatorRequestListRequest(_RequestDatesMixin):
+    """This station's requests: optionally only those waiting, one kind, or a
+    request-date range."""
 
     pending = serializers.BooleanField(required=False, default=False,
                                        error_messages={"invalid": "must be true or false"})
@@ -461,7 +475,7 @@ class OperatorRequestListRequest(serializers.Serializer):
     page = whole_number_field(min_value=1, required=False, default=1)
 
 
-class ManagerRequestListRequest(serializers.Serializer):
+class ManagerRequestListRequest(_RequestDatesMixin):
     pending = serializers.BooleanField(required=False, default=False,
                                        error_messages={"invalid": "must be true or false"})
     kind = serializers.ChoiceField(

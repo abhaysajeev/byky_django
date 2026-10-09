@@ -1436,7 +1436,9 @@ class OrderRequestUsedView(_OperatorView):
 _REQUEST_LIST_DESCRIPTION = _REQUEST_RULES + """
 **This call** lists **this station's** requests -- every tablet's, newest
 first, 50 a page (`page`, from 1) -- for a Requests screen. Send
-`"pending": true` for only those waiting, `kind` for one kind. Each row is the
+`"pending": true` for only those waiting, `kind` for one kind, `from_date` /
+`to_date` (`YYYY-MM-DD`, company time, both included, either may be left out)
+for when they were asked. Each row is the
 same as in `orders/requests/status`, plus `customer_name`. Read-only.
 """
 
@@ -1466,8 +1468,9 @@ class OrderRequestListView(_OperatorView):
         form = OperatorRequestListRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
-        rows, page = order_requests.station_list(branch, pending_only=values["pending"],
-                                                 kind=values.get("kind") or None, page=values["page"])
+        rows, page = order_requests.station_list(
+            branch, pending_only=values["pending"], kind=values.get("kind") or None,
+            from_date=values.get("from_date"), to_date=values.get("to_date"), page=values["page"])
         return envelope("ok", "Requests.", {"requests": rows, "page": page.number,
                                              "pages": page.paginator.num_pages, "total": page.paginator.count})
 
@@ -1538,8 +1541,9 @@ decision is recorded against you, with `decided_channel` / `revoked_channel`
 
 _MANAGER_LIST_DESCRIPTION = _MANAGER_RULES + """
 **This call** lists requests, newest first, 50 a page (`page`, from 1). Send
-`"pending": true` for only those waiting, `kind` for one kind, and `branch_id`
-for one station. Each
+`"pending": true` for only those waiting, `kind` for one kind, `branch_id`
+for one station, and `from_date` / `to_date` (`YYYY-MM-DD`, company time, both
+days included, either may be left out) for when they were asked. Each
 row carries the order: customer, advance paid so far, and every vehicle out or
 back with the minutes run so far (`minutes_run`; for one still out, up to now).
 """
@@ -1627,7 +1631,8 @@ class ManagerRequestListView(_ManagerView):
         values = form.validated_data
         rows, page = order_requests.manager_list(
             self.company_ids(request), pending_only=values["pending"], kind=values.get("kind") or None,
-            branch_id=values.get("branch_id"), page=values["page"],
+            branch_id=values.get("branch_id"), from_date=values.get("from_date"), to_date=values.get("to_date"),
+            zone=zone_for(getattr(request.user, "company", None)), page=values["page"],
         )
         return envelope("ok", "Requests.", {"requests": rows, "page": page.number,
                                              "pages": page.paginator.num_pages, "total": page.paginator.count})
