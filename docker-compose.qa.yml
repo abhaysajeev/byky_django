@@ -30,10 +30,13 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set a real password in .env}
     volumes:
       - byky_f_qa_pgdata:/var/lib/postgresql/data
-    # No `ports:` -- deliberately not published to the host. Only the `web`
-    # service needs to reach it, over the compose-created internal network.
-    # Reach it for a one-off psql/pg_dump from the host with:
+    # QA only: published so a DB client (DBeaver) can log in with the database
+    # credentials directly -- owner's decision, 9 Oct 2026. Host port from
+    # QA_DB_PUBLIC_PORT in .env (default 5434). Production publishes nothing.
+    # A one-off psql/pg_dump from the host still works with:
     #   docker compose -f docker-compose.qa.yml -p byky_f_qa exec db psql -U <user> <db>
+    ports:
+      - "${QA_DB_PUBLIC_PORT:-5434}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-byky_qa} -d ${POSTGRES_DB:-byky_qa}"]
       interval: 5s
