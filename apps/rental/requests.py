@@ -236,6 +236,21 @@ def mark_used(session, values, request_data):
     return run_once(event_id=values["sync_id"], company=company, request_data=request_data, apply=apply)
 
 
+def station_list(branch, *, pending_only=False, kind=None, page=1):
+    """(rows, page) of one station's requests, newest first -- the operator
+    app's Requests screen. Each row is the tablet's view plus the customer."""
+    rows = (OrderRequest.objects.filter(branch=branch)
+            .select_related("order", "decided_by", "revoked_by").order_by("-requested_at"))
+    if pending_only:
+        rows = rows.filter(status=OrderRequestStatus.PENDING)
+    if kind:
+        rows = rows.filter(kind=kind)
+    page = Paginator(rows, PAGE_SIZE).get_page(page)
+    zone = zone_for(branch.company)
+    return [{**request_json(req, zone), "customer_name": req.order.customer_name}
+            for req in page.object_list], page
+
+
 def requests_for_orders(company, order_ids):
     """Every request on these orders of the company, newest first."""
     return list(

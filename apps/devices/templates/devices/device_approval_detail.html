@@ -34,12 +34,11 @@
     </div>
     <div class="scr-head-actions">
       {% if device %}
-        {% if device.status == "pending" and perm.approve %}
-          {% if device.reconnect_of_id %}
-          <button type="button" class="scr-btn-primary" data-device-action="reconnect" data-pk="{{ device.pk }}" data-number="{{ device.device_registration_id }}" data-name="{{ device.name }}" data-channel="{{ device.channel }}" data-match-name="{{ device.reconnect_of.name }}" data-match-number="{{ device.reconnect_of.device_registration_id }}">Reconnect</button>
-          {% else %}
+        {% if device.pending_installation_id and perm.approve %}
+          <button type="button" class="scr-btn-danger" data-device-action="reject" data-reinstall="1" data-pk="{{ device.pk }}" data-number="{{ device.device_registration_id }}" data-name="{{ device.name }}" data-channel="{{ device.channel }}">Reject reinstall</button>
+          <button type="button" class="scr-btn-primary" data-device-action="reconnect" data-pk="{{ device.pk }}" data-number="{{ device.device_registration_id }}" data-name="{{ device.name }}" data-channel="{{ device.channel }}" data-model="{{ device.pending_device_model }}" data-since="{{ device.pending_since|date:'d M Y, H:i' }}">Approve reinstall</button>
+        {% elif device.status == "pending" and perm.approve %}
           <button type="button" class="scr-btn-primary" data-device-action="approve" data-pk="{{ device.pk }}" data-number="{{ device.device_registration_id }}" data-name="{{ device.name }}" data-channel="{{ device.channel }}">Approve</button>
-          {% endif %}
           <button type="button" class="scr-btn-danger" data-device-action="reject" data-pk="{{ device.pk }}" data-number="{{ device.device_registration_id }}" data-name="{{ device.name }}" data-channel="{{ device.channel }}">Reject</button>
         {% elif device.status == "approved" and perm.update %}
           <button type="button" class="scr-btn-danger" data-device-action="block" data-pk="{{ device.pk }}" data-number="{{ device.device_registration_id }}" data-name="{{ device.name }}" data-channel="{{ device.channel }}">Block</button>
@@ -113,10 +112,10 @@
           <span class="scr-detail-label">Approved by</span>
           <span class="scr-detail-value">{% if device.approved_by_id %}{{ device.approved_by.display_name|default:device.approved_by.username }} · {{ device.approved_at|date:"d M Y H:i" }}{% else %}—{% endif %}</span>
         </div>
-        {% if device.reconnect_of_id %}
+        {% if device.pending_installation_id %}
         <div class="scr-detail-row">
-          <span class="scr-detail-label">Reinstall of</span>
-          <span class="scr-detail-value">{{ device.reconnect_of.name|default:device.reconnect_of.device_registration_id }}</span>
+          <span class="scr-detail-label">Reinstall waiting</span>
+          <span class="scr-detail-value">Since {{ device.pending_since|date:"d M Y H:i" }}{% if device.pending_device_model %} · {{ device.pending_device_model }}{% endif %} · the current install keeps working until it is approved</span>
         </div>
         {% endif %}
         {% if device.replaced_device_id %}

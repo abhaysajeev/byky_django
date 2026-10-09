@@ -144,6 +144,8 @@ REGISTRATION_REPLIES = {
     services.APPROVED: (status.HTTP_200_OK, "Device approved."),
     services.PENDING: (status.HTTP_202_ACCEPTED, "Waiting for approval."),
     services.RECONNECT_PENDING: (status.HTTP_202_ACCEPTED, "Waiting for approval after reinstall."),
+    services.REINSTALL_REJECTED: (status.HTTP_403_FORBIDDEN,
+                                  "This reinstall was refused. Contact your administrator."),
     services.BLOCKED: (status.HTTP_403_FORBIDDEN, "This device is blocked. Contact your administrator."),
     services.RETIRED: (status.HTTP_403_FORBIDDEN, "This registration was replaced. Register again."),
     services.UNAVAILABLE: (status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -164,11 +166,8 @@ _REGISTRATION_EXAMPLE_DATA = {
         "device_registration_id": 1549, "registered_at": "2026-09-18T09:03:00Z",
     },
     services.RECONNECT_PENDING: {
-        "device_registration_id": 1551,
-        "matched_device": {
-            "device_registration_id": 1548, "name": "Corniche-POS2",
-            "last_seen_at": "2026-08-03T11:24:00Z",
-        },
+        "device_registration_id": 1548, "name": "Corniche-POS2",
+        "reinstall_requested_at": "2026-10-09T05:10:00Z",
     },
 }
 
@@ -192,14 +191,11 @@ def _registration_data(outcome, device):
             "registered_at": _iso(device.created_on),
         }
     if outcome == services.RECONNECT_PENDING:
-        matched = device.reconnect_of
+        # The device's own number and name: a reinstall waits on its own row.
         return {
             "device_registration_id": device.device_registration_id,
-            "matched_device": {
-                "device_registration_id": matched.device_registration_id,
-                "name": matched.name,
-                "last_seen_at": _iso(matched.last_seen_at),
-            },
+            "name": device.name,
+            "reinstall_requested_at": _iso(device.pending_since),
         }
     return {}
 

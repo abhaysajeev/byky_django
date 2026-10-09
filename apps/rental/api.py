@@ -38,6 +38,7 @@ from apps.rental.serializers import (
     ManagerRequestApproveRequest,
     ManagerRequestDecisionRequest,
     ManagerRequestListRequest,
+    OperatorRequestListRequest,
     OrderAddRequest,
     OrderCreateRequest,
     OrderDetailRequest,
@@ -1431,6 +1432,45 @@ class OrderRequestUsedView(_OperatorView):
             return _refused(refusal)
         return (envelope("ok", "Reprint recorded.", data) if done
                 else envelope("duplicate", "Already recorded.", data))
+
+
+_REQUEST_LIST_DESCRIPTION = _REQUEST_RULES + """
+**This call** lists **this station's** requests -- every tablet's, newest
+first, 50 a page (`page`, from 1) -- for a Requests screen. Send
+`"pending": true` for only those waiting, `kind` for one kind. Each row is the
+same as in `orders/requests/status`, plus `customer_name`. Read-only.
+"""
+
+
+class OrderRequestListView(_OperatorView):
+    """POST /api/v1/{app}/orders/requests/list -- operator app only."""
+
+    @extend_schema(
+        tags=["Operator Requests"],
+        summary="This station's requests, newest first",
+        description=_REQUEST_LIST_DESCRIPTION,
+        request=envelope_request("OrderRequestListEnvelope", OperatorRequestListRequest,
+                                 request_data_required=False),
+        responses=envelope_responses(
+            (200, "ok", "Requests.", {"requests": [{**_REQUEST_PENDING_SAMPLE, "customer_name": "Ahmed Al Mansoori"}],
+                                      "page": 1, "pages": 1, "total": 1}),
+            (400, "invalid_request", "kind must be one of: discount, complimentary, reprint.",
+             {"errors": {"kind": "must be one of: discount, complimentary, reprint"}}),
+            *_COMMON,
+        ),
+    )
+    def post(self, request, app):
+        branch, refused = self.station(request, app)
+        if refused:
+            return refused
+        _, request_data = request_parts(request)
+        form = OperatorRequestListRequest(data=request_data)
+        form.is_valid(raise_exception=True)
+        values = form.validated_data
+        rows, page = order_requests.station_list(branch, pending_only=values["pending"],
+                                                 kind=values.get("kind") or None, page=values["page"])
+        return envelope("ok", "Requests.", {"requests": rows, "page": page.number,
+                                             "pages": page.paginator.num_pages, "total": page.paginator.count})
 
 
 class OrderRequestStatusView(_OperatorView):

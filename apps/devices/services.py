@@ -305,6 +305,7 @@ def _company_and_branch(installation_id, company_code=""):
 APPROVED = "approved"
 PENDING = "pending_approval"
 RECONNECT_PENDING = "reconnect_pending"
+REINSTALL_REJECTED = "reinstall_rejected"
 BLOCKED = "device_blocked"
 RETIRED = "device_retired"
 UNAVAILABLE = "registration_unavailable"
@@ -335,8 +336,17 @@ def _outcome_of(device):
     if device.status == DeviceStatus.BLOCKED:
         return BLOCKED
     if device.status == DeviceStatus.PENDING:
-        return RECONNECT_PENDING if device.reconnect_of_id else PENDING
+        return PENDING
     return APPROVED
+
+
+def _waiting_outcome(device):
+    """What the reinstalled app is told while its install waits on the row."""
+    if device.status == DeviceStatus.BLOCKED:
+        return BLOCKED
+    if device.status == DeviceStatus.RETIRED:
+        return RETIRED
+    return RECONNECT_PENDING
 
 
 def _refresh_known(device, *, channel, platform_id, device_model, push_token, now):
@@ -362,20 +372,19 @@ def _refresh_known(device, *, channel, platform_id, device_model, push_token, no
     device.save(update_fields=sorted(changed | {"modified_on"}))
 
 
-def _reinstall_match(*, company_id, channel, platform, platform_id):
-    """The device a new installation appears to be, or None.
+def _same_phone(*, company_id, channel, platform, platform_id):
+    """The device this phone already is in this app, row-locked, or None.
 
-    A hint for the admin, never an identity (section 9B.3): the platform id is a
-    value the app sends. Retired rows and other reconnect requests never match.
+    Matched on company + app + platform + platform_id (Android ID / iOS
+    identifierForVendor); retired devices never match, so a retired phone
+    starts again as a new device. The match never grants anything by itself:
+    an approved device's new install still waits for an admin (9B.3).
     """
     if not platform_id:
         return None
     return (
-        Device.objects
-        .filter(
-            company_id=company_id, channel=channel, platform=platform,
-            platform_id=platform_id, reconnect_of__isnull=True,
-        )
+        Device.objects.select_for_update()
+        .filter(company_id=company_id, channel=channel, platform=platform, platform_id=platform_id)
         .exclude(status=DeviceStatus.RETIRED)
         .order_by(F("last_seen_at").desc(nulls_last=True), "-id")
         .first()
@@ -383,21 +392,42 @@ def _reinstall_match(*, company_id, channel, platform, platform_id):
 
 
 def device_for_installation(installation_id):
-    """The Device row a request's installation_id names, or None. Public --
-    used by registration (below) and by operator login (apps/portal/auth.py)
-    to find which till a request is about."""
+    """The Device row whose active install is `installation_id`, or None.
+    Public -- used by registration (below) and by login (apps/portal/auth.py)
+    to find which device a request is about."""
     return Device.objects.filter(installation_id=installation_id).first()
+
+
+def device_waiting_for(installation_id):
+    """The device holding `installation_id` as its waiting reinstall, or None."""
+    return Device.objects.filter(pending_installation_id=installation_id).first()
+
+
+def device_refusing(installation_id):
+    """The device that refused `installation_id` as a reinstall, or None."""
+    if not installation_id:
+        return None
+    return Device.objects.filter(rejected_installation_id=installation_id).first()
 
 
 def register_device(*, installation_id, channel, platform, platform_id="",
                     device_model="", push_token=None, company_code="", now=None):
-    """(outcome, device) for one registration call. Idempotent.
+    """(outcome, device) for one registration call. Idempotent. One phone in
+    one app is one device row, whatever happens to its install (owner, 9 Oct
+    2026):
 
     1. A known installation is answered from its own row.
-    2. An unknown one whose platform id matches a live device of this app gets a
-       separate pending request pointing at it. The matched row is not touched:
-       a forged platform id must not be able to take a working station offline.
-    3. Anything else is a new pending device, numbered at once so the waiting
+    2. A reinstall still waiting on a device's row is told reconnect_pending;
+       one an admin refused, reinstall_rejected.
+    3. An unknown installation from a phone that already is a device of this
+       app (same platform_id):
+       - a device still pending simply takes the new install -- same row, same
+         number;
+       - an approved or blocked device holds it as its waiting reinstall
+         (the newest overwrites an older one) until an admin approves; its
+         active install keeps working meanwhile, so a forged platform id can
+         neither take a working station offline nor in.
+    4. Anything else is a new pending device, numbered at once so the waiting
        screen can show it.
 
     `company_code` is the company the app names (§9B.2): matched on
@@ -415,6 +445,12 @@ def register_device(*, installation_id, channel, platform, platform_id="",
         _refresh_known(known, channel=channel, platform_id=platform_id,
                        device_model=device_model, push_token=token, now=now)
         return _outcome_of(known), known
+    waiting = device_waiting_for(installation_id)
+    if waiting is not None:
+        return _waiting_outcome(waiting), waiting
+    refusing = device_refusing(installation_id)
+    if refusing is not None:
+        return REINSTALL_REJECTED, refusing
 
     company_id, refusal = company_for_registration(company_code)
     if company_id is None:
@@ -422,20 +458,48 @@ def register_device(*, installation_id, channel, platform, platform_id="",
                   installation_id, company_code)
         return refusal, None
 
-    match = _reinstall_match(company_id=company_id, channel=channel,
-                             platform=platform, platform_id=platform_id)
     try:
         with transaction.atomic():
-            device = Device.objects.create(
-                company_id=company_id, installation_id=installation_id,
-                channel=channel, platform=platform, platform_id=platform_id,
-                device_model=device_model, push_token=token,
-                status=DeviceStatus.PENDING, reconnect_of=match, last_seen_at=now,
-            )
+            phone = _same_phone(company_id=company_id, channel=channel,
+                                platform=platform, platform_id=platform_id)
+            if phone is None:
+                device = Device.objects.create(
+                    company_id=company_id, installation_id=installation_id,
+                    channel=channel, platform=platform, platform_id=platform_id,
+                    device_model=device_model, push_token=token,
+                    status=DeviceStatus.PENDING, last_seen_at=now,
+                )
+                return _outcome_of(device), device
+            return _reinstalled(phone, installation_id=installation_id, device_model=device_model,
+                                push_token=token, now=now)
     except IntegrityError:
-        # Two first calls raced; the other one created the row. Answer from it.
-        device = Device.objects.get(installation_id=installation_id)
-    return _outcome_of(device), device
+        # Two first calls of one install raced; answer from what the other wrote.
+        device = Device.objects.filter(
+            Q(installation_id=installation_id) | Q(pending_installation_id=installation_id)).first()
+        if device is None:
+            raise
+        return (_outcome_of(device) if device.installation_id == installation_id
+                else _waiting_outcome(device)), device
+
+
+def _reinstalled(device, *, installation_id, device_model, push_token, now):
+    """A known phone came back with a new install: (outcome, device)."""
+    if device.status == DeviceStatus.PENDING:
+        # Never approved, nothing to protect: the row simply follows the phone.
+        device.installation_id = installation_id
+        device.device_model = device_model or device.device_model
+        device.push_token = push_token or device.push_token
+        device.last_seen_at = now
+        device.save(update_fields=["installation_id", "device_model", "push_token", "last_seen_at",
+                                   "modified_on"])
+        return PENDING, device
+    device.pending_installation_id = installation_id
+    device.pending_since = now
+    device.pending_device_model = device_model
+    device.pending_push_token = push_token
+    device.save(update_fields=["pending_installation_id", "pending_since", "pending_device_model",
+                               "pending_push_token", "modified_on"])
+    return _waiting_outcome(device), device
 
 
 # -- Device Approval actions (design/03-login.md sections 9B.3-9B.5) ---------
@@ -517,9 +581,6 @@ def approve_device(devices_qs, pk, *, user, name, branch=None, replaces_pk=None,
     The station is optional for every app: stations are Device Mapping's job,
     and an approved operator device with none simply cannot log in until it is
     mapped (login step 9, device_not_mapped).
-
-    On a reconnect request this is "register as new": the link to the device it
-    looked like is dropped and it becomes a device in its own right.
     """
     now = now or timezone.now()
     name = (name or "").strip()
@@ -559,11 +620,10 @@ def approve_device(devices_qs, pk, *, user, name, branch=None, replaces_pk=None,
         device.name = name
         device.approved_by = user
         device.approved_at = now
-        device.reconnect_of = None
         device.replaced_device = old
         device.modified_by = user
         device.save(update_fields=[
-            "status", "name", "approved_by", "approved_at", "reconnect_of",
+            "status", "name", "approved_by", "approved_at",
             "replaced_device", "modified_by", "modified_on",
         ])
         if branch is not None:
@@ -577,51 +637,61 @@ def approve_device(devices_qs, pk, *, user, name, branch=None, replaces_pk=None,
     return device
 
 
-def reconnect_device(devices_qs, pk, *, user, now=None):
-    """Confirm a reinstall (section 9B.3): the request's new installation moves
-    onto the original device, which keeps its number, name, station, status and
-    history. The request row is discarded.
+def _clear_waiting(device):
+    device.pending_installation_id = None
+    device.pending_since = None
+    device.pending_device_model = ""
+    device.pending_push_token = ""
 
-    The original's open sessions are closed: they belonged to the app install
-    that no longer exists.
-    """
+
+_WAITING_FIELDS = ["pending_installation_id", "pending_since", "pending_device_model", "pending_push_token"]
+
+
+def approve_reinstall(devices_qs, pk, *, user, now=None):
+    """Confirm a reinstall (section 9B.3): the waiting install becomes the
+    device's own. It keeps its number, name, station, status and history; the
+    old install's open sessions are closed -- that install no longer exists."""
     now = now or timezone.now()
     with transaction.atomic():
-        request_row = _locked(devices_qs, pk)
-        if request_row.status != DeviceStatus.PENDING or not request_row.reconnect_of_id:
-            raise DeviceActionError("This is not a reinstall waiting to be reconnected.")
-        original = _locked(devices_qs, request_row.reconnect_of_id)
-        if original.status == DeviceStatus.RETIRED:
-            raise DeviceActionError(
-                "The device this looked like has been retired. Register it as new instead."
-            )
-
-        moved = {
-            "installation_id": request_row.installation_id,
-            "platform_id": request_row.platform_id,
-            "device_model": request_row.device_model or original.device_model,
-            "push_token": request_row.push_token or original.push_token,
-            "last_seen_at": request_row.last_seen_at or original.last_seen_at,
-        }
-        request_number = request_row.device_registration_id
-        # Deleted first: installation_id is unique, and the original takes it.
-        request_row.delete()
-
-        close_sessions_for_device(original, LogoutReason.FORCED, now=now)
-        for field, value in moved.items():
-            setattr(original, field, value)
-        original.modified_by = user
-        original.save(update_fields=[*moved, "modified_by", "modified_on"])
-        _log(original, DeviceAction.RECONNECTED, original.status, original.status, user,
-             remarks=f"Reinstall confirmed; request {request_number} discarded.")
-    return original
+        device = _locked(devices_qs, pk)
+        if not device.pending_installation_id:
+            raise DeviceActionError("This device has no reinstall waiting.")
+        old_install, new_install = device.installation_id, device.pending_installation_id
+        device.installation_id = new_install
+        device.device_model = device.pending_device_model or device.device_model
+        device.push_token = device.pending_push_token or device.push_token
+        device.last_seen_at = device.pending_since
+        device.rejected_installation_id = ""
+        _clear_waiting(device)
+        device.modified_by = user
+        close_sessions_for_device(device, LogoutReason.FORCED, now=now)
+        device.save(update_fields=["installation_id", "device_model", "push_token", "last_seen_at",
+                                   "rejected_installation_id", *_WAITING_FIELDS, "modified_by", "modified_on"])
+        _log(device, DeviceAction.RECONNECTED, device.status, device.status, user,
+             remarks=f"Reinstall approved: install {old_install[:8]} replaced by {new_install[:8]}.")
+    return device
 
 
 def reject_device(devices_qs, pk, *, user, reason=""):
-    """A registration that should not exist. The tablet is then told
-    device_retired, the one reply that means "register again"."""
+    """Refuse what the device is waiting for.
+
+    - A reinstall waiting on an approved or blocked device: refused. The
+      device and its active install are untouched; the refused install is
+      told reinstall_rejected from then on.
+    - A registration that should not exist: retired. The tablet is then told
+      device_retired, the one reply that means "register again"."""
     with transaction.atomic():
         device = _locked(devices_qs, pk)
+        if device.pending_installation_id:
+            refused = device.pending_installation_id
+            device.rejected_installation_id = refused
+            _clear_waiting(device)
+            device.modified_by = user
+            device.save(update_fields=["rejected_installation_id", *_WAITING_FIELDS, "modified_by",
+                                       "modified_on"])
+            _log(device, DeviceAction.REJECTED, device.status, device.status, user, reason=reason,
+                 remarks=f"Reinstall refused: install {refused[:8]}.")
+            return device
         if device.status != DeviceStatus.PENDING:
             raise DeviceActionError("Only a device awaiting approval can be rejected.")
         device.status = DeviceStatus.RETIRED

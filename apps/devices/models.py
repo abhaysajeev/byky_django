@@ -97,12 +97,18 @@ class Device(TimeStampedModel):
     replaced_device = models.ForeignKey(
         "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="replaced_by",
     )
-    # The reinstall case: a pending request that looks like an existing device.
-    # The matched device is left untouched until an admin confirms, so a forged
-    # platform_id cannot put a working station into a pending state (9B.3).
-    reconnect_of = models.ForeignKey(
-        "self", null=True, blank=True, on_delete=models.CASCADE, related_name="reconnect_requests",
-    )
+    # The reinstall case (owner, 9 Oct 2026): the same phone and app came back
+    # with a new installation_id. It waits **on this row** until an admin
+    # approves it -- no second row, no new number. The active install keeps
+    # working meanwhile, so a forged platform_id cannot take a working station
+    # offline or in (9B.3). A later reinstall overwrites the waiting one.
+    pending_installation_id = models.CharField(max_length=64, null=True, blank=True, unique=True)
+    pending_since = models.DateTimeField(null=True, blank=True)
+    pending_device_model = models.CharField(max_length=120, blank=True)
+    pending_push_token = models.CharField(max_length=512, blank=True)
+    # The last reinstall an admin refused: that install is answered
+    # reinstall_rejected instead of asking again on every poll.
+    rejected_installation_id = models.CharField(max_length=64, blank=True)
 
     # FCM token, sent as credentials.device_notification_id. Saved before
     # approval because that is the only moment the app has offered it, and it is
@@ -148,6 +154,11 @@ class Device(TimeStampedModel):
                 condition=~Q(status=DeviceStatus.APPROVED) | Q(approved_at__isnull=False),
                 name="device_approved_has_approval_time",
             ),
+            models.CheckConstraint(
+                condition=Q(pending_installation_id__isnull=True)
+                | (~Q(pending_installation_id=models.F("installation_id")) & Q(pending_since__isnull=False)),
+                name="device_waiting_install_is_another",
+            ),
             # "An approved operator device must have a station" cannot live here
             # any more: the station is in another table, and a check constraint
             # cannot read one. The approval service enforces it, alongside the
@@ -156,6 +167,10 @@ class Device(TimeStampedModel):
 
     def __str__(self):
         return self.name or f"Device {self.device_registration_id}"
+
+    @property
+    def has_waiting_reinstall(self):
+        return bool(self.pending_installation_id)
 
     @property
     def is_usable(self):

@@ -25,6 +25,7 @@ urlpatterns = [
     path("orders/requests/withdraw", api.OrderRequestWithdrawView.as_view(), name="api-app-order-request-withdraw"),
     path("orders/requests/used", api.OrderRequestUsedView.as_view(), name="api-app-order-request-used"),
     path("orders/requests/status", api.OrderRequestStatusView.as_view(), name="api-app-order-request-status"),
+    path("orders/requests/list", api.OrderRequestListView.as_view(), name="api-app-order-request-list"),
     # Manager app.
     path("requests/list", api.ManagerRequestListView.as_view(), name="api-app-request-list"),
     path("requests/approve", api.ManagerRequestApproveView.as_view(), name="api-app-request-approve"),
