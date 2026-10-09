@@ -18,8 +18,11 @@ from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 from django.utils import timezone
 
-BEFORE = [("rental", "0004_order_payment")]
-AFTER = [("rental", "0006_payment_entry")]
+# Devices is pinned too: a target only rolls back its own app, so without this
+# the old Device model these states build would not match the device table.
+DEVICES = ("devices", "0012_device_settings_company")
+BEFORE = [("rental", "0004_order_payment"), DEVICES]
+AFTER = [("rental", "0006_payment_entry"), DEVICES]
 
 
 def migrate(targets):
@@ -120,7 +123,7 @@ def test_orders_survive_the_rebuild():
 
 @pytest.mark.django_db(transaction=True)
 def test_an_open_order_loses_its_bill_and_a_settled_one_keeps_it():
-    apps = migrate([("rental", "0007_order_event")])
+    apps = migrate([("rental", "0007_order_event"), DEVICES])
     company, branch, device, cash, customer, vehicle = make_world(apps)
     Order, OrderItem = apps.get_model("rental", "Order"), apps.get_model("rental", "OrderItem")
     now = timezone.now()
@@ -141,7 +144,7 @@ def test_an_open_order_loses_its_bill_and_a_settled_one_keeps_it():
 
     on_rent, settled = order("C1-1", "active"), order("C1-2", "completed")
 
-    apps = migrate([("rental", "0008_bill_fields")])
+    apps = migrate([("rental", "0008_bill_fields"), DEVICES])
     Order, OrderItem = apps.get_model("rental", "Order"), apps.get_model("rental", "OrderItem")
 
     on_rent = Order.objects.get(pk=on_rent.pk)

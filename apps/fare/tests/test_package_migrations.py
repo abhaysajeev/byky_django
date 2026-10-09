@@ -17,9 +17,12 @@ from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 from django.utils import timezone
 
+# Devices is pinned too: a target only rolls back its own app, so without this
+# the old Device model these states build would not match the device table.
+DEVICES = ("devices", "0012_device_settings_company")
 FARE_BEFORE = [("fare", "0003_offer_offerfreeitem_offerfreeitemtimeslab_offeritem_and_more"),
-               ("rental", "0010_item_removed")]
-FARE_AFTER = [("fare", "0004_offer_to_package"), ("rental", "0010_item_removed")]
+               ("rental", "0010_item_removed"), DEVICES]
+FARE_AFTER = [("fare", "0004_offer_to_package"), ("rental", "0010_item_removed"), DEVICES]
 PORTAL_BEFORE = [("portal", "0017_invoice_page")]
 PORTAL_AFTER = [("portal", "0018_offer_page_to_package")]
 
