@@ -8,7 +8,7 @@ the app is tested instead of being silently answered "no update" forever.
 from rest_framework import serializers
 
 from apps.devices.models import Platform
-from core.api import REQUIRED, datetime_field, text_field, whole_number_field
+from core.api import REQUIRED, date_field, datetime_field, text_field, whole_number_field
 
 
 class UpdateCheckRequest(serializers.Serializer):
@@ -49,3 +49,13 @@ class DeviceSettingsRequest(serializers.Serializer):
     settings, company time: the logo is sent again only if it changed since."""
 
     since = datetime_field(required=False, allow_null=True)
+
+
+class DeviceBranchRequest(serializers.Serializer):
+    """Which station this tablet is mapped to, before login. installation_id is
+    the key; device_registration_id, when sent, must be the same tablet's."""
+
+    installation_id = text_field(64)
+    device_registration_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    # The day whose working time to send; company time, default today.
+    date = date_field(required=False, allow_null=True)

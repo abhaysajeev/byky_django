@@ -9,4 +9,5 @@ urlpatterns = [
     path("app/update-check", api.UpdateCheckView.as_view(), name="api-app-update-check"),
     path("device/registration", api.RegistrationView.as_view(), name="api-device-registration"),
     path("device/settings", api.DeviceSettingsView.as_view(), name="api-device-settings"),
+    path("device/branch", api.DeviceBranchView.as_view(), name="api-device-branch"),
 ]
