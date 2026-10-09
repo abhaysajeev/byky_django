@@ -422,8 +422,8 @@ def manager_row(request_id):
     return _manager_rows().get(pk=request_id)
 
 
-def manager_list(company_ids, *, pending_only=False, kind=None, branch_id=None, from_date=None, to_date=None,
-                 zone=None, page=1):
+def manager_list(company_ids, *, pending_only=False, kind=None, state_id=None, branch_id=None, from_date=None,
+                 to_date=None, zone=None, page=1):
     """(rows, page) of requests across the companies, newest first."""
     rows = _manager_rows().filter(company_id__in=company_ids).order_by("-requested_at")
     if zone is not None:
@@ -432,6 +432,8 @@ def manager_list(company_ids, *, pending_only=False, kind=None, branch_id=None, 
         rows = rows.filter(status=OrderRequestStatus.PENDING)
     if kind:
         rows = rows.filter(kind=kind)
+    if state_id:
+        rows = rows.filter(branch__location__state_id=state_id)
     if branch_id:
         rows = rows.filter(branch_id=branch_id)
     page = Paginator(rows, PAGE_SIZE).get_page(page)

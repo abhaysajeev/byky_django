@@ -478,6 +478,7 @@ class OperatorRequestListRequest(_RequestDatesMixin):
 class ManagerRequestListRequest(_RequestDatesMixin):
     pending = serializers.BooleanField(required=False, default=False,
                                        error_messages={"invalid": "must be true or false"})
+    state_id = whole_number_field(min_value=1, required=False, allow_null=True)
     kind = serializers.ChoiceField(
         choices=OrderRequestKind.choices, required=False, allow_blank=True,
         error_messages={"invalid_choice": "must be one of: discount, complimentary, reprint"},
