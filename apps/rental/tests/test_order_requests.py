@@ -334,15 +334,16 @@ def test_an_approval_is_revoked_only_while_the_order_runs(client, token, manager
     assert decide(client, manager, REVOKE, second)["code"] == "order_closed"
 
 
-def test_the_manager_calls_need_the_manager_app_and_the_right(client, world, token, manager, booked):
+def test_the_manager_calls_need_only_a_manager_login(client, world, token, manager, booked):
+    """No page right is checked: any signed-in manager may list and decide."""
     data = asked(client, token, booked)
+    RolePermission.objects.filter(role__company=world["company"], page__code="rental.request").update(
+        can_read=False, can_approve=False)
 
     assert call(client, LIST, {}, token=token).json()["code"] == "wrong_channel"
-    RolePermission.objects.filter(role__company=world["company"], page__code="rental.request").update(
-        can_approve=False)
-    body = decide(client, manager, APPROVE, data["request_sync_id"], discount_type="percent", discount_value="5")
-    assert body["code"] == "forbidden"
     assert call(client, LIST, {}, token=manager).json()["code"] == "ok"
+    body = decide(client, manager, APPROVE, data["request_sync_id"], discount_type="percent", discount_value="5")
+    assert body["code"] == "ok"
 
 
 def test_another_companys_request_is_unknown(client, world, token, manager, booked):

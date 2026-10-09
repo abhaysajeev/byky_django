@@ -25,7 +25,6 @@ from apps.company.scoping import companies_for
 from apps.devices import services as devices_services
 from apps.devices.models import BillKind
 from apps.portal.authentication import AppJWTAuthentication
-from apps.portal.services import has_permission
 from apps.rental import credit_notes, services
 from apps.rental import requests as order_requests
 from apps.rental.models import DecisionChannel, Invoice, OrderItemStatus
@@ -52,7 +51,7 @@ from apps.rental.serializers import (
     OrderReturnRequest,
     OrderSettleRequest,
 )
-from core.api import envelope, request_parts, session_station
+from core.api import envelope, manager_only, request_parts, session_station
 from core.enums import Channel
 from core.schema import SERVER_ERROR, envelope_request, envelope_responses
 from core.timezones import zone_for
@@ -1502,7 +1501,6 @@ class OrderRequestStatusView(_OperatorView):
 
 # -- Manager app --------------------------------------------------------------------
 
-REQUEST_PAGE = "rental.request"
 
 _MANAGER_SAMPLE = {
     **_REQUEST_PENDING_SAMPLE, "branch_id": 3, "station": "Creek Park 1", "requested_by": "Rashed K",
@@ -1527,13 +1525,12 @@ _MANAGER_DECIDED = {
 _MANAGER_COMMON = (
     (401, "not_authenticated", "Sign in first.", {}),
     (403, "wrong_channel", "Not allowed on this app.", {}),
-    (403, "forbidden", "You do not have permission to do that.", {}),
     SERVER_ERROR,
 )
 
 _MANAGER_RULES = _REQUEST_RULES + """
-**Manager app.** Requests from **every station** of your company. Deciding needs
-the **Approve** right on the Requests page (listing needs **Read**); the
+**Manager app.** Requests from **every station** of your company. Any signed-in
+manager may list and decide -- the manager-app login is the permission. The
 decision is recorded against you, with `decided_channel` / `revoked_channel`
 `manager`. A request already decided -- here or on the web -- answers
 `request_decided`.
@@ -1568,20 +1565,16 @@ refuses it. `note` optional (`revoke_note`).
 
 
 class _ManagerView(APIView):
-    """Manager app only, with the Requests page right; scoped to the
-    companies the user may see."""
+    """Manager app only; scoped to the companies the user may see. Any
+    signed-in manager may list and decide -- the manager-app login is the
+    permission, as for the reports (owner, 9 Oct 2026). The web screen keeps
+    its page rights."""
 
     authentication_classes = [AppJWTAuthentication]
     permission_classes = [IsAuthenticated]
-    action = "approve"
 
     def refusal(self, request, app):
-        # The session too, not only the URL: an operator's token cannot decide.
-        if app != Channel.MANAGER or request.auth.channel != Channel.MANAGER:
-            return envelope("wrong_channel", "Not allowed on this app.", http_status=403)
-        if not has_permission(request.user, REQUEST_PAGE, self.action):
-            return envelope("forbidden", "You do not have permission to do that.", http_status=403)
-        return None
+        return manager_only(request, app)
 
     def company_ids(self, request):
         return list(companies_for(request.user).values_list("id", flat=True))
@@ -1612,7 +1605,6 @@ _ORDER_CLOSED = (409, "order_closed", "This order is already completed or cancel
 class ManagerRequestListView(_ManagerView):
     """POST /api/v1/{app}/requests/list -- manager app only."""
 
-    action = "read"
 
     @extend_schema(
         tags=["Manager Requests"],
