@@ -410,6 +410,48 @@ def device_refusing(installation_id):
     return Device.objects.filter(rejected_installation_id=installation_id).first()
 
 
+# Outcomes of device_branch (the operator app's pre-login station lookup).
+STATION = "ok"
+NOT_MAPPED = "device_not_mapped"
+NOT_REGISTERED = "device_not_registered"
+WAITING_APPROVAL = "device_pending_approval"
+WAITING_REINSTALL = "device_reconnect_pending"
+
+
+def device_branch(installation_id, registration_id=None):
+    """(outcome, device, open mapping) for the operator app before login: which
+    station this tablet is mapped to (owner, 9 Oct 2026).
+
+    Identified by the tablet's own installation_id -- a random id only the
+    tablet holds; the registration number is sequential, so it is only a
+    cross-check here, never the key. Only an approved device learns its
+    station; nothing else about the station is told before login.
+    """
+    device = device_for_installation(installation_id)
+    if device is None:
+        waiting = device_waiting_for(installation_id)
+        if waiting is not None and (registration_id is None or waiting.device_registration_id == registration_id):
+            return WAITING_REINSTALL, waiting, None
+        if device_refusing(installation_id) is not None:
+            return REINSTALL_REJECTED, None, None
+        return NOT_REGISTERED, None, None
+    if registration_id is not None and device.device_registration_id != registration_id:
+        return NOT_REGISTERED, None, None
+    if device.channel != Channel.OPERATOR:
+        return NOT_REGISTERED, None, None
+    if device.status == DeviceStatus.PENDING:
+        return WAITING_APPROVAL, device, None
+    if device.status == DeviceStatus.BLOCKED:
+        return BLOCKED, device, None
+    if device.status == DeviceStatus.RETIRED:
+        return RETIRED, device, None
+    mapping = (DeviceMapping.objects.filter(device=device, to_date__isnull=True)
+               .select_related("branch__location__state").first())
+    if mapping is None:
+        return NOT_MAPPED, device, None
+    return STATION, device, mapping
+
+
 def register_device(*, installation_id, channel, platform, platform_id="",
                     device_model="", push_token=None, company_code="", now=None):
     """(outcome, device) for one registration call. Idempotent. One phone in

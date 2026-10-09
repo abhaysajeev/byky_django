@@ -13,13 +13,20 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.throttling import AnonRateThrottle, SimpleRateThrottle
 from rest_framework.views import APIView
 
+from apps.company import services as company_services
+from apps.company.models import BranchWorkingTime, WeekDay
 from apps.devices import services
-from apps.devices.serializers import DeviceSettingsRequest, RegistrationRequest, UpdateCheckRequest
+from apps.devices.serializers import (
+    DeviceBranchRequest,
+    DeviceSettingsRequest,
+    RegistrationRequest,
+    UpdateCheckRequest,
+)
 from apps.portal.authentication import AppJWTAuthentication
 from core.api import PublicAPIView, envelope, request_parts, session_station
 from core.enums import Channel
 from core.schema import RATE_LIMITED, SERVER_ERROR, envelope_request, envelope_responses
-from core.timezones import zone_for
+from core.timezones import business_date_for, zone_for
 
 log = logging.getLogger(__name__)
 
@@ -326,3 +333,131 @@ class DeviceSettingsView(APIView):
             return envelope("device_settings_not_done", "This station's receipt settings are not set up yet.",
                             http_status=409)
         return envelope("ok", "Device settings.", data)
+
+
+# -- The operator app's station, before login ------------------------------------
+
+DEVICE_BRANCH_REPLIES = {
+    services.STATION: (status.HTTP_200_OK, "Device station."),
+    services.NOT_MAPPED: (status.HTTP_409_CONFLICT, "This device has no station yet."),
+    services.WAITING_APPROVAL: (status.HTTP_202_ACCEPTED, "Waiting for approval."),
+    services.WAITING_REINSTALL: (status.HTTP_202_ACCEPTED, "Waiting for approval after reinstall."),
+    services.BLOCKED: (status.HTTP_403_FORBIDDEN, "This device is blocked. Contact your administrator."),
+    services.RETIRED: (status.HTTP_403_FORBIDDEN, "This registration was replaced. Register again."),
+    services.REINSTALL_REJECTED: (status.HTTP_403_FORBIDDEN,
+                                  "This reinstall was refused. Contact your administrator."),
+    services.NOT_REGISTERED: (status.HTTP_409_CONFLICT, "This device is not registered."),
+}
+
+_DEVICE_SAMPLE = {"device_registration_id": 1018, "name": "Corniche-POS1", "status": "approved"}
+_STATION_SAMPLE = {
+    "device": _DEVICE_SAMPLE,
+    "branch": {"branch_id": 3, "branch_code": "ADC1", "name": "Abu Dhabi Corniche 1", "location": "Corniche",
+               "state": "Abu Dhabi", "is_active": True, "mapped_since": "2026-10-09 10:15:00"},
+    "working_time": {
+        "date": "2026-10-09", "week_day": 3, "week_day_name": "Thursday", "is_set": True,
+        "shifts": [{"shift_number": 1, "start": "08:00", "end": "13:00"},
+                   {"shift_number": 2, "start": "16:00", "end": "23:59"}],
+        "open_now": "open",
+    },
+}
+
+_DEVICE_BRANCH_DESCRIPTION = """
+Which station this tablet is mapped to -- **before login**, e.g. to show
+"Abu Dhabi Corniche 1 · Corniche-POS1" on the login screen. Call it after
+registration answers `approved`.
+
+**Request:** `installation_id` -- the same one sent to `device/registration`
+(after a reinstall, the new one). `device_registration_id` is optional; when
+sent it must be this tablet's, else `device_not_registered`. No token.
+
+`date` is optional (`YYYY-MM-DD`, company time, default **today**): the day
+whose working time is sent.
+
+**Told here:** the station's identity -- `branch_id`, code, name, location,
+state, whether it is active, since when this tablet is mapped to it -- and its
+**working time** for `date`: that weekday's `shifts` (1-4, `HH:MM`, company
+time; none = closed that day), `is_set` (false when the station has no working
+time at all), and `open_now` -- `open` / `closed` / `not_set` at this moment
+(today's state, whatever `date` asks). Settings, receipt numbering and the
+rest still come at login. `branch.is_active: false` means the station is
+closed (login will refuse).
+
+Operator app only; rate-limited like registration.
+"""
+
+
+def _working_time(branch, day):
+    """The station's shifts on `day`, and whether it is open right now."""
+    rows = list(BranchWorkingTime.objects.filter(branch=branch, is_active=True)
+                .values_list("week_day", "shift_number", "start_time", "end_time"))
+    week_day = company_services.week_day_of(day)
+    return {
+        "date": day.isoformat(), "week_day": week_day, "week_day_name": WeekDay(week_day).label,
+        "is_set": bool(rows),
+        "shifts": [{"shift_number": n, "start": start.strftime("%H:%M"), "end": end.strftime("%H:%M")}
+                   for wd, n, start, end in sorted(rows, key=lambda r: r[1]) if wd == week_day],
+        "open_now": company_services.branch_open_state(branch),
+    }
+
+
+def _device_branch_data(outcome, device, mapping, zone, day=None):
+    if outcome == services.STATION:
+        branch = mapping.branch
+        return {
+            "device": {"device_registration_id": device.device_registration_id, "name": device.name,
+                       "status": device.status},
+            "branch": {
+                "branch_id": branch.pk, "branch_code": branch.short_code, "name": branch.name,
+                "location": branch.location.name, "state": branch.location.state.name,
+                "is_active": branch.is_active,
+                "mapped_since": timezone.localtime(mapping.from_date, zone).strftime("%Y-%m-%d %H:%M:%S"),
+            },
+            "working_time": _working_time(branch, day or business_date_for(device.company)),
+        }
+    if outcome == services.NOT_MAPPED:
+        return {"device": {"device_registration_id": device.device_registration_id, "name": device.name,
+                           "status": device.status}}
+    if outcome in (services.WAITING_APPROVAL, services.WAITING_REINSTALL):
+        return {"device_registration_id": device.device_registration_id}
+    return {}
+
+
+class DeviceBranchView(PublicAPIView):
+    """POST /api/v1/{app}/device/branch -- operator app only, before login."""
+
+    throttle_classes = [RegistrationIPThrottle, RegistrationInstallationThrottle]
+
+    @extend_schema(
+        tags=["Device Registration"],
+        summary="This tablet's station, before login",
+        description=_DEVICE_BRANCH_DESCRIPTION,
+        request=envelope_request("DeviceBranchEnvelope", DeviceBranchRequest),
+        responses=envelope_responses(
+            (200, "ok", "Device station.", _STATION_SAMPLE),
+            (409, "device_not_mapped", "This device has no station yet.", {"device": _DEVICE_SAMPLE}),
+            (202, "device_pending_approval", "Waiting for approval.", {"device_registration_id": 1018}),
+            (202, "device_reconnect_pending", "Waiting for approval after reinstall.",
+             {"device_registration_id": 1018}),
+            (403, "device_blocked", "This device is blocked. Contact your administrator.", {}),
+            (403, "device_retired", "This registration was replaced. Register again.", {}),
+            (403, "reinstall_rejected", "This reinstall was refused. Contact your administrator.", {}),
+            (409, "device_not_registered", "This device is not registered.", {}),
+            (400, "invalid_request", "installation_id is required.", {"errors": {"installation_id": "is required"}}),
+            (403, "wrong_channel", "Not allowed on this app.", {}),
+            RATE_LIMITED, SERVER_ERROR,
+        ),
+    )
+    def post(self, request, app):
+        if app != Channel.OPERATOR:
+            return envelope("wrong_channel", "Not allowed on this app.", http_status=403)
+        _, request_data = request_parts(request)
+        form = DeviceBranchRequest(data=request_data)
+        form.is_valid(raise_exception=True)
+        data = form.validated_data
+        outcome, device, mapping = services.device_branch(data["installation_id"],
+                                                          data.get("device_registration_id"))
+        http_status, message = DEVICE_BRANCH_REPLIES[outcome]
+        zone = zone_for(device.company) if device is not None else None
+        return envelope(outcome, message, _device_branch_data(outcome, device, mapping, zone, data.get("date")),
+                        http_status)
