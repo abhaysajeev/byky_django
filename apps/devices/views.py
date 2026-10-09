@@ -153,7 +153,7 @@ class DeviceApprovalView(DeviceScreenView):
         context = super().get_context_data(**kwargs)
         devices = list(
             scoping.devices_for(self.request.user)
-            .select_related("reconnect_of", "approved_by")
+            .select_related("approved_by")
             .order_by("-created_on")
         )
         # The station comes from the open mapping row -- one query for all of
@@ -179,19 +179,19 @@ class DeviceApprovalView(DeviceScreenView):
                     "devices-device-approval-detail",
                     args=[device.device_registration_id],
                 ),
-                # A reinstall the server recognised: shown so the admin can see
-                # which tablet this claims to be before deciding.
-                "reconnect_of": (
-                    {
-                        "name": device.reconnect_of.name,
-                        "registration_id": device.reconnect_of.device_registration_id,
-                        "last_seen_at": device.reconnect_of.last_seen_at,
-                    }
-                    if device.reconnect_of_id
+                # A reinstall waiting on this device's own row: the admin sees
+                # the phone it came from and when, and approves or refuses it.
+                "reinstall": (
+                    {"model": device.pending_device_model, "since": device.pending_since,
+                     "last_seen_at": device.last_seen_at}
+                    if device.pending_installation_id
                     else None
                 ),
             })
             queues.setdefault(device.status, []).append(row)
+            if device.pending_installation_id:
+                # Waiting for a decision: on the Pending tab too -- same device, same row.
+                queues["pending"].append(row)
 
         context.update(_action_context(self.request.user))
         context.update({
@@ -222,7 +222,7 @@ class DeviceApprovalDetailView(DeviceScreenView):
         registration_id = self.kwargs.get("registration_id")
         device = (
             scoping.devices_for(self.request.user)
-            .select_related("approved_by", "reconnect_of", "replaced_device")
+            .select_related("approved_by", "replaced_device")
             .filter(device_registration_id=registration_id)
             .first()
         )
@@ -435,14 +435,16 @@ class DeviceApproveView(DeviceActionView):
 
 
 class DeviceReconnectView(DeviceActionView):
-    done = "{device} reconnected. It keeps its number."
+    """Approve the reinstall waiting on a device's row."""
+
+    done = "Reinstall of {device} approved. It keeps its number."
 
     def act(self, devices, pk, data):
-        return services.reconnect_device(devices, pk, user=self.request.user)
+        return services.approve_reinstall(devices, pk, user=self.request.user)
 
 
 class DeviceRejectView(DeviceActionView):
-    done = "Registration rejected."
+    done = "Rejected."
 
     def act(self, devices, pk, data):
         return services.reject_device(devices, pk, user=self.request.user, reason=_reason(data))

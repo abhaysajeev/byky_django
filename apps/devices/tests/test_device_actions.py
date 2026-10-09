@@ -49,12 +49,21 @@ def devices(admin):
     return scoping.devices_for(admin)
 
 
-def pending(company, installation_id="install-1", *, channel=OPERATOR, platform_id="fed25", reconnect_of=None):
+def pending(company, installation_id="install-1", *, channel=OPERATOR, platform_id="fed25"):
     return Device.objects.create(
         company=company, installation_id=installation_id, platform="android",
         platform_id=platform_id, channel=channel, status=DeviceStatus.PENDING,
-        reconnect_of=reconnect_of,
     )
+
+
+def reinstalled(device, installation_id="new-install", model="Redmi Note 9", push="fcm-new"):
+    """The same phone came back with a new install: it waits on the row."""
+    device.pending_installation_id = installation_id
+    device.pending_since = timezone.now()
+    device.pending_device_model = model
+    device.pending_push_token = push
+    device.save()
+    return device
 
 
 def approve(devices, device, admin, branch=None, name="AlMamzar-POS1", **kw):
@@ -189,54 +198,55 @@ def test_only_a_live_device_of_the_same_app_can_be_replaced(devices, admin, comp
 # -- Reconnect -------------------------------------------------------------------------
 
 
-def test_reconnect_keeps_the_original_and_discards_the_request(devices, admin, company, branch):
+def test_approving_a_reinstall_keeps_the_device_and_its_number(devices, admin, company, branch):
     original = pending(company, "old-install")
     approve(devices, original, admin, branch)
     session = live_session(original, branch)
     number = original.device_registration_id
-    request_row = pending(company, "new-install", reconnect_of=original)
-    request_row.push_token = "fcm-new"
-    request_row.save()
+    reinstalled(Device.objects.get(pk=original.pk))
 
-    services.reconnect_device(devices, request_row.pk, user=admin)
+    services.approve_reinstall(devices, original.pk, user=admin)
 
     original.refresh_from_db()
-    assert original.installation_id == "new-install"
-    assert original.device_registration_id == number
-    assert (original.status, original.name, original.push_token) == (DeviceStatus.APPROVED, "AlMamzar-POS1", "fcm-new")
-    assert not Device.objects.filter(pk=request_row.pk).exists()
+    assert (original.installation_id, original.device_registration_id) == ("new-install", number)
+    assert (original.status, original.name, original.push_token, original.device_model) == (
+        DeviceStatus.APPROVED, "AlMamzar-POS1", "fcm-new", "Redmi Note 9")
+    assert (original.pending_installation_id, original.pending_since) == (None, None)
+    assert Device.objects.count() == 1
     assert DeviceMapping.objects.get(device=original, to_date__isnull=True).branch == branch
     session.refresh_from_db()
     assert session.logged_out_at is not None
     assert actions(original)[0] == DeviceAction.RECONNECTED
 
 
-def test_reconnect_keeps_a_blocked_original_blocked(devices, admin, company, branch):
+def test_approving_a_reinstall_keeps_a_blocked_device_blocked(devices, admin, company, branch):
     original = pending(company, "old-install")
     approve(devices, original, admin, branch)
     services.block_device(devices, original.pk, user=admin)
-    request_row = pending(company, "new-install", reconnect_of=original)
+    reinstalled(Device.objects.get(pk=original.pk))
 
-    services.reconnect_device(devices, request_row.pk, user=admin)
+    services.approve_reinstall(devices, original.pk, user=admin)
 
     assert Device.objects.get(pk=original.pk).status == DeviceStatus.BLOCKED
 
 
-def test_reconnect_needs_a_reinstall_request(devices, admin, company):
-    with pytest.raises(services.DeviceActionError, match="not a reinstall"):
-        services.reconnect_device(devices, pending(company).pk, user=admin)
+def test_approve_reinstall_needs_one_waiting(devices, admin, company):
+    with pytest.raises(services.DeviceActionError, match="no reinstall waiting"):
+        services.approve_reinstall(devices, pending(company).pk, user=admin)
 
 
-def test_register_as_new_drops_the_link(devices, admin, company, branch, other_branch):
+def test_rejecting_a_reinstall_leaves_the_device_alone(devices, admin, company, branch):
     original = pending(company, "old-install")
     approve(devices, original, admin, branch)
-    request_row = pending(company, "new-install", reconnect_of=original)
+    reinstalled(Device.objects.get(pk=original.pk))
 
-    approve(devices, request_row, admin, other_branch, name="Second tablet")
+    services.reject_device(devices, original.pk, user=admin, reason="Not ours")
 
-    request_row.refresh_from_db()
-    assert request_row.status == DeviceStatus.APPROVED and request_row.reconnect_of is None
-    assert Device.objects.get(pk=original.pk).installation_id == "old-install"
+    original.refresh_from_db()
+    assert (original.status, original.installation_id, original.pending_installation_id) == (
+        DeviceStatus.APPROVED, "old-install", None)
+    assert original.rejected_installation_id == "new-install"
+    assert actions(original)[0] == DeviceAction.REJECTED
 
 
 # -- Reject, block, unblock ------------------------------------------------------------------
@@ -372,18 +382,32 @@ def test_new_tablet_to_reinstall_and_back_to_its_own_number(client, signed_in, c
     approved = register(client, "install-a")
     assert (approved["code"], approved["data"]["device_registration_id"]) == ("approved", number)
 
-    # The app is reinstalled: new installation, same phone.
+    # The app is reinstalled: new installation, same phone -- same row, same number.
     claim = register(client, "install-b")
-    assert claim["code"] == "reconnect_pending"
-    assert claim["data"]["matched_device"]["device_registration_id"] == number
-    request_row = Device.objects.get(installation_id="install-b")
+    assert (claim["code"], claim["data"]["device_registration_id"]) == ("reconnect_pending", number)
+    assert Device.objects.count() == 1
+    screen = signed_in.get("/devices/approval/").context["pending_devices"]
+    assert [(row["registration_id"], bool(row["reinstall"])) for row in screen] == [(number, True)]
 
-    post(signed_in, f"/devices/approval/{request_row.pk}/reconnect/")
+    post(signed_in, f"/devices/approval/{device.pk}/reconnect/")
     back = register(client, "install-b")
     assert (back["code"], back["data"]["device_registration_id"]) == ("approved", number)
 
-    # The old installation no longer exists anywhere.
+    # The old install coming back is itself just another reinstall to approve.
     assert register(client, "install-a")["code"] == "reconnect_pending"
+    assert Device.objects.count() == 1
+
+
+def test_a_refused_reinstall_stays_refused(client, signed_in, company, branch):
+    number = register(client, "install-a")["data"]["device_registration_id"]
+    device = Device.objects.get(device_registration_id=number)
+    post(signed_in, f"/devices/approval/{device.pk}/approve/", {"name": "POS", "branch": branch.pk})
+    register(client, "install-b")
+
+    post(signed_in, f"/devices/approval/{device.pk}/reject/", {"reason": "Not ours"})
+
+    assert register(client, "install-b")["code"] == "reinstall_rejected"
+    assert register(client, "install-a")["code"] == "approved"
 
 
 def test_rejected_then_blocked_as_the_tablet_sees_it(client, signed_in, company, branch):

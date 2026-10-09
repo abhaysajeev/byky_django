@@ -97,18 +97,18 @@
           </thead>
           <tbody>
             {% for d in pending_devices %}
-            <tr class="scr-row" data-search="{{ d.registration_id }} {{ d.model|lower }}" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-state="pending" data-name="{{ d.name }}" data-model="{{ d.model }}" data-platform="{{ d.platform }}" data-channel="{{ d.channel_value }}" data-app="{{ d.channel }}" data-registered="{{ d.registered_on|date:'d M Y, H:i' }}"{% if d.reconnect_of %} data-match-name="{{ d.reconnect_of.name }}" data-match-number="{{ d.reconnect_of.registration_id }}"{% endif %}>
+            <tr class="scr-row" data-search="{{ d.registration_id }} {{ d.model|lower }}" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-state="pending" data-name="{{ d.name }}" data-model="{{ d.model }}" data-platform="{{ d.platform }}" data-channel="{{ d.channel_value }}" data-app="{{ d.channel }}" data-registered="{{ d.registered_on|date:'d M Y, H:i' }}"{% if d.reinstall %} data-reinstall="1" data-since="{{ d.reinstall.since|date:'d M Y, H:i' }}"{% endif %}>
               <td><span class="scr-code">{{ d.registration_id }}</span></td>
               <td>
                 <span style="font-weight:600">{{ d.model|default:"—" }}</span>
-                {% if d.reconnect_of %}
-                <div class="scr-contact-sub">Looks like {{ d.reconnect_of.name|default:d.reconnect_of.registration_id }} reinstalling{% if d.reconnect_of.last_seen_at %}, last seen {{ d.reconnect_of.last_seen_at|date:"d M Y" }}{% endif %}</div>
+                {% if d.reinstall %}
+                <div class="scr-contact-sub">{{ d.name|default:"This device" }} reinstalled {{ d.reinstall.since|date:"d M Y H:i" }}{% if d.reinstall.model %} on {{ d.reinstall.model }}{% endif %}</div>
                 {% endif %}
               </td>
               <td class="scr-contact">{{ d.platform }}</td>
               <td class="scr-contact">{{ d.channel }}</td>
               <td class="scr-contact">{{ d.registered_on|date:"d M Y H:i" }}</td>
-              <td data-status-cell><span class="scr-badge scr-badge-pending"><i></i>{{ d.status_label }}</span></td>
+              <td data-status-cell><span class="scr-badge scr-badge-pending"><i></i>{% if d.reinstall %}Reinstall waiting{% else %}{{ d.status_label }}{% endif %}</span></td>
               <td>
                 <div class="scr-row-actions">
                   <div class="scr-menu-wrap">
@@ -121,11 +121,11 @@
                         View
                       </a>
                       {% if perm.approve %}
-                      <button type="button" class="scr-menu-item" data-device-action="{% if d.reconnect_of %}reconnect{% else %}approve{% endif %}" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-name="{{ d.name }}" data-channel="{{ d.channel_value }}" data-model="{{ d.model }}"{% if d.reconnect_of %} data-match-name="{{ d.reconnect_of.name }}" data-match-number="{{ d.reconnect_of.registration_id }}"{% endif %}>
+                      <button type="button" class="scr-menu-item" data-device-action="{% if d.reinstall %}reconnect{% else %}approve{% endif %}" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-name="{{ d.name }}" data-channel="{{ d.channel_value }}" data-model="{% if d.reinstall %}{{ d.reinstall.model }}{% else %}{{ d.model }}{% endif %}"{% if d.reinstall %} data-since="{{ d.reinstall.since|date:'d M Y, H:i' }}"{% endif %}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"></path></svg>
-                        {% if d.reconnect_of %}Reconnect{% else %}Approve{% endif %}
+                        {% if d.reinstall %}Approve reinstall{% else %}Approve{% endif %}
                       </button>
-                      <button type="button" class="scr-menu-item scr-menu-item-danger" data-device-action="reject" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-name="{{ d.name }}" data-channel="{{ d.channel_value }}">
+                      <button type="button" class="scr-menu-item scr-menu-item-danger" data-device-action="reject"{% if d.reinstall %} data-reinstall="1"{% endif %} data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-name="{{ d.name }}" data-channel="{{ d.channel_value }}">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
                         Reject
                       </button>

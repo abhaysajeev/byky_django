@@ -106,17 +106,22 @@
 
   var COPY = {
     reconnect: function (d) {
-      var match = d.matchName ? d.matchName + ' (' + d.matchNumber + ')' : 'device ' + d.matchNumber;
       return {
-        title: 'Reconnect after reinstall',
-        sub: 'Request ' + d.number + ' looks like ' + match + '.',
-        line: 'Confirm only if this is the same tablet. It keeps number ' + d.matchNumber +
-              ', its name, station and history; request ' + d.number + ' is discarded and anyone ' +
-              'logged in on the old install is signed out.',
-        go: 'Reconnect', danger: false, reason: false, alt: true
+        title: 'Approve reinstall of ' + label(d) + '?',
+        sub: 'Reinstalled' + (d.since ? ' ' + d.since : '') + (d.model ? ' on ' + d.model : '') + '.',
+        line: 'Confirm only if this is the same tablet. It keeps number ' + d.number +
+              ', its name, station and history; anyone logged in on the old install is signed out.',
+        go: 'Approve reinstall', danger: false, reason: false, alt: false
       };
     },
     reject: function (d) {
+      if (d.reinstall) {
+        return {
+          title: 'Reject the reinstall of ' + label(d) + '?', sub: 'The device itself is not changed.',
+          line: 'The reinstalled app is refused and cannot log in. The current install keeps working.',
+          go: 'Reject reinstall', danger: true, reason: true, alt: false
+        };
+      }
       return {
         title: 'Reject ' + label(d) + '?', sub: 'The registration is retired.',
         line: 'The tablet will be told to register again. Use this for a registration that should not exist.',
@@ -164,7 +169,7 @@
     if (!current) return;
     var d = current.d;
     closeModal('device-action');
-    openApprove(d);                 // "Register as new": a device in its own right
+    openApprove(d);
   });
 
   /* ── Pending: find a request by its registration number ──────────────
@@ -192,7 +197,7 @@
     var b = el('button', cls, text);
     b.type = 'button';
     b.dataset.deviceAction = action;
-    ['pk', 'number', 'name', 'channel', 'model', 'matchName', 'matchNumber'].forEach(function (key) {
+    ['pk', 'number', 'name', 'channel', 'model', 'since', 'reinstall'].forEach(function (key) {
       if (row.dataset[key] !== undefined) b.dataset[key] = row.dataset[key];
     });
     return b;
@@ -230,16 +235,16 @@
     info.appendChild(el('div', 'scr-dev-match-line',
       [row.dataset.platform, row.dataset.app + ' app', 'registered ' + row.dataset.registered]
         .filter(Boolean).join(' \u00b7 ')));
-    if (row.dataset.matchNumber) {
+    if (row.dataset.reinstall) {
       info.appendChild(el('div', 'scr-dev-match-line is-hint',
-        'Looks like ' + (row.dataset.matchName || 'device') + ' (' + row.dataset.matchNumber + ') reinstalling'));
+        'Reinstall waiting' + (row.dataset.since ? ' since ' + row.dataset.since : '')));
     }
     card.appendChild(info);
 
     if (card.hasAttribute('data-can-approve')) {
       var actions = el('div', 'scr-dev-match-actions');
-      var main = row.dataset.matchNumber
-        ? actionButton(row, 'reconnect', 'Reconnect', 'scr-btn-primary')
+      var main = row.dataset.reinstall
+        ? actionButton(row, 'reconnect', 'Approve reinstall', 'scr-btn-primary')
         : actionButton(row, 'approve', 'Approve', 'scr-btn-primary');
       actions.appendChild(actionButton(row, 'reject', 'Reject', 'scr-btn-danger'));
       actions.appendChild(main);
@@ -273,7 +278,7 @@
     var d = {
       pk: btn.dataset.pk, number: btn.dataset.number, name: btn.dataset.name,
       channel: btn.dataset.channel, model: btn.dataset.model,
-      matchName: btn.dataset.matchName, matchNumber: btn.dataset.matchNumber
+      since: btn.dataset.since, reinstall: btn.dataset.reinstall
     };
     var menu = btn.closest('.scr-menu');
     if (menu) menu.hidden = true;

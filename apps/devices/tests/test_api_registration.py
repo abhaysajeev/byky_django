@@ -265,57 +265,88 @@ def test_a_pending_tablet_cannot_rewrite_its_platform_id(client, company):
 # -- Reinstall, factory reset ---------------------------------------------------
 
 
-def test_a_reinstall_becomes_a_request_and_the_original_is_untouched(client, company):
+def test_a_reinstall_waits_on_the_same_row_and_the_original_keeps_working(client, company):
     original = approved_device(company, "old-install", platform_id="fed25")
-    before = (original.installation_id, original.status, original.name)
+    number = original.device_registration_id
 
-    response = register(client, "new-install", platform_id="fed25")
+    response = register(client, "new-install", platform_id="fed25", model="Redmi Note 9")
 
     assert response.status_code == 202
     reply = body(response)
     assert reply["code"] == "reconnect_pending"
-    request_row = Device.objects.get(installation_id="new-install")
-    assert request_row.reconnect_of == original
-    assert request_row.status == DeviceStatus.PENDING
-    assert reply["data"]["device_registration_id"] == request_row.device_registration_id
-    assert reply["data"]["matched_device"]["device_registration_id"] == original.device_registration_id
-    assert reply["data"]["matched_device"]["name"] == "AlMamzar-POS1"
-
+    assert reply["data"]["device_registration_id"] == number
+    assert reply["data"]["name"] == "AlMamzar-POS1"
+    assert reply["data"]["reinstall_requested_at"]
+    assert Device.objects.count() == 1
     original.refresh_from_db()
-    assert (original.installation_id, original.status, original.name) == before
+    assert (original.installation_id, original.pending_installation_id, original.pending_device_model) == (
+        "old-install", "new-install", "Redmi Note 9")
+    assert body(register(client, "old-install"))["code"] == "approved"
 
 
-def test_asking_again_after_a_reinstall_gives_the_same_request(client, company):
+def test_asking_again_after_a_reinstall_gives_the_same_answer(client, company):
     approved_device(company, "old-install", platform_id="fed25")
     first = body(register(client, "new-install", platform_id="fed25"))["data"]["device_registration_id"]
     second = body(register(client, "new-install", platform_id="fed25"))
 
     assert second["code"] == "reconnect_pending"
     assert second["data"]["device_registration_id"] == first
-    assert Device.objects.count() == 2
+    assert Device.objects.count() == 1
 
 
-@pytest.mark.parametrize("setup", ["retired", "other_app", "other_platform", "no_platform_id"])
+def test_a_second_reinstall_replaces_the_one_waiting(client, company):
+    original = approved_device(company, "old-install", platform_id="fed25")
+    register(client, "install-2", platform_id="fed25")
+
+    register(client, "install-3", platform_id="fed25")
+
+    original.refresh_from_db()
+    assert original.pending_installation_id == "install-3"
+    assert Device.objects.count() == 1
+
+
+def test_a_pending_device_simply_follows_its_phone(client, company):
+    first = body(register(client, "install-1", platform_id="fed25"))["data"]["device_registration_id"]
+
+    again = body(register(client, "install-2", platform_id="fed25"))
+
+    assert (again["code"], again["data"]["device_registration_id"]) == ("pending_approval", first)
+    assert list(Device.objects.values_list("installation_id", flat=True)) == ["install-2"]
+
+
+def test_a_blocked_device_stays_blocked_when_reinstalled(client, company):
+    original = approved_device(company, "old-install", platform_id="fed25", status=DeviceStatus.BLOCKED)
+
+    assert body(register(client, "new-install", platform_id="fed25"))["code"] == "device_blocked"
+    original.refresh_from_db()
+    assert original.pending_installation_id == "new-install"
+
+
+@pytest.mark.parametrize("setup", ["retired", "other_app", "other_platform", "other_phone"])
 def test_what_never_counts_as_a_reinstall(client, company, setup):
     if setup == "retired":
         approved_device(company, "old", platform_id="fed25", status=DeviceStatus.RETIRED)
     elif setup == "other_app":
         approved_device(company, "old", platform_id="fed25", channel=Channel.MANAGER)
-    elif setup == "other_platform":
-        approved_device(company, "old", platform_id="fed25")
     else:
-        approved_device(company, "old", platform_id="")
+        approved_device(company, "old", platform_id="fed25")
 
     kwargs = {"platform_id": "fed25"}
     if setup == "other_platform":
         kwargs["platform"] = "ios"
-    if setup == "no_platform_id":
-        kwargs["platform_id"] = ""
+    if setup == "other_phone":
+        kwargs["platform_id"] = "other"
 
     reply = body(register(client, "new-install", **kwargs))
 
     assert reply["code"] == "pending_approval"
-    assert Device.objects.get(installation_id="new-install").reconnect_of is None
+    assert Device.objects.filter(installation_id="new-install").exists()
+
+
+def test_the_platform_id_is_required(client, company):
+    reply = body(register(client, "new-install", platform_id=""))
+
+    assert reply["code"] == "invalid_request" and "platform_id" in reply["data"]["errors"]
 
 
 def test_a_factory_reset_is_a_new_device(client, company):

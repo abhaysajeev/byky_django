@@ -38,7 +38,9 @@ class RegistrationRequest(serializers.Serializer):
         choices=Platform.choices,
         error_messages={**REQUIRED, "invalid_choice": "must be android or ios"},
     )
-    platform_id = text_field(64, required=False, allow_blank=True, allow_null=True)
+    # Required (9 Oct 2026): it is how a reinstall is recognised as the same
+    # phone and waits on its own device row instead of becoming a new device.
+    platform_id = text_field(64)
     device_model = text_field(120, required=False, allow_blank=True, allow_null=True)
 
 

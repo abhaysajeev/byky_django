@@ -244,6 +244,11 @@ def approved_device(installation_id):
 
     device = devices_services.device_for_installation(installation_id)
     if device is None:
+        if devices_services.device_waiting_for(installation_id) is not None:
+            raise LoginRefused("device_reconnect_pending", "Waiting for approval after reinstall.", status=202)
+        if devices_services.device_refusing(installation_id) is not None:
+            raise LoginRefused("reinstall_rejected", "This reinstall was refused. Contact your administrator.",
+                               status=403)
         raise LoginRefused("device_not_registered", "Setting up this device…", status=409)
     if device.status == DeviceStatus.PENDING:
         raise LoginRefused("device_pending_approval", "Waiting for approval.", status=202)
