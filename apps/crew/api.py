@@ -22,7 +22,9 @@ from apps.crew.serializers import (
     SelfAttendanceRequest,
 )
 from apps.portal.authentication import AppJWTAuthentication
-from core.api import envelope, request_parts, session_station
+from apps.sync import parking
+from apps.sync.models import IssueKind
+from core.api import envelope, request_parts, station_of
 from core.enums import Channel
 from core.schema import SERVER_ERROR, envelope_request, envelope_responses
 from core.timezones import business_date_for, zone_for
@@ -43,11 +45,11 @@ def _local(moment, zone):
     return moment.astimezone(zone).strftime(TIME_FORMAT) if moment else None
 
 
-def _station_or_refusal(request, app):
+def _station_or_refusal(session, app, *, replay=False):
     """The operator app is a station till: its device must still be mapped
     to an open branch. The manager's phone has no station."""
     if app == Channel.OPERATOR:
-        _, refused = session_station(request)
+        _, refused = station_of(session, replay=replay)
         return refused
     return None
 
@@ -110,6 +112,7 @@ class AttendanceMarkView(APIView):
 
     authentication_classes = [AppJWTAuthentication]
     permission_classes = [IsAuthenticated]
+    park_kind = IssueKind.ATTENDANCE
 
     @extend_schema(
         tags=["Operator Attendance", "Manager Attendance"],
@@ -160,22 +163,27 @@ class AttendanceMarkView(APIView):
             (409, "sync_id_conflict", "That sync_id is already used.", {}),
             (409, "device_not_mapped", "This device has no station.", {}, "device_not_mapped (operator)"),
             (409, "branch_inactive", "This station is closed.", {}, "branch_inactive (operator)"),
+            *parking.SCHEMA_ROWS,
             SERVER_ERROR,
         ),
     )
     def post(self, request, app):
         if app not in _SOURCES:
             return envelope("wrong_channel", "Not allowed on this app.", http_status=403)
-        refused = _station_or_refusal(request, app)
+        return parking.handle(request, app, self.park_kind, self.perform)
+
+    def perform(self, session, app, request_data, *, replay=False):
+        """The call's rules; a replay of a parked call runs it as `session`.
+        A punch is parked on its own: it belongs to no order."""
+        refused = _station_or_refusal(session, app, replay=replay)
         if refused:
             return refused
 
         source, request_class = _SOURCES[app]
-        _, request_data = request_parts(request)
         form = request_class(data=request_data)
         form.is_valid(raise_exception=True)
 
-        company = request.user.employee.company
+        company = session.user.employee.company
         zone = zone_for(company)
         values = dict(form.validated_data)
         for key in ("rms_scan_time", "qr_generation_time"):
@@ -183,7 +191,7 @@ class AttendanceMarkView(APIView):
                 values[key] = timezone.make_aware(values[key], zone)
 
         try:
-            row, created = services.mark_attendance(request.user, source, values, device=request.auth.device)
+            row, created = services.mark_attendance(session.user, source, values, device=session.device)
         except services.AttendanceRefused as refusal:
             return envelope(refusal.code, refusal.message, http_status=refusal.status)
 
@@ -271,7 +279,7 @@ class AttendanceHistoryView(APIView):
     def post(self, request, app):
         if app not in _HISTORY_APPS:
             return envelope("wrong_channel", "Not allowed on this app.", http_status=403)
-        refused = _station_or_refusal(request, app)
+        refused = _station_or_refusal(request.auth, app)
         if refused:
             return refused
 

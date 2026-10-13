@@ -51,7 +51,9 @@ from apps.rental.serializers import (
     OrderReturnRequest,
     OrderSettleRequest,
 )
-from core.api import envelope, manager_only, request_parts, session_station
+from apps.sync import parking
+from apps.sync.models import IssueKind
+from core.api import envelope, manager_only, request_parts, session_station, station_of
 from core.enums import Channel
 from core.schema import SERVER_ERROR, envelope_request, envelope_responses
 from core.timezones import zone_for
@@ -143,6 +145,16 @@ class _OperatorView(APIView):
         if app != Channel.OPERATOR:
             return None, envelope("wrong_channel", "Not allowed on this app.", http_status=403)
         return session_station(request)
+
+    # A recording call names its kind and keeps its rules in perform(session,
+    # app, request_data, replay=...); post() hands it to parking, which may
+    # park it (apps/sync/parking.py) and replays run it as the original session.
+    park_kind = None
+
+    def parked(self, request, app):
+        if app != Channel.OPERATOR:
+            return envelope("wrong_channel", "Not allowed on this app.", http_status=403)
+        return parking.handle(request, app, self.park_kind, self.perform)
 
 
 _COMMON = (
@@ -479,6 +491,8 @@ again; `false` -- stop and show the operator.
 class OrderCreateView(_OperatorView):
     """POST /api/v1/{app}/orders -- operator app only."""
 
+    park_kind = IssueKind.BOOKING
+
     @extend_schema(
         tags=["Operator Orders"],
         summary="Book a rental",
@@ -489,19 +503,21 @@ class OrderCreateView(_OperatorView):
             (200, "duplicate", "Already recorded.", _ORDER_SAMPLE),
             (400, "invalid_request", "sync_id must be a UUIDv7.", {"errors": {"sync_id": "must be a UUIDv7"}}),
             *_error_rows(*_BOOK_ERRORS),
+            *parking.SCHEMA_ROWS,
             *_COMMON,
         ),
     )
     def post(self, request, app):
-        branch, refused = self.station(request, app)
+        return self.parked(request, app)
+
+    def perform(self, session, app, request_data, *, replay=False):
+        branch, refused = station_of(session, replay=replay)
         if refused:
             return refused
-
-        _, request_data = request_parts(request)
         form = OrderCreateRequest(data=request_data)
         if not form.is_valid():
             # Refused, but the receipt was printed: its number still counts.
-            services.count_receipt(request.auth, request_data.get("order_no"))
+            services.count_receipt(session, request_data.get("order_no"))
             raise ValidationError(form.errors)
         values = form.validated_data
 
@@ -514,7 +530,6 @@ class OrderCreateView(_OperatorView):
         for payment in values.get("payments") or []:
             payment["paid_at"] = timezone.make_aware(payment["paid_at"], zone)
 
-        session = request.auth
         try:
             data, created = services.create_rental_order(
                 session, values, request_data,
@@ -605,6 +620,8 @@ server before its booking is `order_not_synced` -- keep it queued and retry.
 class OrderReturnView(_OperatorView):
     """POST /api/v1/{app}/orders/return -- operator app only."""
 
+    park_kind = IssueKind.RETURN
+
     @extend_schema(
         tags=["Operator Orders"],
         summary="Return one vehicle",
@@ -615,22 +632,23 @@ class OrderReturnView(_OperatorView):
             (200, "duplicate", "Already recorded.", _RETURNED_SAMPLE),
             (400, "invalid_request", "run_minutes is required.", {"errors": {"run_minutes": "is required"}}),
             *_error_rows(*_RETURN_ERRORS),
+            *parking.SCHEMA_ROWS,
             *_COMMON,
         ),
     )
     def post(self, request, app):
-        branch, refused = self.station(request, app)
+        return self.parked(request, app)
+
+    def perform(self, session, app, request_data, *, replay=False):
+        branch, refused = station_of(session, replay=replay)
         if refused:
             return refused
-
-        _, request_data = request_parts(request)
         form = OrderReturnRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
         zone = zone_for(branch.company)
         values["returned_at"] = timezone.make_aware(values["returned_at"], zone)
 
-        session = request.auth
         try:
             data, done = services.return_item(
                 session, values, request_data,
@@ -756,6 +774,8 @@ _SETTLE_EXAMPLES = [
 class OrderSettleView(_OperatorView):
     """POST /api/v1/{app}/orders/settle -- operator app only."""
 
+    park_kind = IssueKind.SETTLE
+
     @extend_schema(
         tags=["Operator Orders"],
         summary="Settle an order and issue its invoice",
@@ -767,15 +787,17 @@ class OrderSettleView(_OperatorView):
             (200, "duplicate", "Already recorded.", _SETTLED_SAMPLE),
             (400, "invalid_request", "net_amount is required.", {"errors": {"net_amount": "is required"}}),
             *_error_rows(*_SETTLE_ERRORS),
+            *parking.SCHEMA_ROWS,
             *_COMMON,
         ),
     )
     def post(self, request, app):
-        branch, refused = self.station(request, app)
+        return self.parked(request, app)
+
+    def perform(self, session, app, request_data, *, replay=False):
+        branch, refused = station_of(session, replay=replay)
         if refused:
             return refused
-
-        _, request_data = request_parts(request)
         form = OrderSettleRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
@@ -784,7 +806,6 @@ class OrderSettleView(_OperatorView):
         for payment in values.get("payments") or []:
             payment["paid_at"] = timezone.make_aware(payment["paid_at"], zone)
 
-        session = request.auth
         try:
             data, done = services.settle_order(
                 session, values, request_data,
@@ -898,11 +919,12 @@ class _ChangeView(_OperatorView):
         raise NotImplementedError
 
     def post(self, request, app):
-        branch, refused = self.station(request, app)
+        return self.parked(request, app)
+
+    def perform(self, session, app, request_data, *, replay=False):
+        branch, refused = station_of(session, replay=replay)
         if refused:
             return refused
-
-        _, request_data = request_parts(request)
         form = self.form_class(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
@@ -915,7 +937,6 @@ class _ChangeView(_OperatorView):
         for payment in values.get("payments") or []:
             payment["paid_at"] = timezone.make_aware(payment["paid_at"], zone)
 
-        session = request.auth
         try:
             data, done = self.change(
                 session, values, request_data,
@@ -929,6 +950,8 @@ class _ChangeView(_OperatorView):
 class OrderAddView(_ChangeView):
     """POST /api/v1/{app}/orders/add -- operator app only."""
 
+    park_kind = IssueKind.ADD
+
     form_class, times, item_keys, done_message = OrderAddRequest, ("added_at",), ("item",), "Vehicle added."
 
     @extend_schema(
@@ -941,6 +964,7 @@ class OrderAddView(_ChangeView):
             (200, "duplicate", "Already recorded.", _ADDED_SAMPLE),
             (400, "invalid_request", "item is required.", {"errors": {"item": "is required"}}),
             *_error_rows(*_ADD_ERRORS),
+            *parking.SCHEMA_ROWS,
             *_COMMON,
         ),
     )
@@ -953,6 +977,8 @@ class OrderAddView(_ChangeView):
 
 class OrderReplaceView(_ChangeView):
     """POST /api/v1/{app}/orders/replace -- operator app only."""
+
+    park_kind = IssueKind.REPLACE
 
     form_class, times, item_keys = OrderReplaceRequest, ("replaced_at",), ("new_item",)
     done_message = "Vehicle replaced."
@@ -967,6 +993,7 @@ class OrderReplaceView(_ChangeView):
             (200, "duplicate", "Already recorded.", _REPLACED_SAMPLE),
             (400, "invalid_request", "reason is required.", {"errors": {"reason": "is required"}}),
             *_error_rows(*_REPLACE_ERRORS),
+            *parking.SCHEMA_ROWS,
             *_COMMON,
         ),
     )
@@ -980,6 +1007,8 @@ class OrderReplaceView(_ChangeView):
 class OrderRemoveView(_ChangeView):
     """POST /api/v1/{app}/orders/remove -- operator app only."""
 
+    park_kind = IssueKind.REMOVE
+
     form_class, times, done_message = OrderRemoveRequest, ("removed_at",), "Vehicle removed."
 
     @extend_schema(
@@ -992,6 +1021,7 @@ class OrderRemoveView(_ChangeView):
             (200, "duplicate", "Already recorded.", _REMOVED_SAMPLE),
             (400, "invalid_request", "reason is required.", {"errors": {"reason": "is required"}}),
             *_error_rows(*_REMOVE_ERRORS),
+            *parking.SCHEMA_ROWS,
             *_COMMON,
         ),
     )
@@ -1056,6 +1086,8 @@ same payment `sync_id` twice is `payment_id_used`.
 class OrderPaymentsView(_ChangeView):
     """POST /api/v1/{app}/orders/payments -- operator app only."""
 
+    park_kind = IssueKind.PAYMENTS
+
     form_class, done_message = OrderPaymentsRequest, "Payment recorded."
 
     @extend_schema(
@@ -1070,6 +1102,7 @@ class OrderPaymentsView(_ChangeView):
             (400, "invalid_request", "kind must be advance or refund.",
              {"errors": {"kind": "must be advance or refund"}}),
             *_error_rows(*_PAYMENTS_ERRORS),
+            *parking.SCHEMA_ROWS,
             *_COMMON,
         ),
     )
@@ -1142,6 +1175,8 @@ issued on the web. Orders with none are simply absent. Read-only.
 class CreditNoteRequestView(_OperatorView):
     """POST /api/v1/{app}/orders/credit-notes -- operator app only."""
 
+    park_kind = IssueKind.CREDIT_NOTE
+
     @extend_schema(
         tags=["Operator Credit Notes"],
         summary="Ask for a credit note on a settled order",
@@ -1152,20 +1187,23 @@ class CreditNoteRequestView(_OperatorView):
             (200, "duplicate", "Already recorded.", _CREDIT_NOTE_PENDING_SAMPLE),
             (400, "invalid_request", "order_id is required.", {"errors": {"order_id": "is required"}}),
             *_error_rows(*_CREDIT_NOTE_REQUEST_ERRORS),
+            *parking.SCHEMA_ROWS,
             *_COMMON,
         ),
     )
     def post(self, request, app):
-        branch, refused = self.station(request, app)
+        return self.parked(request, app)
+
+    def perform(self, session, app, request_data, *, replay=False):
+        branch, refused = station_of(session, replay=replay)
         if refused:
             return refused
-        _, request_data = request_parts(request)
         form = CreditNoteRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
         values["requested_at"] = timezone.make_aware(values["requested_at"], zone_for(branch.company))
         try:
-            data, done = credit_notes.request_credit_note(request.auth, values, request_data)
+            data, done = credit_notes.request_credit_note(session, values, request_data)
         except services.OrderRefused as refusal:
             return _refused(refusal)
         return (envelope("ok", "Credit note requested.", data) if done
@@ -1174,6 +1212,8 @@ class CreditNoteRequestView(_OperatorView):
 
 class CreditNoteCancelView(_OperatorView):
     """POST /api/v1/{app}/orders/credit-notes/cancel -- operator app only."""
+
+    park_kind = IssueKind.CREDIT_NOTE_CANCEL
 
     @extend_schema(
         tags=["Operator Credit Notes"],
@@ -1186,20 +1226,23 @@ class CreditNoteCancelView(_OperatorView):
             (200, "duplicate", "Already recorded.", {**_CREDIT_NOTE_PENDING_SAMPLE, "status": "cancelled"}),
             (400, "invalid_request", "credit_note_id is required.", {"errors": {"credit_note_id": "is required"}}),
             *_error_rows(*_CREDIT_NOTE_CANCEL_ERRORS),
+            *parking.SCHEMA_ROWS,
             *_COMMON,
         ),
     )
     def post(self, request, app):
-        branch, refused = self.station(request, app)
+        return self.parked(request, app)
+
+    def perform(self, session, app, request_data, *, replay=False):
+        branch, refused = station_of(session, replay=replay)
         if refused:
             return refused
-        _, request_data = request_parts(request)
         form = CreditNoteCancelRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
         values["cancelled_at"] = timezone.make_aware(values["cancelled_at"], zone_for(branch.company))
         try:
-            data, done = credit_notes.cancel_credit_note(request.auth, values, request_data)
+            data, done = credit_notes.cancel_credit_note(session, values, request_data)
         except services.OrderRefused as refusal:
             return _refused(refusal)
         return (envelope("ok", "Credit note request cancelled.", data) if done
@@ -1335,6 +1378,8 @@ where. Orders with none are simply absent. Read-only.
 class OrderRequestView(_OperatorView):
     """POST /api/v1/{app}/orders/requests -- operator app only."""
 
+    park_kind = IssueKind.REQUEST
+
     @extend_schema(
         tags=["Operator Requests"],
         summary="Ask a manager: a discount, a complimentary or a reprint",
@@ -1346,20 +1391,23 @@ class OrderRequestView(_OperatorView):
             (400, "invalid_request", "kind must be one of: discount, complimentary, reprint.",
              {"errors": {"kind": "must be one of: discount, complimentary, reprint"}}),
             *_error_rows(*_REQUEST_CREATE_ERRORS),
+            *parking.SCHEMA_ROWS,
             *_COMMON,
         ),
     )
     def post(self, request, app):
-        branch, refused = self.station(request, app)
+        return self.parked(request, app)
+
+    def perform(self, session, app, request_data, *, replay=False):
+        branch, refused = station_of(session, replay=replay)
         if refused:
             return refused
-        _, request_data = request_parts(request)
         form = OrderRequestCreateRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
         values["requested_at"] = timezone.make_aware(values["requested_at"], zone_for(branch.company))
         try:
-            data, done = order_requests.create_request(request.auth, values, request_data)
+            data, done = order_requests.create_request(session, values, request_data)
         except services.OrderRefused as refusal:
             return _refused(refusal)
         return envelope("ok", "Request sent.", data) if done else envelope("duplicate", "Already recorded.", data)
@@ -1367,6 +1415,8 @@ class OrderRequestView(_OperatorView):
 
 class OrderRequestWithdrawView(_OperatorView):
     """POST /api/v1/{app}/orders/requests/withdraw -- operator app only."""
+
+    park_kind = IssueKind.REQUEST_WITHDRAW
 
     @extend_schema(
         tags=["Operator Requests"],
@@ -1379,20 +1429,23 @@ class OrderRequestWithdrawView(_OperatorView):
             (400, "invalid_request", "request_sync_id is required.",
              {"errors": {"request_sync_id": "is required"}}),
             *_error_rows(*_REQUEST_WITHDRAW_ERRORS),
+            *parking.SCHEMA_ROWS,
             *_COMMON,
         ),
     )
     def post(self, request, app):
-        branch, refused = self.station(request, app)
+        return self.parked(request, app)
+
+    def perform(self, session, app, request_data, *, replay=False):
+        branch, refused = station_of(session, replay=replay)
         if refused:
             return refused
-        _, request_data = request_parts(request)
         form = OrderRequestWithdrawRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
         values["withdrawn_at"] = timezone.make_aware(values["withdrawn_at"], zone_for(branch.company))
         try:
-            data, done = order_requests.withdraw(request.auth, values, request_data)
+            data, done = order_requests.withdraw(session, values, request_data)
         except services.OrderRefused as refusal:
             return _refused(refusal)
         return (envelope("ok", "Request withdrawn.", data) if done
@@ -1401,6 +1454,8 @@ class OrderRequestWithdrawView(_OperatorView):
 
 class OrderRequestUsedView(_OperatorView):
     """POST /api/v1/{app}/orders/requests/used -- operator app only."""
+
+    park_kind = IssueKind.REQUEST_USED
 
     @extend_schema(
         tags=["Operator Requests"],
@@ -1413,20 +1468,23 @@ class OrderRequestUsedView(_OperatorView):
             (400, "invalid_request", "request_sync_id is required.",
              {"errors": {"request_sync_id": "is required"}}),
             *_error_rows(*_REQUEST_USED_ERRORS),
+            *parking.SCHEMA_ROWS,
             *_COMMON,
         ),
     )
     def post(self, request, app):
-        branch, refused = self.station(request, app)
+        return self.parked(request, app)
+
+    def perform(self, session, app, request_data, *, replay=False):
+        branch, refused = station_of(session, replay=replay)
         if refused:
             return refused
-        _, request_data = request_parts(request)
         form = OrderRequestUsedRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
         values["used_at"] = timezone.make_aware(values["used_at"], zone_for(branch.company))
         try:
-            data, done = order_requests.mark_used(request.auth, values, request_data)
+            data, done = order_requests.mark_used(session, values, request_data)
         except services.OrderRefused as refusal:
             return _refused(refusal)
         return (envelope("ok", "Reprint recorded.", data) if done

@@ -193,7 +193,7 @@ def test_expired_rows_are_purged_and_the_rest_kept(db, settings):
         RequestLog.objects.create(created_at=when, method="POST", path="/api/v1/x", status=200, duration_ms=1)
     for when in (old_error, now - datetime.timedelta(days=60)):
         ErrorLog.objects.create(created_at=when, level="ERROR", logger="x", message="m", source="other")
-    assert purge(lock=True) == {"RequestLog": 1, "ErrorLog": 1}
+    assert purge(lock=True) == {"RequestLog": 1, "ErrorLog": 1, "SyncIssue": 0}
     assert RequestLog.objects.count() == 1 and ErrorLog.objects.count() == 1
 
 

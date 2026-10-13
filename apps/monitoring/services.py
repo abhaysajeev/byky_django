@@ -44,6 +44,9 @@ def purge(*, now=None, lock=False):
                     break
                 total += model.objects.filter(pk__in=ids).delete()[0]
             deleted[model.__name__] = total
+        # Parked sync calls share the schedule; their own rule picks the rows.
+        from apps.sync.services import purge as purge_sync_issues
+        deleted["SyncIssue"] = purge_sync_issues(now=now)
         return deleted
     finally:
         if lock:

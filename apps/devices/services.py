@@ -47,7 +47,7 @@ from apps.devices.models import (
     UpdateType,
 )
 from apps.portal.auth import close_sessions_for_device
-from apps.portal.session_models import AppSession, LogoutReason
+from apps.portal.session_models import LogoutReason
 from core.enums import ApprovalStatus, Channel
 
 log = logging.getLogger(__name__)

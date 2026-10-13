@@ -67,6 +67,7 @@ LOCAL_APPS = [
     "apps.rental",
     "apps.discount",
     "apps.monitoring",
+    "apps.sync",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -312,6 +313,11 @@ MONITORING_BODY_LIMIT = 64 * 1024       # bytes kept of each request/response bo
 MONITORING_REQUEST_DAYS = int(os.environ.get("MONITORING_REQUEST_DAYS", 30))
 MONITORING_ERROR_DAYS = int(os.environ.get("MONITORING_ERROR_DAYS", 90))
 MONITORING_PURGE_HOURS = 6              # how often the writer clears expired rows
+
+# -- Parked sync calls (apps/sync) --------------------------------------------------
+# Resolved and dismissed issues are deleted this long after they were finished,
+# by the same 6-hourly purge; open ones are never deleted.
+SYNC_ISSUE_DAYS = int(os.environ.get("SYNC_ISSUE_DAYS", 45))
 
 # -- A copy of every device request for the central log server ---------------------
 # (the log-ingestion project: its own dashboards, its own retention). Sent from
