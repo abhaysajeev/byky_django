@@ -9,6 +9,8 @@ One ModelForm per entity. Two rules they all share:
   the person reading it has never seen a column name.
 """
 
+from decimal import Decimal
+
 from django import forms
 
 from apps.company.models import (
@@ -197,6 +199,22 @@ class BranchForm(ScopedModelForm):
             from apps.company.scoping import departments_for
 
             self.fields["departments"].queryset = departments_for(self.user)
+        # Decided by Is Hotel in clean(), not by the box: the drawer greys the
+        # box out until Is Hotel is ticked, so a non-hotel branch posts it empty
+        # and was refused "This field is required".
+        self.fields["hotel_commission"].required = False
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("is_hotel"):
+            commission = cleaned.get("hotel_commission")
+            if commission is None:
+                self.add_error("hotel_commission", "Enter the hotel commission.")
+            elif not 0 <= commission <= 100:
+                self.add_error("hotel_commission", "Hotel commission must be between 0 and 100.")
+        else:
+            cleaned["hotel_commission"] = Decimal("0")
+        return cleaned
 
 
 class BranchWorkingTimeForm(forms.ModelForm):

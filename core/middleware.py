@@ -11,6 +11,7 @@ import zoneinfo
 from functools import partial
 
 from django.utils import timezone
+from django.utils.cache import add_never_cache_headers
 from django.utils.functional import SimpleLazyObject
 
 SESSION_USER_KEY = "user_id"
@@ -43,7 +44,13 @@ def _load_user(request):
 
 class CurrentUserMiddleware:
     """Puts `request.user` (a User or None) and `request.app_session_id` on
-    every request."""
+    every request.
+
+    A page served to a signed-in user is never stored by the browser: without
+    this, Back after logging out shows the last screen again from the cache,
+    data and all (QA BUG-001). A reply that sets its own Cache-Control (the
+    station logo) keeps it.
+    """
 
     def __init__(self, get_response):
         self.get_response = get_response
@@ -51,7 +58,11 @@ class CurrentUserMiddleware:
     def __call__(self, request):
         request.user = SimpleLazyObject(partial(_load_user, request))
         request.app_session_id = request.session.get(SESSION_ID_KEY)
-        return self.get_response(request)
+        signed_in = bool(request.session.get(SESSION_USER_KEY))
+        response = self.get_response(request)
+        if signed_in and not response.has_header("Cache-Control"):
+            add_never_cache_headers(response)
+        return response
 
 
 class CompanyTimezoneMiddleware:

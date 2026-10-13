@@ -4,6 +4,8 @@ The templates here are deliberately plain: the real UI shell arrives with the
 first screen port (.claude/skills/port-ui/SKILL.md).
 """
 
+import json
+
 from django.contrib import messages
 from django.http import JsonResponse
 from django.shortcuts import redirect, render
@@ -14,7 +16,13 @@ from django.views.decorators.http import require_http_methods
 from apps.company import scoping
 from apps.fleet.scoping import vehicles_for
 from apps.portal import dashboard
-from apps.portal.auth import LoginRefused, close_session, sign_in_web
+from apps.portal.auth import (
+    LoginRefused,
+    PasswordRefused,
+    change_own_password,
+    close_session,
+    sign_in_web,
+)
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.session_models import AppSession, LogoutReason
 from core.middleware import SESSION_ID_KEY, SESSION_USER_KEY
@@ -82,6 +90,31 @@ def logout_view(request):
     request.session.flush()
     messages.success(request, "You have been signed out.")
     return redirect("login")
+
+
+@never_cache
+@require_http_methods(["POST"])
+def change_password_view(request):
+    """The header's Change Password, for whoever is signed in: JSON in
+    ({current, new, confirm}), JSON out ({ok, message} or {ok, errors}),
+    like every other screen write. The field names in `errors` are the
+    dialog's own, so each message lands under its box."""
+    if not request.user:
+        return JsonResponse({"ok": False, "code": "not_authenticated",
+                             "errors": [{"field": "", "message": "Sign in again."}]}, status=401)
+    try:
+        data = json.loads(request.body or "{}")
+    except ValueError:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    try:
+        change_own_password(request.user, str(data.get("current") or ""), str(data.get("new") or ""),
+                            str(data.get("confirm") or ""), keep_session_id=request.session.get(SESSION_ID_KEY))
+    except PasswordRefused as refused:
+        return JsonResponse({"ok": False, "code": "invalid",
+                             "errors": [{"field": refused.field, "message": refused.message}]}, status=400)
+    return JsonResponse({"ok": True, "message": "Password changed. Your other sessions were signed out."})
 
 
 @never_cache

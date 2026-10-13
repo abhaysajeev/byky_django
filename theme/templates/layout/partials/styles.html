@@ -33,3 +33,6 @@
     sidebar.css (which imports Sora) and after core.css, whose .offcanvas
     chrome it overrides.-->
 <link rel="stylesheet" href="{% static 'css/byky-drawer.css' %}" />
+<!--Screen styles, here too because the header's Change Password dialog is on every
+    page; every rule in it is scoped to .scr-* / .byky-* classes.-->
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />

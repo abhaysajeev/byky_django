@@ -119,6 +119,9 @@ class EntitySaveView(WriteView):
 
         with transaction.atomic():
             saved = form.save()
+            _stamp(saved, request.user, created=instance is None)
+            if instance is None:
+                _keep_switched_off(saved, data)
             self.after_save(saved, data)
 
         return JsonResponse({
@@ -126,6 +129,37 @@ class EntitySaveView(WriteView):
             "pk": saved.pk,
             "message": f"{self.noun} saved.",
         })
+
+
+def _stamp(saved, user, *, created):
+    """Who wrote it, for the masters whose forms do not stamp it themselves
+    (Country, State, Location). Their scoping counts what a company's own
+    people created (scoping.py), so an unstamped new row would vanish from the
+    list it was just saved on (QA BUG-014)."""
+    if not hasattr(saved, "created_by_id") or not user:
+        return
+    stamps = {"modified_by_id": user.pk}
+    if created and saved.created_by_id is None:
+        stamps["created_by_id"] = user.pk
+    type(saved).objects.filter(pk=saved.pk).update(**stamps)
+    for field, value in stamps.items():
+        setattr(saved, field, value)
+
+
+_OFF = (False, 0, "false", "False", "off", "0")
+
+
+def _keep_switched_off(saved, data):
+    """A record added with its Active switch turned off stays inactive. The
+    forms' apply_approval_defaults makes every new record active when no
+    approval is wanted, which overwrote the switch. Only an explicit "off"
+    counts -- a payload with no is_active at all still means active."""
+    if "is_active" not in data or data["is_active"] not in _OFF:
+        return
+    if getattr(saved, "want_approval", False) or not getattr(saved, "is_active", False):
+        return
+    type(saved).objects.filter(pk=saved.pk).update(is_active=False)
+    saved.is_active = False
 
 
 class EntityDeleteView(WriteView):

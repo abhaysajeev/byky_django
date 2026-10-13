@@ -1095,3 +1095,8 @@ textarea.scr-mon-json { display: block; width: 100%; min-height: 420px; resize: 
 .scr a.scr-link-blue:hover { color: #1f55b0; text-decoration: underline; }
 .scr-textarea { height: auto; padding: 10px 12px; }
 .scr-help.is-error { color: #c2141a; }
+
+/* Change Password, the header's dialog on every screen (navbar.html). */
+.byky-cp-fields { display: flex; flex-direction: column; gap: 14px; }
+.byky-cp-fields .scr-help { margin-top: 4px; }
+.byky-cp-foot { justify-content: flex-end; }

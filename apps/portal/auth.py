@@ -347,3 +347,37 @@ def close_sessions_for_device(device, reason, *, now=None):
         .filter(device=device, logged_out_at__isnull=True)
         .update(logged_out_at=now or timezone.now(), logout_reason=reason)
     )
+
+
+# -- Changing your own password (the header's Change Password, QA BUG-008) -----
+
+PASSWORD_MIN_LENGTH = 8      # the same rule as the Users screen's Reset password
+
+
+class PasswordRefused(Exception):
+    """One field's problem, shown under that field."""
+
+    def __init__(self, field, message):
+        super().__init__(message)
+        self.field, self.message = field, message
+
+
+def change_own_password(user, current, new, confirm, *, keep_session_id=None):
+    """A signed-in user replaces their own password. The current one must be
+    right; the new one at least 8 characters, typed the same twice, and not the
+    current one. Every other session of theirs -- other browsers, the apps -- is
+    signed out; the one making the change stays signed in."""
+    if not current or not user.check_password(current):
+        raise PasswordRefused("current", "The current password is wrong.")
+    if len(new or "") < PASSWORD_MIN_LENGTH:
+        raise PasswordRefused("new", f"Use at least {PASSWORD_MIN_LENGTH} characters.")
+    if new != confirm:
+        raise PasswordRefused("confirm", "The two new passwords are not the same.")
+    if new == current:
+        raise PasswordRefused("new", "Choose a password different from the current one.")
+    with transaction.atomic():
+        user.set_password(new)
+        user.save(update_fields=["password", "modified_on"])
+        (AppSession.objects.filter(user=user, logged_out_at__isnull=True)
+         .exclude(pk=keep_session_id)
+         .update(logged_out_at=timezone.now(), logout_reason=LogoutReason.FORCED))
