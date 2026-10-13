@@ -139,17 +139,16 @@
                     </a>
                     {% if perm.update %}
                     {% comment %}
-                    Re-mapping is refused while someone is logged in on the
-                    device, which is what the legacy screen did too: it would
-                    not edit or delete a mapping in "Active Status".
+                    Re-map and Close log out whoever is on the device; the
+                    modal says so when the row is in use (data-online).
                     {% endcomment %}
-                    <button type="button" class="scr-menu-item" data-mapping-action="remap" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-name="{{ d.name }}" data-station="{{ d.station }}" data-station-id="{{ d.station_id }}" data-from="{{ d.from_date|date:'d M Y, H:i' }}"{% if not d.mapped %} disabled title="No station yet — use Add Device Mapping"{% elif d.online %} disabled title="In use — log the operator out first"{% endif %}>
+                    <button type="button" class="scr-menu-item" data-mapping-action="remap" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-name="{{ d.name }}" data-station="{{ d.station }}" data-station-id="{{ d.station_id }}" data-from="{{ d.from_date|date:'d M Y, H:i' }}" data-online="{% if d.online %}yes{% endif %}"{% if not d.mapped %} disabled title="No station yet — use Add Device Mapping"{% endif %}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10a2.1 2.1 0 0 0-3-3L5 17z"></path><path d="M14.5 6.5 17.5 9.5"></path></svg>
                       Re-map to another station
                     </button>
                     {% endif %}
                     {% if perm.delete %}
-                    <button type="button" class="scr-menu-item scr-menu-item-danger" data-mapping-action="close" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-name="{{ d.name }}" data-station="{{ d.station }}" data-station-id="{{ d.station_id }}" data-from="{{ d.from_date|date:'d M Y, H:i' }}"{% if not d.mapped %} disabled title="No station to close"{% elif d.online %} disabled title="In use — log the operator out first"{% endif %}>
+                    <button type="button" class="scr-menu-item scr-menu-item-danger" data-mapping-action="close" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-name="{{ d.name }}" data-station="{{ d.station }}" data-station-id="{{ d.station_id }}" data-from="{{ d.from_date|date:'d M Y, H:i' }}" data-online="{% if d.online %}yes{% endif %}"{% if not d.mapped %} disabled title="No station to close"{% endif %}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
                       Close mapping
                     </button>

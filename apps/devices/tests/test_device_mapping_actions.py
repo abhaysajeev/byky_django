@@ -2,8 +2,8 @@
 
 design/03-login.md section 8.6: nobody types a date -- mapping is stamped when
 it is saved, as the legacy did; intervals are half-open, a re-map closes the
-open row at the moment the new one opens, and nothing moves while someone is
-logged in on the device.
+open row at the moment the new one opens, and whoever is logged in on the
+device is logged out by the move.
 """
 
 import datetime
@@ -15,6 +15,7 @@ from django.utils import timezone
 from apps.devices import scoping, services
 from apps.devices.models import Device, DeviceMapping, DeviceStatus
 from apps.portal.auth import open_session
+from apps.portal.session_models import LogoutReason
 from core.enums import Channel, UserScope
 from core.models import User
 
@@ -136,17 +137,48 @@ def test_close_ends_the_mapping_now(devices, admin, company, branch):
     assert not DeviceMapping.objects.filter(device=device, to_date__isnull=True).exists()
 
 
-def test_nothing_moves_while_someone_is_logged_in(devices, admin, company, branch, other_branch):
+def _signed_in(company, device, branch, username="op.x"):
+    operator = User.objects.create_user(username, "Byky#2026", company=company,
+                                        scope=UserScope.COMPANY, allowed_channels=[OPERATOR])
+    return open_session(operator, OPERATOR, device=device, branch=branch)
+
+
+def test_remap_logs_out_whoever_is_on_the_device(devices, admin, company, branch, other_branch):
     device = tablet(company)
     mapped(device, branch)
-    operator = User.objects.create_user("op.x", "Byky#2026", company=company,
-                                        scope=UserScope.COMPANY, allowed_channels=[OPERATOR])
-    open_session(operator, OPERATOR, device=device, branch=branch)
+    session = _signed_in(company, device, branch)
+    moment = timezone.now()
 
-    with pytest.raises(services.DeviceActionError, match="logged in"):
-        services.remap_device(devices, device.pk, user=admin, branch=other_branch)
-    with pytest.raises(services.DeviceActionError, match="logged in"):
-        services.close_mapping(devices, device.pk, user=admin)
+    services.remap_device(devices, device.pk, user=admin, branch=other_branch, now=moment)
+
+    session.refresh_from_db()
+    assert session.logged_out_at == moment
+    assert session.logout_reason == LogoutReason.FORCED
+    assert DeviceMapping.objects.get(device=device, to_date__isnull=True).branch == other_branch
+
+
+def test_close_logs_out_whoever_is_on_the_device(devices, admin, company, branch):
+    device = tablet(company)
+    mapped(device, branch)
+    session = _signed_in(company, device, branch)
+
+    services.close_mapping(devices, device.pk, user=admin)
+
+    session.refresh_from_db()
+    assert session.logout_reason == LogoutReason.FORCED
+    assert not DeviceMapping.objects.filter(device=device, to_date__isnull=True).exists()
+
+
+def test_a_refused_remap_logs_nobody_out(devices, admin, company, branch):
+    device = tablet(company)
+    mapped(device, branch)
+    session = _signed_in(company, device, branch)
+
+    with pytest.raises(services.DeviceActionError, match="already at this station"):
+        services.remap_device(devices, device.pk, user=admin, branch=branch)
+
+    session.refresh_from_db()
+    assert session.logged_out_at is None
 
 
 def test_a_pending_device_cannot_be_mapped(devices, admin, company, branch):

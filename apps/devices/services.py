@@ -782,23 +782,16 @@ def unblock_device(devices_qs, pk, *, user, reason=""):
 # row's to_date with the same moment -- what the legacy did
 # (DeviceMappingModels.cs:235, DeviceMappingController.cs:315). Intervals are
 # half-open, [from_date, to_date), and a re-map closes the open row and opens a
-# new one, so the mapping table is its own history. All three are refused while
-# anyone is logged in on the device, as the legacy refused an "Active Status"
-# edit: moving a tablet mid-shift would put that shift's money at two stations.
-
-
-def _in_use(device):
-    return AppSession.objects.filter(device=device, logged_out_at__isnull=True).exists()
+# new one, so the mapping table is its own history. Whoever is logged in on the
+# device is logged out by all three, in the same transaction: a session carries
+# the station it signed in at, so it must not outlive the mapping -- the tablet
+# signs in again and gets the new station (or none).
 
 
 def _mappable(devices_qs, pk):
     device = _locked(devices_qs, pk)
     if device.status not in (DeviceStatus.APPROVED, DeviceStatus.BLOCKED):
         raise DeviceActionError("Only an approved or blocked device can be mapped.", "Device")
-    if _in_use(device):
-        raise DeviceActionError(
-            "Someone is logged in on this device. Log them out first.", "Device"
-        )
     return device
 
 
@@ -810,6 +803,7 @@ def map_device(devices_qs, pk, *, user, branch, now=None):
         if _open_mapping(device) is not None:
             raise DeviceActionError("This device already has a station. Use Re-map.", "Device")
         _check_station(branch, device)
+        close_sessions_for_device(device, LogoutReason.FORCED, now=now)
         return DeviceMapping.objects.create(
             device=device, branch=branch, from_date=now, created_by=user,
         )
@@ -827,6 +821,7 @@ def remap_device(devices_qs, pk, *, user, branch, now=None):
         if current.branch_id == branch.pk:
             raise DeviceActionError("The device is already at this station.", "Station")
         _check_station(branch, device)
+        close_sessions_for_device(device, LogoutReason.FORCED, now=now)
         _close_mapping(device, now, user)
         return DeviceMapping.objects.create(
             device=device, branch=branch, from_date=now, created_by=user,
@@ -841,6 +836,7 @@ def close_mapping(devices_qs, pk, *, user, now=None):
         device = _mappable(devices_qs, pk)
         if _open_mapping(device) is None:
             raise DeviceActionError("This device has no station to close.", "Device")
+        close_sessions_for_device(device, LogoutReason.FORCED, now=now)
         return _close_mapping(device, now, user)
 
 

@@ -49,6 +49,13 @@
     });
   }
 
+  // Re-map and Close log out whoever is on the device (services.remap_device,
+  // close_mapping); the modal says so when the row is in use.
+  function warnLogout(modal, d) {
+    var line = modal.querySelector('[data-mapping-logout]');
+    if (line) line.hidden = !d.online;
+  }
+
   function label(d) { return d.name ? d.name + ' (' + d.number + ')' : 'Device ' + d.number; }
 
   /* ── Re-map ───────────────────────────────────────────────────────── */
@@ -69,6 +76,7 @@
       opt.hidden = opt.disabled = opt.value === String(d.stationId);
     });
     remapGo.disabled = false;
+    warnLogout(remap, d);
     show('device-remap', true);
   }
 
@@ -87,6 +95,7 @@
     unmap.querySelector('[data-unmap-title]').textContent = 'Close mapping for ' + label(d) + '?';
     unmap.querySelector('[data-unmap-sub]').textContent = 'At ' + (d.station || '—') + (d.from ? ' since ' + d.from : '') + '.';
     unmapGo.disabled = false;
+    warnLogout(unmap, d);
     show('device-unmap', true);
   }
 
@@ -105,7 +114,8 @@
     if (menu) menu.hidden = true;
     var d = {
       pk: btn.dataset.pk, number: btn.dataset.number, name: btn.dataset.name,
-      station: btn.dataset.station, stationId: btn.dataset.stationId, from: btn.dataset.from
+      station: btn.dataset.station, stationId: btn.dataset.stationId, from: btn.dataset.from,
+      online: btn.dataset.online === 'yes'
     };
     if (btn.dataset.mappingAction === 'remap' && remap) openRemap(d);
     if (btn.dataset.mappingAction === 'close' && unmap) openUnmap(d);
