@@ -25,6 +25,7 @@ from apps.rental.models import (
     CreditNote,
     CreditNoteSource,
     CreditNoteStatus,
+    DecisionChannel,
     Invoice,
     Order,
     OrderAction,
@@ -37,7 +38,12 @@ CENT = Decimal("0.001")          # money is kept to the 3rd decimal
 
 
 class CreditNoteRefused(Exception):
-    """A web action that cannot be done -- the message is shown as it is."""
+    """A decision that cannot be made. The web shows `message` as it is; the
+    manager app also gets `code` and the HTTP `status`."""
+
+    def __init__(self, message, code="credit_note_refused", status=409):
+        super().__init__(message)
+        self.message, self.code, self.status = message, code, status
 
 
 def vat_split(net, rate):
@@ -159,47 +165,51 @@ def _amount(order, net_amount):
     try:
         net = Decimal(str(net_amount)).quantize(CENT)
     except (ArithmeticError, ValueError):
-        raise CreditNoteRefused("Enter the credit note amount.") from None
+        raise CreditNoteRefused("Enter the credit note amount.", "invalid_amount", 400) from None
     if net <= 0:
-        raise CreditNoteRefused("The credit note amount must be more than 0.")
+        raise CreditNoteRefused("The credit note amount must be more than 0.", "invalid_amount", 400)
     if order.net_amount is not None and net > order.net_amount:
-        raise CreditNoteRefused(f"The credit note cannot be more than the order's net amount, AED {order.net_amount}.")
+        raise CreditNoteRefused(f"The credit note cannot be more than the order's net amount, AED {order.net_amount}.",
+                                "invalid_amount", 400)
     return net
 
 
-def _issue(note, net, user, remark, now):
+def _issue(note, net, user, remark, now, channel=DecisionChannel.WEB):
     tax, taxable = vat_split(net, note.invoice.tax_percentage)
     note.status = CreditNoteStatus.APPROVED
     note.credit_note_no = credit_note_no(note.order)
     note.net_amount, note.tax_percentage = net, note.invoice.tax_percentage
     note.tax_amount, note.taxable_amount = tax, taxable
     note.decided_by, note.decided_at, note.decision_remark = user, now, remark
-    note.modified_by = user
+    note.decided_channel, note.modified_by = channel, user
 
 
-def approve(user, note_id, company_ids, net_amount, remark=""):
-    """Issue a waiting request with the amount the back office typed."""
+def approve(user, note_id, company_ids, net_amount, remark="", channel=DecisionChannel.WEB):
+    """Issue a waiting request with the amount the approver typed -- on the
+    web, or in the manager app (`channel`); the same rules either way."""
     with transaction.atomic():
         note = (CreditNote.objects.select_for_update().select_related("order", "invoice")
                 .filter(pk=note_id, company_id__in=company_ids).first())
         if note is None:
-            raise CreditNoteRefused("No such credit note request.")
+            raise CreditNoteRefused("No such credit note request.", "unknown_credit_note", 404)
         if note.status != CreditNoteStatus.PENDING:
-            raise CreditNoteRefused(f"This request is already {note.get_status_display().lower()}.")
-        _issue(note, _amount(note.order, net_amount), user, remark.strip(), timezone.now())
+            raise CreditNoteRefused(f"This request is already {note.get_status_display().lower()}.",
+                                    "credit_note_decided", 409)
+        _issue(note, _amount(note.order, net_amount), user, remark.strip(), timezone.now(), channel)
         note.save()
     return note
 
 
-def reject(user, note_id, company_ids, remark=""):
+def reject(user, note_id, company_ids, remark="", channel=DecisionChannel.WEB):
     with transaction.atomic():
         note = CreditNote.objects.select_for_update().filter(pk=note_id, company_id__in=company_ids).first()
         if note is None:
-            raise CreditNoteRefused("No such credit note request.")
+            raise CreditNoteRefused("No such credit note request.", "unknown_credit_note", 404)
         if note.status != CreditNoteStatus.PENDING:
-            raise CreditNoteRefused(f"This request is already {note.get_status_display().lower()}.")
+            raise CreditNoteRefused(f"This request is already {note.get_status_display().lower()}.",
+                                    "credit_note_decided", 409)
         note.status, note.decided_by, note.decided_at = CreditNoteStatus.REJECTED, user, timezone.now()
-        note.decision_remark, note.modified_by = remark.strip(), user
+        note.decision_remark, note.decided_channel, note.modified_by = remark.strip(), channel, user
         note.save()
     return note
 

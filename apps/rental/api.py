@@ -15,6 +15,7 @@ and any advance payments, in one call.
 POST /api/v1/{app}/orders/detail: one order, by sync_id or order number.
 """
 
+from django.core.paginator import Paginator
 from django.utils import timezone
 from drf_spectacular.utils import OpenApiExample, extend_schema
 from rest_framework.exceptions import ValidationError
@@ -32,8 +33,10 @@ from apps.rental.serializers import (
     CreditNoteCancelRequest,
     CreditNoteRequest,
     CreditNoteStatusRequest,
+    CustomerBlockedRequest,
     CustomerCreateRequest,
     CustomerLookupRequest,
+    InvoiceRecentRequest,
     ManagerRequestApproveRequest,
     ManagerRequestDecisionRequest,
     ManagerRequestListRequest,
@@ -65,19 +68,39 @@ _CUSTOMER_SAMPLE = {
     "id_type": "emirates_id", "id_no": "784-1990-1234567-1",
     "mobile_country_code": "+971", "mobile_no": "501234567", "mobile_full": "971501234567",
     "email": "ahmed.almansoori@example.com",
-    "address": "Dubai, UAE", "is_blocked": False, "block_reason": "",
+    "address": "Dubai, UAE", "is_blocked": False, "block_reason": "", "blocked_at": None, "blocked_by": None,
 }
 
 _CUSTOMER_BLOCKED_SAMPLE = {
     **_CUSTOMER_SAMPLE, "customer_id": 4022, "customer_code": "CU015", "first_name": "Fatima",
     "last_name": "Hassan", "mobile_no": "501234568", "mobile_full": "971501234568", "is_blocked": True,
-    "block_reason": "Repeated late returns",
+    "block_reason": "Repeated late returns", "blocked_at": "2026-10-10 11:20:00", "blocked_by": "Sara K",
 }
 
 _CREATED_SAMPLE = {
     **_CUSTOMER_SAMPLE, "customer_id": 4023, "customer_code": "CU016",
     "sync_id": "01923f8e-5b2a-7c3d-9e4f-a1b2c3d4e5f6",
 }
+
+_INVOICE_SAMPLE = {
+    "invoice_no": "DUBPP60182000231", "issued_at": "2026-10-02 17:13:30",
+    "order_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9", "order_no": "DUBPP60182000231",
+    "station": "Abu Dhabi Corniche 1", "customer_name": "Ahmed Al Mansoori", "customer_mobile": "971501234567",
+    "issued_by": "Rashed",
+    "items": [
+        {"vehicle": "MO 41", "identifier": "VB1241", "vehicle_type": "Monaco", "package_minutes": 60,
+         "run_minutes": 72, "start_time": "2026-10-02 16:00:00", "end_time": "2026-10-02 17:12:00",
+         "base_fare": "50.000", "overtime_amount": "10.000", "total_amount": "60.000"},
+        {"vehicle": "DC 02", "identifier": "VB0202", "vehicle_type": "Monaco", "package_minutes": 60,
+         "run_minutes": 60, "start_time": "2026-10-02 16:00:00", "end_time": "2026-10-02 17:00:00",
+         "base_fare": "50.000", "overtime_amount": "0.000", "total_amount": "50.000"},
+    ],
+    "subtotal": "110.000", "discount_percentage": None, "discount_amount": "0.000", "discount_source": None,
+    "tax_percentage": "5.00", "tax_amount": "5.238", "rounding_adjustment": "0.000", "net_amount": "110.000",
+    "payments": [{"mode": "Cash", "kind": "advance", "amount": "60.000", "reference_no": ""},
+                 {"mode": "Card", "kind": "settlement", "amount": "50.000", "reference_no": "448812"}],
+}
+
 
 _PHONE_RULE = """
 **Phone** -- all three required: `mobile_country_code` (`+971`), `mobile_no`
@@ -95,6 +118,13 @@ and `block_reason` tell the app the state, but the lookup itself is never
 refused for a blocked customer. It is scoped to this device's own company even
 though a phone is globally unique, so one company's device can never reach
 another company's customer by guessing a phone number.
+
+**Invoices:** `invoice_count` is how many invoices the customer has, at every
+station of your company; `invoices` are the newest 5, newest first, each whole
+as `invoices/recent` sends it -- every vehicle line and the amounts.
+
+**Blocked:** `blocked_at` (company time) and `blocked_by` say when and by whom
+the block was set; empty for a customer blocked before 13 Oct 2026.
 
 An unknown phone is `unknown_customer`.
 """
@@ -119,7 +149,8 @@ company, with no details.
 """
 
 
-def _customer_json(customer):
+def _customer_json(customer, zone=None):
+    zone = zone or zone_for(customer.company)
     return {
         "customer_id": customer.pk, "customer_code": customer.customer_code,
         "sync_id": str(customer.sync_id) if customer.sync_id else None,
@@ -131,6 +162,9 @@ def _customer_json(customer):
         "mobile_full": customer.mobile_full,
         "email": customer.email, "address": customer.address,
         "is_blocked": customer.is_blocked, "block_reason": customer.block_reason,
+        "blocked_at": _local(customer.blocked_at, zone),
+        "blocked_by": (customer.blocked_by.display_name or customer.blocked_by.username)
+        if customer.blocked_by_id else None,
     }
 
 
@@ -178,8 +212,9 @@ class CustomerLookupView(_OperatorView):
         description=_LOOKUP_DESCRIPTION,
         request=envelope_request("CustomerLookupEnvelope", CustomerLookupRequest),
         responses=envelope_responses(
-            (200, "ok", "Customer.", _CUSTOMER_SAMPLE),
-            (200, "ok", "Customer.", _CUSTOMER_BLOCKED_SAMPLE, "ok (blocked)"),
+            (200, "ok", "Customer.", {**_CUSTOMER_SAMPLE, "invoice_count": 12, "invoices": [_INVOICE_SAMPLE]}),
+            (200, "ok", "Customer.", {**_CUSTOMER_BLOCKED_SAMPLE, "invoice_count": 0, "invoices": []},
+             "ok (blocked)"),
             (400, "invalid_request", "full_number is required.", {"errors": {"full_number": "is required"}}),
             _MISMATCH,
             (404, "unknown_customer", "No customer with that phone number.", {}),
@@ -199,7 +234,12 @@ class CustomerLookupView(_OperatorView):
             customer = services.customer_by_phone(branch.company, form.validated_data["full_number"])
         except services.UnknownCustomer:
             return envelope("unknown_customer", "No customer with that phone number.", http_status=404)
-        return envelope("ok", "Customer.", _customer_json(customer))
+        zone = zone_for(branch.company)
+        count, invoices = services.customer_invoices(customer)
+        return envelope("ok", "Customer.", {
+            **_customer_json(customer, zone),
+            "invoice_count": count, "invoices": [invoice_json(invoice, zone) for invoice in invoices],
+        })
 
 
 class CustomerCreateView(_OperatorView):
@@ -255,6 +295,37 @@ def _local(moment, zone):
 
 def _money(value):
     return str(value) if value is not None else None
+
+
+BLOCKED_PAGE = 50
+
+
+def invoice_json(invoice, zone):
+    """One invoice, whole, as printed: the bill, every vehicle line, and the
+    payments taken when it was issued."""
+    return {
+        "invoice_no": invoice.invoice_no, "issued_at": _local(invoice.issued_at, zone),
+        "order_id": str(invoice.order_id), "order_no": invoice.order.order_no,
+        "station": invoice.branch_name, "customer_name": invoice.customer_name,
+        "customer_mobile": invoice.customer_mobile,
+        "issued_by": (invoice.issued_by.display_name or invoice.issued_by.username),
+        "items": [
+            {"vehicle": item.vehicle_name, "identifier": item.vehicle_identifier,
+             "vehicle_type": item.vehicle_type, "package_minutes": item.package_minutes,
+             "run_minutes": item.run_minutes, "start_time": _local(item.start_time, zone),
+             "end_time": _local(item.end_time, zone), "base_fare": _money(item.base_fare),
+             "overtime_amount": _money(item.overtime_amount), "total_amount": _money(item.total_amount)}
+            for item in sorted(invoice.items.all(), key=lambda line: line.start_time)
+        ],
+        "subtotal": _money(invoice.subtotal),
+        "discount_percentage": _money(invoice.discount_percentage),
+        "discount_amount": _money(invoice.discount_amount),
+        "discount_source": invoice.discount_source or None,
+        "tax_percentage": _money(invoice.tax_percentage), "tax_amount": _money(invoice.tax_amount),
+        "rounding_adjustment": _money(invoice.rounding_adjustment),
+        "net_amount": _money(invoice.net_amount),
+        "payments": invoice.payments,
+    }
 
 
 def _discount_json(order):
@@ -586,6 +657,88 @@ class OrderDetailView(_OperatorView):
             return _refused(refusal)
         data = order_json(order, zone=zone_for(branch.company), next_order_number=_counter_number(request.auth))
         return envelope("ok", "Order.", data)
+
+
+_RECENT_DESCRIPTION = f"""
+The station's **{services.RECENT_INVOICES} newest invoices**, issued on any tablet at this
+station -- newest first by `issued_at` (when the order was settled on the
+tablet, so one uploaded late from offline sits where it happened).
+
+Each invoice is whole, as printed: its number and time, the order it bills,
+the customer, every vehicle line (package, minutes run, base fare, overtime,
+total), the subtotal, discount (and where it came from), VAT inside the net,
+rounding, the net amount, and the payments taken. Money is 3-decimal strings.
+
+Send `request_data: {{}}`. The station is this tablet's own. A station with no
+invoices yet answers `invoices: []`. A settle still queued or parked on a
+tablet is not on the server, so its invoice is not listed.
+"""
+
+
+class InvoiceRecentView(_OperatorView):
+    """POST /api/v1/{app}/invoices/recent -- operator app only."""
+
+    @extend_schema(
+        tags=["Operator Invoices"],
+        summary=f"The station's last {services.RECENT_INVOICES} invoices",
+        description=_RECENT_DESCRIPTION,
+        request=envelope_request("InvoiceRecentEnvelope", InvoiceRecentRequest, request_data_required=False),
+        responses=envelope_responses(
+            (200, "ok", "Recent invoices.", {"invoices": [_INVOICE_SAMPLE]}),
+            *_COMMON,
+        ),
+    )
+    def post(self, request, app):
+        branch, refused = self.station(request, app)
+        if refused:
+            return refused
+        _, request_data = request_parts(request)
+        InvoiceRecentRequest(data=request_data).is_valid(raise_exception=True)
+
+        zone = zone_for(branch.company)
+        invoices = [invoice_json(invoice, zone) for invoice in services.recent_invoices(branch)]
+        return envelope("ok", "Recent invoices.", {"invoices": invoices})
+
+
+_BLOCKED_DESCRIPTION = """
+Your company's **blocked customers**, most recently blocked first, 50 a page
+(`page`, from 1). Each is the customer's full record, as `customers/lookup`
+sends it, with `block_reason`, `blocked_at` (company time) and `blocked_by`.
+A customer blocked before 13 Oct 2026 has no `blocked_at` / `blocked_by` and
+comes last. Blocking and unblocking are done on the web.
+"""
+
+
+class CustomerBlockedView(_OperatorView):
+    """POST /api/v1/{app}/customers/blocked -- operator app only."""
+
+    @extend_schema(
+        tags=["Operator Customers"],
+        summary="Your company's blocked customers",
+        description=_BLOCKED_DESCRIPTION,
+        request=envelope_request("CustomerBlockedEnvelope", CustomerBlockedRequest, request_data_required=False),
+        responses=envelope_responses(
+            (200, "ok", "Blocked customers.",
+             {"customers": [_CUSTOMER_BLOCKED_SAMPLE], "page": 1, "pages": 1, "total": 1}),
+            (400, "invalid_request", "page must be 1 or more.", {"errors": {"page": "must be 1 or more"}}),
+            *_COMMON,
+        ),
+    )
+    def post(self, request, app):
+        branch, refused = self.station(request, app)
+        if refused:
+            return refused
+        _, request_data = request_parts(request)
+        form = CustomerBlockedRequest(data=request_data)
+        form.is_valid(raise_exception=True)
+
+        page = Paginator(services.blocked_customers(branch.company), BLOCKED_PAGE).get_page(
+            form.validated_data["page"])
+        zone = zone_for(branch.company)
+        return envelope("ok", "Blocked customers.", {
+            "customers": [_customer_json(c, zone) for c in page.object_list],
+            "page": page.number, "pages": page.paginator.num_pages, "total": page.paginator.count,
+        })
 
 
 _FLOW = """

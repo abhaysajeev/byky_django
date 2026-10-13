@@ -105,7 +105,8 @@ def test_lookup_finds_a_customer_by_full_number(client, world, token):
     assert body["data"]["customer_code"] == "CU001"
     assert body["data"]["mobile_full"] == "971501234567"
     assert body["data"]["is_blocked"] is False
-    assert shape(body["data"]) == shape(api._CUSTOMER_SAMPLE)
+    assert (body["data"]["invoice_count"], body["data"]["invoices"]) == (0, [])
+    assert shape(body["data"]) == shape({**api._CUSTOMER_SAMPLE, "invoice_count": 0, "invoices": []})
 
 
 def test_lookup_tells_the_same_number_under_two_country_codes_apart(client, world, token):

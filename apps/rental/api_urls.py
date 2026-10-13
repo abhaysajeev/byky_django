@@ -10,8 +10,10 @@ from apps.rental import api, manager_api
 urlpatterns = [
     path("customers/lookup", api.CustomerLookupView.as_view(), name="api-app-customer-lookup"),
     path("customers/create", api.CustomerCreateView.as_view(), name="api-app-customer-create"),
+    path("customers/blocked", api.CustomerBlockedView.as_view(), name="api-app-customer-blocked"),
     path("orders", api.OrderCreateView.as_view(), name="api-app-order-create"),
     path("orders/detail", api.OrderDetailView.as_view(), name="api-app-order-detail"),
+    path("invoices/recent", api.InvoiceRecentView.as_view(), name="api-app-invoice-recent"),
     path("orders/return", api.OrderReturnView.as_view(), name="api-app-order-return"),
     path("orders/settle", api.OrderSettleView.as_view(), name="api-app-order-settle"),
     path("orders/add", api.OrderAddView.as_view(), name="api-app-order-add"),
@@ -38,4 +40,12 @@ urlpatterns = [
     path("reports/collections/branches", manager_api.CollectionsByBranchView.as_view(),
          name="api-app-collections-branches"),
     path("reports/orders", manager_api.BranchOrdersView.as_view(), name="api-app-report-orders"),
+    path("requests/pending-counts", manager_api.PendingCountsView.as_view(),
+         name="api-app-request-pending-counts"),
+    path("credit-notes/list", manager_api.CreditNoteListView.as_view(), name="api-app-credit-note-list"),
+    path("credit-notes/approve", manager_api.CreditNoteApproveView.as_view(), name="api-app-credit-note-approve"),
+    path("credit-notes/reject", manager_api.CreditNoteRejectView.as_view(), name="api-app-credit-note-reject"),
+    path("card-discounts/claims/list", manager_api.ClaimListView.as_view(), name="api-app-claim-list"),
+    path("card-discounts/claims/approve", manager_api.ClaimApproveView.as_view(), name="api-app-claim-approve"),
+    path("card-discounts/claims/reject", manager_api.ClaimRejectView.as_view(), name="api-app-claim-reject"),
 ]

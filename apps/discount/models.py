@@ -22,6 +22,7 @@ from django.db.models import CheckConstraint, F, Q, UniqueConstraint
 
 from apps.company.models import WeekDay
 from apps.fare.db import DateRangeFunc
+from apps.rental.models import DecisionChannel
 from core.models import TimeStampedModel
 
 
@@ -232,6 +233,9 @@ class CardDiscountClaim(TimeStampedModel):
     decided_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT,
                                    related_name="+")
     remarks = models.CharField(max_length=255, blank=True)
+    # Where it was decided: the web screen or the manager app (blank until then,
+    # and for a claim cancelled by the system).
+    decided_channel = models.CharField(max_length=10, choices=DecisionChannel.choices, blank=True)
     redeemed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:

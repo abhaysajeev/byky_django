@@ -277,6 +277,7 @@ def _claim_row(claim, zone):
         "photo": claim.card_photo, "photo_is_image": claim.card_photo.startswith(("http://", "https://")),
         "decided_at": claim.decided_at.astimezone(zone) if claim.decided_at else None,
         "decided_by": claim.decided_by.display_name if claim.decided_by_id else "",
+        "decided_channel": claim.decided_channel, "decided_channel_label": claim.get_decided_channel_display(),
         "remarks": claim.remarks,
         "redeemed_at": claim.redeemed_at.astimezone(zone) if claim.redeemed_at else None,
         "detail_url": reverse("discount-approval-detail", args=[claim.pk]),
