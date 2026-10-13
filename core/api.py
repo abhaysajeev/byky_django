@@ -61,14 +61,21 @@ def session_station(request):
     device's download is for.
 
     Always the session's, never a value the app sends: login copied the
-    device's mapping into it, and the device cannot be re-mapped while signed
-    in (apps/devices/services.py::_mappable). A branch switched off since login
+    device's mapping into it, and re-mapping a device logs its session out
+    (apps/devices/services.py::remap_device). A branch switched off since login
     still has open sessions, so it is re-checked here on every call.
     """
-    branch = request.auth.branch
+    return station_of(request.auth)
+
+
+def station_of(session, *, replay=False):
+    """session_station for a session in hand. A replay of a parked call
+    (apps/sync) skips the closed-station check: the work was done while the
+    station was open, and only login-state checks are skipped on a replay."""
+    branch = session.branch
     if branch is None:
         return None, envelope("device_not_mapped", "This device has no station.", http_status=409)
-    if not branch.is_active:
+    if not replay and not branch.is_active:
         return None, envelope("branch_inactive", "This station is closed.", http_status=409)
     return branch, None
 

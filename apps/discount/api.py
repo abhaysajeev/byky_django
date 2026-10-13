@@ -24,7 +24,9 @@ from apps.discount.serializers import (
     CardUsageRequest,
 )
 from apps.portal.authentication import AppJWTAuthentication
-from core.api import envelope, request_parts, session_station
+from apps.sync import parking
+from apps.sync.models import IssueKind
+from core.api import envelope, request_parts, session_station, station_of
 from core.enums import Channel
 from core.schema import SERVER_ERROR, envelope_request, envelope_responses
 from core.timezones import zone_for
@@ -278,6 +280,7 @@ class ApprovalRequestView(APIView):
 
     authentication_classes = [AppJWTAuthentication]
     permission_classes = [IsAuthenticated]
+    park_kind = IssueKind.CARD_DISCOUNT_APPROVAL
 
     @extend_schema(
         tags=["Operator Discount Cards"],
@@ -301,24 +304,27 @@ class ApprovalRequestView(APIView):
             (403, "wrong_channel", "Not allowed on this app.", {}),
             (409, "device_not_mapped", "This device has no station.", {}),
             (409, "branch_inactive", "This station is closed.", {}),
+            *parking.SCHEMA_ROWS,
             SERVER_ERROR,
         ),
     )
     def post(self, request, app):
         if app != Channel.OPERATOR:
             return envelope("wrong_channel", "Not allowed on this app.", http_status=403)
-        branch, refused = session_station(request)
+        return parking.handle(request, app, self.park_kind, self.perform)
+
+    def perform(self, session, app, request_data, *, replay=False):
+        """The call's rules; a replay of a parked call runs it as `session`."""
+        branch, refused = station_of(session, replay=replay)
         if refused:
             return refused
-
-        _, request_data = request_parts(request)
         form = ApprovalRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = dict(form.validated_data)
         values["requested_at"] = timezone.make_aware(values["requested_at"], zone_for(branch.company))
 
         try:
-            claim, created = services.request_approval(request.auth, values)
+            claim, created = services.request_approval(session, values)
         except services.DiscountRefused as refusal:
             return envelope(refusal.code, refusal.message, http_status=refusal.status)
 

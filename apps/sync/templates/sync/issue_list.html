@@ -1,0 +1,101 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Sync Issues - Logs{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+{% comment %}
+Tablet calls the server refused and the operator parked, plus the calls for the
+same order parked behind them. Open ones first by default; a row opens the
+issue with its body, its attempts and Replay / Dismiss.
+{% endcomment %}
+<div class="scr">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Logs</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Sync Issues</b>
+      </div>
+      <h1 class="scr-title">Sync Issues</h1>
+      <p class="scr-sub">Tablet uploads the server refused and the operator parked. Correct the request and replay it; calls for the same order wait behind it. Resolved and dismissed issues are kept for {{ keep_days }} days.</p>
+    </div>
+  </div>
+
+  <div class="scr-card" data-scr-server-paged>
+    <form method="get" class="scr-toolbar scr-mon-toolbar" data-scr-autosubmit>
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="text" name="q" value="{{ params.q }}" placeholder="Issue no, order no, sync_id or error" aria-label="Search issues" />
+      </div>
+      <select name="status" class="scr-input scr-list-select" aria-label="Status">
+        {% for value, label in statuses %}<option value="{{ value }}"{% if status == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        <option value="all"{% if status == "all" %} selected{% endif %}>Any status</option>
+      </select>
+      <select name="kind" class="scr-input scr-list-select" aria-label="Call">
+        <option value="">Any call</option>
+        {% for value, label in kinds %}<option value="{{ value }}"{% if params.kind == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+      <select name="company" class="scr-input scr-list-select" aria-label="Company">
+        <option value="">Any company</option>
+        {% for pk, name in companies %}<option value="{{ pk }}"{% if params.company == pk|stringformat:"d" %} selected{% endif %}>{{ name }}</option>{% endfor %}
+      </select>
+      <select name="branch" class="scr-input scr-list-select" aria-label="Station">
+        <option value="">Any station</option>
+        {% for pk, name in branches %}<option value="{{ pk }}"{% if params.branch == pk|stringformat:"d" %} selected{% endif %}>{{ name }}</option>{% endfor %}
+      </select>
+      <button type="submit" class="scr-btn">Filter</button>
+      {% if filtered or status != "open" %}<a href="{% url 'sync-issue-list' %}" class="scr-btn-secondary">Clear</a>{% endif %}
+      <span class="scr-toolbar-count">{{ page.paginator.count }} issue{{ page.paginator.count|pluralize }}</span>
+    </form>
+
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Issue</th>
+            <th>Received</th>
+            <th>Call</th>
+            <th>Order</th>
+            <th>Station</th>
+            <th>Device</th>
+            <th>Operator</th>
+            <th>Error</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for i in rows %}
+          <tr class="scr-mon-row" data-scr-href="{% url 'sync-issue-detail' i.pk %}">
+            <td><a class="scr-code" href="{% url 'sync-issue-detail' i.pk %}">#{{ i.pk }}</a></td>
+            <td><span class="scr-mon-time">{{ i.received_at|date:"d M Y" }}<span>{{ i.received_at|date:"H:i:s" }}</span></span></td>
+            <td><div class="scr-contact">{{ i.get_kind_display }}</div><div class="scr-contact-sub">{{ i.app|capfirst }} app</div></td>
+            <td class="scr-state">{{ i.order_no|default:"—" }}</td>
+            <td class="scr-state">{{ i.branch.name|default:"—" }}</td>
+            <td class="scr-state">{% if i.device %}Device {{ i.device.device_registration_id }}{% else %}—{% endif %}</td>
+            <td class="scr-state">{{ i.user.username }}</td>
+            <td class="scr-mon-message">{% if i.error_code %}<div class="scr-co-name">{{ i.error_code }}</div><div class="scr-co-city">{{ i.error_message|truncatechars:90 }}</div>{% elif i.waiting_on %}<div class="scr-co-city">Waiting behind an earlier call</div>{% else %}<span class="scr-state">—</span>{% endif %}</td>
+            <td>{% include "sync/_status.html" with issue=i %}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="9" style="padding:0"><div class="scr-empty"><div><div class="scr-empty-title">{% if filtered or status != "open" %}No issues match{% else %}No open issues{% endif %}</div><p class="scr-empty-sub">{% if filtered or status != "open" %}Change or clear the filters.{% else %}Every parked call has been dealt with.{% endif %}</p></div></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% include "byky/partials/server_pager.html" %}
+  </div>
+</div>
+{% endblock %}

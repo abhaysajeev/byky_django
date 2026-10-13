@@ -25,6 +25,7 @@ No date is typed: mapping is stamped when it is saved, as the legacy did. Needs 
       </select>
     </div>
     <p class="scr-dev-hint" data-remap-hint>The move takes effect now: the current mapping ends and the new one starts at this moment.</p>
+    <p class="scr-dev-hint text-danger" data-mapping-logout hidden>Someone is logged in on this device. They will be logged out, and must log in again to work at the new station.</p>
   </div>
   <div class="scr-modal-foot scr-dev-foot">
     <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
@@ -45,6 +46,7 @@ No date is typed: mapping is stamped when it is saved, as the legacy did. Needs 
   </div>
   <div class="scr-modal-body">
     <p class="scr-modal-line">The mapping ends now and stays in the station history. Until the device is mapped again, nobody can log in on it at a station.</p>
+    <p class="scr-modal-line text-danger" data-mapping-logout hidden>Someone is logged in on this device. They will be logged out now.</p>
   </div>
   <div class="scr-modal-foot scr-dev-foot">
     <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>

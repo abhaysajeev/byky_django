@@ -1039,6 +1039,10 @@ textarea.scr-drawer-input { height: auto; min-height: 72px; padding: 10px 13px; 
 .scr-mon-alert a { word-break: break-word; }
 .scr-mon-message-full { margin: 0; font-size: 13px; line-height: 1.55; color: #1a1640; white-space: pre-wrap; word-break: break-word; }
 .scr-mon-json { margin: 0; max-height: 520px; overflow: auto; padding: 14px 16px; border-radius: 12px; background: #fbfaff; border: 1px solid #eeedf5; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11.5px; line-height: 1.6; color: #1a1640; white-space: pre-wrap; word-break: break-word; }
+/* Sync Issues: the editable request, and the collapsed "as sent" / reply blocks. */
+textarea.scr-mon-json { display: block; width: 100%; min-height: 420px; resize: vertical; }
+.scr-mon-original { margin-top: 10px; }
+.scr-mon-original summary { cursor: pointer; font-size: 12px; font-weight: 600; color: #6b6790; margin-bottom: 8px; }
 @media (max-width: 1100px) {
   .scr-mon-grid, .scr-mon-grid-wide { grid-template-columns: 1fr; }
 }

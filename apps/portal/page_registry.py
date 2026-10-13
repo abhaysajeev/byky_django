@@ -148,6 +148,8 @@ PAGES = [
     # Read only: logs are written by the server, never by a person.
     ("monitoring.request_log", "monitoring", "Device Requests", "monitoring-request-list", ["read"], 1, False),
     ("monitoring.error_log", "monitoring", "Error Logs", "monitoring-error-list", ["read"], 2, False),
+    # Parked tablet calls: read, and update = Replay / Dismiss (apps/sync).
+    ("monitoring.sync_issues", "monitoring", "Sync Issues", "sync-issue-list", ["read", "update"], 3, False),
 ]
 
 # Screens only a system-scope user may open: a company user is refused whatever
@@ -155,6 +157,7 @@ PAGES = [
 SYSTEM_ONLY = {
     "monitoring.request_log",
     "monitoring.error_log",
+    "monitoring.sync_issues",
 }
 
 # page code -> the URL name its sidebar entry links to.

@@ -1,0 +1,176 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Issue {{ issue.pk }} - Sync Issues{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+<script src="{% static 'js/byky-sync-issue.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+{% comment %}
+One parked call: what was sent, why it was refused, every attempt since, and
+the calls for the same order queued behind it. Only the head of an order's
+queue can be replayed or dismissed (apps/sync/services.py).
+{% endcomment %}
+<div class="scr" data-sync-issue data-url-replay="{{ urls.replay }}" data-url-dismiss="{{ urls.dismiss }}">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Logs</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <a href="{% url 'sync-issue-list' %}">Sync Issues</a>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Issue {{ issue.pk }}</b>
+      </div>
+      <h1 class="scr-title">{{ issue.get_kind_display }}{% if issue.order_no %} · {{ issue.order_no }}{% endif %}</h1>
+      <p class="scr-sub">Issue {{ issue.pk }} · received {{ issue.received_at|date:"d M Y, H:i:s" }} · {{ issue.get_reason_display }}</p>
+    </div>
+    <div class="scr-head-actions">
+      {% include "sync/_status.html" %}
+      {% if is_head and may_update %}
+        <button type="button" class="scr-btn-danger" data-sync-dismiss>Dismiss</button>
+        <button type="button" class="scr-btn-primary" data-sync-replay>Replay</button>
+      {% endif %}
+      <a href="{% url 'sync-issue-list' %}" class="scr-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"></path></svg>
+        Back
+      </a>
+    </div>
+  </div>
+
+  {% if issue.status == "open" %}
+  <div class="scr-card scr-mon-card">
+    <div class="scr-form-head"><h2 class="scr-form-title">{% if issue.waiting_on %}Waiting{% else %}Why it was refused{% endif %}</h2></div>
+    <div class="scr-form-body">
+      {% if issue.waiting_on %}
+        <p class="scr-mon-message-full">This call arrived while an earlier call for the same order was parked, so it was not run. It replays after <a href="{% url 'sync-issue-detail' issue.waiting_on %}">issue {{ issue.waiting_on }}</a>.</p>
+      {% else %}
+        <p class="scr-mon-message-full"><b>{{ issue.error_code }}</b> — {{ issue.error_message }}</p>
+      {% endif %}
+    </div>
+  </div>
+  {% elif issue.status == "dismissed" %}
+  <div class="scr-card scr-mon-card">
+    <div class="scr-form-head"><h2 class="scr-form-title">Dismissed</h2></div>
+    <div class="scr-form-body"><p class="scr-mon-message-full">{{ issue.dismissed_at|date:"d M Y, H:i" }} by {{ issue.dismissed_by.username|default:"—" }}{% if issue.dismissed_with_id %}, with <a href="{% url 'sync-issue-detail' issue.dismissed_with_id %}">issue {{ issue.dismissed_with_id }}</a>{% endif %}: {{ issue.dismiss_reason }}</p></div>
+  </div>
+  {% else %}
+  <div class="scr-card scr-mon-card">
+    <div class="scr-form-head"><h2 class="scr-form-title">Resolved</h2></div>
+    <div class="scr-form-body"><p class="scr-mon-message-full">Replayed and recorded {{ issue.resolved_at|date:"d M Y, H:i" }} by {{ issue.resolved_by.username|default:"—" }}.</p></div>
+  </div>
+  {% endif %}
+
+  <div class="scr-mon-grid scr-mon-grid-wide">
+    <div class="scr-card">
+      <div class="scr-form-head"><h2 class="scr-form-title">Request</h2></div>
+      <div class="scr-form-body">
+        {% if is_head and may_update %}
+          <p class="scr-help">Correct the request below, then Replay. The sync_id cannot change.</p>
+          <textarea class="scr-input scr-textarea scr-mon-json" rows="22" spellcheck="false" data-sync-body aria-label="Request to replay">{{ body }}</textarea>
+          <p class="scr-help is-error" data-sync-body-error hidden></p>
+        {% else %}
+          <pre class="scr-mon-json">{{ body }}</pre>
+        {% endif %}
+        {% if body != original %}
+          <details class="scr-mon-original">
+            <summary>As the tablet sent it</summary>
+            <pre class="scr-mon-json">{{ original }}</pre>
+          </details>
+        {% endif %}
+      </div>
+    </div>
+    <div class="scr-card">
+      <div class="scr-form-head"><h2 class="scr-form-title">Where</h2></div>
+      <div class="scr-form-body scr-mon-body">
+        <div class="scr-detail-rows">
+          <div class="scr-detail-row"><span class="scr-detail-label">Company</span><span class="scr-detail-value">{{ issue.company.name }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Station</span><span class="scr-detail-value">{{ issue.branch.name|default:"—" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Device</span><span class="scr-detail-value">{% if issue.device %}Device {{ issue.device.device_registration_id }}{% if issue.device.name %} · {{ issue.device.name }}{% endif %}{% else %}—{% endif %}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Operator</span><span class="scr-detail-value">{{ issue.user.username }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">App</span><span class="scr-detail-value">{{ issue.app|capfirst }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Session</span><span class="scr-detail-value">{{ issue.session.logged_in_at|date:"d M Y, H:i" }}{% if issue.session.logged_out_at %} – {{ issue.session.logged_out_at|date:"d M Y, H:i" }}{% else %} · still open{% endif %}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">sync_id</span><span class="scr-detail-value scr-mon-wrap">{{ issue.sync_id }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">order_id</span><span class="scr-detail-value scr-mon-wrap">{{ issue.order_id|default:"—" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Request</span><span class="scr-detail-value scr-mon-wrap">{% if request_log %}<a href="{% url 'monitoring-request-detail' request_log.pk %}">{{ request_log.status }} · {{ request_log.path }}</a>{% else %}—{% endif %}</span></div>
+          {% for e in error_logs %}
+          <div class="scr-detail-row"><span class="scr-detail-label">Error log</span><span class="scr-detail-value"><a href="{% url 'monitoring-error-detail' e.pk %}">{{ e.created_at|date:"d M Y, H:i:s" }}</a></span></div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% if queue %}
+  <div class="scr-card scr-mon-card">
+    <div class="scr-form-head"><h2 class="scr-form-title">Other calls for this order</h2></div>
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead><tr><th>Issue</th><th>Received</th><th>Call</th><th>Device</th><th>Status</th></tr></thead>
+        <tbody>
+          {% for q in queue %}
+          <tr class="scr-mon-row" data-scr-href="{% url 'sync-issue-detail' q.pk %}">
+            <td><a class="scr-code" href="{% url 'sync-issue-detail' q.pk %}">#{{ q.pk }}</a></td>
+            <td class="scr-state">{{ q.received_at|date:"d M Y, H:i:s" }}</td>
+            <td class="scr-state">{{ q.get_kind_display }}</td>
+            <td class="scr-state">{% if q.device_id %}Device {{ q.device.device_registration_id }}{% else %}—{% endif %}</td>
+            <td>{% include "sync/_status.html" with issue=q %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="scr-card scr-mon-card">
+    <div class="scr-form-head"><h2 class="scr-form-title">Attempts</h2></div>
+    <div class="scr-form-body">
+      {% for a, reply in attempts %}
+        <div class="scr-detail-rows">
+          <div class="scr-detail-row"><span class="scr-detail-label">{{ a.at|date:"d M Y, H:i:s" }}</span><span class="scr-detail-value">{{ a.get_source_display }}{% if a.by %} · {{ a.by.username }}{% endif %} · {{ a.http_status }} <b>{{ a.code }}</b>{% if a.message %} — {{ a.message }}{% endif %}</span></div>
+        </div>
+        {% if reply %}<details class="scr-mon-original"><summary>Reply</summary><pre class="scr-mon-json">{{ reply }}</pre></details>{% endif %}
+        <details class="scr-mon-original"><summary>Request as run</summary><pre class="scr-mon-json">{{ a.request_data|default:"" }}</pre></details>
+      {% empty %}
+        <p class="scr-help">Not run yet: it was parked behind an earlier call for the same order.</p>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+{% if is_head and may_update %}
+<div class="scr-modal-veil" data-scr-modal-veil="sync-dismiss" hidden></div>
+<div class="scr-modal scr-dev-modal" data-scr-modal="sync-dismiss" hidden>
+  <div class="scr-modal-head">
+    <div>
+      <div class="scr-modal-title">Dismiss issue {{ issue.pk }}?</div>
+      <p class="scr-modal-sub">It will never be recorded{% if queue %}, and the calls waiting behind it are dismissed with it{% endif %}. The tablet is told, with your reason.</p>
+    </div>
+    <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+    </button>
+  </div>
+  <div class="scr-modal-body scr-dev-fields">
+    <div class="scr-field">
+      <label class="scr-label" for="sync-dismiss-reason">Reason<span class="scr-required">*</span></label>
+      <input id="sync-dismiss-reason" type="text" class="scr-input" maxlength="255" data-sync-dismiss-reason />
+    </div>
+  </div>
+  <div class="scr-modal-foot scr-dev-foot">
+    <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+    <button type="button" class="scr-btn-danger" data-sync-dismiss-go>Dismiss</button>
+  </div>
+</div>
+{% endif %}
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}
