@@ -487,6 +487,41 @@ class ManagerRequestListRequest(_RequestDatesMixin):
     page = whole_number_field(min_value=1, required=False, default=1)
 
 
+class ManagerApprovalListRequest(_RequestDatesMixin):
+    """Credit-note requests or card-discount claims across the manager's
+    company: optionally only those waiting, one state, one station, a date
+    range."""
+
+    pending = serializers.BooleanField(required=False, default=False,
+                                       error_messages={"invalid": "must be true or false"})
+    state_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    branch_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    page = whole_number_field(min_value=1, required=False, default=1)
+
+
+class ManagerPendingCountsRequest(serializers.Serializer):
+    state_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    branch_id = whole_number_field(min_value=1, required=False, allow_null=True)
+
+
+class ManagerCreditNoteRejectRequest(serializers.Serializer):
+    credit_note_id = serializers.UUIDField(error_messages={**REQUIRED, "invalid": "must be a UUID"})
+    remarks = serializers.CharField(max_length=500, required=False, allow_blank=True,
+                                    error_messages={"max_length": "must be at most 500 characters"})
+
+
+class ManagerCreditNoteApproveRequest(ManagerCreditNoteRejectRequest):
+    """The amount to issue, VAT included -- above 0, at most the order's net."""
+
+    net_amount = _money_field()
+
+
+class ManagerClaimDecisionRequest(serializers.Serializer):
+    claim_id = serializers.UUIDField(error_messages={**REQUIRED, "invalid": "must be a UUID"})
+    remarks = serializers.CharField(max_length=255, required=False, allow_blank=True,
+                                    error_messages={"max_length": "must be at most 255 characters"})
+
+
 class ManagerRequestDecisionRequest(serializers.Serializer):
     """Reject or revoke: the request and an optional note."""
 

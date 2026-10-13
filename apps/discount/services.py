@@ -27,7 +27,14 @@ from apps.discount.models import (
     UsageType,
 )
 from apps.discount.scoping import card_discounts_for, card_grades_for
-from apps.rental.models import REQUEST_LIVE, Customer, Order, OrderRequest, OrderRequestKind
+from apps.rental.models import (
+    REQUEST_LIVE,
+    Customer,
+    DecisionChannel,
+    Order,
+    OrderRequest,
+    OrderRequestKind,
+)
 from core.ids import uuid7
 from core.timezones import business_date_for, zone_for
 
@@ -201,8 +208,9 @@ class NotPending(Exception):
     pass
 
 
-def decide_claim(user, claim, approve, remarks=""):
-    """Approve or reject a pending claim. Anything else is already decided."""
+def decide_claim(user, claim, approve, remarks="", channel=DecisionChannel.WEB):
+    """Approve or reject a pending claim -- on the web, or in the manager app
+    (`channel`). Anything else is already decided."""
     with transaction.atomic():
         claim = type(claim).objects.select_for_update().get(pk=claim.pk)
         if claim.status != ClaimStatus.PENDING:
@@ -212,7 +220,9 @@ def decide_claim(user, claim, approve, remarks=""):
         claim.decided_by = user
         claim.remarks = (remarks or "").strip()[:255]
         claim.modified_by = user
-        claim.save(update_fields=["status", "decided_at", "decided_by", "remarks", "modified_by", "modified_on"])
+        claim.decided_channel = channel
+        claim.save(update_fields=["status", "decided_at", "decided_by", "remarks", "decided_channel",
+                                  "modified_by", "modified_on"])
     return claim
 
 

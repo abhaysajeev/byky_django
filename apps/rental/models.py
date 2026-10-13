@@ -555,6 +555,11 @@ class CreditNoteStatus(models.TextChoices):
     CANCELLED = "cancelled", "Cancelled"
 
 
+class DecisionChannel(models.TextChoices):
+    WEB = "web", "Web"
+    MANAGER = "manager", "Manager app"
+
+
 class CreditNoteSource(models.TextChoices):
     DEVICE = "device", "Device request"
     WEB = "web", "Issued on the web"
@@ -597,6 +602,9 @@ class CreditNote(TimeStampedModel):
     decided_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
     decided_at = models.DateTimeField(null=True, blank=True)
     decision_remark = models.TextField(blank=True)
+    # Where it was decided: the web screen or the manager app (blank until then,
+    # and for a request the tablet cancelled itself).
+    decided_channel = models.CharField(max_length=10, choices=DecisionChannel.choices, blank=True)
 
     # Once approved.
     credit_note_no = models.CharField(max_length=40, blank=True)                     # order_no + "CN"
@@ -671,11 +679,6 @@ class OrderRequestStatus(models.TextChoices):
 class DiscountType(models.TextChoices):
     PERCENT = "percent", "Percentage"
     AMOUNT = "amount", "Amount (AED)"
-
-
-class DecisionChannel(models.TextChoices):
-    WEB = "web", "Web"
-    MANAGER = "manager", "Manager app"
 
 
 # A request that holds its order: waiting, or approved and not yet taken back.

@@ -63,7 +63,7 @@
           {% endif %}
           <div class="scr-detail-row"><span class="scr-detail-label">Reason</span><span class="scr-detail-value scr-mon-wrap">{{ note.reason|default:"—" }}</span></div>
           {% if note.status != "pending" %}
-          <div class="scr-detail-row"><span class="scr-detail-label">{% if note.status == "approved" %}Issued{% elif note.status == "rejected" %}Rejected{% else %}Cancelled{% endif %}</span><span class="scr-detail-value">{{ decided_at|date:"d M Y, H:i" }}{% if decided_by %} · {{ decided_by }}{% elif note.status == "cancelled" %} · by the tablet{% endif %}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">{% if note.status == "approved" %}Issued{% elif note.status == "rejected" %}Rejected{% else %}Cancelled{% endif %}</span><span class="scr-detail-value">{{ decided_at|date:"d M Y, H:i" }}{% if decided_by %} · {{ decided_by }}{% elif note.status == "cancelled" %} · by the tablet{% endif %}{% if note.decided_channel %} · {{ note.get_decided_channel_display }}{% endif %}</span></div>
           {% endif %}
           {% if note.decision_remark %}
           <div class="scr-detail-row"><span class="scr-detail-label">Remark</span><span class="scr-detail-value scr-mon-wrap">{{ note.decision_remark }}</span></div>

@@ -6,6 +6,9 @@ POST /api/v1/{app}/branches                      its active stations, optionally
 POST /api/v1/{app}/reports/collections/states    settled sales per state for a date range
 POST /api/v1/{app}/reports/collections/branches  ... per station of one state
 POST /api/v1/{app}/reports/orders                one station's orders booked in a date range
+POST /api/v1/{app}/credit-notes/list|approve|reject          credit-note requests (approvals.py)
+POST /api/v1/{app}/card-discounts/claims/list|approve|reject card-discount requests
+POST /api/v1/{app}/requests/pending-counts                   badge counts of everything waiting
 
 Manager app only. Any signed-in manager may call them: the manager's token is
 the permission (owner, 9 Oct 2026). Every figure is the manager's own
@@ -17,13 +20,21 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
 from apps.company.scoping import companies_for
+from apps.discount import services as discount_services
+from apps.discount.models import CardDiscountClaim
 from apps.portal.authentication import AppJWTAuthentication
-from apps.rental import reports
+from apps.rental import approvals, credit_notes, reports
+from apps.rental.models import DecisionChannel
 from apps.rental.serializers import (
     BranchOrdersRequest,
     CollectionsByBranchRequest,
     CollectionsByStateRequest,
+    ManagerApprovalListRequest,
     ManagerBranchesRequest,
+    ManagerClaimDecisionRequest,
+    ManagerCreditNoteApproveRequest,
+    ManagerCreditNoteRejectRequest,
+    ManagerPendingCountsRequest,
     ManagerStatesRequest,
 )
 from core.api import envelope, manager_only, request_parts
@@ -287,3 +298,281 @@ class BranchOrdersView(_ManagerView):
             "order_status": values["order_status"], "summary": summary, "orders": rows,
             "page": page.number, "pages": page.paginator.num_pages, "total_orders": page.paginator.count,
         })
+
+
+# -- Credit notes and card-discount claims (apps/rental/approvals.py) ---------------
+#
+# The web's own decisions, the manager as the decider: credit_notes.approve /
+# reject and discount.services.decide_claim, with channel `manager`. Whoever
+# decides first -- here or on the web -- wins; the other is told it is decided.
+
+_APPROVALS = """
+**Manager app.** From **every station** of your company. Any signed-in manager
+may list and decide -- the manager-app login is the permission. The decision
+is the web's own, recorded against you with `decided_channel` `manager`. One
+already decided -- here or on the web -- is refused.
+"""
+
+_APPROVAL_LIST = _APPROVALS + """
+**This call** lists them newest first, 50 a page (`page`, from 1). Send
+`"pending": true` for only those waiting, `state_id` for one state's stations,
+`branch_id` for one station, and `from_date` / `to_date` (`YYYY-MM-DD`, company
+time, both days included, either may be left out) for when they were asked.
+"""
+
+_CREDIT_NOTE_ROW = {
+    "credit_note_id": "01a1013d-fa97-7179-93ae-3ae25842f1ce", "status": "pending", "source": "device",
+    "credit_note_no": None,
+    "order": {"order_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9", "order_no": "ADC1019000231",
+              "customer_name": "Ahmed Al Mansoori", "customer_mobile": "971501234567", "net_amount": "100.000"},
+    "invoice": {"invoice_no": "ADC1019000231", "net_amount": "100.000"},
+    "branch_id": 3, "station": "Abu Dhabi Corniche 1",
+    "requested_by": "Rashed", "requested_at": "2026-10-08 17:05:00", "reason": "Bike broke down after 10 min",
+    "net_amount": None, "tax_amount": None, "taxable_amount": None,
+    "decided_by": None, "decided_channel": None, "decided_at": None, "decision_remark": "",
+}
+_CREDIT_NOTE_ISSUED = {
+    **_CREDIT_NOTE_ROW, "status": "approved", "credit_note_no": "ADC1019000231CN",
+    "net_amount": "40.000", "tax_amount": "1.905", "taxable_amount": "38.095",
+    "decided_by": "Sara K", "decided_channel": "manager", "decided_at": "2026-10-08 17:20:00",
+    "decision_remark": "Refund for the broken bike",
+}
+_CLAIM_ROW = {
+    "claim_id": "01a1013d-fa97-7179-93ae-3ae25842f1cf", "status": "pending",
+    "order": {"order_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9", "order_no": "ADC1019000231"},
+    "customer_name": "Ahmed Al Mansoori", "customer_mobile": "971501234567",
+    "card_type": "Esaad", "card_grade": "Gold", "card_number": "ES-448812",
+    "card_photo": "https://photos.example/esaad/448812.jpg",
+    "discount_percent": "20.00", "fare_basis": "base",
+    "bill_amount": "100.000", "discount_amount": "20.000", "net_amount": "80.000",
+    "branch_id": 3, "station": "Abu Dhabi Corniche 1",
+    "requested_by": "Rashed", "requested_at": "2026-10-08 16:50:00",
+    "decided_by": None, "decided_channel": None, "decided_at": None, "remarks": "",
+}
+_CLAIM_DECIDED = {**_CLAIM_ROW, "status": "approved", "decided_by": "Sara K", "decided_channel": "manager",
+                  "decided_at": "2026-10-08 16:52:00"}
+_PAGED = {"page": 1, "pages": 1, "total": 1}
+_LIST_INVALID = (400, "invalid_request", "page must be 1 or more.", {"errors": {"page": "must be 1 or more"}})
+
+
+def _list_reply(rows, page, key):
+    return envelope("ok", "List.", {key: rows, "page": page.number, "pages": page.paginator.num_pages,
+                                    "total": page.paginator.count})
+
+
+class CreditNoteListView(_ManagerView):
+    """POST /api/v1/{app}/credit-notes/list -- manager app only."""
+
+    form_class = ManagerApprovalListRequest
+
+    @extend_schema(
+        tags=["Manager Credit Notes"],
+        summary="Credit-note requests from every station, newest first",
+        description=_APPROVAL_LIST + "\nA credit note issued straight from the web is listed too, already "
+                                     "`approved`; it has no `requested_at`.",
+        request=envelope_request("ManagerCreditNoteListEnvelope", ManagerApprovalListRequest),
+        responses=envelope_responses(
+            (200, "ok", "List.", {"credit_notes": [_CREDIT_NOTE_ROW], **_PAGED}),
+            _LIST_INVALID, *_COMMON,
+        ),
+    )
+    def post(self, request, app):
+        values, companies, zone, refused = self.values(request, app)
+        if refused:
+            return refused
+        rows, page = approvals.credit_note_list(
+            companies, pending_only=values["pending"], state_id=values.get("state_id"),
+            branch_id=values.get("branch_id"), from_date=values.get("from_date"), to_date=values.get("to_date"),
+            zone=zone, page=values["page"],
+        )
+        return _list_reply(rows, page, "credit_notes")
+
+
+_CREDIT_NOTE_ERRORS = (
+    (404, "unknown_credit_note", "No such credit note request.", {}),
+    (409, "credit_note_decided", "This request is already approved.", {}),
+)
+
+
+class _CreditNoteDecisionView(_ManagerView):
+    def decide(self, request, app, act, message):
+        values, companies, _, refused = self.values(request, app)
+        if refused:
+            return refused
+        try:
+            note = act(values, companies)
+        except credit_notes.CreditNoteRefused as refusal:
+            return envelope(refusal.code, refusal.message, http_status=refusal.status)
+        return envelope("ok", message, approvals.credit_note_row(note.pk))
+
+
+class CreditNoteApproveView(_CreditNoteDecisionView):
+    """POST /api/v1/{app}/credit-notes/approve -- manager app only."""
+
+    form_class = ManagerCreditNoteApproveRequest
+
+    @extend_schema(
+        tags=["Manager Credit Notes"],
+        summary="Issue a credit note request with the amount you set",
+        description=_APPROVALS + """
+**This call** issues a pending request with `net_amount` (AED, VAT included,
+above 0 and at most the order's net -- `invalid_amount`), as the web does. The
+note takes its number (order number + `CN`) and its VAT share at the invoice's
+rate. `remarks` optional; the tablet sees it as `decision_remark`.
+""",
+        request=envelope_request("ManagerCreditNoteApproveEnvelope", ManagerCreditNoteApproveRequest),
+        responses=envelope_responses(
+            (200, "ok", "Credit note issued.", _CREDIT_NOTE_ISSUED),
+            (400, "invalid_request", "net_amount is required.", {"errors": {"net_amount": "is required"}}),
+            (400, "invalid_amount", "The credit note cannot be more than the order's net amount, AED 100.000.", {}),
+            *_CREDIT_NOTE_ERRORS, *_COMMON,
+        ),
+    )
+    def post(self, request, app):
+        return self.decide(request, app, lambda v, companies: credit_notes.approve(
+            request.user, v["credit_note_id"], companies, v["net_amount"], v.get("remarks", ""),
+            channel=DecisionChannel.MANAGER), "Credit note issued.")
+
+
+class CreditNoteRejectView(_CreditNoteDecisionView):
+    """POST /api/v1/{app}/credit-notes/reject -- manager app only."""
+
+    form_class = ManagerCreditNoteRejectRequest
+
+    @extend_schema(
+        tags=["Manager Credit Notes"],
+        summary="Reject a credit note request",
+        description=_APPROVALS + "\n**This call** rejects a pending request. `remarks` optional; the tablet "
+                                 "sees it as `decision_remark`.",
+        request=envelope_request("ManagerCreditNoteRejectEnvelope", ManagerCreditNoteRejectRequest),
+        responses=envelope_responses(
+            (200, "ok", "Credit note request rejected.", {**_CREDIT_NOTE_ROW, "status": "rejected",
+                                                          "decided_by": "Sara K", "decided_channel": "manager",
+                                                          "decided_at": "2026-10-08 17:20:00"}),
+            (400, "invalid_request", "credit_note_id is required.", {"errors": {"credit_note_id": "is required"}}),
+            *_CREDIT_NOTE_ERRORS, *_COMMON,
+        ),
+    )
+    def post(self, request, app):
+        return self.decide(request, app, lambda v, companies: credit_notes.reject(
+            request.user, v["credit_note_id"], companies, v.get("remarks", ""),
+            channel=DecisionChannel.MANAGER), "Credit note request rejected.")
+
+
+class ClaimListView(_ManagerView):
+    """POST /api/v1/{app}/card-discounts/claims/list -- manager app only."""
+
+    form_class = ManagerApprovalListRequest
+
+    @extend_schema(
+        tags=["Manager Card Discounts"],
+        summary="Card-discount approval requests from every station, newest first",
+        description=_APPROVAL_LIST + "\n`card_photo` is the link to the photo the tablet uploaded -- show it "
+                                     "before deciding. A claim still pending when its order was billed is "
+                                     "`cancelled`.",
+        request=envelope_request("ManagerClaimListEnvelope", ManagerApprovalListRequest),
+        responses=envelope_responses(
+            (200, "ok", "List.", {"claims": [_CLAIM_ROW], **_PAGED}),
+            _LIST_INVALID, *_COMMON,
+        ),
+    )
+    def post(self, request, app):
+        values, companies, zone, refused = self.values(request, app)
+        if refused:
+            return refused
+        rows, page = approvals.claim_list(
+            companies, pending_only=values["pending"], state_id=values.get("state_id"),
+            branch_id=values.get("branch_id"), from_date=values.get("from_date"), to_date=values.get("to_date"),
+            zone=zone, page=values["page"],
+        )
+        return _list_reply(rows, page, "claims")
+
+
+_CLAIM_ERRORS = (
+    (400, "invalid_request", "claim_id is required.", {"errors": {"claim_id": "is required"}}),
+    (404, "unknown_claim", "No such card discount request.", {}),
+    (409, "claim_decided", "This request is already decided.", {}),
+)
+
+
+class _ClaimDecisionView(_ManagerView):
+    form_class = ManagerClaimDecisionRequest
+    approve = True
+    message = ""
+
+    def decide(self, request, app):
+        values, companies, _, refused = self.values(request, app)
+        if refused:
+            return refused
+        claim = CardDiscountClaim.objects.filter(pk=values["claim_id"], company_id__in=companies).first()
+        if claim is None:
+            return envelope("unknown_claim", "No such card discount request.", http_status=404)
+        try:
+            discount_services.decide_claim(request.user, claim, self.approve, values.get("remarks", ""),
+                                           channel=DecisionChannel.MANAGER)
+        except discount_services.NotPending:
+            return envelope("claim_decided", "This request is already decided.", http_status=409)
+        return envelope("ok", self.message, approvals.claim_row(claim.pk))
+
+
+class ClaimApproveView(_ClaimDecisionView):
+    """POST /api/v1/{app}/card-discounts/claims/approve -- manager app only."""
+
+    approve, message = True, "Request approved."
+
+    @extend_schema(
+        tags=["Manager Card Discounts"],
+        summary="Approve a card-discount request",
+        description=_APPROVALS + "\n**This call** approves a pending claim; the tablet can then apply the "
+                                 "card discount at settle. `remarks` optional.",
+        request=envelope_request("ManagerClaimApproveEnvelope", ManagerClaimDecisionRequest),
+        responses=envelope_responses((200, "ok", "Request approved.", _CLAIM_DECIDED), *_CLAIM_ERRORS, *_COMMON),
+    )
+    def post(self, request, app):
+        return self.decide(request, app)
+
+
+class ClaimRejectView(_ClaimDecisionView):
+    """POST /api/v1/{app}/card-discounts/claims/reject -- manager app only."""
+
+    approve, message = False, "Request rejected."
+
+    @extend_schema(
+        tags=["Manager Card Discounts"],
+        summary="Reject a card-discount request",
+        description=_APPROVALS + "\n**This call** rejects a pending claim. `remarks` optional.",
+        request=envelope_request("ManagerClaimRejectEnvelope", ManagerClaimDecisionRequest),
+        responses=envelope_responses((200, "ok", "Request rejected.", {**_CLAIM_DECIDED, "status": "rejected"}),
+                                     *_CLAIM_ERRORS, *_COMMON),
+    )
+    def post(self, request, app):
+        return self.decide(request, app)
+
+
+class PendingCountsView(_ManagerView):
+    """POST /api/v1/{app}/requests/pending-counts -- manager app only."""
+
+    form_class = ManagerPendingCountsRequest
+
+    @extend_schema(
+        tags=["Manager Requests"],
+        summary="How many of each kind wait for a decision",
+        description="For the app's badges: pending order requests by kind (`discount`, `complimentary`, "
+                    "`reprint`), credit-note requests and card-discount requests, and their `total` -- across "
+                    "your company, or one state (`state_id`) or station (`branch_id`).",
+        request=envelope_request("ManagerPendingCountsEnvelope", ManagerPendingCountsRequest,
+                                 request_data_required=False),
+        responses=envelope_responses(
+            (200, "ok", "Pending.", {"discount": 2, "complimentary": 0, "reprint": 1, "credit_note": 1,
+                                     "card_discount": 3, "total": 7}),
+            (400, "invalid_request", "state_id must be a whole number.",
+             {"errors": {"state_id": "must be a whole number"}}),
+            *_COMMON,
+        ),
+    )
+    def post(self, request, app):
+        values, companies, _, refused = self.values(request, app)
+        if refused:
+            return refused
+        return envelope("ok", "Pending.", approvals.pending_counts(
+            companies, state_id=values.get("state_id"), branch_id=values.get("branch_id")))
