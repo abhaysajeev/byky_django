@@ -8,6 +8,7 @@ BranchApprovalAuthority is designed here but lands with the crew module, since
 it points at Employee (design/02-company.md sign-off).
 """
 
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 from core.models import ApprovalMixin, TimeStampedModel
@@ -263,8 +264,15 @@ class Branch(ApprovalMixin, TimeStampedModel):
     image = models.ImageField(upload_to="branches/", blank=True)
     station_number = models.CharField(max_length=50, blank=True)
     address = models.CharField(max_length=500, blank=True)
-    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
-    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    # The digits alone allow ±999.999999; a real point is within ±90 / ±180 (QA BUG-019/020).
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True, validators=[
+        MinValueValidator(-90, "Latitude must be between -90 and 90."),
+        MaxValueValidator(90, "Latitude must be between -90 and 90."),
+    ])
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True, validators=[
+        MinValueValidator(-180, "Longitude must be between -180 and 180."),
+        MaxValueValidator(180, "Longitude must be between -180 and 180."),
+    ])
     contact_no = models.CharField(max_length=20, blank=True)
 
     class Meta:

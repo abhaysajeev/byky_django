@@ -312,6 +312,16 @@ STATE = {
         {
             "title": "",
             "fields": [
+                # Every state belongs to a country; without this field Add and
+                # Edit State were both refused "Country is required" (QA BUG-012).
+                {
+                    "id": "country",
+                    "label": "Country",
+                    "kind": "select",
+                    "required": True,
+                    "options_from": "countries_list",
+                    "option_key": "name"
+                },
                 {
                     "id": "code",
                     "label": "State Code",

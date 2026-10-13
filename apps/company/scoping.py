@@ -9,6 +9,10 @@ the ones that company actually reaches:
 
     Company -> its registered country and state
     Branch  -> Location -> State -> Country
+    and whatever the company's own people created -- a state or location
+    added for a branch not made yet (QA BUG-014: without this, a new
+    location vanished from the list it was saved on, and could not be
+    chosen for the company's first branch there).
 
 A system user sees all of them.
 """
@@ -50,6 +54,7 @@ def countries_for(user):
     return Country.objects.filter(
         Q(states__locations__branches__company_id=user.company_id)
         | Q(pk__in=Company.objects.filter(pk=user.company_id).values("country_id"))
+        | Q(created_by__company_id=user.company_id)
     ).distinct()
 
 
@@ -61,6 +66,7 @@ def states_for(user):
     return State.objects.filter(
         Q(locations__branches__company_id=user.company_id)
         | Q(pk__in=Company.objects.filter(pk=user.company_id).values("state_id"))
+        | Q(created_by__company_id=user.company_id)
     ).distinct()
 
 
@@ -74,4 +80,6 @@ def locations_for(user):
         return Location.objects.all()
     if user is None or user.company_id is None:
         return Location.objects.none()
-    return Location.objects.filter(branches__company_id=user.company_id).distinct()
+    return Location.objects.filter(
+        Q(branches__company_id=user.company_id) | Q(created_by__company_id=user.company_id)
+    ).distinct()

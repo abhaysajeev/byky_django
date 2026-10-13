@@ -5,6 +5,7 @@ from apps.portal import screens, views
 urlpatterns = [
     path("login/", views.login_view, name="login"),
     path("logout/", views.logout_view, name="logout"),
+    path("account/password/", views.change_password_view, name="account-password"),
     path("dashboard/", views.DashboardView.as_view(), name="dashboard"),
     path("dashboard/live/", views.dashboard_live_view, name="dashboard-live"),
 

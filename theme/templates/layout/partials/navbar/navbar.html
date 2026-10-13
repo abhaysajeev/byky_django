@@ -135,7 +135,7 @@ authentication in this phase (CLAUDE.md section 1), so it signs nothing out.
             inert label -- every affordance navigates somewhere (CLAUDE.md 11).
             {% endcomment %}
             <li>
-              <a class="dropdown-item" href="javascript:void(0);" data-bs-toggle="modal" data-bs-target="#byky-change-password">
+              <a class="dropdown-item" href="javascript:void(0);" data-cp-open>
                 <i class="icon-base ti tabler-key me-2 icon-md"></i>
                 <span class="align-middle">Change Password</span>
               </a>
@@ -163,36 +163,42 @@ authentication in this phase (CLAUDE.md section 1), so it signs nothing out.
 {% endif %}
 
 {% comment %}
-Change Password dialog. Lives here so it is available from the header on every
-screen without a route of its own. Wireframe phase: it validates nothing and
-saves nothing.
+Change Password dialog, on every screen from the header. Styled like every
+other screen dialog (.scr-modal + the drawer's field classes, as the Users
+screen's Reset password); opened, closed and saved by byky-change-password.js,
+which posts to account-password (portal.views.change_password_view).
 {% endcomment %}
-<div class="modal fade" id="byky-change-password" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Change Password</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        <div class="mb-4">
-          <label class="form-label" for="byky-pwd-current">Current Password</label>
-          <input type="password" class="form-control" id="byky-pwd-current" placeholder="&#183;&#183;&#183;&#183;&#183;&#183;&#183;&#183;" autocomplete="off" />
-        </div>
-        <div class="mb-4">
-          <label class="form-label" for="byky-pwd-new">New Password</label>
-          <input type="password" class="form-control" id="byky-pwd-new" placeholder="&#183;&#183;&#183;&#183;&#183;&#183;&#183;&#183;" autocomplete="off" />
-          <div class="form-text">At least 8 characters, with a number and a symbol.</div>
-        </div>
-        <div class="mb-4">
-          <label class="form-label" for="byky-pwd-confirm">Confirm New Password</label>
-          <input type="password" class="form-control" id="byky-pwd-confirm" placeholder="&#183;&#183;&#183;&#183;&#183;&#183;&#183;&#183;" autocomplete="off" />
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-label-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Update Password</button>
-      </div>
+<div class="scr-modal-veil" data-cp-veil hidden></div>
+<div class="scr-modal" data-cp-modal data-url="{% url 'account-password' %}" role="dialog" aria-modal="true" aria-labelledby="byky-cp-title" hidden>
+  <div class="scr-modal-head">
+    <div>
+      <div class="scr-modal-title" id="byky-cp-title">Change Password</div>
+      <p class="scr-modal-sub">Your other sessions, on other browsers and the apps, will be signed out.</p>
     </div>
+    <button type="button" class="scr-drawer-close" data-cp-close aria-label="Close">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+    </button>
+  </div>
+  <div class="scr-modal-body byky-cp-fields">
+    <div class="byky-field">
+      <label class="byky-label" for="byky-cp-current"><span>Current Password</span><em class="byky-req">*</em></label>
+      <input type="password" id="byky-cp-current" class="byky-input" data-cp-field="current" autocomplete="current-password" placeholder="Enter your current password" />
+      <p class="scr-help is-error" data-cp-error="current" hidden></p>
+    </div>
+    <div class="byky-field">
+      <label class="byky-label" for="byky-cp-new"><span>New Password</span><em class="byky-req">*</em></label>
+      <input type="password" id="byky-cp-new" class="byky-input" data-cp-field="new" autocomplete="new-password" placeholder="At least 8 characters" />
+      <p class="scr-help is-error" data-cp-error="new" hidden></p>
+    </div>
+    <div class="byky-field">
+      <label class="byky-label" for="byky-cp-confirm"><span>Confirm New Password</span><em class="byky-req">*</em></label>
+      <input type="password" id="byky-cp-confirm" class="byky-input" data-cp-field="confirm" autocomplete="new-password" placeholder="Type the new password again" />
+      <p class="scr-help is-error" data-cp-error="confirm" hidden></p>
+    </div>
+    <p class="scr-help is-error" data-cp-error="" hidden></p>
+  </div>
+  <div class="scr-modal-foot byky-cp-foot">
+    <button type="button" class="scr-btn-secondary" data-cp-close>Cancel</button>
+    <button type="button" class="scr-btn-primary" data-cp-save>Update Password</button>
   </div>
 </div>

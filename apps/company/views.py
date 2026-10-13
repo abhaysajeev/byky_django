@@ -338,6 +338,9 @@ class BranchListView(CompanyScreenView):
         }
         context.update({
             "branches": rows,
+            # The Location filter matches each row's location, so it offers the
+            # locations the branches are at -- not states (QA BUG-017).
+            "branch_locations": sorted({row["location"] for row in rows}, key=str.lower),
             "total_fleet": 0,
             "assets_deployed": 0,
             "ho_count": by_type.get(BranchType.HEAD_OFFICE.label, 0),
