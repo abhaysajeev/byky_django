@@ -92,6 +92,11 @@ class Customer(ApprovalMixin, TimeStampedModel):
     # is_blocked is the person -- same split as crew.Employee.is_blocked.
     is_blocked = models.BooleanField(default=False)
     block_reason = models.CharField(max_length=255, blank=True)
+    # When and by whom the current block was set (services.stamp_block); empty
+    # while not blocked, and for customers blocked before 13 Oct 2026.
+    blocked_at = models.DateTimeField(null=True, blank=True)
+    blocked_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT,
+                                   related_name="+")
 
     # The app's own UUIDv7 for a customer it created (customers/create), resent
     # unchanged on retry so an offline create is stored once. Sync checks

@@ -36,6 +36,8 @@ class CustomerSave(WriteView):
             return self.refused()
 
         instance = get_object_or_404(self.rows(), pk=pk) if pk else None
+        # Read before validation: a model form writes onto its instance as it cleans.
+        was_blocked = bool(instance and instance.is_blocked)
         form = CustomerForm(data, instance=instance, user=request.user)
 
         if not form.is_valid():
@@ -45,6 +47,7 @@ class CustomerSave(WriteView):
             customer = form.save(commit=False)
             if customer.pk is None:
                 customer.customer_code = services.next_customer_code(customer.company)
+            services.stamp_block(customer, was_blocked, request.user)
             customer.save()
 
         return JsonResponse({"ok": True, "pk": customer.pk, "message": "Customer saved."})

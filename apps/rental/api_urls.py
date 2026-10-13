@@ -10,9 +10,10 @@ from apps.rental import api, manager_api
 urlpatterns = [
     path("customers/lookup", api.CustomerLookupView.as_view(), name="api-app-customer-lookup"),
     path("customers/create", api.CustomerCreateView.as_view(), name="api-app-customer-create"),
+    path("customers/blocked", api.CustomerBlockedView.as_view(), name="api-app-customer-blocked"),
     path("orders", api.OrderCreateView.as_view(), name="api-app-order-create"),
     path("orders/detail", api.OrderDetailView.as_view(), name="api-app-order-detail"),
-    path("orders/recent", api.OrderRecentView.as_view(), name="api-app-order-recent"),
+    path("invoices/recent", api.InvoiceRecentView.as_view(), name="api-app-invoice-recent"),
     path("orders/return", api.OrderReturnView.as_view(), name="api-app-order-return"),
     path("orders/settle", api.OrderSettleView.as_view(), name="api-app-order-settle"),
     path("orders/add", api.OrderAddView.as_view(), name="api-app-order-add"),

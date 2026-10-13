@@ -273,15 +273,41 @@ def order_at_station(branch, *, sync_id=None, order_no=None):
     return order
 
 
-RECENT_ORDERS = 5
+RECENT_INVOICES = 5
 
 
-def recent_orders(branch, limit=RECENT_ORDERS):
-    """The station's newest orders, any status, from any of its tablets --
-    newest by when they were booked on the tablet, so a booking uploaded late
-    from offline sits where it happened, not where it arrived."""
-    return list(Order.objects.filter(branch=branch).select_related("customer")
-                .order_by("-booked_at", "-created_on")[:limit])
+def _invoices():
+    return Invoice.objects.select_related("order", "issued_by").prefetch_related("items")
+
+
+def recent_invoices(branch, limit=RECENT_INVOICES):
+    """The station's newest invoices, from any of its tablets -- newest by when
+    they were issued (the settle time on the tablet), so one uploaded late from
+    offline sits where it happened, not where it arrived."""
+    return list(_invoices().filter(branch=branch).order_by("-issued_at", "-created_on")[:limit])
+
+
+def customer_invoices(customer, limit=RECENT_INVOICES):
+    """(how many invoices the customer has, their newest `limit`) -- across
+    every station of the customer's company."""
+    invoices = _invoices().filter(order__customer=customer)
+    return invoices.count(), list(invoices.order_by("-issued_at", "-created_on")[:limit])
+
+
+def blocked_customers(company):
+    """The company's blocked customers, most recently blocked first; those
+    blocked before the block was stamped come last, by name."""
+    return (Customer.objects.filter(company=company, is_blocked=True).select_related("blocked_by")
+            .order_by(F("blocked_at").desc(nulls_last=True), "first_name", "last_name", "pk"))
+
+
+def stamp_block(customer, was_blocked, user, now=None):
+    """Record when and by whom a customer was blocked: set when the block goes
+    on, cleared when it comes off, left alone while it stays."""
+    if customer.is_blocked and not was_blocked:
+        customer.blocked_at, customer.blocked_by = now or timezone.now(), user
+    elif not customer.is_blocked:
+        customer.blocked_at, customer.blocked_by = None, None
 
 
 def active_rentals(vehicle_ids):
