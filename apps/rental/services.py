@@ -273,6 +273,17 @@ def order_at_station(branch, *, sync_id=None, order_no=None):
     return order
 
 
+RECENT_ORDERS = 5
+
+
+def recent_orders(branch, limit=RECENT_ORDERS):
+    """The station's newest orders, any status, from any of its tablets --
+    newest by when they were booked on the tablet, so a booking uploaded late
+    from offline sits where it happened, not where it arrived."""
+    return list(Order.objects.filter(branch=branch).select_related("customer")
+                .order_by("-booked_at", "-created_on")[:limit])
+
+
 def active_rentals(vehicle_ids):
     """{vehicle_id: (order_no, expected_end_time)} for the vehicles in
     `vehicle_ids` that are out on rent now -- on an active order item (one

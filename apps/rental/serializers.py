@@ -514,6 +514,10 @@ class ManagerRequestApproveRequest(ManagerRequestDecisionRequest):
 # -- Manager app: masters and reports (apps/rental/manager_api.py) ------------------
 
 
+class OrderRecentRequest(serializers.Serializer):
+    """No fields -- the newest orders at the signed-in tablet's station."""
+
+
 class ManagerStatesRequest(serializers.Serializer):
     """No fields -- the states of the signed-in manager's company."""
 

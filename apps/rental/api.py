@@ -42,6 +42,7 @@ from apps.rental.serializers import (
     OrderCreateRequest,
     OrderDetailRequest,
     OrderPaymentsRequest,
+    OrderRecentRequest,
     OrderRemoveRequest,
     OrderReplaceRequest,
     OrderRequestCreateRequest,
@@ -586,6 +587,44 @@ class OrderDetailView(_OperatorView):
             return _refused(refusal)
         data = order_json(order, zone=zone_for(branch.company), next_order_number=_counter_number(request.auth))
         return envelope("ok", "Order.", data)
+
+
+_RECENT_DESCRIPTION = f"""
+The station's **{services.RECENT_ORDERS} newest orders**, in every status, made on any tablet at
+this station -- newest first by `booked_at` (when the booking happened on the
+tablet, so one uploaded late from offline sits where it happened). Each order
+is whole, in exactly the shape `orders/detail` answers with.
+
+Send `request_data: {{}}`. The station is this tablet's own. A station with no
+orders yet answers `orders: []`. A booking still queued or parked on a tablet
+is not on the server, so it is not listed.
+"""
+
+
+class OrderRecentView(_OperatorView):
+    """POST /api/v1/{app}/orders/recent -- operator app only."""
+
+    @extend_schema(
+        tags=["Operator Orders"],
+        summary=f"The station's last {services.RECENT_ORDERS} orders",
+        description=_RECENT_DESCRIPTION,
+        request=envelope_request("OrderRecentEnvelope", OrderRecentRequest, request_data_required=False),
+        responses=envelope_responses(
+            (200, "ok", "Recent orders.", {"orders": [_ORDER_SAMPLE]}),
+            *_COMMON,
+        ),
+    )
+    def post(self, request, app):
+        branch, refused = self.station(request, app)
+        if refused:
+            return refused
+        _, request_data = request_parts(request)
+        OrderRecentRequest(data=request_data).is_valid(raise_exception=True)
+
+        zone, next_number = zone_for(branch.company), _counter_number(request.auth)
+        orders = [order_json(order, zone=zone, next_order_number=next_number)
+                  for order in services.recent_orders(branch)]
+        return envelope("ok", "Recent orders.", {"orders": orders})
 
 
 _FLOW = """
