@@ -1644,14 +1644,96 @@ class OrderRequestUsedView(_OperatorView):
                 else envelope("duplicate", "Already recorded.", data))
 
 
-_REQUEST_LIST_DESCRIPTION = _REQUEST_RULES + """
-**This call** lists **this station's** requests -- every tablet's, newest
-first, 50 a page (`page`, from 1) -- for a Requests screen. Send
-`"pending": true` for only those waiting, `kind` for one kind, `from_date` /
-`to_date` (`YYYY-MM-DD`, company time, both included, either may be left out)
-for when they were asked. Each row is the
-same as in `orders/requests/status`, plus `customer_name`. Read-only.
+_REQUEST_LIST_DESCRIPTION = """
+Everything **sent for a manager's decision** from this station, in **one
+list** -- for the operator app's Requests screen. Newest first (by
+`requested_at`), 50 a page. **Listing only:** to follow one request, call its
+own status API (below).
+
+### What is listed
+
+| `kind` | What it is | Its own status call |
+|---|---|---|
+| `discount` | A discount asked on a running order | `orders/requests/status` |
+| `complimentary` | The whole running order free | `orders/requests/status` |
+| `reprint` | One more print of a settled order's bill | `orders/requests/status` |
+| `credit_note` | A credit note asked on a settled order | `orders/credit-notes/status` |
+| `card_discount` | A card discount that needed approval | `card-discounts/approval/status` |
+
+Not listed: a credit note issued straight from the web, and a card discount
+that needed no approval -- neither was sent for a decision.
+
+### `request_data` -- every field optional (`{}` lists the whole station)
+
+| Field | Type | Meaning |
+|---|---|---|
+| `mine` | true / false | `true`: only what **this tablet** sent. Default: every tablet at this station. |
+| `pending` | true / false | `true`: only those still waiting for a decision. |
+| `kind` | one of the five above | Only that kind. |
+| `from_date`, `to_date` | `YYYY-MM-DD` | When they were asked, company time, both days included; either may be left out. |
+| `page` | whole number, from 1 | 50 a page; `pages` and `total` in the reply. |
+
+All filters apply to every kind together, and paging runs across them -- one
+list, not three.
+
+### Each row
+
+Every row has the **same fields**, whatever its kind:
+
+- `request_sync_id` -- the id its status call takes: the request's sync_id,
+  the credit note's id (`credit_note_id`), or the card discount's sync_id.
+- `order_id`, `order_no`, `customer_name`, `kind`, `status`, `reason`,
+  `requested_at`.
+- `decided_by`, `decided_channel` (`web` / `manager`), `decided_at`,
+  `decision_note` (a credit note's decision remark, a card discount's remarks).
+- Order-request fields -- `discount_type`, `discount_value`, `revoked_*`,
+  `applied_*`, `used_at` -- are empty (`null` / `""`) for `credit_note` and
+  `card_discount`.
+- `details` -- what is a kind's own:
+
+| `kind` | `details` |
+|---|---|
+| `discount`, `complimentary`, `reprint` | `null` |
+| `credit_note` | `credit_note_no`, `net_amount` -- both `null` until approved |
+| `card_discount` | `card_type`, `card_grade`, `card_number`, `discount_percent`, `bill_amount`, `discount_amount`, `net_amount` |
+
+### `status`, by kind
+
+| `kind` | Values |
+|---|---|
+| `discount`, `complimentary`, `reprint` | `pending`, `approved`, `rejected`, `withdrawn`, `closed`, `revoked`, `used` |
+| `credit_note` | `pending`, `approved`, `rejected`, `cancelled` |
+| `card_discount` | `pending`, `approved`, `rejected`, `cancelled`, `redeemed` |
+
+`card_discount` rows match this tablet for `mine` by its installation id: after
+a reinstall, the card discounts it sent before no longer count as its own.
+
+Read-only.
 """
+
+
+_LIST_OTHER = {
+    "discount_type": None, "discount_value": None, "revoked_by": None, "revoked_channel": None,
+    "revoked_at": None, "revoke_note": "", "applied_amount": None, "applied_at": None, "used_at": None,
+    "customer_name": "Ahmed Al Mansoori",
+}
+_LIST_CREDIT_NOTE_SAMPLE = {
+    "request_sync_id": "01a1013d-fa97-7179-93ae-3ae25842f1ce", "order_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9",
+    "order_no": "ADC1019000231", "kind": "credit_note", "status": "approved",
+    "reason": "Chain broke after 10 minutes", "requested_at": "2026-10-06 10:00:00",
+    "decided_by": "Sara K", "decided_channel": "manager", "decided_at": "2026-10-06 10:20:00",
+    "decision_note": "Half refunded", **_LIST_OTHER,
+    "details": {"credit_note_no": "ADC1019000231CN", "net_amount": "55.000"},
+}
+_LIST_CARD_DISCOUNT_SAMPLE = {
+    "request_sync_id": "01a1013d-fa97-7179-93ae-3ae25842f1cf", "order_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9",
+    "order_no": "ADC1019000231", "kind": "card_discount", "status": "pending", "reason": "",
+    "requested_at": "2026-10-02 16:50:00", "decided_by": None, "decided_channel": None, "decided_at": None,
+    "decision_note": "", **_LIST_OTHER,
+    "details": {"card_type": "Esaad", "card_grade": "Gold", "card_number": "ES-448812",
+                "discount_percent": "20.00", "bill_amount": "100.000", "discount_amount": "20.000",
+                "net_amount": "80.000"},
+}
 
 
 class OrderRequestListView(_OperatorView):
@@ -1659,15 +1741,27 @@ class OrderRequestListView(_OperatorView):
 
     @extend_schema(
         tags=["Operator Requests"],
-        summary="This station's requests, newest first",
+        summary="This station's requests of every kind, newest first",
         description=_REQUEST_LIST_DESCRIPTION,
         request=envelope_request("OrderRequestListEnvelope", OperatorRequestListRequest,
                                  request_data_required=False),
+        examples=[
+            OpenApiExample("the whole station", request_only=True, value={"credentials": {}, "request_data": {}}),
+            OpenApiExample("this tablet's, still waiting", request_only=True,
+                           value={"credentials": {}, "request_data": {"mine": True, "pending": True}}),
+            OpenApiExample("credit notes only, one day", request_only=True, value={"credentials": {}, "request_data": {
+                "kind": "credit_note", "from_date": "2026-10-06", "to_date": "2026-10-06"}}),
+            OpenApiExample("card discounts, page 2", request_only=True,
+                           value={"credentials": {}, "request_data": {"kind": "card_discount", "page": 2}}),
+        ],
         responses=envelope_responses(
-            (200, "ok", "Requests.", {"requests": [{**_REQUEST_PENDING_SAMPLE, "customer_name": "Ahmed Al Mansoori"}],
-                                      "page": 1, "pages": 1, "total": 1}),
-            (400, "invalid_request", "kind must be one of: discount, complimentary, reprint.",
-             {"errors": {"kind": "must be one of: discount, complimentary, reprint"}}),
+            (200, "ok", "Requests.", {"requests": [
+                {**_REQUEST_PENDING_SAMPLE, "customer_name": "Ahmed Al Mansoori", "details": None},
+                _LIST_CREDIT_NOTE_SAMPLE, _LIST_CARD_DISCOUNT_SAMPLE,
+            ], "page": 1, "pages": 1, "total": 3}),
+            (400, "invalid_request", "kind must be one of: discount, complimentary, reprint, credit_note, "
+                                     "card_discount.",
+             {"errors": {"kind": "must be one of: discount, complimentary, reprint, credit_note, card_discount"}}),
             *_COMMON,
         ),
     )
@@ -1681,7 +1775,8 @@ class OrderRequestListView(_OperatorView):
         values = form.validated_data
         rows, page = order_requests.station_list(
             branch, pending_only=values["pending"], kind=values.get("kind") or None,
-            from_date=values.get("from_date"), to_date=values.get("to_date"), page=values["page"])
+            from_date=values.get("from_date"), to_date=values.get("to_date"), page=values["page"],
+            device=request.auth.device if values["mine"] else None)
         return envelope("ok", "Requests.", {"requests": rows, "page": page.number,
                                              "pages": page.paginator.num_pages, "total": page.paginator.count})
 
