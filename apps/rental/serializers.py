@@ -478,8 +478,8 @@ class OperatorRequestListRequest(_RequestDatesMixin):
                                        error_messages={"invalid": "must be true or false"})
     kind = serializers.ChoiceField(
         choices=[*OrderRequestKind.values, "credit_note", "card_discount"], required=False, allow_blank=True,
-        error_messages={"invalid_choice": "must be one of: discount, complimentary, reprint, credit_note, "
-                                          "card_discount"},
+        error_messages={"invalid_choice": "must be one of: discount, complimentary, reprint, cancel, "
+                                          "credit_note, card_discount"},
     )
     # Only what this tablet sent; without it, the whole station's.
     mine = serializers.BooleanField(required=False, default=False,
@@ -488,12 +488,16 @@ class OperatorRequestListRequest(_RequestDatesMixin):
 
 
 class ManagerRequestListRequest(_RequestDatesMixin):
+    """Every kind sent for a decision: order requests, credit-note requests,
+    card discounts that need approval."""
+
     pending = serializers.BooleanField(required=False, default=False,
                                        error_messages={"invalid": "must be true or false"})
     state_id = whole_number_field(min_value=1, required=False, allow_null=True)
     kind = serializers.ChoiceField(
-        choices=OrderRequestKind.choices, required=False, allow_blank=True,
-        error_messages={"invalid_choice": "must be one of: discount, complimentary, reprint, cancel"},
+        choices=[*OrderRequestKind.values, "credit_note", "card_discount"], required=False, allow_blank=True,
+        error_messages={"invalid_choice": "must be one of: discount, complimentary, reprint, cancel, "
+                                          "credit_note, card_discount"},
     )
     branch_id = whole_number_field(min_value=1, required=False, allow_null=True)
     page = whole_number_field(min_value=1, required=False, default=1)

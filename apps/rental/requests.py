@@ -550,23 +550,27 @@ def _money(value):
     return str(value) if value is not None else None
 
 
+def _order_block(order, zone, now):
+    """The order a manager decides about: customer, advance, every vehicle."""
+    return {
+        "order_no": order.order_no, "status": order.status,
+        "customer_name": order.customer_name, "customer_mobile": order.customer_mobile,
+        "booked_at": _local(order.booked_at, zone),
+        "advance_paid": str(order.paid_amount),
+        "net_amount": _money(order.net_amount),
+        "vehicles": _lines(order, zone, now),
+    }
+
+
 def manager_json(req, zone, now):
     """One request as the manager app sees it: the tablet's view plus the
     order it is about -- and, once settled, its bill."""
-    order = req.order
     return {
         **request_json(req, zone),
         "branch_id": req.branch_id,
         "station": req.branch.name,
         "requested_by": _name(req.requested_by),
-        "order": {
-            "order_no": order.order_no, "status": order.status,
-            "customer_name": order.customer_name, "customer_mobile": order.customer_mobile,
-            "booked_at": _local(order.booked_at, zone),
-            "advance_paid": str(order.paid_amount),
-            "net_amount": _money(order.net_amount),
-            "vehicles": _lines(order, zone, now),
-        },
+        "order": _order_block(req.order, zone, now),
     }
 
 
@@ -581,27 +585,99 @@ def manager_row(request_id):
     return _manager_rows().get(pk=request_id)
 
 
+def _company_sources(company_ids, kind, state_id, branch_id):
+    """(source, queryset) per kind the manager's list may show, across the
+    companies -- the same three as the operator's (_station_sources)."""
+    from apps.rental.models import CreditNote, CreditNoteSource
+
+    def where(rows):
+        rows = rows.filter(company_id__in=company_ids)
+        if state_id:
+            rows = rows.filter(branch__location__state_id=state_id)
+        return rows.filter(branch_id=branch_id) if branch_id else rows
+
+    sources = []
+    if kind is None or kind in OrderRequestKind.values:
+        requests = where(OrderRequest.objects.all())
+        sources.append(("request", requests.filter(kind=kind) if kind else requests))
+    if kind in (None, CREDIT_NOTE):
+        sources.append((CREDIT_NOTE, where(CreditNote.objects.filter(source=CreditNoteSource.DEVICE))))
+    if kind in (None, CARD_DISCOUNT):
+        sources.append((CARD_DISCOUNT, where(CardDiscountClaim.objects.filter(requires_approval=True))))
+    return sources
+
+
 def manager_list(company_ids, *, pending_only=False, kind=None, state_id=None, branch_id=None, from_date=None,
                  to_date=None, zone=None, page=1):
-    """(rows, page) of requests across the companies, newest first."""
-    rows = _manager_rows().filter(company_id__in=company_ids).order_by("-requested_at")
-    if zone is not None:
-        rows = _requested_between(rows, zone, from_date, to_date)
-    if pending_only:
-        rows = rows.filter(status=OrderRequestStatus.PENDING)
-    if kind:
-        rows = rows.filter(kind=kind)
-    if state_id:
-        rows = rows.filter(branch__location__state_id=state_id)
-    if branch_id:
-        rows = rows.filter(branch_id=branch_id)
-    page = Paginator(rows, PAGE_SIZE).get_page(page)
-    now, zones = timezone.now(), {}
-    out = []
-    for req in page.object_list:
-        zone = zones.setdefault(req.company_id, zone_for(req.company))
-        out.append(manager_json(req, zone, now))
-    return out, page
+    """(rows, page) of every kind sent for a decision across the companies --
+    order requests, credit-note requests, card discounts that need approval --
+    newest first, sorted and paged together (one UNION, as station_list).
+    Listing only: each kind is decided with its own approve / reject call."""
+    from django.db.models import CharField, Value
+
+    keyed = []
+    for source, rows in _company_sources(company_ids, kind, state_id, branch_id):
+        if zone is not None:
+            rows = _requested_between(rows, zone, from_date, to_date)
+        if pending_only:
+            rows = rows.filter(status=_PENDING[source])
+        keyed.append(rows.annotate(list_source=Value(source, output_field=CharField()))
+                     .values_list("pk", "requested_at", "list_source").order_by())
+    union = keyed[0].union(*keyed[1:], all=True).order_by("-requested_at", "-pk") if len(keyed) > 1 \
+        else keyed[0].order_by("-requested_at", "-pk")
+    page = Paginator(union, PAGE_SIZE).get_page(page)
+    return _manager_rows_of(list(page.object_list)), page
+
+
+def _manager_rows_of(keys):
+    from apps.rental.models import CreditNote
+
+    wanted = {}
+    for pk, _, source in keys:
+        wanted.setdefault(source, []).append(pk)
+    now, zones, loaded = timezone.now(), {}, {}
+
+    def zone_of(row):
+        return zones.setdefault(row.company_id, zone_for(row.company))
+
+    orders = "order__items__vehicle__vehicle_type"
+    if "request" in wanted:
+        for req in _manager_rows().filter(pk__in=wanted["request"]):
+            loaded[("request", req.pk)] = {**manager_json(req, zone_of(req), now), "details": None}
+    if CREDIT_NOTE in wanted:
+        for note in (CreditNote.objects.filter(pk__in=wanted[CREDIT_NOTE])
+                     .select_related("order", "invoice", "branch", "company", "requested_by", "decided_by")
+                     .prefetch_related(orders)):
+            zone = zone_of(note)
+            loaded[(CREDIT_NOTE, note.pk)] = _manager_other(_credit_note_row(note, zone), note, zone, now, details={
+                "credit_note_no": note.credit_note_no or None,
+                "invoice_no": note.invoice.invoice_no, "invoice_net_amount": _money(note.invoice.net_amount),
+                "net_amount": _money(note.net_amount) if note.status == "approved" else None,
+                "tax_amount": _money(note.tax_amount) if note.status == "approved" else None,
+            })
+    if CARD_DISCOUNT in wanted:
+        for claim in (CardDiscountClaim.objects.filter(pk__in=wanted[CARD_DISCOUNT])
+                      .select_related("order", "branch", "company", "requested_by", "decided_by", "card_type",
+                                      "card_grade")
+                      .prefetch_related(orders)):
+            zone = zone_of(claim)
+            row = _claim_row(claim, zone)
+            loaded[(CARD_DISCOUNT, claim.pk)] = _manager_other(row, claim, zone, now, details={
+                **row["details"], "card_photo": claim.card_photo or None, "fare_basis": claim.fare_basis,
+            })
+    return [loaded[(source, pk)] for pk, _, source in keys]
+
+
+def _manager_other(row, record, zone, now, *, details):
+    """A credit note or card-discount request in the manager's row shape: the
+    tablet-shaped row, plus the station, who asked, and the order."""
+    row = {k: v for k, v in row.items() if k != "customer_name"}
+    row.update({
+        "branch_id": record.branch_id, "station": record.branch.name if record.branch_id else None,
+        "requested_by": _name(record.requested_by), "order": _order_block(record.order, zone, now),
+        "details": details,
+    })
+    return row
 
 
 # -- At settle (apps/rental/services.py::settle_order) ------------------------------
