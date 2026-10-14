@@ -36,6 +36,7 @@ from apps.rental.serializers import (
     CustomerBlockedRequest,
     CustomerCreateRequest,
     CustomerLookupRequest,
+    InvoiceDetailRequest,
     InvoiceRecentRequest,
     ManagerRequestApproveRequest,
     ManagerRequestDecisionRequest,
@@ -698,6 +699,51 @@ class InvoiceRecentView(_OperatorView):
         zone = zone_for(branch.company)
         invoices = [invoice_json(invoice, zone) for invoice in services.recent_invoices(branch)]
         return envelope("ok", "Recent invoices.", {"invoices": invoices})
+
+
+_INVOICE_DETAIL_DESCRIPTION = """
+One invoice of this station, whole -- the same shape as each entry of
+`invoices/recent`: number and time, the order, the customer, every vehicle
+line, subtotal, discount, VAT, rounding, net and the payments. For printing an
+invoice again after an approved **`reprint`** (then report it with
+`orders/requests/used`), or for a tablet that lost its own copy.
+
+Send **exactly one** of `order_id` (the order the invoice bills) or
+`invoice_no` (the same as the order number). An order not settled yet has no
+invoice; an invoice at another station is answered the same:
+`unknown_invoice`.
+"""
+
+
+class InvoiceDetailView(_OperatorView):
+    """POST /api/v1/{app}/invoices/detail -- operator app only."""
+
+    @extend_schema(
+        tags=["Operator Invoices"],
+        summary="One invoice, by its order or its number",
+        description=_INVOICE_DETAIL_DESCRIPTION,
+        request=envelope_request("InvoiceDetailEnvelope", InvoiceDetailRequest),
+        responses=envelope_responses(
+            (200, "ok", "Invoice.", _INVOICE_SAMPLE),
+            (400, "invalid_request", "order_id or invoice_no is required.",
+             {"errors": {"order_id": "or invoice_no is required"}}),
+            *_error_rows("unknown_invoice"),
+            *_COMMON,
+        ),
+    )
+    def post(self, request, app):
+        branch, refused = self.station(request, app)
+        if refused:
+            return refused
+        _, request_data = request_parts(request)
+        form = InvoiceDetailRequest(data=request_data)
+        form.is_valid(raise_exception=True)
+        values = form.validated_data
+        invoice = services.invoice_at_station(branch, order_id=values.get("order_id"),
+                                              invoice_no=values.get("invoice_no"))
+        if invoice is None:
+            return _refused(services.OrderRefused("unknown_invoice"))
+        return envelope("ok", "Invoice.", invoice_json(invoice, zone_for(branch.company)))
 
 
 _BLOCKED_DESCRIPTION = """
@@ -1456,7 +1502,7 @@ _REQUEST_AMOUNT_SAMPLE = {
 
 _REQUEST_RULES = """
 **Requests** -- the operator asks a manager about an order; the manager
-decides on the web or in the manager app. Four kinds:
+decides on the web or in the manager app. Five kinds:
 
 - **`discount`** -- a **running** order. It carries no amount: the bill is not
   made yet. The manager approves a **rule** -- `discount_type` `percent`
@@ -1465,10 +1511,16 @@ decides on the web or in the manager app. Four kinds:
 - **`complimentary`** -- a **running** order, the whole bill free. Approved
   with no value. The tablet settles it in `complimentary` (net 0, any advance
   refunded).
-- **`reprint`** -- a **settled** order: one more print of its bill. Once
-  `approved`, the tablet may print it **once** and then reports it with
-  `orders/requests/used`, which makes it `used`. Another reprint needs a new
-  request. A reprint is approved or rejected, never revoked.
+- **`reprint`** -- a **settled** order: one more print of its **invoice**. Once
+  `approved`, the tablet may print it **once** (`invoices/detail` gives it the
+  invoice) and then reports it with `orders/requests/used`, which makes it
+  `used`. Another reprint needs a new request. Approved or rejected, never
+  revoked.
+- **`order_reprint`** -- one more print of the **order receipt** printed at
+  booking: on a **running or settled** order, not a cancelled one
+  (`order_closed`). Same as `reprint` otherwise -- printed once (from
+  `orders/detail`), then `orders/requests/used`; never revoked. A `reprint` and
+  an `order_reprint` may wait on the same order at once.
 - **`cancel`** -- a **running** order cancelled whole, for an operator's
   mistake (wrong vehicle, wrong booking). `reason` is **required**. Approved
   (no value), the order and its vehicles still out become `cancelled` at once
@@ -1516,8 +1568,9 @@ or cancelled order is `order_closed`; a reprint of an order not settled is
 """ + _error_table(*_REQUEST_CREATE_ERRORS)
 
 _REQUEST_USED_DESCRIPTION = _REQUEST_RULES + """
-**This call** reports that the bill was printed under an approved **reprint**:
-the request becomes `used` and the approval is spent. `sync_id` is this call's
+**This call** reports that the document was printed under an approved
+**`reprint`** (the invoice) or **`order_reprint`** (the order receipt): the
+request becomes `used` and the approval is spent. `sync_id` is this call's
 own UUIDv7; `request_sync_id` the reprint request's; `used_at` the tablet's
 time. Before approval it is `request_not_approved`; a second report is
 `request_used`. Any tablet at the order's station may report.
@@ -1550,8 +1603,9 @@ class OrderRequestView(_OperatorView):
         responses=envelope_responses(
             (200, "ok", "Request sent.", _REQUEST_PENDING_SAMPLE),
             (200, "duplicate", "Already recorded.", _REQUEST_PENDING_SAMPLE),
-            (400, "invalid_request", "kind must be one of: discount, complimentary, reprint, cancel.",
-             {"errors": {"kind": "must be one of: discount, complimentary, reprint, cancel"}}),
+            (400, "invalid_request", "kind must be one of: discount, complimentary, reprint, order_reprint, "
+                                     "cancel.",
+             {"errors": {"kind": "must be one of: discount, complimentary, reprint, order_reprint, cancel"}}),
             (400, "invalid_request", "reason is required for a cancel.",
              {"errors": {"reason": "is required for a cancel"}}, "invalid_request (cancel without a reason)"),
             *_error_rows(*_REQUEST_CREATE_ERRORS),
@@ -1770,10 +1824,10 @@ class OrderRequestListView(_OperatorView):
                 {**_REQUEST_PENDING_SAMPLE, "customer_name": "Ahmed Al Mansoori", "details": None},
                 _LIST_CREDIT_NOTE_SAMPLE, _LIST_CARD_DISCOUNT_SAMPLE,
             ], "page": 1, "pages": 1, "total": 3}),
-            (400, "invalid_request", "kind must be one of: discount, complimentary, reprint, cancel, "
-                                     "credit_note, card_discount.",
-             {"errors": {"kind": "must be one of: discount, complimentary, reprint, cancel, credit_note, "
-                                 "card_discount"}}),
+            (400, "invalid_request", "kind must be one of: discount, complimentary, reprint, order_reprint, "
+                                     "cancel, credit_note, card_discount.",
+             {"errors": {"kind": "must be one of: discount, complimentary, reprint, order_reprint, cancel, "
+                                 "credit_note, card_discount"}}),
             *_COMMON,
         ),
     )
@@ -1889,7 +1943,7 @@ newest first, 50 a page (`page`, from 1), sorted and paged together:
 
 | `kind` | What | Decide it with |
 |---|---|---|
-| `discount`, `complimentary`, `reprint`, `cancel` | order requests | `requests/approve` / `reject` (`revoke` for discount, complimentary) |
+| `discount`, `complimentary`, `reprint`, `order_reprint`, `cancel` | order requests | `requests/approve` / `reject` (`revoke` for discount, complimentary) |
 | `credit_note` | a tablet's credit-note request | `credit-notes/approve` (with `net_amount`) / `reject` |
 | `card_discount` | a card discount that needs approval | `card-discounts/claims/approve` / `reject` |
 
@@ -1904,7 +1958,8 @@ both days included, either may be left out) for when they were asked.
 
 Each row carries the order: customer, advance paid so far, and every vehicle
 out or back with the minutes run so far (`minutes_run`; for one still out, up
-to now) -- plus `details`, `null` for an order request and, for the others:
+to now) -- plus `details`, `null` for an order request (an invoice `reprint` carries its
+`invoice_no` and `invoice_net_amount`) and, for the others:
 a credit note's `credit_note_no`, `invoice_no`, `invoice_net_amount`, issued
 `net_amount` / `tax_amount`; a card discount's card type, grade, number,
 **`card_photo`** (the link to show before deciding), %, fare basis and the

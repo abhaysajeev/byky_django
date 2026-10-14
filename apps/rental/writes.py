@@ -136,7 +136,8 @@ class _RequestWrite(WriteView):
 _APPROVED = {
     OrderRequestKind.DISCOUNT: "Discount approved.",
     OrderRequestKind.COMPLIMENTARY: "Complimentary approved.",
-    OrderRequestKind.REPRINT: "Reprint approved.",
+    OrderRequestKind.REPRINT: "Invoice reprint approved.",
+    OrderRequestKind.ORDER_REPRINT: "Order receipt reprint approved.",
     OrderRequestKind.CANCEL: "Order cancelled.",
 }
 

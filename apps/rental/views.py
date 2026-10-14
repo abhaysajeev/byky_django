@@ -788,7 +788,9 @@ def rule_label(req):
     if req.kind == OrderRequestKind.COMPLIMENTARY:
         return "Whole bill"
     if req.kind == OrderRequestKind.REPRINT:
-        return "One print"
+        return "Invoice"
+    if req.kind == OrderRequestKind.ORDER_REPRINT:
+        return "Order receipt"
     if req.kind == OrderRequestKind.CANCEL:
         return "Whole order"
     if req.discount_value is None:
@@ -902,8 +904,11 @@ class RequestDetailView(RentalScreenView):
         context.update({
             "req": req, "order": order, "lines": lines, "rule": rule_label(req),
             "order_running": order.status == OrderStatus.ACTIVE,
-            # A discount or complimentary is decided while the order runs, a reprint once it is settled.
+            # A discount, complimentary or cancel while the order runs; an invoice
+            # reprint once it is settled; an order receipt reprint unless cancelled.
             "decidable": (order.status == OrderStatus.COMPLETED if req.kind == OrderRequestKind.REPRINT
+                          else order.status != OrderStatus.CANCELLED
+                          if req.kind == OrderRequestKind.ORDER_REPRINT
                           else order.status == OrderStatus.ACTIVE),
             "revocable": req.kind in (OrderRequestKind.DISCOUNT, OrderRequestKind.COMPLIMENTARY),
             "used_at": local(req.used_at),

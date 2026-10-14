@@ -51,7 +51,7 @@ def test_every_kind_in_one_list_newest_first(client, manager, three, settled):
         ("card_discount", three["claim"]), ("credit_note", three["note"]), ("reprint", three["reprint"])]
     assert data["total"] == 3
     claim_row, note_row, reprint_row = data["requests"]
-    assert reprint_row["details"] is None
+    assert set(reprint_row["details"]) == {"invoice_no", "invoice_net_amount"}
     assert note_row["details"]["invoice_no"] == settled.order_no and note_row["details"]["net_amount"] is None
     assert claim_row["details"]["card_photo"] == "https://photos.test/fam-1.jpg"
     for row in data["requests"]:

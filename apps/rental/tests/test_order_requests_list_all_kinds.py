@@ -55,7 +55,7 @@ def test_every_kind_is_in_one_list_newest_first(client, token, three):
         ("card_discount", three["claim"]), ("credit_note", three["note"]), ("reprint", three["reprint"])]
     assert data["total"] == 3
     claim_row, note_row, reprint_row = data["requests"]
-    assert reprint_row["details"] is None
+    assert set(reprint_row["details"]) == {"invoice_no", "invoice_net_amount"}
     assert note_row["details"] == {"credit_note_no": None, "net_amount": None}
     assert (claim_row["details"]["card_type"], claim_row["details"]["card_number"]) == ("Family Card", "FAM-1")
     assert note_row["reason"] == "Chain broke after 10 minutes"

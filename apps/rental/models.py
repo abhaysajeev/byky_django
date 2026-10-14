@@ -668,7 +668,10 @@ class CreditNote(TimeStampedModel):
 class OrderRequestKind(models.TextChoices):
     DISCOUNT = "discount", "Discount"
     COMPLIMENTARY = "complimentary", "Complimentary"     # the whole running order free
-    REPRINT = "reprint", "Reprint"                       # one more print of a settled bill
+    REPRINT = "reprint", "Invoice reprint"               # one more print of a settled order's invoice
+    # One more print of the order receipt the tablet printed at booking --
+    # on a running or settled order, never a cancelled one.
+    ORDER_REPRINT = "order_reprint", "Order receipt reprint"
     # Cancel a running order -- an operator's mistake (wrong vehicle, wrong
     # booking). Approved, it cancels the order (requests.cancel_order).
     CANCEL = "cancel", "Cancel order"
@@ -774,7 +777,8 @@ class OrderRequest(TimeStampedModel):
                                revoked_at__isnull=False, closed_at__isnull=True, used_at__isnull=True)
                     | models.Q(status__in=[OrderRequestStatus.WITHDRAWN, OrderRequestStatus.CLOSED],
                                decided_at__isnull=True, closed_at__isnull=False, used_at__isnull=True)
-                    | models.Q(status=OrderRequestStatus.USED, kind=OrderRequestKind.REPRINT,
+                    | models.Q(status=OrderRequestStatus.USED,
+                               kind__in=[OrderRequestKind.REPRINT, OrderRequestKind.ORDER_REPRINT],
                                decided_at__isnull=False, used_at__isnull=False, revoked_at__isnull=True,
                                closed_at__isnull=True)
                 ),

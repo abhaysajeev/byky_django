@@ -38,6 +38,7 @@ from apps.rental.models import (
     REQUEST_LIVE,
     DecisionChannel,
     DiscountType,
+    Invoice,
     Order,
     OrderAction,
     OrderItemStatus,
@@ -61,12 +62,15 @@ CARD_CLAIM_LIVE = (ClaimStatus.PENDING, ClaimStatus.APPROVED)
 BILL_KINDS = (OrderRequestKind.DISCOUNT, OrderRequestKind.COMPLIMENTARY)
 # Revocable while the order runs.
 REVOCABLE = BILL_KINDS
+# Printed once when approved, then reported with orders/requests/used.
+REPRINT_KINDS = (OrderRequestKind.REPRINT, OrderRequestKind.ORDER_REPRINT)
 
 # (pending, approved) refusal per kind; and the refusal another bill kind gets.
 _LIVE_REFUSALS = {
     OrderRequestKind.DISCOUNT: ("discount_request_pending", "discount_approved"),
     OrderRequestKind.COMPLIMENTARY: ("complimentary_request_pending", "complimentary_approved"),
     OrderRequestKind.REPRINT: ("reprint_request_pending", "reprint_approved"),
+    OrderRequestKind.ORDER_REPRINT: ("order_reprint_request_pending", "order_reprint_approved"),
     OrderRequestKind.CANCEL: ("cancel_request_pending", "cancel_approved"),
 }
 _HELD_BY = {
@@ -160,6 +164,12 @@ def create_request(session, values, request_data):
             order = lock_order(values["order_id"], session.branch)
             if order.status != OrderStatus.COMPLETED:
                 raise OrderRefused("order_not_settled", "A reprint needs a settled order.")
+        elif kind == OrderRequestKind.ORDER_REPRINT:
+            # The receipt printed at booking: while the order runs or after it
+            # settled -- never once it is cancelled.
+            order = lock_order(values["order_id"], session.branch)
+            if order.status == OrderStatus.CANCELLED:
+                raise OrderRefused("order_closed", "A cancelled order's receipt is not printed again.")
         else:
             order = _open_order(session, values["order_id"])
         _refuse_if_held(order, kind)
@@ -220,7 +230,7 @@ def mark_used(session, values, request_data):
 
     def apply():
         order, req = _own_request(session, values["request_sync_id"])
-        if req.kind != OrderRequestKind.REPRINT:
+        if req.kind not in REPRINT_KINDS:
             raise OrderRefused("unknown_request", "No reprint request with that id at this station.")
         if req.status == OrderRequestStatus.USED:
             raise OrderRefused("request_used")
@@ -318,7 +328,7 @@ def _station_rows(keys, zone):
         for req in (OrderRequest.objects.filter(pk__in=wanted["request"])
                     .select_related("order", "decided_by", "revoked_by")):
             loaded[("request", req.pk)] = {**request_json(req, zone), "customer_name": req.order.customer_name,
-                                           "details": None}
+                                           "details": request_details(req)}
     if CREDIT_NOTE in wanted:
         for note in CreditNote.objects.filter(pk__in=wanted[CREDIT_NOTE]).select_related("order", "decided_by"):
             loaded[(CREDIT_NOTE, note.pk)] = _credit_note_row(note, zone)
@@ -422,9 +432,12 @@ def _already(req):
 
 
 def _order_open_for(req, order):
-    """A bill request needs the order still running; a reprint a settled one."""
+    """A bill request needs the order still running; an invoice reprint a
+    settled one; an order receipt reprint any order not cancelled."""
     if req.kind == OrderRequestKind.REPRINT:
         return order.status == OrderStatus.COMPLETED
+    if req.kind == OrderRequestKind.ORDER_REPRINT:
+        return order.status != OrderStatus.CANCELLED
     return order.status == OrderStatus.ACTIVE
 
 
@@ -585,6 +598,17 @@ def manager_row(request_id):
     return _manager_rows().get(pk=request_id)
 
 
+def request_details(req):
+    """`details` of an order-request row in the lists: the invoice an invoice
+    reprint is for; nothing for the other kinds (the row carries the order)."""
+    if req.kind != OrderRequestKind.REPRINT:
+        return None
+    invoice = Invoice.objects.filter(order_id=req.order_id).only("invoice_no", "net_amount").first()
+    if invoice is None:
+        return None
+    return {"invoice_no": invoice.invoice_no, "invoice_net_amount": _money(invoice.net_amount)}
+
+
 def _company_sources(company_ids, kind, state_id, branch_id):
     """(source, queryset) per kind the manager's list may show, across the
     companies -- the same three as the operator's (_station_sources)."""
@@ -643,7 +667,7 @@ def _manager_rows_of(keys):
     orders = "order__items__vehicle__vehicle_type"
     if "request" in wanted:
         for req in _manager_rows().filter(pk__in=wanted["request"]):
-            loaded[("request", req.pk)] = {**manager_json(req, zone_of(req), now), "details": None}
+            loaded[("request", req.pk)] = {**manager_json(req, zone_of(req), now), "details": request_details(req)}
     if CREDIT_NOTE in wanted:
         for note in (CreditNote.objects.filter(pk__in=wanted[CREDIT_NOTE])
                      .select_related("order", "invoice", "branch", "company", "requested_by", "decided_by")

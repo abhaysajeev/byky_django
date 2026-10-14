@@ -255,7 +255,8 @@ the web — whoever acts first wins, the other gets `request_decided`.
 |---|---|---|
 | `discount` | running | A **rule**: `percent` + value (e.g. `10.00`) or `amount` + AED value (e.g. `15.000`). The bill is not made yet; the tablet applies it at settle and the server checks it |
 | `complimentary` | running | The whole bill free (net 0). No value |
-| `reprint` | settled | One more print of the bill. No value. Never revoked |
+| `reprint` | settled | One more print of the **invoice**. No value. Never revoked |
+| `order_reprint` | running or settled (not cancelled) | One more print of the **order receipt** printed at booking. No value. Never revoked |
 | `cancel` | running | Cancel the whole order (an operator's mistake). Reason always given. No value. Approving cancels the order at once and frees its vehicles. Never revoked |
 
 ### 5.2 Statuses
@@ -277,7 +278,7 @@ All fields optional — send `{}` for every request, newest first.
 | Field | Type | Notes |
 |---|---|---|
 | `pending` | boolean | `true` = only `pending`. `false` / left out = every status |
-| `kind` | string | `discount`, `complimentary`, `reprint` or `cancel` |
+| `kind` | string | `discount`, `complimentary`, `reprint`, `order_reprint` or `cancel` |
 | `state_id` | number | Only that state's stations (from `states`) |
 | `branch_id` | number | One station (from `branches`). With `state_id`, the station must be in that state, else the list is empty |
 | `from_date` | `YYYY-MM-DD` | Asked on or after this day (company time) |
@@ -351,7 +352,7 @@ Suggested screens: a **Pending** tab (`pending: true`) and a **History** tab
 } }
 ```
 
-For a **complimentary**, **reprint** or **cancel**, send only `request_sync_id` (and
+For a **complimentary**, **reprint**, **order_reprint** or **cancel**, send only `request_sync_id` (and
 `note`). Reply: the updated row, same shape as the list.
 
 ### 5.5 Reject — `POST /api/v1/manager/requests/reject`

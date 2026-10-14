@@ -421,7 +421,7 @@ class OrderRequestCreateRequest(serializers.Serializer):
     kind = serializers.ChoiceField(
         choices=OrderRequestKind.choices,
         error_messages={**REQUIRED,
-                        "invalid_choice": "must be one of: discount, complimentary, reprint, cancel"},
+                        "invalid_choice": "must be one of: discount, complimentary, reprint, order_reprint, cancel"},
     )
     reason = serializers.CharField(max_length=500, required=False, allow_blank=True,
                                    error_messages={"max_length": "must be at most 500 characters"})
@@ -478,8 +478,8 @@ class OperatorRequestListRequest(_RequestDatesMixin):
                                        error_messages={"invalid": "must be true or false"})
     kind = serializers.ChoiceField(
         choices=[*OrderRequestKind.values, "credit_note", "card_discount"], required=False, allow_blank=True,
-        error_messages={"invalid_choice": "must be one of: discount, complimentary, reprint, cancel, "
-                                          "credit_note, card_discount"},
+        error_messages={"invalid_choice": "must be one of: discount, complimentary, reprint, order_reprint, "
+                                          "cancel, credit_note, card_discount"},
     )
     # Only what this tablet sent; without it, the whole station's.
     mine = serializers.BooleanField(required=False, default=False,
@@ -496,8 +496,8 @@ class ManagerRequestListRequest(_RequestDatesMixin):
     state_id = whole_number_field(min_value=1, required=False, allow_null=True)
     kind = serializers.ChoiceField(
         choices=[*OrderRequestKind.values, "credit_note", "card_discount"], required=False, allow_blank=True,
-        error_messages={"invalid_choice": "must be one of: discount, complimentary, reprint, cancel, "
-                                          "credit_note, card_discount"},
+        error_messages={"invalid_choice": "must be one of: discount, complimentary, reprint, order_reprint, "
+                                          "cancel, credit_note, card_discount"},
     )
     branch_id = whole_number_field(min_value=1, required=False, allow_null=True)
     page = whole_number_field(min_value=1, required=False, default=1)
@@ -563,6 +563,21 @@ class ManagerRequestApproveRequest(ManagerRequestDecisionRequest):
 
 
 # -- Manager app: masters and reports (apps/rental/manager_api.py) ------------------
+
+
+class InvoiceDetailRequest(serializers.Serializer):
+    """One invoice at this station, by its order's id or by its number --
+    exactly one of the two."""
+
+    order_id = serializers.UUIDField(required=False, allow_null=True,
+                                     error_messages={"invalid": "must be a UUID"})
+    invoice_no = text_field(max_length=30, required=False, allow_blank=True)
+
+    def validate(self, values):
+        if bool(values.get("order_id")) == bool(values.get("invoice_no")):
+            raise serializers.ValidationError({"order_id": "send order_id or invoice_no, not both"
+                                               if values.get("order_id") else "or invoice_no is required"})
+        return values
 
 
 class InvoiceRecentRequest(serializers.Serializer):
