@@ -43,7 +43,8 @@ def three(client, token, settled, card, shop):
         "requested_at": "2026-10-06 09:00:00"}, token=token).json()["data"]
     note = call(client, notes.REQUEST, notes.ask(settled, requested_at="2026-10-06 10:00:00"),
                 token=token).json()["data"]
-    claim = make_claim(card, shop["ahmed"], order=settled, branch=settled.branch, when=at(11), card_number="FAM-1")
+    claim = make_claim(card, shop["ahmed"], order=settled, branch=settled.branch, when=at(11), card_number="FAM-1",
+                       rms_installation_id="till-1")
     return {"reprint": reprint["request_sync_id"], "note": note["credit_note_id"], "claim": str(claim.pk)}
 
 
@@ -115,3 +116,21 @@ def test_an_unknown_kind_is_refused(client, token):
     response = call(client, LIST, {"kind": "refund"}, token=token)
 
     assert (response.status_code, response.json()["code"]) == (400, "invalid_request")
+
+
+def test_mine_shows_only_what_this_tablet_sent(client, world, token, three):
+    from apps.devices.models import Device
+    from apps.rental.models import OrderRequest
+    from apps.rental.tests.test_order_api import sign_in_tablet
+
+    other = sign_in_tablet(client, world, code="OPR002", installation_id="till-2", branch=world["adc1"])
+    OrderRequest.objects.filter(pk=three["reprint"]).update(device=Device.objects.get(installation_id="till-2"))
+
+    mine = [r["kind"] for r in listed(client, token, mine=True)["requests"]]
+    theirs = [r["kind"] for r in listed(client, other, mine=True)["requests"]]
+    station = [r["kind"] for r in listed(client, other)["requests"]]
+
+    assert mine == ["card_discount", "credit_note"]
+    assert theirs == ["reprint"]
+    assert station == ["card_discount", "credit_note", "reprint"]
+    assert listed(client, token, mine=True, kind="reprint")["requests"] == []

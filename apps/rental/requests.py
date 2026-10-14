@@ -257,28 +257,35 @@ CREDIT_NOTE, CARD_DISCOUNT = "credit_note", "card_discount"
 LIST_KINDS = (*OrderRequestKind.values, CREDIT_NOTE, CARD_DISCOUNT)
 
 
-def _station_sources(branch, kind):
-    """(source, queryset) for each kind of request the list may show."""
+def _station_sources(branch, kind, device=None):
+    """(source, queryset) for each kind of request the list may show -- the
+    station's, or only `device`'s when one is given (`mine`)."""
     from apps.rental.models import CreditNote, CreditNoteSource
 
     sources = []
     if kind is None or kind in OrderRequestKind.values:
         requests = OrderRequest.objects.filter(branch=branch)
-        sources.append(("request", requests.filter(kind=kind) if kind else requests))
+        requests = requests.filter(kind=kind) if kind else requests
+        sources.append(("request", requests.filter(device=device) if device else requests))
     if kind in (None, CREDIT_NOTE):
         # Only what a tablet asked for; one issued straight from the web was
         # never sent for a decision.
-        sources.append((CREDIT_NOTE, CreditNote.objects.filter(branch=branch, source=CreditNoteSource.DEVICE)))
+        notes = CreditNote.objects.filter(branch=branch, source=CreditNoteSource.DEVICE)
+        sources.append((CREDIT_NOTE, notes.filter(device=device) if device else notes))
     if kind in (None, CARD_DISCOUNT):
-        # Only claims that went to someone for approval.
-        sources.append((CARD_DISCOUNT, CardDiscountClaim.objects.filter(branch=branch, requires_approval=True)))
+        # Only claims that went to someone for approval. A claim keeps the
+        # tablet's installation id, not the device row: after a reinstall the
+        # tablet's earlier claims no longer count as its own.
+        claims = CardDiscountClaim.objects.filter(branch=branch, requires_approval=True)
+        sources.append((CARD_DISCOUNT, claims.filter(rms_installation_id=device.installation_id)
+                        if device else claims))
     return sources
 
 
 _PENDING = {"request": OrderRequestStatus.PENDING, CREDIT_NOTE: "pending", CARD_DISCOUNT: ClaimStatus.PENDING}
 
 
-def station_list(branch, *, pending_only=False, kind=None, from_date=None, to_date=None, page=1):
+def station_list(branch, *, pending_only=False, kind=None, from_date=None, to_date=None, page=1, device=None):
     """(rows, page) of one station's requests of every kind, newest first --
     the operator app's Requests screen. Sorted and paged together in the
     database (one UNION of id, time and source), then each page's rows loaded
@@ -287,7 +294,7 @@ def station_list(branch, *, pending_only=False, kind=None, from_date=None, to_da
 
     zone = zone_for(branch.company)
     keyed = []
-    for source, rows in _station_sources(branch, kind):
+    for source, rows in _station_sources(branch, kind, device):
         rows = _requested_between(rows, zone, from_date, to_date)
         if pending_only:
             rows = rows.filter(status=_PENDING[source])

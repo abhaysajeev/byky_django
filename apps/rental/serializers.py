@@ -474,6 +474,9 @@ class OperatorRequestListRequest(_RequestDatesMixin):
         error_messages={"invalid_choice": "must be one of: discount, complimentary, reprint, credit_note, "
                                           "card_discount"},
     )
+    # Only what this tablet sent; without it, the whole station's.
+    mine = serializers.BooleanField(required=False, default=False,
+                                    error_messages={"invalid": "must be true or false"})
     page = whole_number_field(min_value=1, required=False, default=1)
 
 
