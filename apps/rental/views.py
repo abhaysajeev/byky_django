@@ -406,8 +406,31 @@ class OrderDetailView(RentalScreenView):
             "credit_note": credit_note_link(order),
             "requests": request_links(order),
             "list_url": reverse("rental-order-list"),
+            # A running order may be cancelled straight from here by whoever
+            # decides requests (they approve operators' cancels too).
+            "can_cancel": order.status == OrderStatus.ACTIVE and has_permission(user, "rental.request", "approve"),
+            "cancel_url": reverse("rental-order-cancel", args=[order.pk]),
+            "cancellation": _cancellation(order, local),
         })
         return context
+
+
+def _cancellation(order, local):
+    """Why and by whom a cancelled order was cancelled: its approved cancel
+    request (asked on a tablet, or asked and approved on the web at once)."""
+    if order.status != OrderStatus.CANCELLED:
+        return None
+    req = (order.requests.filter(kind=OrderRequestKind.CANCEL, status=OrderRequestStatus.APPROVED)
+           .select_related("requested_by", "decided_by").first())
+    if req is None:
+        return None
+    return {
+        "reason": req.reason, "requested_by": req.requested_by.display_name if req.requested_by_id else "",
+        "from_tablet": req.device_id is not None,
+        "decided_by": req.decided_by.display_name if req.decided_by_id else "",
+        "channel": req.get_decided_channel_display(), "decided_at": local(req.decided_at),
+        "url": reverse("rental-request-detail", args=[req.pk]),
+    }
 
 
 def request_links(order):
@@ -766,6 +789,8 @@ def rule_label(req):
         return "Whole bill"
     if req.kind == OrderRequestKind.REPRINT:
         return "One print"
+    if req.kind == OrderRequestKind.CANCEL:
+        return "Whole order"
     if req.discount_value is None:
         return ""
     if req.discount_type == "percent":

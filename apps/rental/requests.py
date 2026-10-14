@@ -67,6 +67,7 @@ _LIVE_REFUSALS = {
     OrderRequestKind.DISCOUNT: ("discount_request_pending", "discount_approved"),
     OrderRequestKind.COMPLIMENTARY: ("complimentary_request_pending", "complimentary_approved"),
     OrderRequestKind.REPRINT: ("reprint_request_pending", "reprint_approved"),
+    OrderRequestKind.CANCEL: ("cancel_request_pending", "cancel_approved"),
 }
 _HELD_BY = {
     OrderRequestKind.DISCOUNT: "discount_requested",
@@ -438,10 +439,62 @@ def approve(user, request_id, company_ids, channel, discount_type=None, value=No
             raise RequestRefused("order_closed", "This order is already completed or cancelled.")
         if req.kind == OrderRequestKind.DISCOUNT:
             req.discount_type, req.discount_value = parse_rule(discount_type, value)
+        now = timezone.now()
         req.status = OrderRequestStatus.APPROVED
-        req.decided_by, req.decided_channel, req.decided_at = user, channel, timezone.now()
+        req.decided_by, req.decided_channel, req.decided_at = user, channel, now
         req.decision_note, req.modified_by = (note or "").strip(), user
         req.save()
+        if req.kind == OrderRequestKind.CANCEL:
+            cancel_order(order, req, user, now)
+    return req
+
+
+def cancel_order(order, cancel, user, now):
+    """An approved cancel takes effect, inside the approval's transaction (the
+    order is already locked): the order and its running lines are cancelled,
+    so their vehicles can be rented again at once; returned, replaced and
+    removed lines stay as they are. Requests still waiting on the order are
+    closed; an approved discount or complimentary stays approved but can never
+    be used -- nothing settles a cancelled order. Card-discount claims are
+    cancelled, so the customer's card usage is not spent. Money already taken
+    stays recorded; a refund may be added with orders/payments."""
+    from apps.discount.services import cancel_unused_for_order
+
+    order.status, order.cancelled_at, order.modified_by = OrderStatus.CANCELLED, now, user
+    order.save(update_fields=["status", "cancelled_at", "modified_by", "modified_on"])
+    order.items.filter(status=OrderItemStatus.ACTIVE).update(status=OrderItemStatus.CANCELLED, modified_on=now)
+    order.requests.filter(status=OrderRequestStatus.PENDING).exclude(pk=cancel.pk).update(
+        status=OrderRequestStatus.CLOSED, closed_at=now, modified_on=now,
+    )
+    cancel_unused_for_order(order, now=now)
+
+
+def cancel_directly(user, order_id, company_ids, reason):
+    """The back office cancels a running order on the web, with no tablet
+    request. Recorded as a cancel request asked and approved by the same
+    person on the web, so both routes leave one shape of record."""
+    from core.ids import uuid7
+
+    reason = (reason or "").strip()
+    if not reason:
+        raise RequestRefused("invalid_request", "Give the reason for the cancel.", 400)
+    with transaction.atomic():
+        order = Order.objects.select_for_update().filter(pk=order_id, company_id__in=company_ids).first()
+        if order is None:
+            raise RequestRefused("unknown_order", "No such order.", 404)
+        if order.status != OrderStatus.ACTIVE:
+            raise RequestRefused("order_closed", "Only a running order can be cancelled.")
+        if order.requests.filter(kind=OrderRequestKind.CANCEL, status__in=REQUEST_LIVE).exists():
+            raise RequestRefused("cancel_request_pending",
+                                 "A cancel request is waiting for this order -- approve or reject it instead.")
+        now = timezone.now()
+        req = OrderRequest.objects.create(
+            id=uuid7(), kind=OrderRequestKind.CANCEL, company_id=order.company_id, branch_id=order.branch_id,
+            order=order, status=OrderRequestStatus.APPROVED, device=None, requested_by=user, requested_at=now,
+            reason=reason, decided_by=user, decided_channel=DecisionChannel.WEB, decided_at=now,
+            created_by=user, modified_by=user,
+        )
+        cancel_order(order, req, user, now)
     return req
 
 
@@ -463,7 +516,8 @@ def revoke(user, request_id, company_ids, channel, note=""):
     with transaction.atomic():
         order, req = _locked(request_id, company_ids)
         if req.kind not in REVOCABLE:
-            raise RequestRefused("request_not_revocable", "A reprint is approved or rejected, not revoked.")
+            raise RequestRefused("request_not_revocable",
+                                 f"A {req.get_kind_display().lower()} is approved or rejected, not revoked.")
         if req.status != OrderRequestStatus.APPROVED:
             raise RequestRefused("request_not_approved", "Only an approved request can be revoked.")
         if order.status != OrderStatus.ACTIVE:

@@ -63,6 +63,8 @@
           <div class="scr-detail-row"><span class="scr-detail-label"><b>For</b></span><span class="scr-detail-value"><b>The whole bill</b> · net 0, any advance refunded</span></div>
           {% elif req.kind == "reprint" %}
           <div class="scr-detail-row"><span class="scr-detail-label"><b>For</b></span><span class="scr-detail-value"><b>One reprint</b> of the settled bill</span></div>
+          {% elif req.kind == "cancel" %}
+          <div class="scr-detail-row"><span class="scr-detail-label"><b>For</b></span><span class="scr-detail-value"><b>Cancel the whole order</b> · its vehicles still out are freed</span></div>
           {% endif %}
           {% if req.decision_note %}
           <div class="scr-detail-row"><span class="scr-detail-label">Note</span><span class="scr-detail-value scr-mon-wrap">{{ req.decision_note }}</span></div>
@@ -129,7 +131,7 @@
     <div class="scr-modal-head">
       <div>
         <div class="scr-modal-title">Approve {{ req.get_kind_display|lower }}</div>
-        <p class="scr-modal-sub">{% if req.kind == "discount" %}The bill is not made yet: approve a percentage or a fixed amount. The tablet applies it at settle.{% elif req.kind == "complimentary" %}The whole bill of {{ order.order_no }} becomes free: it settles at net 0, and any advance is refunded.{% else %}The tablet may print the bill of {{ order.order_no }} once more.{% endif %}</p>
+        <p class="scr-modal-sub">{% if req.kind == "discount" %}The bill is not made yet: approve a percentage or a fixed amount. The tablet applies it at settle.{% elif req.kind == "complimentary" %}The whole bill of {{ order.order_no }} becomes free: it settles at net 0, and any advance is refunded.{% elif req.kind == "cancel" %}{{ order.order_no }} is cancelled now, with its vehicles still out -- they can be rented again at once. This cannot be undone.{% else %}The tablet may print the bill of {{ order.order_no }} once more.{% endif %}</p>
       </div>
       <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>

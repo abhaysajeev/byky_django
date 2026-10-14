@@ -669,6 +669,9 @@ class OrderRequestKind(models.TextChoices):
     DISCOUNT = "discount", "Discount"
     COMPLIMENTARY = "complimentary", "Complimentary"     # the whole running order free
     REPRINT = "reprint", "Reprint"                       # one more print of a settled bill
+    # Cancel a running order -- an operator's mistake (wrong vehicle, wrong
+    # booking). Approved, it cancels the order (requests.cancel_order).
+    CANCEL = "cancel", "Cancel order"
 
 
 class OrderRequestStatus(models.TextChoices):

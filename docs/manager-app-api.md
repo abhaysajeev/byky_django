@@ -256,6 +256,7 @@ the web — whoever acts first wins, the other gets `request_decided`.
 | `discount` | running | A **rule**: `percent` + value (e.g. `10.00`) or `amount` + AED value (e.g. `15.000`). The bill is not made yet; the tablet applies it at settle and the server checks it |
 | `complimentary` | running | The whole bill free (net 0). No value |
 | `reprint` | settled | One more print of the bill. No value. Never revoked |
+| `cancel` | running | Cancel the whole order (an operator's mistake). Reason always given. No value. Approving cancels the order at once and frees its vehicles. Never revoked |
 
 ### 5.2 Statuses
 
@@ -276,7 +277,7 @@ All fields optional — send `{}` for every request, newest first.
 | Field | Type | Notes |
 |---|---|---|
 | `pending` | boolean | `true` = only `pending`. `false` / left out = every status |
-| `kind` | string | `discount`, `complimentary` or `reprint` |
+| `kind` | string | `discount`, `complimentary`, `reprint` or `cancel` |
 | `state_id` | number | Only that state's stations (from `states`) |
 | `branch_id` | number | One station (from `branches`). With `state_id`, the station must be in that state, else the list is empty |
 | `from_date` | `YYYY-MM-DD` | Asked on or after this day (company time) |
@@ -350,7 +351,7 @@ Suggested screens: a **Pending** tab (`pending: true`) and a **History** tab
 } }
 ```
 
-For a **complimentary** or **reprint**, send only `request_sync_id` (and
+For a **complimentary**, **reprint** or **cancel**, send only `request_sync_id` (and
 `note`). Reply: the updated row, same shape as the list.
 
 ### 5.5 Reject — `POST /api/v1/manager/requests/reject`
@@ -372,7 +373,7 @@ running. The operator may then ask again.
 | `request_decided` | 409 | Already decided (maybe on the web) — message says how | Reload the row |
 | `order_closed` | 409 | The order was settled/cancelled meanwhile | Reload the row |
 | `request_not_approved` | 409 | Revoke on a request that is not approved | — |
-| `request_not_revocable` | 409 | Revoke on a reprint | Hide Revoke for reprints |
+| `request_not_revocable` | 409 | Revoke on a reprint or a cancel | Hide Revoke for reprints and cancels |
 | `invalid_request` | 400 | e.g. percent over 100, 3 decimals on a percent, missing type for a discount | Show `data.errors` / `message` |
 
 Always refresh the row (or the list) after any of these — someone else may
@@ -495,6 +496,6 @@ included. They answer different questions and will not always match.
 - [ ] Money as strings / decimals, never floats.
 - [ ] Discount approve: `percent` 2 decimals ≤ 100, `amount` 3 decimals;
       complimentary / reprint: no value.
-- [ ] Hide Revoke for reprints and for anything not `approved`.
+- [ ] Hide Revoke for reprints, cancels, and anything not `approved`.
 - [ ] After any refusal on approve / reject / revoke, reload the row.
 - [ ] Switch on `code`, show `message`, show `data.errors` per field.

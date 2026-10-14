@@ -420,11 +420,18 @@ class OrderRequestCreateRequest(serializers.Serializer):
     order_id = _existing_id()
     kind = serializers.ChoiceField(
         choices=OrderRequestKind.choices,
-        error_messages={**REQUIRED, "invalid_choice": "must be one of: discount, complimentary, reprint"},
+        error_messages={**REQUIRED,
+                        "invalid_choice": "must be one of: discount, complimentary, reprint, cancel"},
     )
     reason = serializers.CharField(max_length=500, required=False, allow_blank=True,
                                    error_messages={"max_length": "must be at most 500 characters"})
     requested_at = datetime_field()
+
+    def validate(self, values):
+        # Why an order is cancelled is always recorded.
+        if values.get("kind") == OrderRequestKind.CANCEL and not (values.get("reason") or "").strip():
+            raise serializers.ValidationError({"reason": "is required for a cancel"})
+        return values
 
 
 class OrderRequestWithdrawRequest(serializers.Serializer):
@@ -486,7 +493,7 @@ class ManagerRequestListRequest(_RequestDatesMixin):
     state_id = whole_number_field(min_value=1, required=False, allow_null=True)
     kind = serializers.ChoiceField(
         choices=OrderRequestKind.choices, required=False, allow_blank=True,
-        error_messages={"invalid_choice": "must be one of: discount, complimentary, reprint"},
+        error_messages={"invalid_choice": "must be one of: discount, complimentary, reprint, cancel"},
     )
     branch_id = whole_number_field(min_value=1, required=False, allow_null=True)
     page = whole_number_field(min_value=1, required=False, default=1)

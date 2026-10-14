@@ -16,7 +16,7 @@ from apps.company.writes import WriteView, _errors, _payload
 from apps.rental import credit_notes, services
 from apps.rental import requests as order_requests
 from apps.rental.forms import CustomerForm
-from apps.rental.models import CreditNote, Customer, DecisionChannel, OrderRequest
+from apps.rental.models import CreditNote, Customer, DecisionChannel, OrderRequest, OrderRequestKind
 from apps.rental.scoping import customers_for
 
 
@@ -121,6 +121,7 @@ class _RequestWrite(WriteView):
         return list(companies_for(self.request.user).values_list("id", flat=True))
 
     def answer(self, act, message):
+        """`message` is the text, or a function of the request that gives it."""
         if not self.may("approve"):
             return self.refused()
         try:
@@ -128,8 +129,16 @@ class _RequestWrite(WriteView):
         except order_requests.RequestRefused as refused:
             return JsonResponse({"ok": False, "code": "invalid", "errors": [{"field": "", "message": refused.message}]},
                                 status=400)
-        return JsonResponse({"ok": True, "message": message,
+        return JsonResponse({"ok": True, "message": message(req) if callable(message) else message,
                              "redirect": reverse("rental-request-detail", args=[req.pk])})
+
+
+_APPROVED = {
+    OrderRequestKind.DISCOUNT: "Discount approved.",
+    OrderRequestKind.COMPLIMENTARY: "Complimentary approved.",
+    OrderRequestKind.REPRINT: "Reprint approved.",
+    OrderRequestKind.CANCEL: "Order cancelled.",
+}
 
 
 class RequestApprove(_RequestWrite):
@@ -138,7 +147,23 @@ class RequestApprove(_RequestWrite):
     def post(self, request, pk):
         return self.answer(lambda data: order_requests.approve(
             request.user, pk, self.company_ids(), DecisionChannel.WEB, data.get("discount_type"),
-            data.get("discount_value"), str(data.get("note") or "")), "Discount approved.")
+            data.get("discount_value"), str(data.get("note") or "")), lambda req: _APPROVED[req.kind])
+
+
+class OrderCancel(_RequestWrite):
+    """Cancel a running order from its page, with a reason -- no tablet request.
+    The same staff who decide requests may do it."""
+
+    def post(self, request, pk):
+        if not self.may("approve"):
+            return self.refused()
+        reason = str(_payload(request).get("reason") or "")
+        try:
+            order_requests.cancel_directly(request.user, pk, self.company_ids(), reason)
+        except order_requests.RequestRefused as refused:
+            return JsonResponse({"ok": False, "code": "invalid", "errors": [{"field": "", "message": refused.message}]},
+                                status=400)
+        return JsonResponse({"ok": True, "message": "Order cancelled."})
 
 
 class RequestReject(_RequestWrite):

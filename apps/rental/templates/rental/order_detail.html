@@ -11,10 +11,11 @@
 {% block page_js %}
 {{ block.super }}
 <script src="{% static 'js/byky-screen.js' %}"></script>
+{% if can_cancel %}<script src="{% static 'js/byky-order-cancel.js' %}"></script>{% endif %}
 {% endblock page_js %}
 
 {% block content %}
-<div class="scr">
+<div class="scr"{% if can_cancel %} data-order-cancel data-url="{{ cancel_url }}"{% endif %}>
 
   <div class="scr-head">
     <div>
@@ -28,6 +29,7 @@
       <h1 class="scr-title">{{ order.order_no }}</h1>
     </div>
     <div class="scr-head-actions">
+      {% if can_cancel %}<button type="button" class="scr-btn-danger" data-scr-modal-open="order-cancel">Cancel order</button>{% endif %}
       <a href="{{ list_url }}" class="scr-btn-secondary">Back</a>
     </div>
   </div>
@@ -51,6 +53,10 @@
           <div class="scr-detail-row"><span class="scr-detail-label">Start</span><span class="scr-detail-value">{{ start_time|date:"d M Y, H:i" }}</span></div>
           {% if completed_at %}<div class="scr-detail-row"><span class="scr-detail-label">Settled</span><span class="scr-detail-value">{{ completed_at|date:"d M Y, H:i" }}</span></div>{% endif %}
           {% if cancelled_at %}<div class="scr-detail-row"><span class="scr-detail-label">Cancelled</span><span class="scr-detail-value">{{ cancelled_at|date:"d M Y, H:i" }}</span></div>{% endif %}
+          {% if cancellation %}
+          <div class="scr-detail-row"><span class="scr-detail-label">Cancel Reason</span><span class="scr-detail-value scr-mon-wrap">{{ cancellation.reason }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Cancelled By</span><span class="scr-detail-value">{% if cancellation.from_tablet %}Asked by {{ cancellation.requested_by|default:"—" }} on the tablet · approved by {{ cancellation.decided_by|default:"—" }} ({{ cancellation.channel }}){% else %}{{ cancellation.decided_by|default:"—" }} on the web{% endif %} · <a href="{{ cancellation.url }}">request</a></span></div>
+          {% endif %}
           <div class="scr-detail-row"><span class="scr-detail-label">Vehicles Out</span><span class="scr-detail-value">{{ items_out }}</span></div>
         </div>
       </div>
@@ -181,4 +187,33 @@
     </div>
   </div>
 </div>
+{% if can_cancel %}
+{% comment %}
+Cancel this running order straight from here, with a reason -- recorded as a
+cancel request asked and approved by you on the web (requests.cancel_directly).
+{% endcomment %}
+<div class="scr-modal-veil" data-scr-modal-veil="order-cancel" hidden></div>
+<div class="scr-modal" data-scr-modal="order-cancel" hidden>
+  <div class="scr-modal-head">
+    <div>
+      <div class="scr-modal-title">Cancel order {{ order.order_no }}?</div>
+      <p class="scr-modal-sub">The order and its vehicles still out are cancelled now; the vehicles can be rented again at once. This cannot be undone. Money already taken stays recorded -- a refund can be added from the tablet.</p>
+    </div>
+    <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+    </button>
+  </div>
+  <div class="scr-modal-body">
+    <div class="scr-field">
+      <label class="scr-label" for="order-cancel-reason">Reason<span class="scr-required">*</span></label>
+      <textarea id="order-cancel-reason" class="scr-input scr-textarea" rows="3" maxlength="500" data-cancel-reason></textarea>
+    </div>
+  </div>
+  <div class="scr-modal-foot" style="justify-content:flex-end">
+    <button type="button" class="scr-btn-secondary" data-scr-modal-close>Keep order</button>
+    <button type="button" class="scr-btn-danger" data-cancel-go>Cancel order</button>
+  </div>
+</div>
+{% include "byky/partials/message_modal.html" %}
+{% endif %}
 {% endblock %}

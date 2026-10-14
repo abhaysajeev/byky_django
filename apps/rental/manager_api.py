@@ -558,13 +558,13 @@ class PendingCountsView(_ManagerView):
         tags=["Manager Requests"],
         summary="How many of each kind wait for a decision",
         description="For the app's badges: pending order requests by kind (`discount`, `complimentary`, "
-                    "`reprint`), credit-note requests and card-discount requests, and their `total` -- across "
-                    "your company, or one state (`state_id`) or station (`branch_id`).",
+                    "`reprint`, `cancel`), credit-note requests and card-discount requests, and their `total` "
+                    "-- across your company, or one state (`state_id`) or station (`branch_id`).",
         request=envelope_request("ManagerPendingCountsEnvelope", ManagerPendingCountsRequest,
                                  request_data_required=False),
         responses=envelope_responses(
-            (200, "ok", "Pending.", {"discount": 2, "complimentary": 0, "reprint": 1, "credit_note": 1,
-                                     "card_discount": 3, "total": 7}),
+            (200, "ok", "Pending.", {"discount": 2, "complimentary": 0, "reprint": 1, "cancel": 1,
+                                     "credit_note": 1, "card_discount": 3, "total": 8}),
             (400, "invalid_request", "state_id must be a whole number.",
              {"errors": {"state_id": "must be a whole number"}}),
             *_COMMON,

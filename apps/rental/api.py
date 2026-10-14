@@ -1456,7 +1456,7 @@ _REQUEST_AMOUNT_SAMPLE = {
 
 _REQUEST_RULES = """
 **Requests** -- the operator asks a manager about an order; the manager
-decides on the web or in the manager app. Three kinds:
+decides on the web or in the manager app. Four kinds:
 
 - **`discount`** -- a **running** order. It carries no amount: the bill is not
   made yet. The manager approves a **rule** -- `discount_type` `percent`
@@ -1469,6 +1469,15 @@ decides on the web or in the manager app. Three kinds:
   `approved`, the tablet may print it **once** and then reports it with
   `orders/requests/used`, which makes it `used`. Another reprint needs a new
   request. A reprint is approved or rejected, never revoked.
+- **`cancel`** -- a **running** order cancelled whole, for an operator's
+  mistake (wrong vehicle, wrong booking). `reason` is **required**. Approved
+  (no value), the order and its vehicles still out become `cancelled` at once
+  -- the vehicles can be rented again -- other requests still waiting on it
+  are `closed`, and a card discount on it is cancelled. **Final:** never
+  revoked. While a cancel waits, returns and changes go on, but
+  `orders/settle` is refused (`cancel_requested`). Money already taken stays
+  recorded; a refund may be added with `orders/payments` (`kind` `refund`).
+  A cancel can also be made straight on the web, without a request.
 
 A discount or complimentary approval can be **revoked** while the order runs;
 the server checks the settle against the approval, and an order with one
@@ -1476,7 +1485,7 @@ the server checks the settle against the approval, and an order with one
 
 `status`: `pending` · `approved` · `rejected` (see `decision_note`) ·
 `withdrawn` (the tablet took it back) · `closed` (still pending when the order
-settled) · `revoked` (approved, then taken back -- see `revoke_note`) · `used`
+settled or was cancelled) · `revoked` (approved, then taken back -- see `revoke_note`) · `used`
 (a reprint, printed -- `used_at`). `decided_channel` / `revoked_channel`: `web`
 or `manager`. One pending or approved request per order and kind; after
 rejected, withdrawn, revoked or used the order may be asked again. A manager
