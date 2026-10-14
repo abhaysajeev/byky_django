@@ -328,3 +328,6 @@ LOG_INGEST_KEY = os.environ.get("LOG_INGEST_KEY", "")
 LOG_INGEST_QUEUE_SIZE = 5_000           # rows waiting to be sent before new ones are dropped
 LOG_INGEST_BATCH_BYTES = 4 * 1024 * 1024  # under the log server's 8 MB body limit
 LOG_INGEST_TIMEOUT = 5                  # seconds per POST
+# Which copy sends the logs (qa / dev, docs/deployments.md): carried in every
+# log as log.environment, for the log viewer's qa | dev switch. Empty = not sent.
+LOG_ENVIRONMENT = os.environ.get("LOG_ENVIRONMENT", "")

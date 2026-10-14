@@ -6,6 +6,13 @@
 # port. deploy/nginx/qa.conf says why -- gunicorn's sync workers must not be
 # left waiting on browser connections.
 #
+# Two copies run from this file on the same VPS (docs/deployments.md): `qa`
+# (testers, old app builds, ~/byky_django, project byky_f_qa, port 8007) and
+# `dev` (the dev team, ~/byky_django_dev, project byky_f_dev, port 8008). Each
+# folder's .env picks its port (APP_PORT), workers (GUNICORN_WORKERS) and log
+# environment; volumes are prefixed by the project name, so the two never share
+# a database. Every default below is qa's.
+#
 # Run it with an explicit project name -- do NOT rely on the directory name.
 # This host already has a compose project called "byky_rms" (a different,
 # earlier BYKY project, still running on port 8004) -- an accidental name
@@ -48,7 +55,7 @@ services:
       context: .
       args:
         REQUIREMENTS: requirements/base.txt
-    command: gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3 --access-logfile - --error-logfile -
+    command: gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-3} --access-logfile - --error-logfile -
     environment:
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?set a real, freshly generated key in .env}
       DJANGO_DEBUG: "False"
@@ -66,6 +73,8 @@ services:
       # log-ingestion project). Empty = not sent. apps/monitoring/shipper.py.
       LOG_INGEST_URL: ${LOG_INGEST_URL:-}
       LOG_INGEST_KEY: ${LOG_INGEST_KEY:-}
+      # Which copy sent a log (qa / dev): the log viewer's qa | dev switch.
+      LOG_ENVIRONMENT: ${LOG_ENVIRONMENT:-}
       POSTGRES_DB: ${POSTGRES_DB:-byky_qa}
       POSTGRES_USER: ${POSTGRES_USER:-byky_qa}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set a real password in .env}
@@ -92,9 +101,10 @@ services:
     volumes:
       - ./deploy/nginx/qa.conf:/etc/nginx/conf.d/default.conf:ro
     ports:
-      # The address testers and tablets already use (http://<VPS IP>:8007).
+      # qa: the address testers and tablets already use (http://<VPS IP>:8007).
+      # dev sets APP_PORT=8008 in its .env.
       # A published port bypasses ufw, as the web port did before.
-      - "8007:80"
+      - "${APP_PORT:-8007}:80"
     depends_on:
       web:
         condition: service_healthy

@@ -62,6 +62,17 @@ def test_a_device_call_reaches_the_log_server_as_one_document(client, world, log
     assert "request_body" not in record and "response_body" not in record
 
 
+def test_each_log_says_which_copy_sent_it(client, world, log_server, inline, settings):
+    """Two copies (qa, dev) share one log viewer: its qa | dev switch reads this."""
+    settings.LOG_ENVIRONMENT = "dev"
+    login(client)
+    settings.LOG_ENVIRONMENT = ""
+    login(client)
+
+    environments = [d["log"]["environment"] for batch in log_server for d in batch["logs"]]
+    assert environments == ["dev", None]
+
+
 def test_a_signed_in_call_carries_the_station_and_company_names(client, world, token, log_server, inline):
     monitoring.call(client, monitoring.FARES, {"date": "2026-09-30"}, token=token)
 

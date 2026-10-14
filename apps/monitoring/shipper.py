@@ -165,10 +165,13 @@ def _body(text):
 
 def document(fields, names):
     """One log for the log server: the device as `device_id`, the request body
-    as `form_data`, everything else (response included) under `log`."""
+    as `form_data`, everything else (response included) under `log` -- with
+    `environment`, the copy that sent it (qa / dev; None when unset), so one
+    viewer can tell the two deployments on the VPS apart."""
     record = {k: v for k, v in fields.items() if k not in ("request_body", "response_body")}
     record.update(names)
     record["response"] = _body(fields["response_body"])
+    record["environment"] = settings.LOG_ENVIRONMENT or None
     return {
         "device_id": fields["installation_id"] or (f"ip:{fields['ip']}" if fields["ip"] else "unknown"),
         "form_data": _body(fields["request_body"]),

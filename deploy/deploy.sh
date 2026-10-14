@@ -4,7 +4,12 @@
 # user (in the docker group, no sudo); .github/workflows/deploy.yml calls it
 # after checking out the commit being deployed. Also safe to run by hand:
 #
-#   cd ~/byky_django && ./deploy/deploy.sh
+#   cd ~/byky_django && ./deploy/deploy.sh          # qa
+#   cd ~/byky_django_dev && ./deploy/deploy.sh      # dev
+#
+# Which copy it deploys comes from that folder's .env (docs/deployments.md):
+# COMPOSE_PROJECT, APP_PORT and BACKUP_DIR. Each defaults to qa's value, so a
+# .env without them deploys qa exactly as before.
 #
 # Exits non-zero -- and so turns the GitHub run red -- if the backup or the
 # health check fails.
@@ -12,15 +17,30 @@ set -euo pipefail
 
 COMMIT="${1:-$(git rev-parse HEAD)}"
 SHORT="${COMMIT:0:7}"
-COMPOSE=(docker compose -f docker-compose.qa.yml -p byky_f_qa)
-BACKUPS="$HOME/backups"
 KEEP=14
-HEALTH_URL="http://127.0.0.1:8007/healthz/"
 
 log() { printf '\n== %s\n' "$*"; }
 
 cd "$(dirname "$0")/.."
 [ -f .env ] || { echo ".env is missing in $(pwd) -- copy .env.qa.example and fill it in."; exit 1; }
+
+# One value from .env, or the default. Read as text, never sourced: .env holds
+# secrets and is not a shell script. Surrounding quotes are dropped.
+env_value() {
+    local value
+    # `|| true`: a key not in .env is normal (the default applies), not an error.
+    value="$(grep -E "^$1=" .env | tail -n 1 | cut -d= -f2- || true)"
+    value="${value%\"}"; value="${value#\"}"
+    value="${value%\'}"; value="${value#\'}"
+    printf '%s' "${value:-$2}"
+}
+
+PROJECT="$(env_value COMPOSE_PROJECT byky_f_qa)"
+APP_PORT="$(env_value APP_PORT 8007)"
+BACKUPS="$(env_value BACKUP_DIR "$HOME/backups")"
+COMPOSE=(docker compose -f docker-compose.qa.yml -p "$PROJECT")
+HEALTH_URL="http://127.0.0.1:${APP_PORT}/healthz/"
+log "Deploying $SHORT as $PROJECT on port $APP_PORT (backups in $BACKUPS)"
 
 # 1. Back up the database before anything changes: migrations run on start.
 mkdir -p "$BACKUPS"
@@ -51,7 +71,7 @@ log "Building and starting $SHORT"
 "${COMPOSE[@]}" up -d
 
 # 3. Wait for the app to answer -- through nginx (the `proxy` service owns
-#    port 8007), so this proves the whole path a browser takes.
+#    APP_PORT), so this proves the whole path a browser takes.
 log "Waiting for $HEALTH_URL"
 for _ in $(seq 1 45); do
     if curl -fsS --max-time 3 "$HEALTH_URL" >/dev/null 2>&1; then
