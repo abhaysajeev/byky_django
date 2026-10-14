@@ -1646,12 +1646,50 @@ class OrderRequestUsedView(_OperatorView):
 
 _REQUEST_LIST_DESCRIPTION = _REQUEST_RULES + """
 **This call** lists **this station's** requests -- every tablet's, newest
-first, 50 a page (`page`, from 1) -- for a Requests screen. Send
-`"pending": true` for only those waiting, `kind` for one kind, `from_date` /
-`to_date` (`YYYY-MM-DD`, company time, both included, either may be left out)
-for when they were asked. Each row is the
-same as in `orders/requests/status`, plus `customer_name`. Read-only.
+first, 50 a page (`page`, from 1) -- for a Requests screen. **Every kind sent
+for a decision is in the one list:** order requests (`discount`,
+`complimentary`, `reprint`), credit-note requests (`credit_note`) and card
+discounts sent for approval (`card_discount`). Send `"pending": true` for only
+those waiting, `kind` for one kind, `from_date` / `to_date` (`YYYY-MM-DD`,
+company time, both included, either may be left out) for when they were asked.
+
+Each row has the shape of `orders/requests/status`, plus `customer_name` and
+`details`. For an order request `details` is `null`. For the others,
+`request_sync_id` is the credit note's / the claim's own id, the request-only
+fields (`discount_type`, `revoked_*`, `applied_*`, `used_at`) are empty, and
+`details` carries what is theirs: a credit note's `credit_note_no` and issued
+`net_amount`; a card discount's card type, grade, number, % and amounts.
+`status` is each kind's own (a credit note can be `cancelled`, a card discount
+`redeemed`).
+
+Listing only. To follow one request, use its own status call --
+`orders/requests/status`, `orders/credit-notes/status`, or
+`card-discounts/approval/status`. Read-only.
 """
+
+
+_LIST_OTHER = {
+    "discount_type": None, "discount_value": None, "revoked_by": None, "revoked_channel": None,
+    "revoked_at": None, "revoke_note": "", "applied_amount": None, "applied_at": None, "used_at": None,
+    "customer_name": "Ahmed Al Mansoori",
+}
+_LIST_CREDIT_NOTE_SAMPLE = {
+    "request_sync_id": "01a1013d-fa97-7179-93ae-3ae25842f1ce", "order_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9",
+    "order_no": "ADC1019000231", "kind": "credit_note", "status": "approved",
+    "reason": "Chain broke after 10 minutes", "requested_at": "2026-10-06 10:00:00",
+    "decided_by": "Sara K", "decided_channel": "manager", "decided_at": "2026-10-06 10:20:00",
+    "decision_note": "Half refunded", **_LIST_OTHER,
+    "details": {"credit_note_no": "ADC1019000231CN", "net_amount": "55.000"},
+}
+_LIST_CARD_DISCOUNT_SAMPLE = {
+    "request_sync_id": "01a1013d-fa97-7179-93ae-3ae25842f1cf", "order_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9",
+    "order_no": "ADC1019000231", "kind": "card_discount", "status": "pending", "reason": "",
+    "requested_at": "2026-10-02 16:50:00", "decided_by": None, "decided_channel": None, "decided_at": None,
+    "decision_note": "", **_LIST_OTHER,
+    "details": {"card_type": "Esaad", "card_grade": "Gold", "card_number": "ES-448812",
+                "discount_percent": "20.00", "bill_amount": "100.000", "discount_amount": "20.000",
+                "net_amount": "80.000"},
+}
 
 
 class OrderRequestListView(_OperatorView):
@@ -1659,15 +1697,18 @@ class OrderRequestListView(_OperatorView):
 
     @extend_schema(
         tags=["Operator Requests"],
-        summary="This station's requests, newest first",
+        summary="This station's requests of every kind, newest first",
         description=_REQUEST_LIST_DESCRIPTION,
         request=envelope_request("OrderRequestListEnvelope", OperatorRequestListRequest,
                                  request_data_required=False),
         responses=envelope_responses(
-            (200, "ok", "Requests.", {"requests": [{**_REQUEST_PENDING_SAMPLE, "customer_name": "Ahmed Al Mansoori"}],
-                                      "page": 1, "pages": 1, "total": 1}),
-            (400, "invalid_request", "kind must be one of: discount, complimentary, reprint.",
-             {"errors": {"kind": "must be one of: discount, complimentary, reprint"}}),
+            (200, "ok", "Requests.", {"requests": [
+                {**_REQUEST_PENDING_SAMPLE, "customer_name": "Ahmed Al Mansoori", "details": None},
+                _LIST_CREDIT_NOTE_SAMPLE, _LIST_CARD_DISCOUNT_SAMPLE,
+            ], "page": 1, "pages": 1, "total": 3}),
+            (400, "invalid_request", "kind must be one of: discount, complimentary, reprint, credit_note, "
+                                     "card_discount.",
+             {"errors": {"kind": "must be one of: discount, complimentary, reprint, credit_note, card_discount"}}),
             *_COMMON,
         ),
     )

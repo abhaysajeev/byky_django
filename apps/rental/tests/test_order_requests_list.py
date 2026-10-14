@@ -29,7 +29,7 @@ def test_the_station_lists_its_requests_newest_first(client, token, manager, boo
     assert (row["status"], row["customer_name"], row["order_no"]) == ("approved", "Ahmed Al Mansoori",
                                                                       booked["order_no"])
     assert (data["page"], data["pages"], data["total"]) == (1, 1, 1)
-    assert shape(row) == shape({**api._REQUEST_APPROVED_SAMPLE, "customer_name": ""})
+    assert shape(row) == shape({**api._REQUEST_APPROVED_SAMPLE, "customer_name": "", "details": None})
 
 
 def test_pending_and_kind_narrow_the_list(client, token, manager, booked):

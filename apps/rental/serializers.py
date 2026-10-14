@@ -463,14 +463,16 @@ class _RequestDatesMixin(serializers.Serializer):
 
 
 class OperatorRequestListRequest(_RequestDatesMixin):
-    """This station's requests: optionally only those waiting, one kind, or a
-    request-date range."""
+    """This station's requests of every kind -- order requests, credit-note
+    requests, card discounts sent for approval: optionally only those waiting,
+    one kind, or a request-date range."""
 
     pending = serializers.BooleanField(required=False, default=False,
                                        error_messages={"invalid": "must be true or false"})
     kind = serializers.ChoiceField(
-        choices=OrderRequestKind.choices, required=False, allow_blank=True,
-        error_messages={"invalid_choice": "must be one of: discount, complimentary, reprint"},
+        choices=[*OrderRequestKind.values, "credit_note", "card_discount"], required=False, allow_blank=True,
+        error_messages={"invalid_choice": "must be one of: discount, complimentary, reprint, credit_note, "
+                                          "card_discount"},
     )
     page = whole_number_field(min_value=1, required=False, default=1)
 

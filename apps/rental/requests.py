@@ -248,20 +248,118 @@ def _requested_between(rows, zone, from_date=None, to_date=None):
     return rows
 
 
+# The operator's Requests screen lists everything the station sent for a
+# decision, in one list: order requests, credit-note requests, and card
+# discounts that needed approval. Listing only -- each kind's own status call
+# (orders/requests/status, orders/credit-notes/status,
+# card-discounts/approval/status) stays the way to follow one.
+CREDIT_NOTE, CARD_DISCOUNT = "credit_note", "card_discount"
+LIST_KINDS = (*OrderRequestKind.values, CREDIT_NOTE, CARD_DISCOUNT)
+
+
+def _station_sources(branch, kind):
+    """(source, queryset) for each kind of request the list may show."""
+    from apps.rental.models import CreditNote, CreditNoteSource
+
+    sources = []
+    if kind is None or kind in OrderRequestKind.values:
+        requests = OrderRequest.objects.filter(branch=branch)
+        sources.append(("request", requests.filter(kind=kind) if kind else requests))
+    if kind in (None, CREDIT_NOTE):
+        # Only what a tablet asked for; one issued straight from the web was
+        # never sent for a decision.
+        sources.append((CREDIT_NOTE, CreditNote.objects.filter(branch=branch, source=CreditNoteSource.DEVICE)))
+    if kind in (None, CARD_DISCOUNT):
+        # Only claims that went to someone for approval.
+        sources.append((CARD_DISCOUNT, CardDiscountClaim.objects.filter(branch=branch, requires_approval=True)))
+    return sources
+
+
+_PENDING = {"request": OrderRequestStatus.PENDING, CREDIT_NOTE: "pending", CARD_DISCOUNT: ClaimStatus.PENDING}
+
+
 def station_list(branch, *, pending_only=False, kind=None, from_date=None, to_date=None, page=1):
-    """(rows, page) of one station's requests, newest first -- the operator
-    app's Requests screen. Each row is the tablet's view plus the customer."""
+    """(rows, page) of one station's requests of every kind, newest first --
+    the operator app's Requests screen. Sorted and paged together in the
+    database (one UNION of id, time and source), then each page's rows loaded
+    from their own table."""
+    from django.db.models import CharField, Value
+
     zone = zone_for(branch.company)
-    rows = _requested_between(
-        OrderRequest.objects.filter(branch=branch).select_related("order", "decided_by", "revoked_by")
-        .order_by("-requested_at"), zone, from_date, to_date)
-    if pending_only:
-        rows = rows.filter(status=OrderRequestStatus.PENDING)
-    if kind:
-        rows = rows.filter(kind=kind)
-    page = Paginator(rows, PAGE_SIZE).get_page(page)
-    return [{**request_json(req, zone), "customer_name": req.order.customer_name}
-            for req in page.object_list], page
+    keyed = []
+    for source, rows in _station_sources(branch, kind):
+        rows = _requested_between(rows, zone, from_date, to_date)
+        if pending_only:
+            rows = rows.filter(status=_PENDING[source])
+        keyed.append(rows.annotate(list_source=Value(source, output_field=CharField()))
+                     .values_list("pk", "requested_at", "list_source").order_by())
+    union = keyed[0].union(*keyed[1:], all=True).order_by("-requested_at", "-pk") if len(keyed) > 1 \
+        else keyed[0].order_by("-requested_at", "-pk")
+    page = Paginator(union, PAGE_SIZE).get_page(page)
+    return _station_rows(list(page.object_list), zone), page
+
+
+def _station_rows(keys, zone):
+    from apps.rental.models import CreditNote
+
+    wanted = {}
+    for pk, _, source in keys:
+        wanted.setdefault(source, []).append(pk)
+    loaded = {}
+    if "request" in wanted:
+        for req in (OrderRequest.objects.filter(pk__in=wanted["request"])
+                    .select_related("order", "decided_by", "revoked_by")):
+            loaded[("request", req.pk)] = {**request_json(req, zone), "customer_name": req.order.customer_name,
+                                           "details": None}
+    if CREDIT_NOTE in wanted:
+        for note in CreditNote.objects.filter(pk__in=wanted[CREDIT_NOTE]).select_related("order", "decided_by"):
+            loaded[(CREDIT_NOTE, note.pk)] = _credit_note_row(note, zone)
+    if CARD_DISCOUNT in wanted:
+        for claim in (CardDiscountClaim.objects.filter(pk__in=wanted[CARD_DISCOUNT])
+                      .select_related("order", "decided_by", "card_type", "card_grade")):
+            loaded[(CARD_DISCOUNT, claim.pk)] = _claim_row(claim, zone)
+    return [loaded[(source, pk)] for pk, _, source in keys]
+
+
+def _other_row(kind, pk, order, zone, *, status, reason, requested_at, decided_by, decided_channel, decided_at,
+               note, details):
+    """A credit note or card-discount request in the same row shape as an
+    order request: the request-only fields are empty, and `details` carries
+    what is its own."""
+    return {
+        "request_sync_id": str(pk), "order_id": str(order.pk), "order_no": order.order_no,
+        "kind": kind, "status": status, "reason": reason, "requested_at": _local(requested_at, zone),
+        "discount_type": None, "discount_value": None,
+        "decided_by": _name(decided_by), "decided_channel": decided_channel or None,
+        "decided_at": _local(decided_at, zone), "decision_note": note,
+        "revoked_by": None, "revoked_channel": None, "revoked_at": None, "revoke_note": "",
+        "applied_amount": None, "applied_at": None, "used_at": None,
+        "customer_name": order.customer_name,
+        "details": details,
+    }
+
+
+def _credit_note_row(note, zone):
+    approved = note.status == "approved"
+    return _other_row(
+        CREDIT_NOTE, note.pk, note.order, zone, status=note.status, reason=note.reason,
+        requested_at=note.requested_at, decided_by=note.decided_by, decided_channel=note.decided_channel,
+        decided_at=note.decided_at, note=note.decision_remark,
+        details={"credit_note_no": note.credit_note_no or None,
+                 "net_amount": str(note.net_amount) if approved else None},
+    )
+
+
+def _claim_row(claim, zone):
+    return _other_row(
+        CARD_DISCOUNT, claim.pk, claim.order, zone, status=claim.status, reason="",
+        requested_at=claim.requested_at, decided_by=claim.decided_by, decided_channel=claim.decided_channel,
+        decided_at=claim.decided_at, note=claim.remarks,
+        details={"card_type": claim.card_type.name, "card_grade": claim.card_grade.name,
+                 "card_number": claim.card_number, "discount_percent": str(claim.discount_percent),
+                 "bill_amount": _money(claim.bill_amount), "discount_amount": _money(claim.discount_amount),
+                 "net_amount": _money(claim.net_amount)},
+    )
 
 
 def requests_for_orders(company, order_ids):
