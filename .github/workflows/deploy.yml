@@ -1,6 +1,14 @@
-# Deploys main to the VPS. Started by hand: Actions -> Deploy -> Run workflow.
-# The server-side steps (backup, build, start, health check) are in
-# deploy/deploy.sh, versioned with the code.
+# Deploys to the VPS. Started by hand: Actions -> Deploy -> Run workflow, then
+# pick the target. Two copies run on the one VPS (docs/deployments.md):
+#
+#   qa   testers, older app builds   branch release/qa   ~/byky_django       port 8007
+#   dev  the dev team                branch main         ~/byky_django_dev   port 8008
+#
+# Run the workflow on the target's own branch ("Use workflow from"): a run on
+# any other branch is refused, so main can never land on qa or release/qa on
+# dev. The server-side steps (backup, build, start, health check) are in
+# deploy/deploy.sh, versioned with the code; each folder's .env says which copy
+# it is.
 #
 # Secrets live in the `vps` environment (repo Settings -> Environments):
 #   VPS_HOST         the server's address
@@ -12,8 +20,15 @@ name: Deploy
 
 on:
   workflow_dispatch:
+    inputs:
+      target:
+        description: "Which copy: qa (from release/qa) or dev (from main)"
+        type: choice
+        options: [qa, dev]
+        required: true
 
-# Never two deploys at once; a second one waits for the first.
+# Never two deploys at once, whichever copy: both build on the same 2-vCPU
+# host. A second one waits for the first.
 concurrency:
   group: deploy
   cancel-in-progress: false
@@ -23,13 +38,29 @@ permissions:
 
 jobs:
   deploy:
-    # Only main is ever deployed, whatever branch the button was pressed on.
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: vps
 
     steps:
+      - name: Pick the copy
+        id: target
+        env:
+          TARGET: ${{ inputs.target }}
+          REF: ${{ github.ref }}
+        run: |
+          case "$TARGET" in
+            qa)  branch=release/qa; folder=byky_django ;;
+            dev) branch=main;       folder=byky_django_dev ;;
+            *)   echo "Unknown target: $TARGET"; exit 1 ;;
+          esac
+          if [ "$REF" != "refs/heads/$branch" ]; then
+            echo "::error::$TARGET deploys only $branch -- this run is on ${REF#refs/heads/}. Re-run it with 'Use workflow from: $branch'."
+            exit 1
+          fi
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "folder=$folder" >> "$GITHUB_OUTPUT"
+
       - name: Set up the SSH key
         env:
           SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
@@ -40,14 +71,17 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
 
-      - name: Deploy ${{ github.sha }}
+      - name: Deploy ${{ inputs.target }} at ${{ github.sha }}
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
+          BRANCH: ${{ steps.target.outputs.branch }}
+          FOLDER: ${{ steps.target.outputs.folder }}
+          SHA: ${{ github.sha }}
         run: |
           ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             "$VPS_USER@$VPS_HOST" \
-            "cd ~/byky_django && git fetch --quiet origin main && git reset --hard ${{ github.sha }} && ./deploy/deploy.sh ${{ github.sha }}"
+            "cd ~/$FOLDER && git fetch --quiet origin $BRANCH && git reset --hard $SHA && ./deploy/deploy.sh $SHA"
 
       - name: Remove the key
         if: always()

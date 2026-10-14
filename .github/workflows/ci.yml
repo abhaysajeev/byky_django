@@ -1,11 +1,12 @@
-# Checks every pull request and every push to main. main is protected: a PR
-# merges only when both jobs below are green.
+# Checks every pull request and every push to main and release/qa (the two
+# deployed branches, docs/deployments.md). Both are protected: a PR merges only
+# when both jobs below are green.
 name: CI
 
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, release/qa]
 
 # A newer push to the same branch replaces a run still in progress.
 concurrency:
