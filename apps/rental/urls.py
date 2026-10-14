@@ -5,6 +5,7 @@ from apps.rental import views, writes
 urlpatterns = [
     path("order/list/", views.OrderListView.as_view(), name="rental-order-list"),
     path("order/<uuid:pk>/", views.OrderDetailView.as_view(), name="rental-order-detail"),
+    path("order/<uuid:pk>/cancel/", writes.OrderCancel.as_view(), name="rental-order-cancel"),
     path("invoice/list/", views.InvoiceListView.as_view(), name="rental-invoice-list"),
     path("invoice/<uuid:pk>/", views.InvoiceDetailView.as_view(), name="rental-invoice-detail"),
     path("invoice/<uuid:pk>/receipt/", views.InvoiceReceiptView.as_view(), name="rental-invoice-receipt"),

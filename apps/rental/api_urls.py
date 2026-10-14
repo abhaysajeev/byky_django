@@ -14,6 +14,7 @@ urlpatterns = [
     path("orders", api.OrderCreateView.as_view(), name="api-app-order-create"),
     path("orders/detail", api.OrderDetailView.as_view(), name="api-app-order-detail"),
     path("invoices/recent", api.InvoiceRecentView.as_view(), name="api-app-invoice-recent"),
+    path("invoices/detail", api.InvoiceDetailView.as_view(), name="api-app-invoice-detail"),
     path("orders/return", api.OrderReturnView.as_view(), name="api-app-order-return"),
     path("orders/settle", api.OrderSettleView.as_view(), name="api-app-order-settle"),
     path("orders/add", api.OrderAddView.as_view(), name="api-app-order-add"),

@@ -246,7 +246,7 @@ def test_the_manager_filters_by_kind(client, token, manager, settled):
 def test_the_web_approves_a_reprint_with_a_note(client_in, token, settled):
     request_id = asked(client_in, token, settled, kind="reprint")["request_sync_id"]
     page = client_in.get(f"/rental/request/{request_id}/").content.decode()
-    assert "Approve reprint" in page and "Discount as" not in page
+    assert "Approve invoice reprint" in page and "Discount as" not in page
 
     response = client_in.post(f"/rental/request/{request_id}/approve/", {"note": "Fine"},
                               content_type="application/json")
@@ -254,7 +254,7 @@ def test_the_web_approves_a_reprint_with_a_note(client_in, token, settled):
     assert response.json()["ok"], response.json()
     assert OrderRequest.objects.get().status == OrderRequestStatus.APPROVED
     listed = client_in.get("/rental/request/list/", {"tab": "approved", "kind": "reprint"}).context["rows"]
-    assert [r["rule"] for r in listed] == ["One print"]
+    assert [r["rule"] for r in listed] == ["Invoice"]
 
 
 def test_the_used_endpoint_is_in_the_api_docs(client, db):

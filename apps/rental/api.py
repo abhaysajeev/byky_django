@@ -36,6 +36,7 @@ from apps.rental.serializers import (
     CustomerBlockedRequest,
     CustomerCreateRequest,
     CustomerLookupRequest,
+    InvoiceDetailRequest,
     InvoiceRecentRequest,
     ManagerRequestApproveRequest,
     ManagerRequestDecisionRequest,
@@ -700,6 +701,51 @@ class InvoiceRecentView(_OperatorView):
         return envelope("ok", "Recent invoices.", {"invoices": invoices})
 
 
+_INVOICE_DETAIL_DESCRIPTION = """
+One invoice of this station, whole -- the same shape as each entry of
+`invoices/recent`: number and time, the order, the customer, every vehicle
+line, subtotal, discount, VAT, rounding, net and the payments. For printing an
+invoice again after an approved **`reprint`** (then report it with
+`orders/requests/used`), or for a tablet that lost its own copy.
+
+Send **exactly one** of `order_id` (the order the invoice bills) or
+`invoice_no` (the same as the order number). An order not settled yet has no
+invoice; an invoice at another station is answered the same:
+`unknown_invoice`.
+"""
+
+
+class InvoiceDetailView(_OperatorView):
+    """POST /api/v1/{app}/invoices/detail -- operator app only."""
+
+    @extend_schema(
+        tags=["Operator Invoices"],
+        summary="One invoice, by its order or its number",
+        description=_INVOICE_DETAIL_DESCRIPTION,
+        request=envelope_request("InvoiceDetailEnvelope", InvoiceDetailRequest),
+        responses=envelope_responses(
+            (200, "ok", "Invoice.", _INVOICE_SAMPLE),
+            (400, "invalid_request", "order_id or invoice_no is required.",
+             {"errors": {"order_id": "or invoice_no is required"}}),
+            *_error_rows("unknown_invoice"),
+            *_COMMON,
+        ),
+    )
+    def post(self, request, app):
+        branch, refused = self.station(request, app)
+        if refused:
+            return refused
+        _, request_data = request_parts(request)
+        form = InvoiceDetailRequest(data=request_data)
+        form.is_valid(raise_exception=True)
+        values = form.validated_data
+        invoice = services.invoice_at_station(branch, order_id=values.get("order_id"),
+                                              invoice_no=values.get("invoice_no"))
+        if invoice is None:
+            return _refused(services.OrderRefused("unknown_invoice"))
+        return envelope("ok", "Invoice.", invoice_json(invoice, zone_for(branch.company)))
+
+
 _BLOCKED_DESCRIPTION = """
 Your company's **blocked customers**, most recently blocked first, 50 a page
 (`page`, from 1). Each is the customer's full record, as `customers/lookup`
@@ -817,7 +863,7 @@ _SETTLE_ERRORS = (
     "balance_not_settled", "unknown_card_claim", "card_claim_not_approved", "unknown_card_discount",
     "unknown_discount_request", "discount_request_not_approved", "discount_mismatch",
     "approved_discount_not_applied", "unknown_complimentary_request", "complimentary_request_not_approved",
-    "approved_complimentary_not_applied", "unknown_payment_mode", "payment_id_used",
+    "approved_complimentary_not_applied", "unknown_payment_mode", "payment_id_used", "cancel_requested",
 )
 
 _SETTLE_DESCRIPTION = """
@@ -1456,7 +1502,7 @@ _REQUEST_AMOUNT_SAMPLE = {
 
 _REQUEST_RULES = """
 **Requests** -- the operator asks a manager about an order; the manager
-decides on the web or in the manager app. Three kinds:
+decides on the web or in the manager app. Five kinds:
 
 - **`discount`** -- a **running** order. It carries no amount: the bill is not
   made yet. The manager approves a **rule** -- `discount_type` `percent`
@@ -1465,10 +1511,25 @@ decides on the web or in the manager app. Three kinds:
 - **`complimentary`** -- a **running** order, the whole bill free. Approved
   with no value. The tablet settles it in `complimentary` (net 0, any advance
   refunded).
-- **`reprint`** -- a **settled** order: one more print of its bill. Once
-  `approved`, the tablet may print it **once** and then reports it with
-  `orders/requests/used`, which makes it `used`. Another reprint needs a new
-  request. A reprint is approved or rejected, never revoked.
+- **`reprint`** -- a **settled** order: one more print of its **invoice**. Once
+  `approved`, the tablet may print it **once** (`invoices/detail` gives it the
+  invoice) and then reports it with `orders/requests/used`, which makes it
+  `used`. Another reprint needs a new request. Approved or rejected, never
+  revoked.
+- **`order_reprint`** -- one more print of the **order receipt** printed at
+  booking: on a **running or settled** order, not a cancelled one
+  (`order_closed`). Same as `reprint` otherwise -- printed once (from
+  `orders/detail`), then `orders/requests/used`; never revoked. A `reprint` and
+  an `order_reprint` may wait on the same order at once.
+- **`cancel`** -- a **running** order cancelled whole, for an operator's
+  mistake (wrong vehicle, wrong booking). `reason` is **required**. Approved
+  (no value), the order and its vehicles still out become `cancelled` at once
+  -- the vehicles can be rented again -- other requests still waiting on it
+  are `closed`, and a card discount on it is cancelled. **Final:** never
+  revoked. While a cancel waits, returns and changes go on, but
+  `orders/settle` is refused (`cancel_requested`). Money already taken stays
+  recorded; a refund may be added with `orders/payments` (`kind` `refund`).
+  A cancel can also be made straight on the web, without a request.
 
 A discount or complimentary approval can be **revoked** while the order runs;
 the server checks the settle against the approval, and an order with one
@@ -1476,7 +1537,7 @@ the server checks the settle against the approval, and an order with one
 
 `status`: `pending` · `approved` · `rejected` (see `decision_note`) ·
 `withdrawn` (the tablet took it back) · `closed` (still pending when the order
-settled) · `revoked` (approved, then taken back -- see `revoke_note`) · `used`
+settled or was cancelled) · `revoked` (approved, then taken back -- see `revoke_note`) · `used`
 (a reprint, printed -- `used_at`). `decided_channel` / `revoked_channel`: `web`
 or `manager`. One pending or approved request per order and kind; after
 rejected, withdrawn, revoked or used the order may be asked again. A manager
@@ -1489,7 +1550,7 @@ _REQUEST_CREATE_ERRORS = (
     "order_not_synced", "sync_id_conflict", "order_closed", "order_not_settled",
     "discount_request_pending", "discount_approved", "complimentary_request_pending", "complimentary_approved",
     "reprint_request_pending", "reprint_approved", "discount_requested", "complimentary_requested",
-    "card_discount_requested",
+    "card_discount_requested", "cancel_request_pending", "cancel_approved",
 )
 _REQUEST_USED_ERRORS = (
     "order_not_synced", "sync_id_conflict", "unknown_request", "request_not_approved", "request_used",
@@ -1507,8 +1568,9 @@ or cancelled order is `order_closed`; a reprint of an order not settled is
 """ + _error_table(*_REQUEST_CREATE_ERRORS)
 
 _REQUEST_USED_DESCRIPTION = _REQUEST_RULES + """
-**This call** reports that the bill was printed under an approved **reprint**:
-the request becomes `used` and the approval is spent. `sync_id` is this call's
+**This call** reports that the document was printed under an approved
+**`reprint`** (the invoice) or **`order_reprint`** (the order receipt): the
+request becomes `used` and the approval is spent. `sync_id` is this call's
 own UUIDv7; `request_sync_id` the reprint request's; `used_at` the tablet's
 time. Before approval it is `request_not_approved`; a second report is
 `request_used`. Any tablet at the order's station may report.
@@ -1541,8 +1603,11 @@ class OrderRequestView(_OperatorView):
         responses=envelope_responses(
             (200, "ok", "Request sent.", _REQUEST_PENDING_SAMPLE),
             (200, "duplicate", "Already recorded.", _REQUEST_PENDING_SAMPLE),
-            (400, "invalid_request", "kind must be one of: discount, complimentary, reprint.",
-             {"errors": {"kind": "must be one of: discount, complimentary, reprint"}}),
+            (400, "invalid_request", "kind must be one of: discount, complimentary, reprint, order_reprint, "
+                                     "cancel.",
+             {"errors": {"kind": "must be one of: discount, complimentary, reprint, order_reprint, cancel"}}),
+            (400, "invalid_request", "reason is required for a cancel.",
+             {"errors": {"reason": "is required for a cancel"}}, "invalid_request (cancel without a reason)"),
             *_error_rows(*_REQUEST_CREATE_ERRORS),
             *parking.SCHEMA_ROWS,
             *_COMMON,
@@ -1759,9 +1824,10 @@ class OrderRequestListView(_OperatorView):
                 {**_REQUEST_PENDING_SAMPLE, "customer_name": "Ahmed Al Mansoori", "details": None},
                 _LIST_CREDIT_NOTE_SAMPLE, _LIST_CARD_DISCOUNT_SAMPLE,
             ], "page": 1, "pages": 1, "total": 3}),
-            (400, "invalid_request", "kind must be one of: discount, complimentary, reprint, credit_note, "
-                                     "card_discount.",
-             {"errors": {"kind": "must be one of: discount, complimentary, reprint, credit_note, card_discount"}}),
+            (400, "invalid_request", "kind must be one of: discount, complimentary, reprint, order_reprint, "
+                                     "cancel, credit_note, card_discount.",
+             {"errors": {"kind": "must be one of: discount, complimentary, reprint, order_reprint, cancel, "
+                                 "credit_note, card_discount"}}),
             *_COMMON,
         ),
     )
@@ -1845,14 +1911,61 @@ decision is recorded against you, with `decided_channel` / `revoked_channel`
 `request_decided`.
 """
 
+_MANAGER_OTHER = {
+    "discount_type": None, "discount_value": None, "revoked_by": None, "revoked_channel": None,
+    "revoked_at": None, "revoke_note": "", "applied_amount": None, "applied_at": None, "used_at": None,
+    "branch_id": 3, "station": "Abu Dhabi Corniche 1", "requested_by": "Rashed",
+}
+_MANAGER_CREDIT_NOTE_ROW = {
+    **_MANAGER_OTHER, "request_sync_id": "01a1013d-fa97-7179-93ae-3ae25842f1ce",
+    "order_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9", "order_no": "DUBPP60182000231", "kind": "credit_note",
+    "status": "pending", "reason": "Chain broke after 10 minutes", "requested_at": "2026-10-08 17:05:00",
+    "decided_by": None, "decided_channel": None, "decided_at": None, "decision_note": "",
+    "order": {**_MANAGER_SAMPLE["order"], "status": "completed", "net_amount": "110.000"},
+    "details": {"credit_note_no": None, "invoice_no": "DUBPP60182000231", "invoice_net_amount": "110.000",
+                "net_amount": None, "tax_amount": None},
+}
+_MANAGER_CARD_ROW = {
+    **_MANAGER_OTHER, "request_sync_id": "01a1013d-fa97-7179-93ae-3ae25842f1cf",
+    "order_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9", "order_no": "DUBPP60182000231",
+    "kind": "card_discount", "status": "pending", "reason": "", "requested_at": "2026-10-08 16:50:00",
+    "decided_by": None, "decided_channel": None, "decided_at": None, "decision_note": "",
+    "order": _MANAGER_SAMPLE["order"],
+    "details": {"card_type": "Esaad", "card_grade": "Gold", "card_number": "ES-448812",
+                "card_photo": "https://photos.example/esaad/448812.jpg", "discount_percent": "20.00",
+                "fare_basis": "base", "bill_amount": "100.000", "discount_amount": "20.000",
+                "net_amount": "80.000"},
+}
+
 _MANAGER_LIST_DESCRIPTION = _MANAGER_RULES + """
-**This call** lists requests, newest first, 50 a page (`page`, from 1). Send
-`"pending": true` for only those waiting, `kind` for one kind, `state_id` for
-one state's stations, `branch_id` for one station (with `state_id`, it must be
-in that state, else the list is empty), and `from_date` / `to_date` (`YYYY-MM-DD`, company time, both
-days included, either may be left out) for when they were asked. Each
-row carries the order: customer, advance paid so far, and every vehicle out or
-back with the minutes run so far (`minutes_run`; for one still out, up to now).
+**This call** lists **everything waiting for a manager, in one list** --
+newest first, 50 a page (`page`, from 1), sorted and paged together:
+
+| `kind` | What | Decide it with |
+|---|---|---|
+| `discount`, `complimentary`, `reprint`, `order_reprint`, `cancel` | order requests | `requests/approve` / `reject` (`revoke` for discount, complimentary) |
+| `credit_note` | a tablet's credit-note request | `credit-notes/approve` (with `net_amount`) / `reject` |
+| `card_discount` | a card discount that needs approval | `card-discounts/claims/approve` / `reject` |
+
+`request_sync_id` is the id that kind's call takes (`credit_note_id`,
+`claim_id` for the last two). Listing only -- nothing is decided here.
+
+Filters, all optional, for every kind together: `"pending": true` for only
+those waiting, `kind` for one kind, `state_id` for one state's stations,
+`branch_id` for one station (with `state_id`, it must be in that state, else
+the list is empty), and `from_date` / `to_date` (`YYYY-MM-DD`, company time,
+both days included, either may be left out) for when they were asked.
+
+Each row carries the order: customer, advance paid so far, and every vehicle
+out or back with the minutes run so far (`minutes_run`; for one still out, up
+to now) -- plus `details`, `null` for an order request (an invoice `reprint` carries its
+`invoice_no` and `invoice_net_amount`) and, for the others:
+a credit note's `credit_note_no`, `invoice_no`, `invoice_net_amount`, issued
+`net_amount` / `tax_amount`; a card discount's card type, grade, number,
+**`card_photo`** (the link to show before deciding), %, fare basis and the
+bill / discount / net amounts. Order-request-only fields (`discount_*`,
+`revoked_*`, `applied_*`, `used_at`) are empty for those two kinds. `status` is
+each kind's own (a credit note can be `cancelled`, a card discount `redeemed`).
 """
 
 _MANAGER_APPROVE_DESCRIPTION = _MANAGER_RULES + """
@@ -1923,7 +2036,9 @@ class ManagerRequestListView(_ManagerView):
         description=_MANAGER_LIST_DESCRIPTION,
         request=envelope_request("ManagerRequestListEnvelope", ManagerRequestListRequest),
         responses=envelope_responses(
-            (200, "ok", "Requests.", {"requests": [_MANAGER_SAMPLE], "page": 1, "pages": 1, "total": 1}),
+            (200, "ok", "Requests.", {"requests": [
+                {**_MANAGER_SAMPLE, "details": None}, _MANAGER_CREDIT_NOTE_ROW, _MANAGER_CARD_ROW,
+            ], "page": 1, "pages": 1, "total": 3}),
             (400, "invalid_request", "page must be 1 or more.", {"errors": {"page": "must be 1 or more"}}),
             *_MANAGER_COMMON,
         ),

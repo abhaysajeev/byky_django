@@ -254,6 +254,8 @@ SPECTACULAR_SETTINGS = {
     "ENUM_NAME_OVERRIDES": {
         "PaymentKindEnum": "apps.rental.models.PaymentKind",
         "OrderRequestKindEnum": "apps.rental.models.OrderRequestKind",
+        # The request lists' kinds: the order-request kinds + credit_note, card_discount.
+        "RequestListKindEnum": "apps.rental.requests.LIST_KINDS",
     },
 }
 

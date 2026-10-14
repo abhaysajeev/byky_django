@@ -25,6 +25,8 @@ from apps.rental.models import (
     OrderEvent,
     OrderItem,
     OrderItemStatus,
+    OrderRequestKind,
+    OrderRequestStatus,
     OrderStatus,
     Payment,
     PaymentKind,
@@ -153,6 +155,14 @@ ORDER_ERRORS = {
     "discount_requested": (409, "This order already has a manager discount request.", False),
     "reprint_request_pending": (409, "A reprint request is already waiting for this order.", False),
     "reprint_approved": (409, "A reprint is already approved for this order -- print it first.", False),
+    "order_reprint_request_pending": (409, "An order receipt reprint is already waiting for this order.", False),
+    "order_reprint_approved": (409, "An order receipt reprint is already approved for this order -- print it "
+                                    "first.", False),
+    "unknown_invoice": (404, "No invoice for that order or number at this station.", False),
+    "cancel_request_pending": (409, "A cancel request is already waiting for this order.", False),
+    "cancel_approved": (409, "This order's cancel is already approved.", False),
+    "cancel_requested": (409, "A cancel request is waiting for a manager's decision -- the order cannot be "
+                              "settled until it is decided.", False),
     "request_not_approved": (409, "That request is not approved.", False),
     "request_used": (409, "That reprint has already been printed.", False),
     "unknown_complimentary_request": (404, "That complimentary request is not on this order.", False),
@@ -285,6 +295,13 @@ def recent_invoices(branch, limit=RECENT_INVOICES):
     they were issued (the settle time on the tablet), so one uploaded late from
     offline sits where it happened, not where it arrived."""
     return list(_invoices().filter(branch=branch).order_by("-issued_at", "-created_on")[:limit])
+
+
+def invoice_at_station(branch, *, order_id=None, invoice_no=None):
+    """One invoice of `branch`, by its order or its number -- None if there is
+    none here (not settled yet, another station's, or no such)."""
+    invoices = _invoices().filter(branch=branch)
+    return (invoices.filter(order_id=order_id) if order_id else invoices.filter(invoice_no=invoice_no)).first()
 
 
 def customer_invoices(customer, limit=RECENT_INVOICES):
@@ -673,6 +690,9 @@ def settle_order(session, values, request_data, reply_for):
 
     def apply():
         order = _open_order(session, values["order_id"])
+        # A cancel waiting for a manager: the order is not billed meanwhile.
+        if order.requests.filter(kind=OrderRequestKind.CANCEL, status=OrderRequestStatus.PENDING).exists():
+            raise OrderRefused("cancel_requested")
         items = list(order.items.select_related("vehicle__vehicle_type"))
         if any(item.status == OrderItemStatus.ACTIVE for item in items):
             raise OrderRefused("items_still_out")
