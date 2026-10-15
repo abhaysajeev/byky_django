@@ -28,10 +28,22 @@ class AttendanceMethod(models.TextChoices):
     NOT_REQUIRED = "not_required", "Not required"
 
 
+class TeamScope(models.TextChoices):
+    """Whose attendance a designation sees in Team Attendance (15 Oct 2026).
+    The manager app always sees the whole company; in the employee app this
+    decides -- a Supervisor or PRO sees the branches they are a Branch
+    Supervisor of (company.BranchApprovalAuthority)."""
+
+    COMPANY = "company", "Whole company"
+    BRANCHES = "branches", "Assigned branches"
+    OWN = "own", "Own only"
+
+
 class AttendanceSource(models.TextChoices):
     """Which app recorded a punch -- never sent, it follows the channel: the
-    operator (RMS) app scans an employee's QR code, the manager app marks its
-    own user's attendance."""
+    operator (RMS) app scans an employee's QR code; the manager app, and the
+    employee app for staff whose attendance method is Self, mark the
+    signed-in user's own."""
 
     QR_SCAN = "qr_scan", "QR scanned"
     SELF = "self", "Self attendance"
@@ -101,6 +113,8 @@ class Designation(ApprovalMixin, TimeStampedModel):
     attendance_method = models.CharField(
         max_length=20, choices=AttendanceMethod.choices, default=AttendanceMethod.QR_STATION
     )
+    # Whose attendance this job sees in the employee app's Team Attendance.
+    team_scope = models.CharField(max_length=16, choices=TeamScope.choices, default=TeamScope.OWN)
 
     class Meta:
         db_table = "designation"
@@ -329,9 +343,10 @@ class Attendance(TimeStampedModel):
       roster; the operator (RMS) app scans it and posts. The `employee_*`
       fields are what the QR code carried, the `rms_*` fields the scanning
       side. QR generation is the apps' business, not the server's.
-    * **self** -- the manager app's own "mark attendance" button. The
-      `employee_*` fields are the manager; the RMS side has only the phone's
-      installation id, clock and GPS.
+    * **self** -- the manager app's own "mark attendance" button, or the
+      employee app's for staff whose attendance method is Self (Supervisors,
+      PROs). The `employee_*` fields are that person; the RMS side has only
+      the phone's installation id, clock and GPS -- no station.
 
     `id` is the app's `sync_id`, a UUIDv7 made on the device and resent
     unchanged on retry, so an offline punch that is sent twice is stored once.

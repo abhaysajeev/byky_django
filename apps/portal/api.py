@@ -170,7 +170,7 @@ def _manager_login(request, form):
     employee = user.employee
     data = {
         "tokens": _issue_tokens(user, session),
-        "employee": crew_services.employee_profile(employee),
+        "employee": crew_services.employee_profile(employee, Channel.MANAGER),
     }
     return envelope("ok", f"Welcome, {employee.full_name}.", data)
 
@@ -193,6 +193,7 @@ _EMPLOYEE_LOGIN_SUCCESS_DATA = {
         "middle_name": "", "last_name": "USER", "designation": "Cashier", "role": "Cashier",
         "branch_id": None, "branch": None, "mobile": "", "email": "", "photo_url": None,
         "company": "BY KY SPORT & LEISURE EQUIPMENT RENTAL & TRADING LLC",
+        "attendance_method": "qr_station", "team_scope": "own",
     },
     "roster": {
         "week_start": "2026-09-20", "week_end": "2026-09-26",
@@ -234,6 +235,7 @@ _MANAGER_LOGIN_SUCCESS_DATA = {
         "middle_name": "", "last_name": "K", "designation": "Manager", "role": None,
         "branch_id": None, "branch": None, "mobile": "0500000000", "email": "meera@byky.test", "photo_url": None,
         "company": "BY KY SPORT & LEISURE EQUIPMENT RENTAL & TRADING LLC",
+        "attendance_method": "self", "team_scope": "company",
     },
 }
 
@@ -262,6 +264,12 @@ class LoginView(PublicAPIView):
             "branch, null when none). See the success examples below for "
             "the different response shapes. Operator's `branch.branch_id` is the "
             "station's id in the database -- use it when building the station QR code. "
+            "`employee.attendance_method` (employee app) picks the attendance button: "
+            "`qr_station` shows the QR code, `self` Mark / Close attendance, `not_required` "
+            "neither. `employee.team_scope` is `company`, `branches` or `own`: Team "
+            "Attendance is offered unless `own`; the manager app is always `company`. "
+            "Both are read at login -- a change on the web reaches the app at its next "
+            "login (the server applies it at once). "
             "design/login/login-for-employee.md, design/login/login-for-operator.md."
         ),
         request=envelope_request("LoginEnvelope", LoginRequest),

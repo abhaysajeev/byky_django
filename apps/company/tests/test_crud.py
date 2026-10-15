@@ -398,6 +398,53 @@ def test_another_companys_employee_cannot_be_made_an_approver(client_in, world, 
     assert BranchApprovalAuthority.objects.filter(employee=theirs).count() == 0
 
 
+# --- branch supervisors ------------------------------------------------------
+# Supervisors and PROs who see the branch's Team Attendance. Only a designation
+# whose Team Scope is "Assigned branches" may be picked (15 Oct 2026).
+
+@pytest.fixture
+def supervisor(world):
+    from apps.crew.models import Designation, Employee, TeamScope
+
+    designation = Designation.objects.create(
+        company=world["company"], code="SUP", title="Supervisor", team_scope=TeamScope.BRANCHES,
+    )
+    return Employee.objects.create(
+        company=world["company"], employee_code="BYKY050",
+        first_name="Sara", last_name="M", designation=designation,
+    )
+
+
+def test_branch_supervisors_are_saved_listed_and_unpicked(client_in, world, supervisor):
+    from apps.company.models import AuthorityType, BranchApprovalAuthority
+
+    response = post(client_in, "/company/branch/save/", branch_payload(
+        world, branch_supervisors=[str(supervisor.pk)]))
+    assert response.status_code == 200, response.content
+    branch = Branch.objects.get(short_code="C1")
+    assert BranchApprovalAuthority.objects.get(branch=branch).authority_type == AuthorityType.BRANCH_SUPERVISOR
+
+    page = client_in.get("/company/branch/list/")
+    assert page.context["branches"][0]["fields_json"]["branch_supervisors"] == [supervisor.pk]
+    assert [row["id"] for row in page.context["supervisors_list"]] == [supervisor.pk]
+
+    post(client_in, "/company/branch/save/", branch_payload(world, pk=branch.pk, branch_supervisors=[]))
+    assert not BranchApprovalAuthority.objects.filter(branch=branch).exists()
+
+
+def test_only_assigned_branches_staff_can_be_branch_supervisors(client_in, world, supervisor, mechanic):
+    """The mechanic's designation is Own only: not offered, and dropped when
+    posted directly."""
+    from apps.company.models import BranchApprovalAuthority
+
+    post(client_in, "/company/branch/save/", branch_payload(
+        world, branch_supervisors=[mechanic.pk, supervisor.pk]))
+
+    assert list(BranchApprovalAuthority.objects.values_list("employee_id", flat=True)) == [supervisor.pk]
+    listed = client_in.get("/company/branch/list/").context["supervisors_list"]
+    assert mechanic.pk not in [row["id"] for row in listed]
+
+
 # -- Branch Code is unique per company, not globally (20 Sep 2026) -----------
 
 
