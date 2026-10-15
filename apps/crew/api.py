@@ -368,7 +368,7 @@ def _punch_json(row, zone):
 _TEAM_STATION = {"branch_id": 12, "code": "AUH01", "name": "Creek Park 1"}
 
 _TEAM_SESSION_ROW = {
-    "row_type": "session", "attendance_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9",
+    "date": "2026-10-15", "row_type": "session", "attendance_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9",
     "status": "checked_out", "missing_check_out": False,
     "employee": {"employee_code": "BYKY014", "name": "Anil Kumar", "designation": "Cashier"},
     "source": "qr_scan", "station": _TEAM_STATION, "emirate": {"state_id": 1, "name": "Abu Dhabi"},
@@ -377,7 +377,7 @@ _TEAM_SESSION_ROW = {
 }
 
 _TEAM_NOT_CHECKED_IN_ROW = {
-    "row_type": "not_checked_in", "attendance_id": None, "status": "not_checked_in", "missing_check_out": False,
+    "date": "2026-10-15", "row_type": "not_checked_in", "attendance_id": None, "status": "not_checked_in", "missing_check_out": False,
     "employee": {"employee_code": "BYKY031", "name": "Ravi S", "designation": "Labour"},
     "source": None, "station": None, "emirate": {"state_id": 1, "name": "Abu Dhabi"},
     "check_in": None, "check_out": None, "duration_minutes": None, "device_no": None,
@@ -386,7 +386,7 @@ _TEAM_NOT_CHECKED_IN_ROW = {
 }
 
 _TEAM_SAMPLE = {
-    "date": "2026-10-15", "scope": "branches",
+    "date": "2026-10-15", "from_date": "2026-10-15", "to_date": "2026-10-15", "scope": "branches",
     "branches": [{**_TEAM_STATION, "state_id": 1, "state": "Abu Dhabi"}],
     "counts": {"all": 2, "checked_in": 0, "checked_out": 1, "not_checked_in": 1},
     "rows": [_TEAM_SESSION_ROW, _TEAM_NOT_CHECKED_IN_ROW],
@@ -394,8 +394,8 @@ _TEAM_SAMPLE = {
 }
 
 _TEAM_DESCRIPTION = """
-Team Attendance for one day -- who checked in, who checked out, and who is
-rostered but has not checked in.
+Team Attendance for one day or a date range -- who checked in, who checked
+out, and who was rostered but did not check in.
 
 **Whose** -- the **manager** app sees the whole company. In the **employee**
 app the designation's **Team Scope** decides (the login reply's
@@ -406,14 +406,19 @@ app the designation's **Team Scope** decides (the login reply's
   screen). None assigned: an empty list and `branches: []`;
 * `own` -- refused `no_team_scope`.
 
-`request_data`, all optional: `date` (`YYYY-MM-DD`, today by default),
-`state_id` (emirate), `branch_id` (station), `status` (`all` | `checked_in` |
-`checked_out` | `not_checked_in`, default `all`), `search` (employee name or
-code), `page` (50 rows a page).
+`request_data`, all optional: **one day** -- `date` (`YYYY-MM-DD`, today by
+default) -- **or a range** -- `from_date` + `to_date` (both, at most 31 days;
+not with `date`); `state_id` (emirate), `branch_id` (station), `status` (`all`
+| `checked_in` | `checked_out` | `not_checked_in`, default `all`), `search`
+(employee name or code), `page` (50 rows a page).
 
-**Rows** -- one per session: a check-in made that day with its check-out, even
-when that fell the next day (a 17:00 to 01:00 shift stays on the day it
-started). Newest check-in first, then the not-checked-in rows by name. Each
+The reply's `from_date` / `to_date` are the days covered; `date` is that day
+for a one-day request and null for a range.
+
+**Rows** -- one per session: a check-in made on a day of the range with its
+check-out, even when that fell the next day (a 17:00 to 01:00 shift stays on
+the day it started). Every row has its `date`. Newest day first; within a
+day, newest check-in first, then that day's not-checked-in rows by name. Each
 row carries everything the detail screen shows -- there is no second call.
 
 * `status` -- `checked_in`, `checked_out` or `not_checked_in`. A check-in
@@ -430,11 +435,13 @@ row carries everything the detail screen shows -- there is no second call.
 * `duration_minutes` -- check-in to check-out; null while open.
 * `device_no` -- the registration number of the device that recorded the
   check-in (the station tablet, or the phone), null when not found.
-* **Not checked in** -- staff rostered **Working** that day (Duty Roster) at
-  a station in scope, with no check-in that day anywhere. The roster covers
+* **Not checked in** -- staff rostered **Working** on a day (Duty Roster) at
+  a station in scope, with no check-in that day anywhere -- one row per such
+  day. The roster covers
   cashier and labour only. `roster` gives the station and shift times.
 
-`counts` follow every filter but `status`, for the tabs. `branches` lists the
+`counts` cover the whole range and follow every filter but `status`, for
+the tabs. `branches` lists the
 stations in scope (active stations for the whole company), for the station and
 emirate pickers. Times are `YYYY-MM-DD HH:MM:SS`, company time.
 
@@ -488,17 +495,22 @@ class TeamAttendanceView(APIView):
         except services.AttendanceRefused as refusal:
             return envelope(refusal.code, refusal.message, http_status=refusal.status)
 
-        day = values.get("date") or business_date_for(company)
+        if "from_date" in values:
+            from_date, to_date = values["from_date"], values["to_date"]
+        else:
+            from_date = to_date = values.get("date") or business_date_for(company)
         rows, counts = services.team_attendance(
-            company, branch_ids, day, state_id=values.get("state_id"), branch_id=values.get("branch_id"),
-            status=values["status"], search=values.get("search", ""),
+            company, branch_ids, from_date, to_date, state_id=values.get("state_id"),
+            branch_id=values.get("branch_id"), status=values["status"], search=values.get("search", ""),
         )
         page = Paginator(rows, services.TEAM_PAGE_SIZE).get_page(values["page"])
         zone = zone_for(company)
         devices = _device_numbers(page.object_list)
         message = "No stations are assigned to you." if branch_ids == set() else "Team attendance."
         return envelope("ok", message, {
-            "date": day.isoformat(), "scope": scope,
+            # The one day asked for; null for a range (from_date / to_date say which).
+            "date": from_date.isoformat() if from_date == to_date else None,
+            "from_date": from_date.isoformat(), "to_date": to_date.isoformat(), "scope": scope,
             "branches": [
                 {"branch_id": b.pk, "code": b.short_code, "name": b.name,
                  "state_id": b.location.state_id, "state": b.location.state.name}
@@ -534,6 +546,7 @@ def _team_row_json(row, zone, devices):
     if punch_in is None:
         branch = roster.branch
         return {
+            "date": row["day"].isoformat(),
             "row_type": "not_checked_in", "attendance_id": None, "status": row["status"],
             "missing_check_out": False, "employee": person, "source": None, "station": None,
             "emirate": _emirate_json(branch), "check_in": None, "check_out": None, "duration_minutes": None,
@@ -549,6 +562,7 @@ def _team_row_json(row, zone, devices):
     station = punch_in.rms_branch if punch_in.rms_branch_id else None
     named = punch_in.employee_branch if punch_in.employee_branch_id else None
     return {
+        "date": row["day"].isoformat(),
         "row_type": "session", "attendance_id": str(punch_in.pk), "status": row["status"],
         "missing_check_out": row["missing_check_out"], "employee": person, "source": punch_in.source,
         "station": _station_json(station), "emirate": _emirate_json(station or named),

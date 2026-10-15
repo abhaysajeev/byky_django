@@ -109,7 +109,8 @@ def test_a_row_carries_every_detail(client, world, manager, day):
     till = Device.objects.get(installation_id="till-1")
 
     assert rows["EMP001"] == {
-        "row_type": "session", "attendance_id": rows["EMP001"]["attendance_id"], "status": "checked_out",
+        "date": "2026-08-29", "row_type": "session", "attendance_id": rows["EMP001"]["attendance_id"],
+        "status": "checked_out",
         "missing_check_out": False,
         "employee": {"employee_code": "EMP001", "name": "Anil K", "designation": "Cashier"},
         "source": "qr_scan", "station": {"branch_id": world["auh1"].pk, "code": "AUH01", "name": "Creek Park 1"},
@@ -253,3 +254,74 @@ def test_it_is_in_the_docs(client, world):
     schema = client.get("/api/schema/").content.decode()
 
     assert "/api/v1/{app}/attendance/team" in schema and "no_team_scope" in schema
+
+
+# -- A date range (from_date + to_date) --------------------------------------------------
+
+NEXT = DAY + datetime.timedelta(days=1)
+
+
+@pytest.fixture
+def two_days(client, world, operator, day):
+    """DAY as in `day`; on NEXT EMP003 checks in at AUH01 at 09:00, and
+    EMP002 is rostered at AUH01 but does not come."""
+    rostered(day["emp3"], world["auh1"], day=NEXT)
+    rostered(day["emp2"], world["auh1"], day=NEXT)
+    assert mark(client, operator, qr("punch_in", local(NEXT, 9), employee_code="EMP003")).json()["code"] == "ok"
+    return day
+
+
+def ranged(client, token, app="manager", **request_data):
+    """DAY to NEXT -- sent without `date`, which a range may not carry."""
+    body = call(client, TEAM.format(app), {"from_date": DAY.isoformat(), "to_date": NEXT.isoformat(),
+                                           **request_data}, token=token).json()
+    assert body["code"] == "ok", body
+    return body["data"]
+
+
+def test_a_range_lists_every_day_newest_first(client, manager, two_days):
+    data = ranged(client, manager)
+
+    assert [(r["date"], r["employee"]["employee_code"], r["status"]) for r in data["rows"]] == [
+        ("2026-08-30", "EMP003", "checked_in"), ("2026-08-30", "EMP002", "not_checked_in"),
+        ("2026-08-29", "EMP002", "checked_in"), ("2026-08-29", "EMP001", "checked_out"),
+        ("2026-08-29", "MGR001", "checked_in"), ("2026-08-29", "EMP003", "not_checked_in"),
+    ]
+    assert (data["date"], data["from_date"], data["to_date"]) == (None, "2026-08-29", "2026-08-30")
+    assert data["counts"] == {"all": 6, "checked_in": 3, "checked_out": 1, "not_checked_in": 2}
+
+
+def test_not_checked_in_is_decided_per_day(client, manager, two_days):
+    """EMP003 checked in on the 30th; that does not cover the 29th."""
+    rows = ranged(client, manager, status="not_checked_in")["rows"]
+
+    assert [(r["date"], r["employee"]["employee_code"]) for r in rows] == [
+        ("2026-08-30", "EMP002"), ("2026-08-29", "EMP003")]
+
+
+def test_a_range_keeps_the_supervisor_scope(client, world, supervisor, two_days):
+    rows = ranged(client, supervisor, "employee")["rows"]
+
+    assert [(r["date"], r["employee"]["employee_code"]) for r in rows] == [
+        ("2026-08-30", "EMP003"), ("2026-08-30", "EMP002"), ("2026-08-29", "EMP001"), ("2026-08-29", "EMP003")]
+
+
+def test_one_day_still_answers_as_before(client, manager, two_days):
+    data = listed(client, manager)
+
+    assert (data["date"], data["from_date"], data["to_date"]) == ("2026-08-29", "2026-08-29", "2026-08-29")
+    assert all(r["date"] == "2026-08-29" for r in data["rows"]) and data["total"] == 4
+
+
+@pytest.mark.parametrize("request_data, field", [
+    ({"date": "2026-08-29", "from_date": "2026-08-29", "to_date": "2026-08-30"}, "date"),
+    ({"from_date": "2026-08-29"}, "to_date"),
+    ({"to_date": "2026-08-29"}, "from_date"),
+    ({"from_date": "2026-08-30", "to_date": "2026-08-29"}, "to_date"),
+    ({"from_date": "2026-08-01", "to_date": "2026-09-01"}, "to_date"),
+])
+def test_a_bad_range_is_refused(client, manager, request_data, field):
+    response = call(client, TEAM.format("manager"), request_data, token=manager)
+
+    assert (response.status_code, response.json()["code"]) == (400, "invalid_request")
+    assert field in response.json()["data"]["errors"]
