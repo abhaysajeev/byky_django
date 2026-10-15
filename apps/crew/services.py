@@ -10,11 +10,18 @@ from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from apps.company.models import Branch, BranchWorkingTime, WeekDay
+from apps.company.models import (
+    AuthorityType,
+    Branch,
+    BranchApprovalAuthority,
+    BranchWorkingTime,
+    WeekDay,
+)
 from apps.company.services import week_day_of
 from apps.crew.models import (
     AddressType,
     Attendance,
+    AttendanceMethod,
     AttendanceSource,
     BlockAction,
     DutyRoster,
@@ -25,6 +32,7 @@ from apps.crew.models import (
     EmployeeDesignation,
     PunchType,
     RosterCategory,
+    TeamScope,
 )
 from core.enums import Channel
 from core.scoping import scoped_to
@@ -237,17 +245,23 @@ def _open_punch_in(employee, at):
     )
 
 
-def mark_attendance(user, source, values, device=None):
+def mark_attendance(user, source, values, device=None, channel=None):
     """Record one punch. Returns (row, created) -- created is False when this
     sync_id was already stored, which the app treats as success.
 
     `values` is the validated request_data, times already aware in company
     time. `device` is the signed-in phone, used for a self punch that does not
-    name one. Refusals raise AttendanceRefused; nothing is written then.
+    name one. `channel` is the app that sent it. Refusals raise
+    AttendanceRefused; nothing is written then.
 
-    A self punch (manager app) is always the signed-in manager's own: a code
-    naming anyone else is refused. A manager covers every station, so its
-    branch is optional -- the manager's home branch when not sent, else none.
+    A self punch (manager or employee app) is always the signed-in user's
+    own: a code naming anyone else is refused. It has no station, so its
+    branch is optional -- the user's home branch when not sent, else none.
+
+    The attendance method (Designation, or the employee's own override) is
+    enforced (15 Oct 2026): the employee app self-marks only staff whose
+    method is Self; the operator app scans only staff whose method is QR.
+    The manager app's own punch is always allowed.
     """
     company = user.employee.company
     sync_id = values["sync_id"]
@@ -263,8 +277,11 @@ def mark_attendance(user, source, values, device=None):
         employee = user.employee
         code = (values.get("employee_code") or "").strip()
         if code and code != employee.employee_code:
-            raise AttendanceRefused("not_your_attendance", "A manager marks only their own attendance.",
+            raise AttendanceRefused("not_your_attendance", "You can mark only your own attendance.",
                                     status=403)
+        if channel == Channel.EMPLOYEE and employee.attendance_rule != AttendanceMethod.SELF:
+            raise AttendanceRefused("self_attendance_not_allowed",
+                                    "Your attendance is not marked in this app.", status=403)
         employee_branch = (_branch_by_code(company, branch_code, "employee_branch_code")
                            if branch_code else employee.branch)
         installation_id = (values.get("rms_installation_id") or "").strip() or (
@@ -277,6 +294,9 @@ def mark_attendance(user, source, values, device=None):
         raise AttendanceRefused("employee_blocked", "This employee is blocked.", status=403)
     if not employee.is_active:
         raise AttendanceRefused("employee_inactive", "This employee is not active.", status=403)
+    if source == AttendanceSource.QR_SCAN and employee.attendance_rule != AttendanceMethod.QR_STATION:
+        raise AttendanceRefused("attendance_method_mismatch",
+                                "This employee's attendance is not taken by QR scan.", status=403)
 
     row = Attendance(
         id=sync_id,
@@ -383,6 +403,131 @@ def attendance_history(company, employee_code, from_date, to_date, now=None):
     for session in attendance_sessions(punch_ins, now):
         days.setdefault(session[0].rms_scan_time.astimezone(zone).date(), []).append(session)
     return employee, sorted(days.items())
+
+
+# -- Team Attendance ------------------------------------------------------------
+# Manager app SRS section 10; owner decisions 14-15 Oct 2026. The manager app
+# sees the whole company; in the employee app the designation's Team Scope
+# decides -- a Supervisor or PRO sees the branches they are a Branch Supervisor
+# of (company.BranchApprovalAuthority).
+
+TEAM_PAGE_SIZE = 50
+
+
+class TeamStatus:
+    ALL = "all"
+    CHECKED_IN = "checked_in"
+    CHECKED_OUT = "checked_out"
+    NOT_CHECKED_IN = "not_checked_in"
+
+    CHOICES = (ALL, CHECKED_IN, CHECKED_OUT, NOT_CHECKED_IN)
+
+
+def team_scope_of(employee, channel):
+    """(scope, branch ids or None). None means every branch of the company.
+    Refuses `no_team_scope` for a designation whose Team Scope is Own only."""
+    scope = team_scope_for(employee, channel)
+    if scope == TeamScope.COMPANY:
+        return scope, None
+    if scope == TeamScope.BRANCHES:
+        ids = (
+            BranchApprovalAuthority.objects
+            .filter(employee=employee, authority_type=AuthorityType.BRANCH_SUPERVISOR,
+                    branch__company=employee.company_id)
+            .values_list("branch_id", flat=True)
+        )
+        return scope, set(ids)
+    raise AttendanceRefused("no_team_scope", "You do not see a team's attendance.", status=403)
+
+
+def team_branches(company, branch_ids):
+    """The branches the caller may filter by: every active branch of the
+    company, or the assigned ones."""
+    branches = Branch.objects.filter(company=company)
+    branches = branches.filter(is_active=True) if branch_ids is None else branches.filter(pk__in=branch_ids)
+    return branches.select_related("location__state").order_by("name")
+
+
+def _narrowed(company, branch_ids, state_id=None, branch_id=None):
+    """The scope's branch ids after the emirate / branch filters, or None
+    for "every branch" (company scope, no filter)."""
+    ids = None if branch_ids is None else set(branch_ids)
+    if branch_id is not None:
+        ids = {branch_id} if ids is None else ids & {branch_id}
+    if state_id is not None:
+        in_state = set(Branch.objects.filter(company=company, location__state_id=state_id)
+                       .values_list("pk", flat=True))
+        ids = in_state if ids is None else ids & in_state
+    return ids
+
+
+def team_attendance(company, branch_ids, day, *, state_id=None, branch_id=None, status=TeamStatus.ALL,
+                    search="", now=None):
+    """(rows, counts) for one company-local day.
+
+    A row is one session -- a punch-in made that day with its punch-out, even
+    when that fell the next day -- or one rostered employee who has not
+    checked in. `branch_ids` is the scope (None: the whole company). A branch
+    scope, and any emirate / branch filter, reads the station a punch was
+    scanned at (`rms_branch`): a self punch has none, so it shows only in the
+    unfiltered whole-company list.
+
+    Not checked in = a DutyRoster day of type Working at an in-scope branch,
+    for an active employee with no punch-in that day anywhere. The roster
+    covers cashier and labour only, so nobody else is ever listed as absent.
+
+    `counts` follow every filter but `status`, for the status tabs.
+    """
+    now = now or timezone.now()
+    ids = _narrowed(company, branch_ids, state_id, branch_id)
+    start, end = business_day_range(company, day)
+
+    day_punch_ins = Attendance.objects.filter(
+        employee__company=company, punch_type=PunchType.PUNCH_IN, rms_scan_time__gte=start, rms_scan_time__lt=end,
+    )
+    punch_ins = day_punch_ins
+    if ids is not None:
+        punch_ins = punch_ins.filter(rms_branch_id__in=ids)
+    punch_ins = punch_ins.select_related(
+        "punch_out", "employee__designation", "employee_branch__location__state", "rms_branch__location__state",
+    ).order_by("-rms_scan_time")
+
+    rows = []
+    for punch_in, punch_out, state, worked in attendance_sessions(punch_ins, now):
+        rows.append({
+            "status": TeamStatus.CHECKED_OUT if punch_out is not None else TeamStatus.CHECKED_IN,
+            "missing_check_out": state == SessionStatus.MISSING_PUNCH_OUT,
+            "employee": punch_in.employee, "punch_in": punch_in, "punch_out": punch_out,
+            "worked_minutes": worked, "roster": None,
+        })
+
+    roster = (
+        DutyRoster.objects
+        .filter(employee__company=company, employee__is_active=True, date=day, day_type=DutyRosterDayType.WORKING)
+        .exclude(employee_id__in=day_punch_ins.values("employee_id"))
+        .select_related("employee__designation", "branch__location__state")
+    )
+    if ids is not None:
+        roster = roster.filter(branch_id__in=ids)
+    for entry in sorted(roster, key=lambda r: (r.employee.full_name.lower(), r.employee.employee_code)):
+        rows.append({
+            "status": TeamStatus.NOT_CHECKED_IN, "missing_check_out": False,
+            "employee": entry.employee, "punch_in": None, "punch_out": None,
+            "worked_minutes": None, "roster": entry,
+        })
+
+    needle = (search or "").strip().lower()
+    if needle:
+        rows = [
+            row for row in rows
+            if needle in row["employee"].employee_code.lower() or needle in row["employee"].full_name.lower()
+        ]
+
+    counts = {key: sum(1 for row in rows if row["status"] == key) for key in TeamStatus.CHOICES[1:]}
+    counts[TeamStatus.ALL] = len(rows)
+    if status and status != TeamStatus.ALL:
+        rows = [row for row in rows if row["status"] == status]
+    return rows, counts
 
 
 ADDRESS_TYPES = AddressType
@@ -928,13 +1073,24 @@ def import_rows(rows, *, user, employees_qs, branches_qs):
 # relation to roster_payload's multi-employee admin-screen matrix above.
 
 
+def team_scope_for(employee, channel):
+    """Whose attendance this person sees in Team Attendance: the manager app
+    always the whole company, the employee app what the designation says."""
+    if channel == Channel.MANAGER:
+        return TeamScope.COMPANY
+    return employee.designation.team_scope
+
+
 def employee_profile(employee, channel=Channel.EMPLOYEE):
     """Everything the app's profile screen shows. Every field comes straight
     off Employee/Designation -- nothing here is invented for the app.
 
-    `can_approve_leave` says whether to show Leave Requests to decide: always
-    in the manager app; in the employee app for a Leave Request approver of
-    any station (apps/crew/leave.py)."""
+    `attendance_method` tells the employee app which attendance button to
+    show (qr_station: the QR code; self: Mark / Close; not_required: none),
+    `team_scope` whether Team Attendance is offered (anything but own),
+    `can_approve_leave` whether to show Leave Requests to decide: always in
+    the manager app; in the employee app for a Leave Request approver of any
+    station (apps/crew/leave.py)."""
     from apps.crew import leave
 
     designation = employee.designation
@@ -953,6 +1109,8 @@ def employee_profile(employee, channel=Channel.EMPLOYEE):
         "photo_url": employee.photo.url if employee.photo else None,
         "company": employee.company.name,
         "can_approve_leave": leave.is_approver(employee, channel),
+        "attendance_method": employee.attendance_rule,
+        "team_scope": team_scope_for(employee, channel),
     }
 
 

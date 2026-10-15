@@ -69,6 +69,9 @@ class AuthorityType(models.TextChoices):
     LEAVE_REQUEST = "leave_request", "Leave Request"
     MAINTENANCE = "maintenance", "Service & Maintenance"
     RMS_APP_REQUEST = "rms_app_request", "RMS App Request"
+    # Not an approval: the Supervisors and PROs who see this branch's Team
+    # Attendance in the employee app (15 Oct 2026).
+    BRANCH_SUPERVISOR = "branch_supervisor", "Branch Supervisors"
 
 
 class Country(ApprovalMixin, TimeStampedModel):

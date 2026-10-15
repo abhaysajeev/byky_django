@@ -1,5 +1,6 @@
-"""/api/v1/{app}/attendance/... and /leave/... `{app}` is checked by the URL
-converter in config/urls.py; each view narrows it to the apps it serves."""
+"""/api/v1/{app}/attendance/... and /leave/... for the three apps. `{app}` is
+checked by the URL converter in config/urls.py; each view narrows it to the
+apps it serves."""
 
 from django.urls import path
 
@@ -15,4 +16,5 @@ urlpatterns = [
     path("leave/requests", leave_api.LeaveRequestsView.as_view(), name="api-app-leave-requests"),
     path("leave/approve", leave_api.LeaveApproveView.as_view(), name="api-app-leave-approve"),
     path("leave/reject", leave_api.LeaveRejectView.as_view(), name="api-app-leave-reject"),
+    path("attendance/team", api.TeamAttendanceView.as_view(), name="api-app-attendance-team"),
 ]

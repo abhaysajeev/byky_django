@@ -26,7 +26,7 @@ def seed(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("crew", "0005_leave_request"),
+        ("crew", "0006_leave_request"),
     ]
 
     operations = [

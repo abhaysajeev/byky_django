@@ -2,10 +2,11 @@
 
 For the manager app developers. It covers what the manager app calls, in the
 order it calls them: sign in → load the masters (states, stations) → requests
-(list, approve, reject, revoke) → reports. Everything here is live in Swagger
-(`/api/docs/`) under the tags **Manager Auth**, **Manager Masters**,
-**Manager Requests** and **Manager Reports** — Swagger is generated from the
-code and is the final word if this page and it ever disagree.
+(list, approve, reject, revoke) → reports → attendance → leave. Everything here is
+live in Swagger (`/api/docs/`) under the tags **Manager Auth**, **Manager
+Masters**, **Manager Requests**, **Manager Reports**, **Manager Attendance** and
+**Manager Leave** — Swagger is generated from the code and is the final word if
+this page and it ever disagree.
 
 > Base URL: `https://<server>/api/v1/manager/...` — every call is `POST`,
 > JSON in and out.
@@ -181,7 +182,8 @@ Reply `ok`:
       "middle_name": "", "last_name": "K", "designation": "Manager", "role": null,
       "branch_id": null, "branch": null, "mobile": "0500000000",
       "email": "meera@byky.test", "photo_url": null, "company": "BY KY SPORT & ...",
-      "can_approve_leave": true
+      "can_approve_leave": true,
+      "attendance_method": "self", "team_scope": "company"
     }
 } }
 ```
@@ -189,6 +191,9 @@ Reply `ok`:
 - **Store** both tokens and their expiry times securely.
 - `employee.branch_id` is the manager's home station, often `null` — a manager
   works across **every station of the company**.
+- `employee.team_scope` is always `company` in the manager app (§7.2).
+  `attendance_method` is informational here: the manager's own Mark
+  attendance is always allowed.
 - Refusals worth handling: `invalid_credentials` (401), `account_locked`
   (429), `wrong_channel` (this user may not use the manager app),
   `user_blocked`, `device_pending_approval` (202), `device_blocked`,
@@ -487,12 +492,85 @@ included. They answer different questions and will not always match.
 
 ---
 
-## 7. Leave requests
+## 7. Attendance
+
+### 7.1 Mark own attendance — `POST /api/v1/manager/attendance/mark`
+
+The manager's own **Mark attendance** / **Close attendance** button — always
+allowed. Send `sync_id` (a UUIDv7 made on the phone, resent unchanged on a
+retry), `punch_type` (`punch_in` / `punch_out`), `rms_scan_time` (the button
+press, company time) and optionally `rms_latitude` / `rms_longitude`. Swagger
+lists the refusals (`punch_in_open`, `no_open_punch_in`, …).
+`attendance/history` reads it back.
+
+### 7.2 Team Attendance — `POST /api/v1/manager/attendance/team`
+
+Who checked in and out on one day, across **the whole company**, and who is
+rostered but has not checked in.
+
+| Field | Required | Notes |
+|---|---|---|
+| `date` | no | `YYYY-MM-DD`, today by default |
+| `state_id` | no | One emirate |
+| `branch_id` | no | One station |
+| `status` | no | `all` (default), `checked_in`, `checked_out`, `not_checked_in` |
+| `search` | no | Employee name or code |
+| `page` | no | From 1, 50 rows a page |
+
+```json
+{ "code": "ok", "message": "Team attendance.", "data": {
+  "date": "2026-10-15", "scope": "company",
+  "branches": [ { "branch_id": 12, "code": "AUH01", "name": "Creek Park 1",
+                  "state_id": 1, "state": "Abu Dhabi" } ],
+  "counts": { "all": 2, "checked_in": 0, "checked_out": 1, "not_checked_in": 1 },
+  "rows": [
+    { "row_type": "session", "attendance_id": "01923e1c-…",
+      "status": "checked_out", "missing_check_out": false,
+      "employee": { "employee_code": "BYKY014", "name": "Anil Kumar", "designation": "Cashier" },
+      "source": "qr_scan",
+      "station": { "branch_id": 12, "code": "AUH01", "name": "Creek Park 1" },
+      "emirate": { "state_id": 1, "name": "Abu Dhabi" },
+      "check_in": "2026-10-15 07:58:10", "check_out": "2026-10-15 16:02:44",
+      "duration_minutes": 484, "device_no": 1000023, "roster": null },
+    { "row_type": "not_checked_in", "attendance_id": null,
+      "status": "not_checked_in", "missing_check_out": false,
+      "employee": { "employee_code": "BYKY031", "name": "Ravi S", "designation": "Labour" },
+      "source": null, "station": null,
+      "emirate": { "state_id": 1, "name": "Abu Dhabi" },
+      "check_in": null, "check_out": null, "duration_minutes": null, "device_no": null,
+      "roster": { "station": { "branch_id": 12, "code": "AUH01", "name": "Creek Park 1" },
+                  "shift1_start": "08:00", "shift1_end": "16:00",
+                  "shift2_start": null, "shift2_end": null } }
+  ],
+  "page": 1, "pages": 1, "total": 2
+} }
+```
+
+- **One row per session** — a check-in made that day with its check-out, even
+  when the check-out fell the next day (a night shift stays on the day it
+  started). Newest check-in first, then the not-checked-in rows by name.
+- Each row has **everything the detail screen shows** — no second call.
+- `missing_check_out: true` — still `checked_in` more than 24 hours after the
+  check-in; show a "Missing check-out" label.
+- `source` — `qr_scan` (scanned at a station) or `self` (Mark attendance in an
+  app). A self check-in has **no station**: `station` is `null`, and it drops
+  out as soon as a station or emirate filter is chosen.
+- **Not checked in** — staff rostered **Working** that day (Duty Roster:
+  cashier and labour) with no check-in anywhere that day.
+- `counts` follow every filter except `status` — use them for the tab badges.
+- `branches` — the stations for the station / emirate pickers.
+- Paged (§1.5).
+
+The same call works in the **employee app** (`/api/v1/employee/attendance/team`)
+for Supervisors and PROs: they see the QR check-ins at the stations they are a
+**Branch Supervisor** of (set on the Branch screen), by their designation's
+**Team Scope**.
+## 8. Leave requests
 
 Employees ask for leave in the employee app; the manager approves or rejects
 it here. Everything is also in Swagger under **Manager Leave**.
 
-### 7.1 The rules
+### 8.1 The rules
 
 - Whole days from **today** on; days are calendar days, both ends counted
   (20–22 Oct = 3 days). No leave balance is kept.
@@ -508,7 +586,7 @@ it here. Everything is also in Swagger under **Manager Leave**.
   the station Leave Request approvers' own requests, which only a manager
   (or the web) may decide.
 
-### 7.2 List — `POST /api/v1/manager/leave/requests`
+### 8.2 List — `POST /api/v1/manager/leave/requests`
 
 | Field | Required | Notes |
 |---|---|---|
@@ -545,21 +623,21 @@ it here. Everything is also in Swagger under **Manager Leave**.
   branch (show them as "Employee location").
 - `counts` follow every filter except `status` — use them for the tabs.
 
-### 7.3 Approve / Reject — `POST /api/v1/manager/leave/approve`, `…/reject`
+### 8.3 Approve / Reject — `POST /api/v1/manager/leave/approve`, `…/reject`
 
 `leave_request_id`, `remarks` (optional). The reply is the row as above, plus
 `working_days_replaced`. Refusals: `unknown_leave` (404), `leave_decided`
 (409 — already approved, cancelled, or its one edit used), `leave_overlaps`
 (409 — approving an old rejection over newer approved leave).
 
-### 7.4 Badge
+### 8.4 Badge
 
 `requests/pending-counts` gains `leave` (pending leave requests), included in
 `total`.
 
 ---
 
-## 8. Checklist for the app
+## 9. Checklist for the app
 
 - [ ] One stored `installation_id` per install; always send `platform_id`.
 - [ ] Store and rotate both tokens; refresh on `not_authenticated`; log out only
@@ -575,3 +653,5 @@ it here. Everything is also in Swagger under **Manager Leave**.
 - [ ] Switch on `code`, show `message`, show `data.errors` per field.
 - [ ] Leave: show Approve / Reject only when `can_decide`; label the second
       decision on a rejected request "Edit Status".
+- [ ] Team Attendance: one date at a time, reload on pull-to-refresh, show the
+      "Missing check-out" label when `missing_check_out` is true.

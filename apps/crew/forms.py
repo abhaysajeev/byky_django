@@ -29,11 +29,12 @@ class DesignationForm(ScopedModelForm):
     class Meta:
         model = Designation
         fields = ["company", "code", "title", "description", "rank_order",
-                  "attendance_method", "roster_category", "is_active"]
+                  "attendance_method", "team_scope", "roster_category", "is_active"]
         labels = {
             "code": "Designation Code", "title": "Designation Title",
             "description": "Description", "rank_order": "Rank Order",
             "attendance_method": "Attendance Method",
+            "team_scope": "Team Scope",
             "roster_category": "Duty Roster Category",
         }
 

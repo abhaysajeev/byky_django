@@ -9,7 +9,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ('company', '0011_branch_coordinates_range'),
         ('core', '0005_user_employee'),
-        ('crew', '0004_attendance_branch_optional_for_self'),
+        ('crew', '0005_designation_team_scope'),
     ]
 
     operations = [

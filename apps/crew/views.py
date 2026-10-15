@@ -37,6 +37,7 @@ from apps.crew.models import (
     LeaveType,
     PunchType,
     RosterCategory,
+    TeamScope,
 )
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
@@ -89,6 +90,9 @@ class CrewScreenView(PagePermissionMixin, ThemedTemplateView):
             "attendance_methods_list": [
                 {"id": value, "name": label} for value, label in AttendanceMethod.choices
             ],
+            "team_scopes_list": [
+                {"id": value, "name": label} for value, label in TeamScope.choices
+            ],
             "roster_categories_list": [
                 {"id": value, "name": label} for value, label in RosterCategory.choices
             ],
@@ -123,6 +127,7 @@ class DesignationListView(CrewScreenView):
                 "title": designation.title,
                 "description": designation.description,
                 "rank": designation.rank_order,
+                "team_scope": designation.get_team_scope_display(),
                 "headcount": designation.headcount,
                 "active": designation.is_active,
                 "json_id": f"scr-record-designation-{i}",
@@ -133,6 +138,7 @@ class DesignationListView(CrewScreenView):
                     "description": designation.description,
                     "rank": designation.rank_order,
                     "attendance_method": designation.attendance_method,
+                    "team_scope": designation.team_scope,
                     "roster_category": designation.roster_category,
                     "company": designation.company_id,
                     "is_active": designation.is_active,
