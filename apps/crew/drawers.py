@@ -324,6 +324,34 @@ DUTY_ROSTER_ADD_TO_DAY = {
     ],
 }
 
+LEAVE_TYPE = {
+    "drawer_id": "drawerLeaveType",
+    "scr_name": "leave_type",
+    "model": "crew.LeaveType",
+    "add_label": "Add Leave Type",
+    "title_field": "name",
+    "sections": [
+        {
+            "title": "",
+            "fields": [
+                {
+                    "id": "company", "label": "Company", "kind": "select",
+                    "required": True, "options_from": "companies_list",
+                    "option_key": "name", "system_only": True,
+                },
+                {
+                    "id": "code", "label": "Leave Type Code", "kind": "text",
+                    "required": True, "lock_on_edit": True,
+                },
+                {
+                    "id": "name", "label": "Leave Type Name", "kind": "text", "required": True,
+                    "help": "What the employee app shows, e.g. Annual Leave.",
+                },
+            ],
+        },
+    ],
+}
+
 SPECS = {
     "drawer_employee": EMPLOYEE,
     "drawer_designation": DESIGNATION,
@@ -331,4 +359,5 @@ SPECS = {
     "drawer_duty_roster_employee": DUTY_ROSTER_EMPLOYEE,
     "drawer_duty_roster_day": DUTY_ROSTER_EDIT_DAY,
     "drawer_duty_roster_add_to_day": DUTY_ROSTER_ADD_TO_DAY,
+    "drawer_leave_type": LEAVE_TYPE,
 }

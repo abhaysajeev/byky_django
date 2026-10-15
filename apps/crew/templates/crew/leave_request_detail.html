@@ -1,0 +1,133 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Leave {{ leave.reference }} - Human Resources{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+{% comment %}The credit note's Approve / Reject dialogs post the same way: remarks only.{% endcomment %}
+<script src="{% static 'js/byky-credit-note.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr" data-credit-note data-approve-url="{{ approve_url }}" data-reject-url="{{ reject_url }}">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Human Resources</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <a href="{{ list_url }}">Leave Requests</a>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>{{ leave.reference }}</b>
+      </div>
+      <h1 class="scr-title">{{ leave.employee.full_name }} · {{ leave.leave_type.name }}</h1>
+      <p class="scr-sub">{{ leave.reference }} · {{ leave.from_date|date:"d M Y" }} – {{ leave.to_date|date:"d M Y" }} · {{ leave.days }} day{{ leave.days|pluralize }}</p>
+    </div>
+    <div class="scr-head-actions">
+      <a href="{{ list_url }}" class="scr-btn-secondary">Back</a>
+      {% if can_decide %}
+      <button type="button" class="scr-btn-danger" data-scr-modal-open="leave-reject">{% if leave.status == "rejected" %}Keep rejected{% else %}Reject{% endif %}</button>
+      <button type="button" class="scr-btn-primary" data-scr-modal-open="leave-approve">Approve</button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="scr-mon-grid">
+    <div class="scr-card">
+      <div class="scr-form-head">
+        <div class="scr-form-title-row">
+          <h2 class="scr-form-title">Leave Request</h2>
+          {% include "crew/partials/leave_status.html" with status=leave.status %}
+        </div>
+      </div>
+      <div class="scr-form-body scr-mon-body">
+        <div class="scr-detail-rows">
+          <div class="scr-detail-row"><span class="scr-detail-label">Employee</span><span class="scr-detail-value">{{ leave.employee.full_name }} · {{ leave.employee.employee_code }} · {{ leave.employee.designation.title }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Leave Type</span><span class="scr-detail-value">{{ leave.leave_type.name }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Dates</span><span class="scr-detail-value">{{ leave.from_date|date:"d M Y" }} – {{ leave.to_date|date:"d M Y" }} · {{ leave.days }} day{{ leave.days|pluralize }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Reason</span><span class="scr-detail-value scr-mon-wrap">{{ leave.reason|default:"—" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Applied</span><span class="scr-detail-value">{{ applied_at|date:"d M Y, H:i" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Stations</span><span class="scr-detail-value">{% for b in stations %}{{ b.name }} ({{ b.location.state.name }}){% if not forloop.last %}, {% endif %}{% empty %}— (decided by managers only){% endfor %}</span></div>
+          {% if leave.status == "approved" or leave.status == "rejected" %}
+          <div class="scr-detail-row"><span class="scr-detail-label">{{ leave.get_status_display }}</span><span class="scr-detail-value">{{ decided_at|date:"d M Y, H:i" }} · {{ decided_by }} · {{ leave.get_decided_channel_display }}</span></div>
+          {% if leave.decision_remarks %}<div class="scr-detail-row"><span class="scr-detail-label">Remarks</span><span class="scr-detail-value scr-mon-wrap">{{ leave.decision_remarks }}</span></div>{% endif %}
+          {% elif leave.status == "cancelled" %}
+          <div class="scr-detail-row"><span class="scr-detail-label">Cancelled</span><span class="scr-detail-value">{{ cancelled_at|date:"d M Y, H:i" }} · by the employee</span></div>
+          {% endif %}
+          {% if leave.status == "rejected" and not leave.status_edited %}
+          <div class="scr-detail-row"><span class="scr-detail-label">Edit Status</span><span class="scr-detail-value">A first rejection may be changed once.</span></div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="scr-card">
+      <div class="scr-form-head"><div class="scr-form-title-row"><h2 class="scr-form-title">Status Log</h2></div></div>
+      <div class="scr-form-body scr-mon-body">
+        <div class="scr-detail-rows">
+          {% for item in log %}
+          <div class="scr-detail-row"><span class="scr-detail-label">{{ item.at|date:"d M Y, H:i" }}</span><span class="scr-detail-value">{% include "crew/partials/leave_status.html" with status=item.entry.status %} {{ item.entry.by_name }} · {{ item.entry.get_channel_display }}{% if item.entry.remarks %} · {{ item.entry.remarks }}{% endif %}</span></div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% if can_decide %}
+  <div class="scr-modal-veil" data-scr-modal-veil="leave-approve" hidden></div>
+  <div class="scr-modal" data-scr-modal="leave-approve" hidden>
+    <div class="scr-modal-head">
+      <div>
+        <div class="scr-modal-title">Approve leave</div>
+        <p class="scr-modal-sub">{{ leave.days }} day{{ leave.days|pluralize }} become On Leave in the duty roster.{% if working_days %} This removes {{ working_days }} rostered working shift{{ working_days|pluralize }}.{% endif %}</p>
+      </div>
+      <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+      </button>
+    </div>
+    <div class="scr-modal-body">
+      <div class="scr-field">
+        <label class="scr-label" for="leave-approve-remarks">Remarks</label>
+        <textarea id="leave-approve-remarks" class="scr-input scr-textarea" rows="3" maxlength="500" data-cn-remarks></textarea>
+      </div>
+    </div>
+    <div class="scr-modal-foot">
+      <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+      <button type="button" class="scr-btn-primary" data-cn-go="approve">Approve</button>
+    </div>
+  </div>
+
+  <div class="scr-modal-veil" data-scr-modal-veil="leave-reject" hidden></div>
+  <div class="scr-modal" data-scr-modal="leave-reject" hidden>
+    <div class="scr-modal-head">
+      <div>
+        <div class="scr-modal-title">Reject leave</div>
+        <p class="scr-modal-sub">{% if leave.status == "rejected" %}Confirms the rejection; it cannot be changed again.{% else %}A first rejection may be changed once later.{% endif %}</p>
+      </div>
+      <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+      </button>
+    </div>
+    <div class="scr-modal-body">
+      <div class="scr-field">
+        <label class="scr-label" for="leave-reject-remarks">Reason for rejecting</label>
+        <textarea id="leave-reject-remarks" class="scr-input scr-textarea" rows="3" maxlength="500" data-cn-remarks></textarea>
+      </div>
+    </div>
+    <div class="scr-modal-foot">
+      <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+      <button type="button" class="scr-btn-danger" data-cn-go="reject">Reject</button>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}

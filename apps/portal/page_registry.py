@@ -89,6 +89,9 @@ PAGES = [
     # the plan a week held is worth keeping even once it is in the past.
     ("crew.duty_roster", "crew", "Duty Roster", "crew-duty-roster-list",
      ["create", "read", "update"], 6, False),
+    ("crew.leave_type", "crew", "Leave Type", "crew-leave-type-list", CRUD, 7, False),
+    # approve = approve or reject a leave request (as in the manager app).
+    ("crew.leave_request", "crew", "Leave Requests", "crew-leave-request-list", ["read", "approve"], 8, False),
     ("crew.privileges", "crew", "Privileges", "crew-privileges", ["read", "update"], 9, False),
 
     # Approval has no "create": a device joins the queue by registering itself,

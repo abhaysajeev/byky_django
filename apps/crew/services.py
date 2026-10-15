@@ -26,6 +26,7 @@ from apps.crew.models import (
     PunchType,
     RosterCategory,
 )
+from core.enums import Channel
 from core.scoping import scoped_to
 from core.timezones import business_date_for, business_day_range, zone_for
 
@@ -523,6 +524,20 @@ def default_week(today=None):
 
 
 @transaction.atomic
+def _on_leave(employee, dates):
+    """{date: the approved leave request} for those of `dates` that are On
+    Leave -- days the roster screen may not change (apps/crew/leave.py)."""
+    rows = (DutyRoster.objects
+            .filter(employee=employee, date__in=dates, day_type=DutyRosterDayType.ON_LEAVE)
+            .select_related("leave_request"))
+    return {row.date: row.leave_request for row in rows}
+
+
+def _leave_error(on_date, leave):
+    return {"field": f"{on_date:%d %b}",
+            "message": f"{on_date:%d %b} is approved leave {leave.reference}; it cannot be changed on the roster."}
+
+
 def save_week(employee, days, *, user, branches_qs):
     """Write one employee's week: `days` is
     [{"date", "day_type", "branch", "shift1_start", "shift1_end",
@@ -544,6 +559,8 @@ def save_week(employee, days, *, user, branches_qs):
         errors += day_errors
         if not day_errors:
             clean.append(fields)
+    locked = _on_leave(employee, [fields["date"] for fields in clean])
+    errors += [_leave_error(day, leave) for day, leave in sorted(locked.items())]
     if errors:
         raise Invalid(errors)
 
@@ -572,6 +589,9 @@ def _check_day(entry, *, branches_qs):
     label = on_date.strftime("%d %b")
 
     day_type = entry.get("day_type")
+    if day_type == DutyRosterDayType.ON_LEAVE:
+        errors.append({"field": label, "message": "On Leave is set only by an approved leave request."})
+        return errors, {}
     if day_type not in DutyRosterDayType.values:
         errors.append({"field": label, "message": "Choose a day type."})
         return errors, {}
@@ -666,17 +686,9 @@ def today_assignment(employee, at=None):
     is none or the day is not Working.
 
     This is the function design/device-login.md's employee-login response is
-    built to call. One seam is left for a feature that does not exist yet:
-
-        # TODO once Leave Request exists: an *approved* leave request for
-        # this employee/date should override whatever this function returns
-        # with "on leave, <type>" -- checked here, before the DutyRoster
-        # lookup below, so today_assignment stays the one place login reads.
-
-    Until then, a day typed directly as Sick/Casual Leave on the roster itself
-    already answers None here (only Working carries an assignment) -- the
-    Leave Request table changes *how* a leave day is decided, not what this
-    function returns for one.
+    built to call. An approved leave request writes its days as On Leave
+    (apps/crew/leave.py), so a leave day -- like one typed as Sick/Casual
+    Leave -- answers None here: only Working carries an assignment.
     """
     today = (at or timezone.now())
     if timezone.is_aware(today):
@@ -747,7 +759,7 @@ def roster_payload(user, year, month):
     rows = (
         DutyRoster.objects
         .filter(employee__in=employees, date__range=(weeks[0][0], weeks[-1][-1]))
-        .select_related("branch__company")
+        .select_related("branch__company", "leave_request__leave_type")
     )
     matrix = {}
     for row in rows:
@@ -762,6 +774,7 @@ def roster_payload(user, year, month):
             "shift1_end": _hhmm(row.shift1_end, zone),
             "shift2_start": _hhmm(row.shift2_start, zone),
             "shift2_end": _hhmm(row.shift2_end, zone),
+            **_leave_fields(row),
         }
 
     current_week_index = 0
@@ -791,6 +804,15 @@ def roster_payload(user, year, month):
         "current_week_index": current_week_index,
         "today": today.isoformat(),
         "branches": [{"id": b.pk, "name": b.name} for b in branches],
+    }
+
+
+def _leave_fields(row):
+    """The approved leave behind an On Leave day, else nulls."""
+    leave = row.leave_request if row.leave_request_id else None
+    return {
+        "leave_type": leave.leave_type.name if leave else None,
+        "leave_reference": leave.reference if leave else None,
     }
 
 
@@ -828,6 +850,8 @@ def assign_day(employee, entry, *, branches_qs, user, require_new=False):
     errors, fields = _check_day(entry, branches_qs=branches_qs)
     if errors:
         raise Invalid(errors)
+    for day, leave in _on_leave(employee, [fields["date"]]).items():
+        raise Invalid([_leave_error(day, leave)])
     if require_new:
         existing = (
             DutyRoster.objects.filter(employee=employee, date=fields["date"])
@@ -852,6 +876,8 @@ def remove_day(employee, on_date, *, user):
     the wireframe's own chip-remove leaves no day type behind either."""
     if isinstance(on_date, str):
         on_date = datetime.date.fromisoformat(on_date)
+    for day, leave in _on_leave(employee, [on_date]).items():
+        raise Invalid([_leave_error(day, leave)])
     deleted, _ = DutyRoster.objects.filter(employee=employee, date=on_date).delete()
     return deleted > 0
 
@@ -882,6 +908,8 @@ def import_rows(rows, *, user, employees_qs, branches_qs):
                             "message": "No Cashier or Labour employee with that code."})
             continue
         errors, fields = _check_day(entry, branches_qs=branches_qs)
+        if not errors:
+            errors = [_leave_error(day, leave) for day, leave in _on_leave(employee, [fields["date"]]).items()]
         if errors:
             results.append({"row": i, "employee_code": code, "ok": False,
                             "message": errors[0]["message"]})
@@ -900,9 +928,15 @@ def import_rows(rows, *, user, employees_qs, branches_qs):
 # relation to roster_payload's multi-employee admin-screen matrix above.
 
 
-def employee_profile(employee):
+def employee_profile(employee, channel=Channel.EMPLOYEE):
     """Everything the app's profile screen shows. Every field comes straight
-    off Employee/Designation -- nothing here is invented for the app."""
+    off Employee/Designation -- nothing here is invented for the app.
+
+    `can_approve_leave` says whether to show Leave Requests to decide: always
+    in the manager app; in the employee app for a Leave Request approver of
+    any station (apps/crew/leave.py)."""
+    from apps.crew import leave
+
     designation = employee.designation
     return {
         "employee_code": employee.employee_code,
@@ -918,6 +952,7 @@ def employee_profile(employee):
         "email": employee.email,
         "photo_url": employee.photo.url if employee.photo else None,
         "company": employee.company.name,
+        "can_approve_leave": leave.is_approver(employee, channel),
     }
 
 
@@ -943,7 +978,7 @@ def current_week_roster(employee, *, at=None):
     rows = {
         row.date: row
         for row in DutyRoster.objects.filter(employee=employee, date__in=days)
-        .select_related("branch__company")
+        .select_related("branch__company", "leave_request__leave_type")
     }
 
     out = []
@@ -954,6 +989,7 @@ def current_week_roster(employee, *, at=None):
                 "date": day.isoformat(), "status": None, "branch_id": None, "branch": None, "branch_code": None,
                 "shift1_start": None, "shift1_end": None,
                 "shift2_start": None, "shift2_end": None,
+                "leave_type": None, "leave_reference": None,
             })
             continue
         zone = zone_for(row.branch.company) if row.branch_id else zone_for(company)
@@ -969,6 +1005,7 @@ def current_week_roster(employee, *, at=None):
             "shift1_end": _hhmm(row.shift1_end, zone),
             "shift2_start": _hhmm(row.shift2_start, zone),
             "shift2_end": _hhmm(row.shift2_end, zone),
+            **_leave_fields(row),
         })
 
     return {

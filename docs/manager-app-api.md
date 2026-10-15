@@ -180,7 +180,8 @@ Reply `ok`:
       "employee_code": "MGR001", "full_name": "Meera K", "first_name": "Meera",
       "middle_name": "", "last_name": "K", "designation": "Manager", "role": null,
       "branch_id": null, "branch": null, "mobile": "0500000000",
-      "email": "meera@byky.test", "photo_url": null, "company": "BY KY SPORT & ..."
+      "email": "meera@byky.test", "photo_url": null, "company": "BY KY SPORT & ...",
+      "can_approve_leave": true
     }
 } }
 ```
@@ -486,7 +487,79 @@ included. They answer different questions and will not always match.
 
 ---
 
-## 7. Checklist for the app
+## 7. Leave requests
+
+Employees ask for leave in the employee app; the manager approves or rejects
+it here. Everything is also in Swagger under **Manager Leave**.
+
+### 7.1 The rules
+
+- Whole days from **today** on; days are calendar days, both ends counted
+  (20–22 Oct = 3 days). No leave balance is kept.
+- A request never overlaps the employee's own pending or approved one.
+- Statuses: `pending` → `approved` / `rejected`, or `cancelled` (only by the
+  employee, only while pending — a manager never cancels).
+- **Approved is final.** A **first rejection may be changed once** ("Edit
+  Status"): approve it, or reject it again. After that `can_decide` is false.
+- An approval turns every day of the range into **On Leave** in the duty
+  roster, replacing what was rostered. `working_days_rostered` on a pending
+  row says how many working shifts that will remove — show it before Approve.
+- The manager app sees and decides **every** request of the company — also
+  the station Leave Request approvers' own requests, which only a manager
+  (or the web) may decide.
+
+### 7.2 List — `POST /api/v1/manager/leave/requests`
+
+| Field | Required | Notes |
+|---|---|---|
+| `status` | no | `all` (default), `pending`, `approved`, `rejected`, `cancelled` |
+| `state_id`, `branch_id` | no | Emirate / station of the request's stations |
+| `from_date`, `to_date` | no | Leave overlapping this range |
+| `search` | no | Employee name or code |
+| `page` | no | From 1, 50 a page |
+
+```json
+{ "code": "ok", "message": "Leave requests.", "data": {
+  "counts": { "pending": 1, "approved": 0, "rejected": 0, "cancelled": 0, "all": 1 },
+  "requests": [ {
+    "leave_request_id": "01923e1c-…", "reference": "LEV-2026-00037",
+    "employee": { "employee_code": "BYKY014", "name": "Anil Kumar", "designation": "Cashier" },
+    "stations": [ { "branch_id": 12, "code": "CPG1", "name": "Creek Park Gate 1",
+                    "state_id": 2, "state": "Dubai" } ],
+    "leave_type": { "leave_type_id": 1, "name": "Annual Leave" },
+    "from_date": "2026-10-20", "to_date": "2026-10-22", "days": 3, "reason": "Family visit",
+    "status": "pending", "applied_at": "2026-10-15 09:12:40",
+    "decided_by": null, "decided_channel": null, "decided_at": null, "decision_remarks": "",
+    "status_edited": false, "cancelled_at": null,
+    "can_cancel": false, "can_decide": true, "working_days_rostered": 2,
+    "log": [ { "status": "pending", "at": "2026-10-15 09:12:40", "by": "Anil Kumar",
+               "channel": "employee", "remarks": "" } ]
+  } ],
+  "page": 1, "pages": 1, "total": 1
+} }
+```
+
+- Each row has **everything the details screen shows**, including the
+  **Status Log History** (`log`, oldest first) — no second call.
+- `stations` — where the employee is rostered during the leave plus their home
+  branch (show them as "Employee location").
+- `counts` follow every filter except `status` — use them for the tabs.
+
+### 7.3 Approve / Reject — `POST /api/v1/manager/leave/approve`, `…/reject`
+
+`leave_request_id`, `remarks` (optional). The reply is the row as above, plus
+`working_days_replaced`. Refusals: `unknown_leave` (404), `leave_decided`
+(409 — already approved, cancelled, or its one edit used), `leave_overlaps`
+(409 — approving an old rejection over newer approved leave).
+
+### 7.4 Badge
+
+`requests/pending-counts` gains `leave` (pending leave requests), included in
+`total`.
+
+---
+
+## 8. Checklist for the app
 
 - [ ] One stored `installation_id` per install; always send `platform_id`.
 - [ ] Store and rotate both tokens; refresh on `not_authenticated`; log out only
@@ -500,3 +573,5 @@ included. They answer different questions and will not always match.
 - [ ] Hide Revoke for reprints, cancels, and anything not `approved`.
 - [ ] After any refusal on approve / reject / revoke, reload the row.
 - [ ] Switch on `code`, show `message`, show `data.errors` per field.
+- [ ] Leave: show Approve / Reject only when `can_decide`; label the second
+      decision on a rejected request "Edit Status".

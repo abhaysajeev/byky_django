@@ -170,7 +170,7 @@ def _manager_login(request, form):
     employee = user.employee
     data = {
         "tokens": _issue_tokens(user, session),
-        "employee": crew_services.employee_profile(employee),
+        "employee": crew_services.employee_profile(employee, Channel.MANAGER),
     }
     return envelope("ok", f"Welcome, {employee.full_name}.", data)
 
@@ -193,14 +193,17 @@ _EMPLOYEE_LOGIN_SUCCESS_DATA = {
         "middle_name": "", "last_name": "USER", "designation": "Cashier", "role": "Cashier",
         "branch_id": None, "branch": None, "mobile": "", "email": "", "photo_url": None,
         "company": "BY KY SPORT & LEISURE EQUIPMENT RENTAL & TRADING LLC",
+        "can_approve_leave": False,
     },
     "roster": {
         "week_start": "2026-09-20", "week_end": "2026-09-26",
         "days": [
             {"date": "2026-09-20", "status": "Working", "branch_id": 12, "branch": "Creek Park 1", "branch_code": "AUH01",
-             "shift1_start": "07:00", "shift1_end": "23:00", "shift2_start": None, "shift2_end": None},
+             "shift1_start": "07:00", "shift1_end": "23:00", "shift2_start": None, "shift2_end": None,
+             "leave_type": None, "leave_reference": None},
             {"date": "2026-09-21", "status": None, "branch_id": None, "branch": None, "branch_code": None,
-             "shift1_start": None, "shift1_end": None, "shift2_start": None, "shift2_end": None},
+             "shift1_start": None, "shift1_end": None, "shift2_start": None, "shift2_end": None,
+             "leave_type": None, "leave_reference": None},
         ],
     },
 }
@@ -234,6 +237,7 @@ _MANAGER_LOGIN_SUCCESS_DATA = {
         "middle_name": "", "last_name": "K", "designation": "Manager", "role": None,
         "branch_id": None, "branch": None, "mobile": "0500000000", "email": "meera@byky.test", "photo_url": None,
         "company": "BY KY SPORT & LEISURE EQUIPMENT RENTAL & TRADING LLC",
+        "can_approve_leave": True,
     },
 }
 
@@ -262,6 +266,10 @@ class LoginView(PublicAPIView):
             "branch, null when none). See the success examples below for "
             "the different response shapes. Operator's `branch.branch_id` is the "
             "station's id in the database -- use it when building the station QR code. "
+            "`employee.can_approve_leave` says whether to offer Leave Requests to decide "
+            "(always in the manager app; in the employee app for a station's Leave Request "
+            "approver). The employee roster's days carry `leave_type` / `leave_reference` "
+            "on an approved-leave day (status `On Leave`). "
             "design/login/login-for-employee.md, design/login/login-for-operator.md."
         ),
         request=envelope_request("LoginEnvelope", LoginRequest),

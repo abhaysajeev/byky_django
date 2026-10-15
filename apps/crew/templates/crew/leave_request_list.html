@@ -1,0 +1,111 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Leave Requests - Human Resources{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+{% comment %}
+Leave requests from the employee app, a tab per status. The row opens its
+page, where it is approved or rejected -- the same rules as the manager app
+(apps/crew/leave.py).
+{% endcomment %}
+<div class="scr">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Human Resources</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Leave Requests</b>
+      </div>
+      <h1 class="scr-title">Leave Requests</h1>
+      <p class="scr-sub">Leave asked for in the employee app. An approval marks the days On Leave in the duty roster.</p>
+    </div>
+  </div>
+
+  <div class="scr-card" data-scr-server-paged>
+    <div class="scr-content-tabs">
+      {% for t in tabs %}
+      <a class="scr-content-tab{% if t.value == tab %} is-on{% endif %}" href="?tab={{ t.value }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}">{{ t.label }} <span class="scr-content-tab-count">{{ t.count }}</span></a>
+      {% endfor %}
+    </div>
+    <form method="get" class="scr-toolbar scr-mon-toolbar" data-scr-autosubmit>
+      <input type="hidden" name="tab" value="{{ tab }}" />
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="text" name="q" value="{{ params.q }}" placeholder="Employee name or code" aria-label="Search" />
+      </div>
+      <div class="scr-mon-dates">
+        <input type="date" name="from" class="scr-input" value="{{ params.from }}" aria-label="From" title="Leave from" />
+        <span>to</span>
+        <input type="date" name="to" class="scr-input" value="{{ params.to }}" aria-label="To" title="Leave to" />
+      </div>
+      <select name="type" class="scr-input scr-list-select" aria-label="Leave type">
+        <option value="">All leave types</option>
+        {% for t in leave_types %}<option value="{{ t.id }}"{% if params.type == t.id|stringformat:"s" %} selected{% endif %}>{{ t.name }}</option>{% endfor %}
+      </select>
+      <select name="state" class="scr-input scr-list-select" aria-label="Emirate">
+        <option value="">All emirates</option>
+        {% for s in states %}<option value="{{ s.id }}"{% if params.state == s.id|stringformat:"s" %} selected{% endif %}>{{ s.name }}</option>{% endfor %}
+      </select>
+      <select name="branch" class="scr-input scr-list-select" aria-label="Station">
+        <option value="">All stations</option>
+        {% for b in station_options %}<option value="{{ b.id }}"{% if params.branch == b.id|stringformat:"s" %} selected{% endif %}>{{ b.name }}</option>{% endfor %}
+      </select>
+      <button type="submit" class="scr-btn">Filter</button>
+      {% if filtered %}<a href="{% url 'crew-leave-request-list' %}?tab={{ tab }}" class="scr-btn-secondary">Clear</a>{% endif %}
+      <span class="scr-toolbar-count">{{ page.paginator.count }} request{{ page.paginator.count|pluralize }}</span>
+    </form>
+
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Request</th>
+            <th>Employee</th>
+            <th>Leave Type</th>
+            <th>Dates</th>
+            <th>Stations</th>
+            <th>Status</th>
+            <th class="scr-th-actions"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr class="scr-mon-row" data-scr-href="{{ r.detail_url }}">
+            <td><a class="scr-mon-time" href="{{ r.detail_url }}">{{ r.reference }}<span>Applied {{ r.applied_at|date:"d M Y, H:i" }}</span></a></td>
+            <td><div class="scr-co-name">{{ r.employee.full_name }}</div><div class="scr-contact-sub">{{ r.employee.employee_code }}</div></td>
+            <td class="scr-state">{{ r.leave_type }}</td>
+            <td class="scr-state">{{ r.from_date|date:"d M Y" }} – {{ r.to_date|date:"d M Y" }}<div class="scr-contact-sub">{{ r.days }} day{{ r.days|pluralize }}</div></td>
+            <td class="scr-state">{{ r.stations }}</td>
+            <td>{% include "crew/partials/leave_status.html" with status=r.status %}</td>
+            <td>
+              <div class="scr-row-actions">
+                <a class="scr-icon-btn" href="{{ r.detail_url }}" title="View leave request" aria-label="View leave request {{ r.reference }}">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                </a>
+              </div>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7" style="padding:0"><div class="scr-empty"><div><div class="scr-empty-title">{% if filtered %}No {{ tab_label|lower }} leave requests match{% else %}No {{ tab_label|lower }} leave requests{% endif %}</div><p class="scr-empty-sub">Employees ask for leave in the employee app.</p></div></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% include "byky/partials/server_pager.html" %}
+  </div>
+
+</div>
+{% endblock %}
