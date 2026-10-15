@@ -41,6 +41,7 @@ SCREENS = {
     "/crew/employee/list/": ["drawer_employee"],
     "/crew/designation/list/": ["drawer_designation"],
     "/crew/address/list/": ["drawer_address"],
+    "/crew/leave-type/list/": ["drawer_leave_type"],
     "/portal/role/list/": ["drawer_role"],
     "/portal/user/list/": ["drawer_user"],
     "/discount/card-grade/list/": ["drawer_card_grade"],

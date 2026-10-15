@@ -1,0 +1,94 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Leave Type - Human Resources{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Human Resources</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Leave Type</b>
+      </div>
+      <h1 class="scr-title">Leave Type</h1>
+      <p class="scr-sub">The kinds of leave employees pick from in the employee app.</p>
+    </div>
+    {% if perm.create %}
+    <div class="scr-head-actions">
+      <button type="button" class="scr-btn-primary" data-scr-open="leave_type:add">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+        Add Leave Type
+      </button>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="scr-tiles">
+    <div class="scr-tile">
+      <div><div class="scr-tile-val">{{ leave_types|length }}</div><div class="scr-tile-lab">Leave types</div></div>
+    </div>
+    <div class="scr-tile">
+      <div><div class="scr-tile-val">{{ active_count }}</div><div class="scr-tile-lab">Offered in the app</div></div>
+    </div>
+  </div>
+
+  <div class="scr-card" data-scr-noun-singular="leave type" data-scr-noun-plural="leave types" data-scr-delete-url="{{ delete_url_leave_type }}" data-scr-noun="{{ noun_leave_type }}">
+    <div class="scr-toolbar">
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="text" placeholder="Search leave type code or name" />
+      </div>
+      <span class="scr-toolbar-count">{{ leave_types|length }} leave types</span>
+    </div>
+
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Leave Type Name</th>
+            <th>Requests</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in leave_types %}
+          <tr class="scr-row" data-search="{{ t.code|lower }} {{ t.name|lower }}" data-record-id="{{ t.json_id }}" data-pk="{{ t.pk }}">
+            <td><span class="scr-code">{{ t.code }}</span></td>
+            <td class="scr-co-name">{{ t.name }}</td>
+            <td>{{ t.used }}</td>
+            <td>{% if t.active %}<span class="scr-badge scr-badge-active"><i></i>Active</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Inactive</span>{% endif %}</td>
+            <td>
+              <div class="scr-row-actions">
+                {% include "byky/partials/row_actions.html" with edit_open="leave_type:edit" %}
+              </div>
+            </td>
+          </tr>
+          {{ t.fields_json|json_script:t.json_id }}
+          {% empty %}
+          <tr><td colspan="5" style="padding:0"><div class="scr-empty"><div><div class="scr-empty-title">No leave types yet</div><p class="scr-empty-sub">Add the kinds of leave employees may ask for.</p></div></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% include "byky/partials/drawer.html" with save_url=save_url_leave_type spec=drawer_leave_type module_label="Human Resources · Leave Type" %}
+{% include "byky/partials/confirm_modal.html" %}
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}

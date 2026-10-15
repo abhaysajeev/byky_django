@@ -9,7 +9,7 @@ mark their own user (no QR code, no scanning person).
 
 from rest_framework import serializers
 
-from apps.crew.models import PunchType
+from apps.crew.models import LeaveStatus, PunchType
 from apps.crew.services import HISTORY_MAX_DAYS, TeamStatus
 from core.api import (
     REQUIRED,
@@ -108,6 +108,68 @@ class AttendanceHistoryRequest(serializers.Serializer):
             if span >= HISTORY_MAX_DAYS:
                 raise serializers.ValidationError({"to_date": f"must be within {HISTORY_MAX_DAYS} days of from_date"})
         return values
+
+
+# -- Leave (apps/crew/leave.py) ---------------------------------------------------------
+
+LEAVE_STATUS_FILTER = ["all", *LeaveStatus.values]
+LEAVE_STATUS_MESSAGE = {"invalid_choice": "must be all, pending, approved, rejected or cancelled"}
+
+
+def _leave_status():
+    return serializers.ChoiceField(choices=LEAVE_STATUS_FILTER, required=False, default="all",
+                                   error_messages=LEAVE_STATUS_MESSAGE)
+
+
+def _range(values):
+    if values.get("from_date") and values.get("to_date") and values["to_date"] < values["from_date"]:
+        raise serializers.ValidationError({"to_date": "must be on or after from_date"})
+    return values
+
+
+class LeaveSubmitRequest(serializers.Serializer):
+    """Employee app: one request for whole days, today or later."""
+
+    sync_id = uuid7_field()
+    leave_type_id = whole_number_field(min_value=1)
+    from_date = date_field()
+    to_date = date_field()
+    reason = text_field(max_length=500, required=False, allow_blank=True)
+
+    def validate(self, values):
+        return _range(values)
+
+
+class LeaveTypesRequest(serializers.Serializer):
+    """No input: the company's active leave types."""
+
+
+class LeaveIdRequest(serializers.Serializer):
+    leave_request_id = serializers.UUIDField(error_messages={**REQUIRED, "invalid": "must be a UUID"})
+
+
+class LeaveDecisionRequest(LeaveIdRequest):
+    remarks = text_field(max_length=500, required=False, allow_blank=True)
+
+
+class MyLeaveListRequest(serializers.Serializer):
+    """Employee app: the signed-in employee's own requests."""
+
+    status = _leave_status()
+    from_date = date_field(required=False)
+    to_date = date_field(required=False)
+    page = whole_number_field(min_value=1, required=False, default=1)
+
+    def validate(self, values):
+        return _range(values)
+
+
+class LeaveListRequest(MyLeaveListRequest):
+    """Manager app and employee-app approvers: the requests they decide."""
+
+    state_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    branch_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    search = text_field(max_length=100, required=False, allow_blank=True)
 
 
 class TeamAttendanceRequest(serializers.Serializer):

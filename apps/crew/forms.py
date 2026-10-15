@@ -14,7 +14,15 @@ from apps.crew.models import (
     Employee,
     EmployeeAddress,
     EmployeeDetail,
+    LeaveType,
 )
+
+
+class LeaveTypeForm(ScopedModelForm):
+    class Meta:
+        model = LeaveType
+        fields = ["company", "code", "name", "is_active"]
+        labels = {"code": "Leave Type Code", "name": "Leave Type Name"}
 
 
 class DesignationForm(ScopedModelForm):

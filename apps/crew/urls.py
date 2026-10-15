@@ -14,6 +14,9 @@ urlpatterns = [
          name="crew-attendance-detail"),
     path("duty-roster/", views.DutyRosterListView.as_view(), name="crew-duty-roster-list"),
     path("privileges/", views.CrewPrivilegeView.as_view(), name="crew-privileges"),
+    path("leave-type/list/", views.LeaveTypeListView.as_view(), name="crew-leave-type-list"),
+    path("leave-request/list/", views.LeaveRequestListView.as_view(), name="crew-leave-request-list"),
+    path("leave-request/<uuid:pk>/", views.LeaveRequestDetailView.as_view(), name="crew-leave-request-detail"),
 
     # Writes
     path("employee/save/", writes.EmployeeSaveView.as_view(), name="crew-employee-save"),
@@ -23,6 +26,10 @@ urlpatterns = [
     path("designation/<int:pk>/delete/", views.DesignationDelete.as_view(), name="crew-designation-delete"),
     path("address/save/", views.AddressSave.as_view(), name="crew-address-save"),
     path("address/<int:pk>/delete/", views.AddressDelete.as_view(), name="crew-address-delete"),
+    path("leave-type/save/", views.LeaveTypeSave.as_view(), name="crew-leave-type-save"),
+    path("leave-type/<int:pk>/delete/", views.LeaveTypeDelete.as_view(), name="crew-leave-type-delete"),
+    path("leave-request/<uuid:pk>/approve/", writes.LeaveApprove.as_view(), name="crew-leave-request-approve"),
+    path("leave-request/<uuid:pk>/reject/", writes.LeaveReject.as_view(), name="crew-leave-request-reject"),
 
     # Duty Roster
     path("duty-roster/branch-shifts/", writes.DutyRosterBranchShiftsView.as_view(), name="crew-duty-roster-branch-shifts"),

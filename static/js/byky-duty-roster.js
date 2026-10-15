@@ -54,6 +54,13 @@
     ['working', 'Working'], ['week_off', 'Week Off'],
     ['sick_leave', 'Sick Leave'], ['casual_leave', 'Casual Leave'],
   ];
+  // Set only by an approved leave request (apps/crew/leave.py): shown, never
+  // offered in a dropdown, and locked -- the server refuses any change.
+  var ON_LEAVE = 'On Leave';
+  function isLeave(rec) { return !!(rec && rec.status === ON_LEAVE); }
+  function statusText(rec) {
+    return isLeave(rec) && rec.leave_type ? ON_LEAVE + ' · ' + rec.leave_type : rec.status;
+  }
 
   var empByNo = {}, empById = {}, empByName = {};
   R.employees.forEach(function (e) {
@@ -77,7 +84,7 @@
   }
   function statusBadgeClass(status) {
     if (status === 'Working') return 'scr-badge-approved';
-    if (status === 'Sick Leave' || status === 'Casual Leave') return 'scr-badge-rejected';
+    if (status === 'Sick Leave' || status === 'Casual Leave' || status === ON_LEAVE) return 'scr-badge-rejected';
     return 'scr-badge-pending';
   }
   function shiftLabel(rec) {
@@ -441,12 +448,12 @@
     var allDays = [];
     R.weeks.forEach(function (w) { allDays = allDays.concat(w.days); });
 
-    var counts = { Working: 0, 'Week Off': 0, 'Sick Leave': 0, 'Casual Leave': 0 };
+    var counts = { Working: 0, 'Week Off': 0, 'Sick Leave': 0, 'Casual Leave': 0, 'On Leave': 0 };
     allDays.forEach(function (d) { var st = (monthMatrix[d] || {}).status; if (st) counts[st] = (counts[st] || 0) + 1; });
 
     if (empProfile) {
       empProfile.innerHTML = '<b style="color:#1a1640">' + emp.name + '</b> (' + emp.emp_no + ') · ' + emp.role + ' · ' + emp.designation +
-        ' &nbsp;·&nbsp; Working days: ' + counts.Working + ' · Week-offs: ' + counts['Week Off'] + ' · Sick leave: ' + counts['Sick Leave'] + ' · Casual leave: ' + counts['Casual Leave'];
+        ' &nbsp;·&nbsp; Working days: ' + counts.Working + ' · Week-offs: ' + counts['Week Off'] + ' · Sick leave: ' + counts['Sick Leave'] + ' · Casual leave: ' + counts['Casual Leave'] + ' · On leave: ' + counts['On Leave'];
     }
 
     empCalendar.innerHTML = '';
@@ -466,22 +473,23 @@
       var cell = document.createElement('div');
       cell.className = 'scr-cal-cell' + (day === R.today ? ' is-today' : '');
       cell.innerHTML = '<span class="scr-cal-date">' + d.getDate() + '</span>' +
-        (rec ? '<span class="scr-badge ' + statusBadgeClass(rec.status) + '"><i></i>' + rec.status + '</span>' : '') +
+        (rec ? '<span class="scr-badge ' + statusBadgeClass(rec.status) + '"><i></i>' + statusText(rec) + '</span>' : '') +
         (rec && rec.status === 'Working' ? '<span class="scr-cal-shift">' + shiftLabel(rec) + '</span><span class="scr-cal-branch">' + (rec.branch || '') + '</span>' : '') +
-        '<button type="button" class="scr-cal-edit" title="Edit day" data-cal-edit="' + day + '">' +
-        '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10a2.1 2.1 0 0 0-3-3L5 17z"></path></svg></button>';
+        (isLeave(rec) ? '' : '<button type="button" class="scr-cal-edit" title="Edit day" data-cal-edit="' + day + '">' +
+        '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10a2.1 2.1 0 0 0-3-3L5 17z"></path></svg></button>');
       cell.addEventListener('click', function (e) {
         if (e.target.closest('[data-cal-edit]')) return;
         openDetailModal(emp.name + ' — ' + day, [
           ['Employee', emp.name + ' (' + emp.emp_no + ')'],
           ['Date & Day', d.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })],
-          ['Status', rec ? rec.status : 'Not set'],
+          ['Status', rec ? statusText(rec) : 'Not set'],
+          ['Leave request', isLeave(rec) ? rec.leave_reference : ''],
           ['Branch', rec && rec.status === 'Working' ? rec.branch : ''],
           ['Shift 1', shiftLabel(rec)],
           ['Shift 2', rec && rec.shift2_start ? rec.shift2_start + ' – ' + rec.shift2_end : ''],
         ]);
       });
-      cell.querySelector('[data-cal-edit]').addEventListener('click', function (ev) {
+      if (cell.querySelector('[data-cal-edit]')) cell.querySelector('[data-cal-edit]').addEventListener('click', function (ev) {
         ev.stopPropagation();
         openEditDay(emp, day);
       });
@@ -526,6 +534,13 @@
     function dayCard(emp, day, monthMatrix) {
       var rec = monthMatrix[day];
       var d = new Date(day + 'T00:00:00');
+      if (isLeave(rec)) {
+        // Approved leave: shown, not posted with the week.
+        return '<div class="scr-wk-day-card" style="min-width:0" data-emp-day-leave="' + day + '">' +
+          '<div class="scr-wk-day-head">' + d.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'short' }) + '</div>' +
+          '<span class="scr-badge scr-badge-rejected"><i></i>' + statusText(rec) + '</span>' +
+          '<div class="byky-help" style="margin-top:6px">Approved leave ' + (rec.leave_reference || '') + ' — cannot be changed here.</div></div>';
+      }
       var dayType = rec ? (DAY_TYPE_VALUE[rec.status] || 'working') : 'working';
       var working = dayType === 'working';
       var branchId = rec && rec.branch ? (branchNameToId[rec.branch] || '') : '';
