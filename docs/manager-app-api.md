@@ -2,10 +2,10 @@
 
 For the manager app developers. It covers what the manager app calls, in the
 order it calls them: sign in → load the masters (states, stations) → requests
-(list, approve, reject, revoke) → reports → attendance → leave. Everything here is
+(list, approve, reject, revoke) → reports → attendance → leave → duty roster. Everything here is
 live in Swagger (`/api/docs/`) under the tags **Manager Auth**, **Manager
-Masters**, **Manager Requests**, **Manager Reports**, **Manager Attendance** and
-**Manager Leave** — Swagger is generated from the code and is the final word if
+Masters**, **Manager Requests**, **Manager Reports**, **Manager Attendance**,
+**Manager Leave** and **Manager Duty Roster** — Swagger is generated from the code and is the final word if
 this page and it ever disagree.
 
 > Base URL: `https://<server>/api/v1/manager/...` — every call is `POST`,
@@ -637,7 +637,55 @@ it here. Everything is also in Swagger under **Manager Leave**.
 
 ---
 
-## 9. Checklist for the app
+## 9. Duty roster — `POST /api/v1/manager/duty/team`
+
+Read-only: rosters are written on the web. The manager app sees every cashier
+and labour of the company (no one else is rostered), **grouped per
+employee** — also those with nothing rostered (their days are not set).
+
+| Field | Required | Notes |
+|---|---|---|
+| `from_date`, `to_date` | no | Both or neither; the current roster week by default; at most 31 days |
+| `state_id`, `branch_id` | no | Lists only staff **working** in the range at a station in that emirate / station — with all their days |
+| `category` | no | `cashier` or `labour` |
+| `search` | no | Name or code |
+| `page` | no | From 1, 50 employees a page, by name |
+
+```json
+{ "code": "ok", "message": "Team duty roster.", "data": {
+  "from_date": "2026-10-11", "to_date": "2026-10-17", "scope": "company",
+  "branches": [ { "branch_id": 12, "code": "CPG1", "name": "Creek Park Gate 1",
+                  "state_id": 2, "state": "Dubai" } ],
+  "counts": { "working": 30, "week_off": 6, "sick_leave": 0, "casual_leave": 1,
+              "on_leave": 2, "not_set": 4 },
+  "employees": [ {
+    "employee": { "employee_code": "BYKY014", "name": "Anil Kumar",
+                  "designation": "Cashier", "category": "cashier" },
+    "days": [
+      { "date": "2026-10-11", "status": "Working", "branch_id": 12,
+        "branch": "Creek Park Gate 1", "branch_code": "CPG1", "state": "Dubai",
+        "shift1_start": "15:00", "shift1_end": "02:00", "shift1_ends_next_day": true,
+        "shift2_start": null, "shift2_end": null, "shift2_ends_next_day": null,
+        "leave_type": null, "leave_reference": null },
+      { "date": "2026-10-12", "status": "On Leave", "branch_id": null, "...": "…",
+        "leave_type": "Annual Leave", "leave_reference": "LEV-2026-00037" },
+      { "date": "2026-10-13", "status": null, "...": "…" }
+    ]
+  } ],
+  "page": 1, "pages": 1, "total": 1
+} }
+```
+
+- `status`: `Working`, `Week Off`, `Sick Leave`, `Casual Leave`, `On Leave`
+  (approved leave), or `null` — **not set**, never read as Working.
+- `shiftN_ends_next_day` — the shift runs past midnight.
+- `counts` cover every page — use them for summary chips.
+- The same call works in the employee app for Supervisors / PROs, scoped by
+  their Team Scope (their Branch Supervisor stations).
+
+---
+
+## 10. Checklist for the app
 
 - [ ] One stored `installation_id` per install; always send `platform_id`.
 - [ ] Store and rotate both tokens; refresh on `not_authenticated`; log out only
@@ -655,3 +703,5 @@ it here. Everything is also in Swagger under **Manager Leave**.
       decision on a rejected request "Edit Status".
 - [ ] Team Attendance: one date at a time, reload on pull-to-refresh, show the
       "Missing check-out" label when `missing_check_out` is true.
+- [ ] Duty roster: draw a day with `status: null` as "Not set", never as
+      Working; mark `ends_next_day` shifts.
