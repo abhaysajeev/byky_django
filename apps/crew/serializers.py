@@ -9,7 +9,7 @@ mark their own user (no QR code, no scanning person).
 
 from rest_framework import serializers
 
-from apps.crew.models import LeaveStatus, PunchType
+from apps.crew.models import LeaveStatus, PunchType, RosterCategory
 from apps.crew.services import HISTORY_MAX_DAYS, TeamStatus
 from core.api import (
     REQUIRED,
@@ -182,6 +182,45 @@ class TeamAttendanceRequest(serializers.Serializer):
     status = serializers.ChoiceField(
         choices=TeamStatus.CHOICES, required=False, default=TeamStatus.ALL,
         error_messages={"invalid_choice": "must be all, checked_in, checked_out or not_checked_in"},
+    )
+    search = text_field(max_length=100, required=False, allow_blank=True)
+    page = whole_number_field(min_value=1, required=False, default=1)
+
+
+# -- Duty roster (apps/crew/duty.py) ---------------------------------------------------
+
+ROSTER_MAX_DAYS = 31
+
+
+class MyRosterRequest(serializers.Serializer):
+    """Employee app: the signed-in employee's own days. Both dates or neither
+    (today and the next six days)."""
+
+    from_date = date_field(required=False)
+    to_date = date_field(required=False)
+
+    def validate(self, values):
+        if ("from_date" in values) != ("to_date" in values):
+            missing, other = ("to_date", "from_date") if "from_date" in values else ("from_date", "to_date")
+            raise serializers.ValidationError({missing: f"is required with {other}"})
+        if "from_date" in values:
+            span = (values["to_date"] - values["from_date"]).days
+            if span < 0:
+                raise serializers.ValidationError({"to_date": "must be on or after from_date"})
+            if span >= ROSTER_MAX_DAYS:
+                raise serializers.ValidationError({"to_date": f"must be within {ROSTER_MAX_DAYS} days of from_date"})
+        return values
+
+
+class TeamRosterRequest(MyRosterRequest):
+    """Manager app and employee-app supervisors: the team's days. No dates:
+    the current roster week."""
+
+    state_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    branch_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    category = serializers.ChoiceField(
+        choices=RosterCategory.values, required=False, allow_blank=True,
+        error_messages={"invalid_choice": "must be cashier or labour"},
     )
     search = text_field(max_length=100, required=False, allow_blank=True)
     page = whole_number_field(min_value=1, required=False, default=1)

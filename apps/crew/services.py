@@ -36,7 +36,7 @@ from apps.crew.models import (
 )
 from core.enums import Channel
 from core.scoping import scoped_to
-from core.timezones import business_date_for, business_day_range, zone_for
+from core.timezones import business_day_range, zone_for
 
 # A document inside this many days counts as needing attention.
 EXPIRY_WARNING_DAYS = 30
@@ -1115,59 +1115,16 @@ def employee_profile(employee, channel=Channel.EMPLOYEE):
 
 
 def current_week_roster(employee, *, at=None):
-    """This employee's own current Sun-Sat week -- week_dates_all/
-    week_index_for, the same pair roster_payload uses for the admin screen,
-    just for one employee instead of every roster-eligible one.
-
-    A day with no DutyRoster row comes back with status=None, never a
-    defaulted "Working" -- the same rule roster_payload's matrix follows.
-    Shift times go through _hhmm/zone_for, not row.shift1_start.strftime()
-    directly -- that exact shortcut was the bug fixed earlier for the admin
-    screen (a Dubai 07:00 shift printing back as "03:00", the raw UTC the
-    field is stored in); new code reading the same DateTimeFields would
-    reintroduce it without this.
+    """This employee's own current roster week, for the login reply -- the
+    same week the admin screen shows (week_dates_all / week_index_for), each
+    day in apps/crew/duty.py's one day shape: an unset day has status None,
+    never a defaulted "Working"; shift times are the station's own clock.
     """
-    company = employee.company
-    today = business_date_for(company, at or timezone.now())
-    weeks = week_dates_all(today.year, today.month)
-    index = week_index_for(today) - 1
-    days = weeks[index] if 0 <= index < len(weeks) else []
+    from apps.crew import duty
 
-    rows = {
-        row.date: row
-        for row in DutyRoster.objects.filter(employee=employee, date__in=days)
-        .select_related("branch__company", "leave_request__leave_type")
-    }
-
-    out = []
-    for day in days:
-        row = rows.get(day)
-        if row is None:
-            out.append({
-                "date": day.isoformat(), "status": None, "branch_id": None, "branch": None, "branch_code": None,
-                "shift1_start": None, "shift1_end": None,
-                "shift2_start": None, "shift2_end": None,
-                "leave_type": None, "leave_reference": None,
-            })
-            continue
-        zone = zone_for(row.branch.company) if row.branch_id else zone_for(company)
-        out.append({
-            "date": day.isoformat(),
-            "status": row.get_day_type_display(),
-            # The station's database id, for the app's QR code.
-            "branch_id": row.branch_id,
-            "branch": row.branch.name if row.branch_id else None,
-            # The QR code carries this as employee_branch_code (attendance/mark).
-            "branch_code": row.branch.short_code if row.branch_id else None,
-            "shift1_start": _hhmm(row.shift1_start, zone),
-            "shift1_end": _hhmm(row.shift1_end, zone),
-            "shift2_start": _hhmm(row.shift2_start, zone),
-            "shift2_end": _hhmm(row.shift2_end, zone),
-            **_leave_fields(row),
-        })
-
+    days = duty.current_week(employee.company, at)
     return {
-        "week_start": days[0].isoformat() if days else None,
-        "week_end": days[-1].isoformat() if days else None,
-        "days": out,
+        "week_start": days[0].isoformat(),
+        "week_end": days[-1].isoformat(),
+        "days": duty.my_roster(employee, days[0], days[-1]),
     }
