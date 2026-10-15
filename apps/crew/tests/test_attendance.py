@@ -386,10 +386,16 @@ def test_a_blocked_or_inactive_employee_is_refused(client, world, operator, chan
     assert response.json()["code"] == code
 
 
-def test_the_employee_app_cannot_mark_attendance(client, world, operator):
-    response = call(client, MARK.format("employee"), {}, token=operator)
+@pytest.mark.parametrize("app, url", [
+    ("operator", MARK.format("employee")), ("operator", MARK.format("manager")),
+    ("manager", MARK.format("operator")), ("operator", HISTORY.format("manager")),
+])
+def test_a_token_works_only_on_its_own_apps_urls(client, world, operator, manager, app, url):
+    response = call(client, url, self_punch("punch_in", local(DAY, 9)),
+                    token={"operator": operator, "manager": manager}[app])
     assert response.status_code == 403
     assert response.json()["code"] == "wrong_channel"
+    assert not Attendance.objects.exists()
 
 
 def test_no_token_is_refused(client, world):
@@ -514,9 +520,85 @@ def test_manager_and_operator_read_their_own_by_default(client, world, operator,
     assert history(client, operator, "operator", employee_code="MGR001").json()["data"]["days"]
 
 
+# -- Attendance method (15 Oct 2026) ------------------------------------------------
+
+
+def self_method(employee, method="self"):
+    employee.designation.attendance_method = method
+    employee.designation.save(update_fields=["attendance_method"])
+
+
+def test_the_employee_app_marks_its_own_when_the_method_is_self(client, world, staff_app):
+    self_method(world["staff"])
+
+    body = mark(client, staff_app, self_punch("punch_in", local(DAY, 9), employee_code="EMP001",
+                                              employee_branch_code="", rms_installation_id=""),
+                app="employee").json()
+
+    assert body["code"] == "ok", body
+    row = Attendance.objects.get()
+    assert (row.source, row.employee, row.rms_branch, row.rms_installation_id) == (
+        AttendanceSource.SELF, world["staff"], None, "phone-e")
+
+
+@pytest.mark.parametrize("method", ["qr_station", "not_required"])
+def test_the_employee_app_refuses_anyone_else(client, world, staff_app, method):
+    self_method(world["staff"], method)
+
+    response = mark(client, staff_app, self_punch("punch_in", local(DAY, 9), employee_code=""), app="employee")
+
+    assert (response.status_code, response.json()["code"]) == (403, "self_attendance_not_allowed")
+    assert not Attendance.objects.exists()
+
+
+def test_the_employees_own_override_wins(client, world, staff_app):
+    world["staff"].attendance_method = "self"           # the designation stays QR
+    world["staff"].save(update_fields=["attendance_method"])
+
+    body = mark(client, staff_app, self_punch("punch_in", local(DAY, 9), employee_code=""), app="employee").json()
+
+    assert body["code"] == "ok", body
+
+
+@pytest.mark.parametrize("method", ["self", "not_required"])
+def test_the_operator_scans_only_qr_staff(client, world, operator, method):
+    self_method(world["staff"], method)
+
+    response = mark(client, operator, qr("punch_in", local(DAY, 9)))
+
+    assert (response.status_code, response.json()["code"]) == (403, "attendance_method_mismatch")
+    assert not Attendance.objects.exists()
+
+
+def test_the_manager_app_always_marks_its_own(client, world, manager):
+    self_method(world["manager"], "not_required")
+
+    assert mark(client, manager, self_punch("punch_in", local(DAY, 9)), app="manager").json()["code"] == "ok"
+
+
+def test_a_resent_punch_is_a_duplicate_even_after_the_method_changes(client, world, operator):
+    data = qr("punch_in", local(DAY, 9))
+    assert mark(client, operator, data).json()["code"] == "ok"
+    self_method(world["staff"])
+
+    assert mark(client, operator, data).json()["code"] == "duplicate"
+
+
+def test_the_logins_tell_the_app_its_method_and_team_scope(client, world, manager, staff_app):
+    employee = call(client, "/api/v1/employee/auth/login",
+                    {"username": "EMP001", "password": PASSWORD, "installation_id": "phone-e"}).json()
+    boss = call(client, "/api/v1/manager/auth/login",
+                {"username": "MGR001", "password": PASSWORD, "installation_id": "phone-m"}).json()
+
+    assert (employee["data"]["employee"]["attendance_method"], employee["data"]["employee"]["team_scope"]) == (
+        "qr_station", "own")
+    assert boss["data"]["employee"]["team_scope"] == "company"
+
+
 def test_the_endpoints_are_in_the_docs(client, world):
     schema = client.get("/api/schema/").content.decode()
     assert "/api/v1/{app}/attendance/mark" in schema and "/api/v1/{app}/attendance/history" in schema
+    assert "attendance_method_mismatch" in schema and "self_attendance_not_allowed" in schema
     assert "Manager Attendance" in schema and "Employee Attendance" in schema and "UUIDv7" in schema
 
 

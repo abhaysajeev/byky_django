@@ -137,6 +137,13 @@ DESIGNATION = {
                     "help": "How this job's attendance is taken, unless an employee overrides it.",
                 },
                 {
+                    "id": "team_scope", "label": "Team Scope", "kind": "select",
+                    "required": True, "options_from": "team_scopes_list",
+                    "option_key": "name",
+                    "help": "What this job sees in Team Attendance. 'Assigned branches' makes "
+                            "the employee selectable as a Branch Supervisor.",
+                },
+                {
                     "id": "roster_category", "label": "Duty Roster Category", "kind": "select",
                     "required": False, "options_from": "roster_categories_list",
                     "option_key": "name",

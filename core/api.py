@@ -80,6 +80,14 @@ def station_of(session, *, replay=False):
     return branch, None
 
 
+def other_app(request, app):
+    """The reply refusing a session signed in on another app than the URL's
+    `{app}`, or None -- an employee's token on a /manager/ URL is refused."""
+    if request.auth.channel != app:
+        return envelope("wrong_channel", "Not allowed on this app.", http_status=403)
+    return None
+
+
 def manager_only(request, app):
     """The reply refusing a call that is not the manager app's, or None. The
     session's own channel is checked too, not only the URL: an operator's

@@ -3,15 +3,23 @@ presence only -- lookups and the punch in/out rules are
 apps/crew/services.py::mark_attendance.
 
 One serializer per source, because the source decides which fields exist:
-the operator app scans a QR code (both sides), the manager app marks its own
-user (no QR code, no scanning person).
+the operator app scans a QR code (both sides), the manager and employee apps
+mark their own user (no QR code, no scanning person).
 """
 
 from rest_framework import serializers
 
 from apps.crew.models import PunchType
-from apps.crew.services import HISTORY_MAX_DAYS
-from core.api import REQUIRED, coordinate_field, date_field, datetime_field, text_field, uuid7_field
+from apps.crew.services import HISTORY_MAX_DAYS, TeamStatus
+from core.api import (
+    REQUIRED,
+    coordinate_field,
+    date_field,
+    datetime_field,
+    text_field,
+    uuid7_field,
+    whole_number_field,
+)
 
 PUNCH_TYPE = {**REQUIRED, "invalid_choice": "must be punch_in or punch_out"}
 
@@ -30,9 +38,10 @@ def _pairs(values, *prefixes):
 
 
 class SelfAttendanceRequest(serializers.Serializer):
-    """Manager app: the signed-in manager's own punch. Who and which phone come
-    from the session; a manager covers every station, so the branch is optional
-    (the manager's home branch, if any, when not sent)."""
+    """Manager app, and employee app for staff whose attendance method is
+    Self: the signed-in user's own punch. Who and which phone come from the
+    session; it has no station, so the branch is optional (the user's home
+    branch, if any, when not sent)."""
 
     sync_id = uuid7_field()
     punch_type = serializers.ChoiceField(choices=PunchType.choices, error_messages=PUNCH_TYPE)
@@ -99,3 +108,18 @@ class AttendanceHistoryRequest(serializers.Serializer):
             if span >= HISTORY_MAX_DAYS:
                 raise serializers.ValidationError({"to_date": f"must be within {HISTORY_MAX_DAYS} days of from_date"})
         return values
+
+
+class TeamAttendanceRequest(serializers.Serializer):
+    """Team Attendance -- one day (today when not sent), optionally one
+    emirate, one station, one status tab, a name or code search, a page."""
+
+    date = date_field(required=False)
+    state_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    branch_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    status = serializers.ChoiceField(
+        choices=TeamStatus.CHOICES, required=False, default=TeamStatus.ALL,
+        error_messages={"invalid_choice": "must be all, checked_in, checked_out or not_checked_in"},
+    )
+    search = text_field(max_length=100, required=False, allow_blank=True)
+    page = whole_number_field(min_value=1, required=False, default=1)

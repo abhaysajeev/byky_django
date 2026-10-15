@@ -184,6 +184,23 @@ BRANCH = {
                     "help": "Staff at this branch who can approve RMS app requests."
                 }
             ]
+        },
+        {
+            "title": "Team Attendance",
+            "fields": [
+                {
+                    "id": "branch_supervisors",
+                    "label": "Branch Supervisors",
+                    "kind": "multiselect",
+                    "required": False,
+                    "width": 12,
+                    "placeholder": "Select supervisors",
+                    "options_from": "supervisors_list",
+                    "option_key": "name",
+                    "help": "Supervisors and PROs picked here see this branch's team attendance. "
+                            "Only staff whose designation's Team Scope is 'Assigned branches' are listed."
+                }
+            ]
         }
     ]
 }

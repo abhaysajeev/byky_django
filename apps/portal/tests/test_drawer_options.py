@@ -23,7 +23,7 @@ from apps.company.models import (
     Location,
     State,
 )
-from apps.crew.models import Designation, Employee
+from apps.crew.models import Designation, Employee, TeamScope
 from apps.discount.models import CardType
 from apps.portal.models import Role
 from apps.portal.services import grant_all
@@ -74,6 +74,13 @@ def world(db):
     Employee.objects.create(
         company=company, employee_code="BYKY001", first_name="Anil", last_name="R",
         designation=designation,
+    )
+    # The Branch Supervisors picker lists only these.
+    Employee.objects.create(
+        company=company, employee_code="BYKY002", first_name="Sara", last_name="M",
+        designation=Designation.objects.create(
+            company=company, code="SUP", title="Supervisor", team_scope=TeamScope.BRANCHES,
+        ),
     )
     CardType.objects.create(company=company, code="CORP", name="Corporate")
     return company

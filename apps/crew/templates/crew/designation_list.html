@@ -63,6 +63,7 @@
             <th>Designation Title</th>
             <th>Description</th>
             <th>Rank Order</th>
+            <th>Team Scope</th>
             <th>Headcount</th>
             <th>Status</th>
             <th>Actions</th>
@@ -75,6 +76,7 @@
             <td style="font-weight:600">{{ d.title }}</td>
             <td class="scr-contact">{{ d.description }}</td>
             <td>{{ d.rank }}</td>
+            <td>{{ d.team_scope }}</td>
             <td><span class="scr-badge scr-badge-approved"><i></i>{{ d.headcount }}</span></td>
             <td>{% if d.active %}<span class="scr-badge scr-badge-active"><i></i>Active</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Inactive</span>{% endif %}</td>
             <td>
