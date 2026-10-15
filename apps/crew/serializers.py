@@ -10,7 +10,7 @@ mark their own user (no QR code, no scanning person).
 from rest_framework import serializers
 
 from apps.crew.models import LeaveStatus, PunchType, RosterCategory
-from apps.crew.services import HISTORY_MAX_DAYS, TeamStatus
+from apps.crew.services import HISTORY_MAX_DAYS, TEAM_MAX_DAYS, TeamStatus
 from core.api import (
     REQUIRED,
     coordinate_field,
@@ -173,10 +173,13 @@ class LeaveListRequest(MyLeaveListRequest):
 
 
 class TeamAttendanceRequest(serializers.Serializer):
-    """Team Attendance -- one day (today when not sent), optionally one
-    emirate, one station, one status tab, a name or code search, a page."""
+    """Team Attendance -- one day (`date`, today when nothing is sent) or a
+    range (`from_date` + `to_date`, at most TEAM_MAX_DAYS days); optionally
+    one emirate, one station, one status tab, a name or code search, a page."""
 
     date = date_field(required=False)
+    from_date = date_field(required=False)
+    to_date = date_field(required=False)
     state_id = whole_number_field(min_value=1, required=False, allow_null=True)
     branch_id = whole_number_field(min_value=1, required=False, allow_null=True)
     status = serializers.ChoiceField(
@@ -185,6 +188,22 @@ class TeamAttendanceRequest(serializers.Serializer):
     )
     search = text_field(max_length=100, required=False, allow_blank=True)
     page = whole_number_field(min_value=1, required=False, default=1)
+
+    def validate(self, values):
+        has_range = "from_date" in values or "to_date" in values
+        if "date" in values and has_range:
+            raise serializers.ValidationError({"date": "cannot be sent with from_date or to_date"})
+        if has_range:
+            if "from_date" not in values:
+                raise serializers.ValidationError({"from_date": "is required with to_date"})
+            if "to_date" not in values:
+                raise serializers.ValidationError({"to_date": "is required with from_date"})
+            span = (values["to_date"] - values["from_date"]).days
+            if span < 0:
+                raise serializers.ValidationError({"to_date": "must be on or after from_date"})
+            if span >= TEAM_MAX_DAYS:
+                raise serializers.ValidationError({"to_date": f"must be within {TEAM_MAX_DAYS} days of from_date"})
+        return values
 
 
 # -- Duty roster (apps/crew/duty.py) ---------------------------------------------------

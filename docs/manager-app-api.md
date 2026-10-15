@@ -510,7 +510,8 @@ rostered but has not checked in.
 
 | Field | Required | Notes |
 |---|---|---|
-| `date` | no | `YYYY-MM-DD`, today by default |
+| `date` | no | One day, `YYYY-MM-DD`; today by default |
+| `from_date`, `to_date` | no | A range instead of `date`: both, at most 31 days |
 | `state_id` | no | One emirate |
 | `branch_id` | no | One station |
 | `status` | no | `all` (default), `checked_in`, `checked_out`, `not_checked_in` |
@@ -519,12 +520,12 @@ rostered but has not checked in.
 
 ```json
 { "code": "ok", "message": "Team attendance.", "data": {
-  "date": "2026-10-15", "scope": "company",
+  "date": "2026-10-15", "from_date": "2026-10-15", "to_date": "2026-10-15", "scope": "company",
   "branches": [ { "branch_id": 12, "code": "AUH01", "name": "Creek Park 1",
                   "state_id": 1, "state": "Abu Dhabi" } ],
   "counts": { "all": 2, "checked_in": 0, "checked_out": 1, "not_checked_in": 1 },
   "rows": [
-    { "row_type": "session", "attendance_id": "01923e1c-…",
+    { "date": "2026-10-15", "row_type": "session", "attendance_id": "01923e1c-…",
       "status": "checked_out", "missing_check_out": false,
       "employee": { "employee_code": "BYKY014", "name": "Anil Kumar", "designation": "Cashier" },
       "source": "qr_scan",
@@ -532,7 +533,7 @@ rostered but has not checked in.
       "emirate": { "state_id": 1, "name": "Abu Dhabi" },
       "check_in": "2026-10-15 07:58:10", "check_out": "2026-10-15 16:02:44",
       "duration_minutes": 484, "device_no": 1000023, "roster": null },
-    { "row_type": "not_checked_in", "attendance_id": null,
+    { "date": "2026-10-15", "row_type": "not_checked_in", "attendance_id": null,
       "status": "not_checked_in", "missing_check_out": false,
       "employee": { "employee_code": "BYKY031", "name": "Ravi S", "designation": "Labour" },
       "source": null, "station": null,
@@ -548,7 +549,11 @@ rostered but has not checked in.
 
 - **One row per session** — a check-in made that day with its check-out, even
   when the check-out fell the next day (a night shift stays on the day it
-  started). Newest check-in first, then the not-checked-in rows by name.
+  started). Every row has its `date`. Newest day first; within a day, newest
+  check-in first, then that day's not-checked-in rows by name.
+- **A range** (`from_date` + `to_date`): the reply's `date` is `null` and
+  `from_date` / `to_date` give the days covered. "Not checked in" is per day:
+  one row for each rostered day with no check-in that day.
 - Each row has **everything the detail screen shows** — no second call.
 - `missing_check_out: true` — still `checked_in` more than 24 hours after the
   check-in; show a "Missing check-out" label.

@@ -461,31 +461,41 @@ def _narrowed(company, branch_ids, state_id=None, branch_id=None):
     return ids
 
 
-def team_attendance(company, branch_ids, day, *, state_id=None, branch_id=None, status=TeamStatus.ALL,
-                    search="", now=None):
-    """(rows, counts) for one company-local day.
+TEAM_MAX_DAYS = 31
 
-    A row is one session -- a punch-in made that day with its punch-out, even
-    when that fell the next day -- or one rostered employee who has not
-    checked in. `branch_ids` is the scope (None: the whole company). A branch
-    scope, and any emirate / branch filter, reads the station a punch was
-    scanned at (`rms_branch`): a self punch has none, so it shows only in the
-    unfiltered whole-company list.
+
+def team_attendance(company, branch_ids, from_date, to_date=None, *, state_id=None, branch_id=None,
+                    status=TeamStatus.ALL, search="", now=None):
+    """(rows, counts) for company-local days `from_date` to `to_date` (one
+    day when `to_date` is not given).
+
+    A row is one session -- a punch-in made on a day of the range with its
+    punch-out, even when that fell the next day -- or one rostered day of an
+    employee who did not check in that day. Every row carries its `day`.
+    `branch_ids` is the scope (None: the whole company). A branch scope, and
+    any emirate / branch filter, reads the station a punch was scanned at
+    (`rms_branch`): a self punch has none, so it shows only in the unfiltered
+    whole-company list.
 
     Not checked in = a DutyRoster day of type Working at an in-scope branch,
-    for an active employee with no punch-in that day anywhere. The roster
+    for an active employee with no punch-in **that day** anywhere. The roster
     covers cashier and labour only, so nobody else is ever listed as absent.
 
-    `counts` follow every filter but `status`, for the status tabs.
+    Rows run newest day first; within a day, newest check-in first, then that
+    day's not-checked-in rows by name. `counts` cover the whole range and
+    follow every filter but `status`, for the status tabs.
     """
     now = now or timezone.now()
+    to_date = to_date or from_date
+    zone = zone_for(company)
     ids = _narrowed(company, branch_ids, state_id, branch_id)
-    start, end = business_day_range(company, day)
+    start, _ = business_day_range(company, from_date)
+    _, end = business_day_range(company, to_date)
 
-    day_punch_ins = Attendance.objects.filter(
+    range_punch_ins = Attendance.objects.filter(
         employee__company=company, punch_type=PunchType.PUNCH_IN, rms_scan_time__gte=start, rms_scan_time__lt=end,
     )
-    punch_ins = day_punch_ins
+    punch_ins = range_punch_ins
     if ids is not None:
         punch_ins = punch_ins.filter(rms_branch_id__in=ids)
     punch_ins = punch_ins.select_related(
@@ -495,26 +505,42 @@ def team_attendance(company, branch_ids, day, *, state_id=None, branch_id=None, 
     rows = []
     for punch_in, punch_out, state, worked in attendance_sessions(punch_ins, now):
         rows.append({
+            "day": timezone.localtime(punch_in.rms_scan_time, zone).date(),
             "status": TeamStatus.CHECKED_OUT if punch_out is not None else TeamStatus.CHECKED_IN,
             "missing_check_out": state == SessionStatus.MISSING_PUNCH_OUT,
             "employee": punch_in.employee, "punch_in": punch_in, "punch_out": punch_out,
             "worked_minutes": worked, "roster": None,
         })
 
+    # Who checked in on which day, anywhere -- a punch at another station still counts.
+    checked_in = {
+        (employee_id, timezone.localtime(at, zone).date())
+        for employee_id, at in range_punch_ins.values_list("employee_id", "rms_scan_time")
+    }
     roster = (
         DutyRoster.objects
-        .filter(employee__company=company, employee__is_active=True, date=day, day_type=DutyRosterDayType.WORKING)
-        .exclude(employee_id__in=day_punch_ins.values("employee_id"))
+        .filter(employee__company=company, employee__is_active=True, date__range=(from_date, to_date),
+                day_type=DutyRosterDayType.WORKING)
         .select_related("employee__designation", "branch__location__state")
     )
     if ids is not None:
         roster = roster.filter(branch_id__in=ids)
-    for entry in sorted(roster, key=lambda r: (r.employee.full_name.lower(), r.employee.employee_code)):
+    for entry in roster:
+        if (entry.employee_id, entry.date) in checked_in:
+            continue
         rows.append({
-            "status": TeamStatus.NOT_CHECKED_IN, "missing_check_out": False,
+            "day": entry.date, "status": TeamStatus.NOT_CHECKED_IN, "missing_check_out": False,
             "employee": entry.employee, "punch_in": None, "punch_out": None,
             "worked_minutes": None, "roster": entry,
         })
+
+    def order(row):
+        if row["punch_in"] is not None:
+            return (-row["day"].toordinal(), 0, -row["punch_in"].rms_scan_time.timestamp(), "", "")
+        employee = row["employee"]
+        return (-row["day"].toordinal(), 1, 0, employee.full_name.lower(), employee.employee_code)
+
+    rows.sort(key=order)
 
     needle = (search or "").strip().lower()
     if needle:
