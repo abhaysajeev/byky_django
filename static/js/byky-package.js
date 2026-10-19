@@ -23,7 +23,7 @@
     all_days: 'All Days', monday: 'Monday', tuesday: 'Tuesday', wednesday: 'Wednesday',
     thursday: 'Thursday', friday: 'Friday', saturday: 'Saturday', sunday: 'Sunday'
   };
-  var PROMOTION_LABEL = { quantity: 'Quantity', amount: 'Amount', percentage: 'Percentage', each: 'Each', package_price: 'Package Price' };
+  var PROMOTION_LABEL = { quantity: 'Quantity', amount: 'Amount', percentage: 'Percentage', package_price: 'Package Price' };
   var VEHICLE_NAME = {};
   options.vehicle_types.forEach(function (v) { VEHICLE_NAME[v.id] = v.name; });
 
@@ -90,7 +90,6 @@
   var validFrom = $('[data-package-date="valid_from"]');
   var validTo = $('[data-package-date="valid_to"]');
   var promotionFor = $('[data-package-field="promotion_for"]');
-  var inventoryType = $('[data-package-field="inventory_type"]');
   var lowerValue = $('[data-package-field="lower_value"]');
   var upperValue = $('[data-package-field="upper_value"]');
   var promotionType = $('[data-package-field="promotion_type"]');
@@ -118,7 +117,6 @@
     setIso(validFrom, initial.valid_from);
     setIso(validTo, initial.valid_to);
     promotionFor.value = initial.promotion_for || '';
-    inventoryType.value = initial.inventory_type || 'vehicle_type';
     lowerValue.value = initial.lower_value || '';
     upperValue.value = initial.upper_value || '';
     promotionType.value = initial.promotion_type || '';
@@ -177,7 +175,7 @@
       level: level(), branch: level() === 'branch' ? branch.value : '', location: level() === 'location' ? location.value : '',
       valid_from: isoOf(validFrom), valid_to: isoOf(validTo),
       is_active: status.value === '1',
-      promotion_for: promotionFor.value, inventory_type: inventoryType.value,
+      promotion_for: promotionFor.value,
       lower_value: lowerValue.value.trim(), upper_value: upperValue.value.trim(),
       promotion_type: promotionType.value,
       time_slab_applicable: toggledOn(timeSlabToggle), free_item_selectable: toggledOn(freeItemToggle),

@@ -302,7 +302,7 @@ def _package_blank(user):
     return {
         "pk": None, "company": user.company_id, "package_code": "", "package_name": "",
         "level": PackageLevel.COMPANY, "branch": None, "location": None,
-        "valid_from": "", "valid_to": "", "promotion_for": "", "inventory_type": "vehicle_type",
+        "valid_from": "", "valid_to": "", "promotion_for": "",
         "lower_value": "", "upper_value": "", "promotion_type": "",
         "time_slab_applicable": False, "free_item_selectable": False, "free_item_selectable_note": "",
         "free_or_package_price": "free", "is_active": True,

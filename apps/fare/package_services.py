@@ -175,7 +175,6 @@ def _write(user, package, context, spec, meta):
     package.location = context["location"]
     package.valid_from, package.valid_to = spec.valid_from, spec.valid_to
     package.promotion_for = spec.promotion_for
-    package.inventory_type = spec.inventory_type
     package.lower_value, package.upper_value = spec.lower_value, spec.upper_value
     package.promotion_type = spec.promotion_type
     package.time_slab_applicable = spec.time_slab_applicable

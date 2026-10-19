@@ -274,17 +274,10 @@ class PromotionFor(models.TextChoices):
     AMOUNT = "amount", "Amount"
 
 
-class InventoryType(models.TextChoices):
-    # Only value in the client mockup; kept as a real choice field rather
-    # than hardcoded, since the mockup itself presents it as a dropdown.
-    VEHICLE_TYPE = "vehicle_type", "Vehicle Type"
-
-
 class PromotionType(models.TextChoices):
     QUANTITY = "quantity", "Quantity"
     AMOUNT = "amount", "Amount"
     PERCENTAGE = "percentage", "Percentage"
-    EACH = "each", "Each"
     PACKAGE_PRICE = "package_price", "Package Price"
 
 
@@ -334,9 +327,6 @@ class Package(ApprovalMixin, TimeStampedModel):
     valid_from = models.DateField("Valid From")
     valid_to = models.DateField("Valid To")
     promotion_for = models.CharField("Promotion For", max_length=10, choices=PromotionFor.choices)
-    inventory_type = models.CharField(
-        "Inventory Type", max_length=20, choices=InventoryType.choices, default=InventoryType.VEHICLE_TYPE,
-    )
     lower_value = models.DecimalField("Lower Promotion Value", max_digits=13, decimal_places=3)
     upper_value = models.DecimalField("Upper Promotion Value", max_digits=13, decimal_places=3)
 
