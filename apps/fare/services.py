@@ -456,6 +456,18 @@ class UnknownVehicleType(Exception):
     """Not this branch's company's, or it, or its category, is not active and approved."""
 
 
+def check_vehicle_type(branch, vehicle_type_id):
+    """Raise UnknownVehicleType unless this station's company can use it --
+    the fare and package downloads' vehicle_type_id filter."""
+    approved = ApprovalStatus.APPROVED
+    usable = VehicleType.objects.filter(
+        pk=vehicle_type_id, company=branch.company, is_active=True, approval_status=approved,
+        category__is_active=True, category__approval_status=approved,
+    ).exists()
+    if not usable:
+        raise UnknownVehicleType()
+
+
 KIND_ORDER = {RuleKind.SINGLE_DATE: 0, RuleKind.SELECTED_DAYS: 1, RuleKind.EVERY_DAY: 2}
 
 
@@ -527,13 +539,7 @@ def device_fares(branch, day, *, vehicle_type_id=None, package_minutes=None):
     only narrow it. Raises UnknownVehicleType for a vehicle type this branch
     cannot use; a usable one with no fare gives an empty list."""
     if vehicle_type_id is not None:
-        approved = ApprovalStatus.APPROVED
-        usable = VehicleType.objects.filter(
-            pk=vehicle_type_id, company=branch.company, is_active=True, approval_status=approved,
-            category__is_active=True, category__approval_status=approved,
-        ).exists()
-        if not usable:
-            raise UnknownVehicleType()
+        check_vehicle_type(branch, vehicle_type_id)
 
     fares = sorted(
         device_fare_rows(branch, day, vehicle_type_id=vehicle_type_id, package_minutes=package_minutes),
