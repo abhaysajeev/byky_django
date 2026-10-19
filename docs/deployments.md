@@ -47,10 +47,10 @@ copy what is already in the volume across, then deploy:
 
 ```bash
 # once, as deploy, for the copy in ~/byky_django (qa)
-sudo mkdir -p /srv/ftp/upload/byky/qa          # the FTP folder's real host path
-docker run --rm -v byky_f_qa_byky_f_qa_media:/from -v /srv/ftp/upload/byky/qa:/to \
+sudo mkdir -p /ftp/upload/byky/qa          # the FTP folder (its real host path)
+docker run --rm -v byky_f_qa_byky_f_qa_media:/from -v /ftp/upload/byky/qa:/to \
   alpine sh -c 'cp -a /from/. /to/'
-echo 'MEDIA_HOST_DIR=/srv/ftp/upload/byky/qa' >> ~/byky_django/.env
+echo 'MEDIA_HOST_DIR=/ftp/upload/byky/qa' >> ~/byky_django/.env
 ```
 
 The apps never use FTP: they upload through the API, and photos are sent
