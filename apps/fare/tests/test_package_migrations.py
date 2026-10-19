@@ -156,3 +156,36 @@ def test_a_role_granted_offers_keeps_the_packages_screen(new_page_exists):
     assert (package.name, package.is_active) == ("Packages", True)
     grant = RolePermission.objects.get(role_id=role.pk)
     assert (grant.page_id, grant.can_read, grant.can_update, grant.can_delete) == (package.pk, True, True, False)
+
+
+BEFORE_0006 = [("fare", "0005_money_three_decimals"), DEVICES]
+AFTER_0006 = [("fare", "0006_drop_inventory_type_and_each"), DEVICES]
+
+
+@pytest.mark.django_db(transaction=True)
+def test_each_becomes_amount_and_inventory_type_goes():
+    """fare 0006: a package saved as "Each" keeps its items, as "Amount"."""
+    apps = migrate(BEFORE_0006)
+    Country, State, Company = (apps.get_model("company", name) for name in ("Country", "State", "Company"))
+    Category, Brand, VehicleType = (apps.get_model("fleet", name) for name in ("Category", "Brand", "VehicleType"))
+    Package, PackageItem = (apps.get_model("fare", name) for name in ("Package", "PackageItem"))
+    uae = Country.objects.create(short_code="AE", name="UAE")
+    state = State.objects.create(country=uae, short_code="AUH", name="Abu Dhabi")
+    company = Company.objects.create(short_code="BYKY", name="BYKY", country=uae, state=state,
+                                     phone_number="+9710", email="a@b.test")
+    category = Category.objects.create(company=company, category_code="C", category_name="Bikes")
+    brand = Brand.objects.create(company=company, brand_code="B", brand_name="Byky")
+    vtype = VehicleType.objects.create(company=company, category=category, brand=brand, vehicle_type_name="Bike")
+    package = Package.objects.create(
+        company=company, package_code="EACH", package_name="Each deal", level="company",
+        valid_from=datetime.date(2026, 6, 1), valid_to=datetime.date(2026, 8, 31), promotion_for="quantity",
+        inventory_type="vehicle_type", lower_value=Decimal("1"), upper_value=Decimal("3"), promotion_type="each",
+    )
+    PackageItem.objects.create(package=package, vehicle_type=vtype, package_minutes=30, value=Decimal("5.000"))
+
+    apps = migrate(AFTER_0006)
+    after = apps.get_model("fare", "Package").objects.get(package_code="EACH")
+
+    assert after.promotion_type == "amount"
+    assert not hasattr(after, "inventory_type")
+    assert apps.get_model("fare", "PackageItem").objects.get(package=after).value == Decimal("5.000")

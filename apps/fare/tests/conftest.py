@@ -14,7 +14,6 @@ from apps.fare.models import (
     FareLevel,
     FareRule,
     FareSeason,
-    InventoryType,
     Package,
     PackageLevel,
     PromotionFor,
@@ -119,7 +118,7 @@ def make_package(world, *, code="PROMO1", **fields):
     values = {
         "company": world["company"], "package_code": code, "package_name": "Promo",
         "level": PackageLevel.COMPANY, "valid_from": D(2026, 1, 1), "valid_to": D(2026, 12, 31),
-        "promotion_for": PromotionFor.QUANTITY, "inventory_type": InventoryType.VEHICLE_TYPE,
+        "promotion_for": PromotionFor.QUANTITY,
         "lower_value": Decimal("1"), "upper_value": Decimal("5"), "promotion_type": PromotionType.QUANTITY,
     }
     values.update(fields)

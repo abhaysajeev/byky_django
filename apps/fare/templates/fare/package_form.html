@@ -57,6 +57,12 @@ for why this pass doesn't need either.
 
   <div data-package-banner aria-live="polite"></div>
 
+  {% comment %}
+  Layout rule for the three cards below: nothing appears or disappears inside
+  a row. A control that only applies sometimes keeps its cell (the scope cell
+  swaps what it shows; Free / Package Price is reserved, not removed), so a
+  click never moves the controls around it.
+  {% endcomment %}
   <div class="scr-card">
     <div class="scr-form-head">
       <div>
@@ -79,37 +85,37 @@ for why this pass doesn't need either.
           <label class="scr-label" for="package-code">Package Code<span class="scr-required">*</span></label>
           <input id="package-code" class="scr-input" maxlength="30" autocomplete="off" data-package-field="package_code" />
         </div>
-        <div class="scr-field scr-fare-span">
+        <div class="scr-field {% if sees_every_company %}scr-span-2{% else %}scr-span-3{% endif %}">
           <label class="scr-label" for="package-name">Package Name<span class="scr-required">*</span></label>
           <input id="package-name" class="scr-input" maxlength="100" autocomplete="off" data-package-field="package_name" />
+        </div>
+        <div class="scr-field scr-span-2">
+          <span class="scr-label">Package Level<span class="scr-required">*</span></span>
+          <div class="scr-radio-row scr-control-height">
+            <label class="scr-radio-label"><input type="radio" class="scr-radio" name="package-level" value="company" data-package-field="level" /> Company Wise</label>
+            <label class="scr-radio-label"><input type="radio" class="scr-radio" name="package-level" value="branch" data-package-field="level" /> Branch Wise</label>
+            <label class="scr-radio-label"><input type="radio" class="scr-radio" name="package-level" value="location" data-package-field="level" /> Location Wise</label>
+          </div>
+        </div>
+        {# One cell for the scope, whatever the level: it changes what it shows, never the layout. #}
+        <div class="scr-field">
+          <span class="scr-label" data-package-scope-label>Applies To</span>
+          <input class="scr-input" value="All branches of the company" disabled data-package-scope-all
+                 aria-label="Applies to all branches of the company" />
+          <select id="package-branch" class="scr-input" data-package-field="branch" aria-label="Branch" hidden>
+            <option value="">Select branch</option>
+            {% for b in branches %}<option value="{{ b.id }}" data-company="{{ b.company }}">{{ b.name }}</option>{% endfor %}
+          </select>
+          <select id="package-location" class="scr-input" data-package-field="location" aria-label="Location" hidden>
+            <option value="">Select location</option>
+            {% for l in locations %}<option value="{{ l.id }}">{{ l.name }}</option>{% endfor %}
+          </select>
         </div>
         <div class="scr-field">
           <label class="scr-label" for="package-status">Status</label>
           <select id="package-status" class="scr-input" data-package-field="is_active">
             <option value="1">Active</option>
             <option value="0">Inactive</option>
-          </select>
-        </div>
-        <div class="scr-field scr-fare-span">
-          <span class="scr-label">Package Level<span class="scr-required">*</span></span>
-          <div class="scr-radio-row">
-            <label class="scr-radio-label"><input type="radio" class="scr-radio" name="package-level" value="company" data-package-field="level" /> Company Wise</label>
-            <label class="scr-radio-label"><input type="radio" class="scr-radio" name="package-level" value="branch" data-package-field="level" /> Branch Wise</label>
-            <label class="scr-radio-label"><input type="radio" class="scr-radio" name="package-level" value="location" data-package-field="level" /> Location Wise</label>
-          </div>
-        </div>
-        <div class="scr-field" data-package-branch-wrap hidden>
-          <label class="scr-label" for="package-branch">Branch<span class="scr-required">*</span></label>
-          <select id="package-branch" class="scr-input" data-package-field="branch">
-            <option value="">Select branch</option>
-            {% for b in branches %}<option value="{{ b.id }}" data-company="{{ b.company }}">{{ b.name }}</option>{% endfor %}
-          </select>
-        </div>
-        <div class="scr-field" data-package-location-wrap hidden>
-          <label class="scr-label" for="package-location">Location<span class="scr-required">*</span></label>
-          <select id="package-location" class="scr-input" data-package-field="location">
-            <option value="">Select location</option>
-            {% for l in locations %}<option value="{{ l.id }}">{{ l.name }}</option>{% endfor %}
           </select>
         </div>
       </div>
@@ -124,7 +130,7 @@ for why this pass doesn't need either.
       </div>
     </div>
     <div class="scr-form-body">
-      <div class="scr-grid scr-fare-grid-4">
+      <div class="scr-grid scr-fare-grid-3">
         <div class="scr-field">
           <label class="scr-label" for="package-valid-from">Valid From<span class="scr-required">*</span></label>
           <input id="package-valid-from" class="scr-input byky-date" data-package-date="valid_from" placeholder="Select date" />
@@ -142,12 +148,6 @@ for why this pass doesn't need either.
           </select>
         </div>
         <div class="scr-field">
-          <label class="scr-label" for="package-inventory-type">Inventory Type<span class="scr-required">*</span></label>
-          <select id="package-inventory-type" class="scr-input" data-package-field="inventory_type">
-            <option value="vehicle_type">Vehicle Type</option>
-          </select>
-        </div>
-        <div class="scr-field">
           <label class="scr-label" for="package-lower-value">Lower Promotion Value<span class="scr-required">*</span></label>
           <input id="package-lower-value" class="scr-input" inputmode="decimal" maxlength="14" autocomplete="off"
                  data-package-field="lower_value" data-num="money" placeholder="0.000" />
@@ -156,6 +156,10 @@ for why this pass doesn't need either.
           <label class="scr-label" for="package-upper-value">Upper Promotion Value<span class="scr-required">*</span></label>
           <input id="package-upper-value" class="scr-input" inputmode="decimal" maxlength="14" autocomplete="off"
                  data-package-field="upper_value" data-num="money" placeholder="0.000" />
+        </div>
+        <div class="scr-field">
+          <span class="scr-label">Qualifies When</span>
+          <div class="scr-control-height scr-package-band" data-package-band aria-live="polite">Choose Promotion For and the band.</div>
         </div>
       </div>
     </div>
@@ -177,28 +181,32 @@ for why this pass doesn't need either.
             <option value="quantity">Quantity</option>
             <option value="amount">Amount</option>
             <option value="percentage">Percentage</option>
-            <option value="each">Each</option>
             <option value="package_price">Package Price</option>
           </select>
         </div>
-        <div class="scr-field" data-package-free-price-wrap hidden>
+        <div class="scr-field">
+          <span class="scr-label" id="package-slab-label">Time Slab Applicable</span>
+          <div class="scr-toggle-row scr-control-height">
+            <button type="button" class="scr-toggle" role="switch" aria-checked="false" aria-labelledby="package-slab-label"
+                    data-package-field="time_slab_applicable"><i></i></button>
+            <span class="scr-toggle-label" data-toggle-state>Off</span>
+          </div>
+        </div>
+        <div class="scr-field">
+          <span class="scr-label" id="package-free-label">Free Item Selectable</span>
+          <div class="scr-toggle-row scr-control-height">
+            <button type="button" class="scr-toggle" role="switch" aria-checked="false" aria-labelledby="package-free-label"
+                    data-package-field="free_item_selectable"><i></i></button>
+            <span class="scr-toggle-label" data-toggle-state>Off</span>
+          </div>
+        </div>
+        {# Reserved, not removed: appearing never shifts the toggles before it. #}
+        <div class="scr-field scr-is-reserved" data-package-free-price-wrap>
           <label class="scr-label" for="package-free-or-package-price">Free / Package Price<span class="scr-required">*</span></label>
           <select id="package-free-or-package-price" class="scr-input" data-package-field="free_or_package_price">
             <option value="free">Free</option>
             <option value="package_price">Package Price</option>
           </select>
-        </div>
-        <div class="scr-field">
-          <span class="scr-label">Time Slab Applicable</span>
-          <div class="scr-toggle-row">
-            <button type="button" class="scr-toggle" data-package-field="time_slab_applicable"><i></i></button>
-          </div>
-        </div>
-        <div class="scr-field">
-          <span class="scr-label">Free Item Selectable</span>
-          <div class="scr-toggle-row">
-            <button type="button" class="scr-toggle" data-package-field="free_item_selectable"><i></i></button>
-          </div>
         </div>
         <div class="scr-field scr-fare-span" data-package-free-note-wrap hidden>
           <label class="scr-label" for="package-free-note">Free Item Note</label>
@@ -287,7 +295,7 @@ for why this pass doesn't need either.
                data-item-package data-num="minutes" data-min="1" data-max="1440" placeholder="e.g. 30" />
       </div>
       <div class="scr-field" data-item-value-wrap>
-        <label class="scr-label" for="item-value">Value<span class="scr-required">*</span></label>
+        <label class="scr-label" for="item-value"><span data-item-value-label>Value</span><span class="scr-required">*</span></label>
         <input id="item-value" class="scr-input" inputmode="decimal" maxlength="14" autocomplete="off"
                data-item-value data-num="money" placeholder="0.000" />
       </div>
@@ -358,7 +366,7 @@ for why this pass doesn't need either.
                data-slab-package data-num="minutes" data-min="1" data-max="1440" placeholder="e.g. 30" />
       </div>
       <div class="scr-field">
-        <label class="scr-label" for="slab-value">Value<span class="scr-required">*</span></label>
+        <label class="scr-label" for="slab-value"><span data-slab-value-label>Value</span><span class="scr-required">*</span></label>
         <input id="slab-value" class="scr-input" inputmode="decimal" maxlength="14" autocomplete="off"
                data-slab-value data-num="money" placeholder="0.000" />
       </div>

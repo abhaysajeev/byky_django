@@ -8,7 +8,7 @@ serialise() turns a saved package back into the same JSON, for the edit screen.
 The shape:
 
   {pk, company, package_code, package_name, level, branch, location,
-   valid_from, valid_to, promotion_for, inventory_type,
+   valid_from, valid_to, promotion_for,
    lower_value, upper_value, promotion_type,
    time_slab_applicable, free_item_selectable, free_item_selectable_note,
    free_or_package_price, is_active,
@@ -29,7 +29,6 @@ from decimal import Decimal, InvalidOperation
 
 from apps.fare.models import (
     FreeOrPackagePrice,
-    InventoryType,
     PackageLevel,
     PromotionFor,
     PromotionType,
@@ -85,7 +84,6 @@ class PackageSpec:
     valid_from: datetime.date
     valid_to: datetime.date
     promotion_for: str
-    inventory_type: str
     lower_value: Decimal
     upper_value: Decimal
     promotion_type: str
@@ -289,8 +287,6 @@ def parse(data):
 
     promotion_for = reader.choice(data.get("promotion_for"), "", "Promotion For",
                                   PromotionFor.values, "Quantity or Amount")
-    inventory_type = reader.choice(data.get("inventory_type"), "", "Inventory Type",
-                                   InventoryType.values, "an inventory type")
 
     lower_value = reader.money(data.get("lower_value"), "", "Lower Promotion Value")
     upper_value = reader.money(data.get("upper_value"), "", "Upper Promotion Value")
@@ -323,14 +319,14 @@ def parse(data):
         if not time_slabs:
             reader.fail("", "Free Item Time Slabs", "Add at least one time slab.", missing=True)
 
-    required = (package_code, package_name, level, valid_from, valid_to, promotion_for, inventory_type,
+    required = (package_code, package_name, level, valid_from, valid_to, promotion_for,
                lower_value, upper_value, promotion_type, free_or_package_price)
     if None in required or not items:
         return Parsed(None, reader.errors, meta)
 
     spec = PackageSpec(
         package_code=package_code, package_name=package_name, level=level, branch=branch, location=location,
-        valid_from=valid_from, valid_to=valid_to, promotion_for=promotion_for, inventory_type=inventory_type,
+        valid_from=valid_from, valid_to=valid_to, promotion_for=promotion_for,
         lower_value=lower_value, upper_value=upper_value, promotion_type=promotion_type,
         time_slab_applicable=time_slab_applicable, free_item_selectable=free_item_selectable,
         free_item_selectable_note=free_item_selectable_note, free_or_package_price=free_or_package_price,
@@ -368,7 +364,7 @@ def serialise(package):
         "pk": package.pk, "company": package.company_id, "package_code": package.package_code, "package_name": package.package_name,
         "level": package.level, "branch": package.branch_id, "location": package.location_id,
         "valid_from": package.valid_from.isoformat(), "valid_to": package.valid_to.isoformat(),
-        "promotion_for": package.promotion_for, "inventory_type": package.inventory_type,
+        "promotion_for": package.promotion_for,
         "lower_value": str(package.lower_value), "upper_value": str(package.upper_value),
         "promotion_type": package.promotion_type,
         "time_slab_applicable": package.time_slab_applicable, "free_item_selectable": package.free_item_selectable,

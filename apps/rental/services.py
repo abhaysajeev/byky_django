@@ -12,6 +12,7 @@ from apps.company.models import PaymentMode
 from apps.devices import services as devices_services
 from apps.devices.models import BillKind
 from apps.discount import services as discount_services
+from apps.fare import package_device
 from apps.fare.models import Fare, Package
 from apps.fleet.models import Vehicle
 from apps.rental.models import (
@@ -33,6 +34,7 @@ from apps.rental.models import (
     full_number,
 )
 from core.ids import uuid7
+from core.timezones import business_date_for
 
 
 def next_customer_code(company):
@@ -119,6 +121,8 @@ ORDER_ERRORS = {
     "vehicle_not_at_station": (400, "That vehicle is not at this station.", False),
     "unknown_fare": (400, "No fare with that id.", False),
     "unknown_offer": (400, "No offer with that id.", False),
+    # Paused, not at this station, or not in force on the line's start date.
+    "package_not_available": (409, "That package cannot be used here on this date.", False),
     "unknown_order": (404, "No order with that id at this station.", False),
     "order_closed": (409, "This order is already completed or cancelled.", False),
     "unknown_item": (404, "That item is not on this order.", False),
@@ -446,6 +450,14 @@ def _line_refs(company, branch, items_input):
     # A package (sent as offer_id: the tablet API kept the old name).
     offers = _by_id(Package, company, {item["offer_id"] for item in items_input if item.get("offer_id")},
                     "unknown_offer", "offer")
+    # ...that is active, covers this station and is in force on the line's
+    # start date (apps/fare/package_device.py).
+    for item in items_input:
+        package = offers.get(item.get("offer_id"))
+        if package is not None:
+            problem = package_device.unavailable(package, branch, business_date_for(company, item["start_time"]))
+            if problem:
+                raise OrderRefused("package_not_available", problem)
     if OrderItem.objects.filter(pk__in=[item["sync_id"] for item in items_input]).exists():
         raise OrderRefused("item_id_used")
     return vehicles, fares, offers

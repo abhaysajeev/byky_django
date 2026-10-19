@@ -28,7 +28,7 @@ def data(world, **changes):
     values = {
         "package_code": "PROMO1", "package_name": "Promo", "level": "company", "branch": "", "location": "",
         "valid_from": "2026-01-01", "valid_to": "2026-12-31", "is_active": True,
-        "promotion_for": "quantity", "inventory_type": "vehicle_type",
+        "promotion_for": "quantity",
         "lower_value": "1", "upper_value": "5", "promotion_type": "amount",
         "time_slab_applicable": False, "free_item_selectable": False, "free_item_selectable_note": "",
         "free_or_package_price": "free",
