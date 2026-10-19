@@ -23,7 +23,7 @@ from apps.company.models import (
     Location,
     State,
 )
-from apps.crew.models import Designation, Employee
+from apps.crew.models import Designation, Employee, TeamScope
 from apps.discount.models import CardType
 from apps.portal.models import Role
 from apps.portal.services import grant_all
@@ -41,6 +41,7 @@ SCREENS = {
     "/crew/employee/list/": ["drawer_employee"],
     "/crew/designation/list/": ["drawer_designation"],
     "/crew/address/list/": ["drawer_address"],
+    "/crew/leave-type/list/": ["drawer_leave_type"],
     "/portal/role/list/": ["drawer_role"],
     "/portal/user/list/": ["drawer_user"],
     "/discount/card-grade/list/": ["drawer_card_grade"],
@@ -74,6 +75,13 @@ def world(db):
     Employee.objects.create(
         company=company, employee_code="BYKY001", first_name="Anil", last_name="R",
         designation=designation,
+    )
+    # The Branch Supervisors picker lists only these.
+    Employee.objects.create(
+        company=company, employee_code="BYKY002", first_name="Sara", last_name="M",
+        designation=Designation.objects.create(
+            company=company, code="SUP", title="Supervisor", team_scope=TeamScope.BRANCHES,
+        ),
     )
     CardType.objects.create(company=company, code="CORP", name="Corporate")
     return company

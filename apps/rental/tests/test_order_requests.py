@@ -265,7 +265,7 @@ def test_the_manager_lists_requests_with_the_order(client, token, manager, booke
     assert {(v["vehicle"], v["status"]) for v in order["vehicles"]} == {("MO 41", "active"), ("DC 02", "returned")}
     assert next(v for v in order["vehicles"] if v["vehicle"] == "DC 02")["minutes_run"] == 31
     assert (body["data"]["page"], body["data"]["pages"], body["data"]["total"]) == (1, 1, 1)
-    assert shape(row) == shape(api._MANAGER_SAMPLE)
+    assert shape(row) == shape({**api._MANAGER_SAMPLE, "details": None})
 
 
 def test_the_list_can_show_only_pending(client, world, token, manager, shop, booked):

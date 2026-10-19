@@ -22,7 +22,7 @@ from apps.company import writes as company_writes
 from apps.company.models import Country, State
 from apps.company.scoping import branches_for, companies_for
 from apps.company.views import ACTIONS
-from apps.crew import drawers, forms, scoping, services
+from apps.crew import drawers, forms, leave, scoping, services
 from apps.crew.models import (
     AddressType,
     AttendanceMethod,
@@ -33,12 +33,16 @@ from apps.crew.models import (
     DutyRosterDayType,
     Employee,
     EmployeeAddress,
+    LeaveStatus,
+    LeaveType,
     PunchType,
     RosterCategory,
+    TeamScope,
 )
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
+from core.enums import Channel
 from core.ordering import recent_first
 from core.timezones import zone_for
 from theme import drawers as theme_drawers
@@ -86,6 +90,9 @@ class CrewScreenView(PagePermissionMixin, ThemedTemplateView):
             "attendance_methods_list": [
                 {"id": value, "name": label} for value, label in AttendanceMethod.choices
             ],
+            "team_scopes_list": [
+                {"id": value, "name": label} for value, label in TeamScope.choices
+            ],
             "roster_categories_list": [
                 {"id": value, "name": label} for value, label in RosterCategory.choices
             ],
@@ -120,6 +127,7 @@ class DesignationListView(CrewScreenView):
                 "title": designation.title,
                 "description": designation.description,
                 "rank": designation.rank_order,
+                "team_scope": designation.get_team_scope_display(),
                 "headcount": designation.headcount,
                 "active": designation.is_active,
                 "json_id": f"scr-record-designation-{i}",
@@ -130,6 +138,7 @@ class DesignationListView(CrewScreenView):
                     "description": designation.description,
                     "rank": designation.rank_order,
                     "attendance_method": designation.attendance_method,
+                    "team_scope": designation.team_scope,
                     "roster_category": designation.roster_category,
                     "company": designation.company_id,
                     "is_active": designation.is_active,
@@ -798,7 +807,9 @@ class DutyRosterListView(CrewScreenView):
                 "Employee Code", "Employee Name", "Date", "Day Type", "Branch",
                 "Shift1 Start", "Shift1 End", "Shift2 Start", "Shift2 End", "Remarks",
             ],
-            "roster_day_types": [{"id": v, "name": label} for v, label in DutyRosterDayType.choices],
+            # On Leave is set only by an approved leave request, never picked.
+            "roster_day_types": [{"id": v, "name": label} for v, label in DutyRosterDayType.choices
+                                 if v != DutyRosterDayType.ON_LEAVE],
             "roster_urls": {
                 "branch_shifts": reverse("crew-duty-roster-branch-shifts"),
                 "save_week": reverse("crew-duty-roster-save-week"),
@@ -815,3 +826,141 @@ def _int(value):
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+# -- Leave (apps/crew/leave.py) ------------------------------------------------------
+
+
+class LeaveTypeListView(CrewScreenView):
+    template_name = "crew/leave_type_list.html"
+    page_code = "crew.leave_type"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        types = recent_first(scoping.leave_types_for(self.request.user)).annotate(used=Count("requests"))
+        rows = [
+            {
+                "pk": t.pk, "code": t.code, "name": t.name, "used": t.used, "active": t.is_active,
+                "json_id": f"scr-record-leave-type-{i}",
+                "fields_json": {"pk": t.pk, "code": t.code, "name": t.name, "company": t.company_id,
+                                "is_active": t.is_active},
+            }
+            for i, t in enumerate(types)
+        ]
+        context.update({
+            "leave_types": rows,
+            "active_count": sum(1 for row in rows if row["active"]),
+            "save_url_leave_type": reverse("crew-leave-type-save"),
+            "delete_url_leave_type": reverse("crew-leave-type-delete", args=[0]),
+            "noun_leave_type": "Leave Type",
+        })
+        return context
+
+
+class LeaveTypeSave(company_writes.EntitySaveView):
+    model = LeaveType
+    form_class = forms.LeaveTypeForm
+    page_code = "crew.leave_type"
+    noun = "Leave Type"
+
+
+class LeaveTypeDelete(company_writes.EntityDeleteView):
+    model = LeaveType
+    page_code = "crew.leave_type"
+    noun = "Leave Type"
+
+
+LEAVE_PER_PAGE = 50
+LEAVE_TABS = [(status.value, status.label) for status in LeaveStatus]
+
+
+def _day(value):
+    try:
+        return datetime.date.fromisoformat(value) if value else None
+    except ValueError:
+        return None
+
+
+class LeaveRequestListView(CrewScreenView):
+    """Leave requests across the user's companies, a tab per status --
+    decided on the detail page, as in the manager app."""
+
+    template_name = "crew/leave_request_list.html"
+    page_code = "crew.leave_request"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user, params = self.request.user, self.request.GET
+        zone = zone_for(getattr(user, "company", None))
+        tab = params.get("tab", LeaveStatus.PENDING)
+        if tab not in dict(LEAVE_TABS):
+            tab = LeaveStatus.PENDING
+        rows = leave.filtered(
+            scoping.leave_requests_for(user),
+            state_id=int(params["state"]) if params.get("state", "").isdigit() else None,
+            branch_id=int(params["branch"]) if params.get("branch", "").isdigit() else None,
+            leave_type_id=int(params["type"]) if params.get("type", "").isdigit() else None,
+            from_date=_day(params.get("from")), to_date=_day(params.get("to")), search=params.get("q", ""),
+        )
+        counts = leave.status_counts(rows)
+        page = Paginator(leave.with_details(rows.filter(status=tab)), LEAVE_PER_PAGE).get_page(params.get("page"))
+        filters = params.copy()
+        for key in ("page", "tab"):
+            filters.pop(key, None)
+        query = filters.copy()
+        query["tab"] = tab
+        context.update({
+            "tab": tab,
+            "tab_label": dict(LEAVE_TABS)[tab],
+            "tabs": [{"value": value, "label": label, "count": counts[value]} for value, label in LEAVE_TABS],
+            "filter_query": filters.urlencode(),
+            "rows": [
+                {
+                    "reference": row.reference, "applied_at": row.applied_at.astimezone(zone),
+                    "employee": row.employee, "leave_type": row.leave_type.name,
+                    "from_date": row.from_date, "to_date": row.to_date, "days": row.days,
+                    "stations": ", ".join(sorted(b.name for b in row.stations.all())) or "—",
+                    "status": row.status,
+                    "detail_url": reverse("crew-leave-request-detail", args=[row.pk]),
+                }
+                for row in page.object_list
+            ],
+            "page": page, "query": query.urlencode(), "params": params,
+            "filtered": any(params.get(k) for k in ("q", "state", "branch", "type", "from", "to")),
+            "states": list(State.objects.filter(locations__branches__in=branches_for(user)).distinct()
+                           .order_by("name").values("id", "name")),
+            "station_options": list(branches_for(user).filter(is_active=True).order_by("name").values("id", "name")),
+            "leave_types": list(scoping.leave_types_for(user).order_by("name").values("id", "name")),
+        })
+        return context
+
+
+class LeaveRequestDetailView(CrewScreenView):
+    template_name = "crew/leave_request_detail.html"
+    page_code = "crew.leave_request"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        zone = zone_for(getattr(user, "company", None))
+        row = leave.with_details(scoping.leave_requests_for(user)).filter(pk=self.kwargs["pk"]).first()
+        if row is None:
+            raise Http404("No such leave request.")
+
+        def local(moment):
+            return moment.astimezone(zone) if moment else None
+
+        context.update({
+            "leave": row, "applied_at": local(row.applied_at), "decided_at": local(row.decided_at),
+            "cancelled_at": local(row.cancelled_at),
+            "decided_by": leave._name(row.decided_by),
+            "stations": sorted(row.stations.all(), key=lambda b: b.name),
+            "log": [{"entry": entry, "at": local(entry.at)} for entry in row.log.all()],
+            "can_decide": context["perm"]["approve"] and leave.can_decide(row, user, Channel.WEB),
+            "working_days": leave.working_days_in(row)
+            if row.status in (LeaveStatus.PENDING, LeaveStatus.REJECTED) else 0,
+            "list_url": reverse("crew-leave-request-list"),
+            "approve_url": reverse("crew-leave-request-approve", args=[row.pk]),
+            "reject_url": reverse("crew-leave-request-reject", args=[row.pk]),
+        })
+        return context

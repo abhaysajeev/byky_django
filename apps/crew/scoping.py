@@ -11,6 +11,8 @@ from apps.crew.models import (
     Employee,
     EmployeeAddress,
     EmployeeBlockLog,
+    LeaveRequest,
+    LeaveType,
 )
 from core.scoping import scoped_to
 
@@ -37,3 +39,11 @@ def attendance_for(user):
 
 def duty_roster_for(user):
     return DutyRoster.objects.filter(employee__in=employees_for(user))
+
+
+def leave_types_for(user):
+    return scoped_to(LeaveType.objects.all(), user)
+
+
+def leave_requests_for(user):
+    return scoped_to(LeaveRequest.objects.all(), user)

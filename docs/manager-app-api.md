@@ -2,10 +2,11 @@
 
 For the manager app developers. It covers what the manager app calls, in the
 order it calls them: sign in → load the masters (states, stations) → requests
-(list, approve, reject, revoke) → reports. Everything here is live in Swagger
-(`/api/docs/`) under the tags **Manager Auth**, **Manager Masters**,
-**Manager Requests** and **Manager Reports** — Swagger is generated from the
-code and is the final word if this page and it ever disagree.
+(list, approve, reject, revoke) → reports → attendance → leave → duty roster. Everything here is
+live in Swagger (`/api/docs/`) under the tags **Manager Auth**, **Manager
+Masters**, **Manager Requests**, **Manager Reports**, **Manager Attendance**,
+**Manager Leave** and **Manager Duty Roster** — Swagger is generated from the code and is the final word if
+this page and it ever disagree.
 
 > Base URL: `https://<server>/api/v1/manager/...` — every call is `POST`,
 > JSON in and out.
@@ -180,7 +181,9 @@ Reply `ok`:
       "employee_code": "MGR001", "full_name": "Meera K", "first_name": "Meera",
       "middle_name": "", "last_name": "K", "designation": "Manager", "role": null,
       "branch_id": null, "branch": null, "mobile": "0500000000",
-      "email": "meera@byky.test", "photo_url": null, "company": "BY KY SPORT & ..."
+      "email": "meera@byky.test", "photo_url": null, "company": "BY KY SPORT & ...",
+      "can_approve_leave": true,
+      "attendance_method": "self", "team_scope": "company"
     }
 } }
 ```
@@ -188,6 +191,9 @@ Reply `ok`:
 - **Store** both tokens and their expiry times securely.
 - `employee.branch_id` is the manager's home station, often `null` — a manager
   works across **every station of the company**.
+- `employee.team_scope` is always `company` in the manager app (§7.2).
+  `attendance_method` is informational here: the manager's own Mark
+  attendance is always allowed.
 - Refusals worth handling: `invalid_credentials` (401), `account_locked`
   (429), `wrong_channel` (this user may not use the manager app),
   `user_blocked`, `device_pending_approval` (202), `device_blocked`,
@@ -255,7 +261,9 @@ the web — whoever acts first wins, the other gets `request_decided`.
 |---|---|---|
 | `discount` | running | A **rule**: `percent` + value (e.g. `10.00`) or `amount` + AED value (e.g. `15.000`). The bill is not made yet; the tablet applies it at settle and the server checks it |
 | `complimentary` | running | The whole bill free (net 0). No value |
-| `reprint` | settled | One more print of the bill. No value. Never revoked |
+| `reprint` | settled | One more print of the **invoice**. No value. Never revoked |
+| `order_reprint` | running or settled (not cancelled) | One more print of the **order receipt** printed at booking. No value. Never revoked |
+| `cancel` | running | Cancel the whole order (an operator's mistake). Reason always given. No value. Approving cancels the order at once and frees its vehicles. Never revoked |
 
 ### 5.2 Statuses
 
@@ -276,7 +284,7 @@ All fields optional — send `{}` for every request, newest first.
 | Field | Type | Notes |
 |---|---|---|
 | `pending` | boolean | `true` = only `pending`. `false` / left out = every status |
-| `kind` | string | `discount`, `complimentary` or `reprint` |
+| `kind` | string | `discount`, `complimentary`, `reprint`, `order_reprint` or `cancel` |
 | `state_id` | number | Only that state's stations (from `states`) |
 | `branch_id` | number | One station (from `branches`). With `state_id`, the station must be in that state, else the list is empty |
 | `from_date` | `YYYY-MM-DD` | Asked on or after this day (company time) |
@@ -350,7 +358,7 @@ Suggested screens: a **Pending** tab (`pending: true`) and a **History** tab
 } }
 ```
 
-For a **complimentary** or **reprint**, send only `request_sync_id` (and
+For a **complimentary**, **reprint**, **order_reprint** or **cancel**, send only `request_sync_id` (and
 `note`). Reply: the updated row, same shape as the list.
 
 ### 5.5 Reject — `POST /api/v1/manager/requests/reject`
@@ -372,7 +380,7 @@ running. The operator may then ask again.
 | `request_decided` | 409 | Already decided (maybe on the web) — message says how | Reload the row |
 | `order_closed` | 409 | The order was settled/cancelled meanwhile | Reload the row |
 | `request_not_approved` | 409 | Revoke on a request that is not approved | — |
-| `request_not_revocable` | 409 | Revoke on a reprint | Hide Revoke for reprints |
+| `request_not_revocable` | 409 | Revoke on a reprint or a cancel | Hide Revoke for reprints and cancels |
 | `invalid_request` | 400 | e.g. percent over 100, 3 decimals on a percent, missing type for a discount | Show `data.errors` / `message` |
 
 Always refresh the row (or the list) after any of these — someone else may
@@ -484,7 +492,205 @@ included. They answer different questions and will not always match.
 
 ---
 
-## 7. Checklist for the app
+## 7. Attendance
+
+### 7.1 Mark own attendance — `POST /api/v1/manager/attendance/mark`
+
+The manager's own **Mark attendance** / **Close attendance** button — always
+allowed. Send `sync_id` (a UUIDv7 made on the phone, resent unchanged on a
+retry), `punch_type` (`punch_in` / `punch_out`), `rms_scan_time` (the button
+press, company time) and optionally `rms_latitude` / `rms_longitude`. Swagger
+lists the refusals (`punch_in_open`, `no_open_punch_in`, …).
+`attendance/history` reads it back.
+
+### 7.2 Team Attendance — `POST /api/v1/manager/attendance/team`
+
+Who checked in and out on one day, across **the whole company**, and who is
+rostered but has not checked in.
+
+| Field | Required | Notes |
+|---|---|---|
+| `date` | no | One day, `YYYY-MM-DD`; today by default |
+| `from_date`, `to_date` | no | A range instead of `date`: both, at most 31 days |
+| `state_id` | no | One emirate |
+| `branch_id` | no | One station |
+| `status` | no | `all` (default), `checked_in`, `checked_out`, `not_checked_in` |
+| `search` | no | Employee name or code |
+| `page` | no | From 1, 50 rows a page |
+
+```json
+{ "code": "ok", "message": "Team attendance.", "data": {
+  "date": "2026-10-15", "from_date": "2026-10-15", "to_date": "2026-10-15", "scope": "company",
+  "branches": [ { "branch_id": 12, "code": "AUH01", "name": "Creek Park 1",
+                  "state_id": 1, "state": "Abu Dhabi" } ],
+  "counts": { "all": 2, "checked_in": 0, "checked_out": 1, "not_checked_in": 1 },
+  "rows": [
+    { "date": "2026-10-15", "row_type": "session", "attendance_id": "01923e1c-…",
+      "status": "checked_out", "missing_check_out": false,
+      "employee": { "employee_code": "BYKY014", "name": "Anil Kumar", "designation": "Cashier" },
+      "source": "qr_scan",
+      "station": { "branch_id": 12, "code": "AUH01", "name": "Creek Park 1" },
+      "emirate": { "state_id": 1, "name": "Abu Dhabi" },
+      "check_in": "2026-10-15 07:58:10", "check_out": "2026-10-15 16:02:44",
+      "duration_minutes": 484, "device_no": 1000023, "roster": null },
+    { "date": "2026-10-15", "row_type": "not_checked_in", "attendance_id": null,
+      "status": "not_checked_in", "missing_check_out": false,
+      "employee": { "employee_code": "BYKY031", "name": "Ravi S", "designation": "Labour" },
+      "source": null, "station": null,
+      "emirate": { "state_id": 1, "name": "Abu Dhabi" },
+      "check_in": null, "check_out": null, "duration_minutes": null, "device_no": null,
+      "roster": { "station": { "branch_id": 12, "code": "AUH01", "name": "Creek Park 1" },
+                  "shift1_start": "08:00", "shift1_end": "16:00",
+                  "shift2_start": null, "shift2_end": null } }
+  ],
+  "page": 1, "pages": 1, "total": 2
+} }
+```
+
+- **One row per session** — a check-in made that day with its check-out, even
+  when the check-out fell the next day (a night shift stays on the day it
+  started). Every row has its `date`. Newest day first; within a day, newest
+  check-in first, then that day's not-checked-in rows by name.
+- **A range** (`from_date` + `to_date`): the reply's `date` is `null` and
+  `from_date` / `to_date` give the days covered. "Not checked in" is per day:
+  one row for each rostered day with no check-in that day.
+- Each row has **everything the detail screen shows** — no second call.
+- `missing_check_out: true` — still `checked_in` more than 24 hours after the
+  check-in; show a "Missing check-out" label.
+- `source` — `qr_scan` (scanned at a station) or `self` (Mark attendance in an
+  app). A self check-in has **no station**: `station` is `null`, and it drops
+  out as soon as a station or emirate filter is chosen.
+- **Not checked in** — staff rostered **Working** that day (Duty Roster:
+  cashier and labour) with no check-in anywhere that day.
+- `counts` follow every filter except `status` — use them for the tab badges.
+- `branches` — the stations for the station / emirate pickers.
+- Paged (§1.5).
+
+The same call works in the **employee app** (`/api/v1/employee/attendance/team`)
+for Supervisors and PROs: they see the QR check-ins at the stations they are a
+**Branch Supervisor** of (set on the Branch screen), by their designation's
+**Team Scope**.
+## 8. Leave requests
+
+Employees ask for leave in the employee app; the manager approves or rejects
+it here. Everything is also in Swagger under **Manager Leave**.
+
+### 8.1 The rules
+
+- Whole days from **today** on; days are calendar days, both ends counted
+  (20–22 Oct = 3 days). No leave balance is kept.
+- A request never overlaps the employee's own pending or approved one.
+- Statuses: `pending` → `approved` / `rejected`, or `cancelled` (only by the
+  employee, only while pending — a manager never cancels).
+- **Approved is final.** A **first rejection may be changed once** ("Edit
+  Status"): approve it, or reject it again. After that `can_decide` is false.
+- An approval turns every day of the range into **On Leave** in the duty
+  roster, replacing what was rostered. `working_days_rostered` on a pending
+  row says how many working shifts that will remove — show it before Approve.
+- The manager app sees and decides **every** request of the company — also
+  the station Leave Request approvers' own requests, which only a manager
+  (or the web) may decide.
+
+### 8.2 List — `POST /api/v1/manager/leave/requests`
+
+| Field | Required | Notes |
+|---|---|---|
+| `status` | no | `all` (default), `pending`, `approved`, `rejected`, `cancelled` |
+| `state_id`, `branch_id` | no | Emirate / station of the request's stations |
+| `from_date`, `to_date` | no | Leave overlapping this range |
+| `search` | no | Employee name or code |
+| `page` | no | From 1, 50 a page |
+
+```json
+{ "code": "ok", "message": "Leave requests.", "data": {
+  "counts": { "pending": 1, "approved": 0, "rejected": 0, "cancelled": 0, "all": 1 },
+  "requests": [ {
+    "leave_request_id": "01923e1c-…", "reference": "LEV-2026-00037",
+    "employee": { "employee_code": "BYKY014", "name": "Anil Kumar", "designation": "Cashier" },
+    "stations": [ { "branch_id": 12, "code": "CPG1", "name": "Creek Park Gate 1",
+                    "state_id": 2, "state": "Dubai" } ],
+    "leave_type": { "leave_type_id": 1, "name": "Annual Leave" },
+    "from_date": "2026-10-20", "to_date": "2026-10-22", "days": 3, "reason": "Family visit",
+    "status": "pending", "applied_at": "2026-10-15 09:12:40",
+    "decided_by": null, "decided_channel": null, "decided_at": null, "decision_remarks": "",
+    "status_edited": false, "cancelled_at": null,
+    "can_cancel": false, "can_decide": true, "working_days_rostered": 2,
+    "log": [ { "status": "pending", "at": "2026-10-15 09:12:40", "by": "Anil Kumar",
+               "channel": "employee", "remarks": "" } ]
+  } ],
+  "page": 1, "pages": 1, "total": 1
+} }
+```
+
+- Each row has **everything the details screen shows**, including the
+  **Status Log History** (`log`, oldest first) — no second call.
+- `stations` — where the employee is rostered during the leave plus their home
+  branch (show them as "Employee location").
+- `counts` follow every filter except `status` — use them for the tabs.
+
+### 8.3 Approve / Reject — `POST /api/v1/manager/leave/approve`, `…/reject`
+
+`leave_request_id`, `remarks` (optional). The reply is the row as above, plus
+`working_days_replaced`. Refusals: `unknown_leave` (404), `leave_decided`
+(409 — already approved, cancelled, or its one edit used), `leave_overlaps`
+(409 — approving an old rejection over newer approved leave).
+
+### 8.4 Badge
+
+`requests/pending-counts` gains `leave` (pending leave requests), included in
+`total`.
+
+---
+
+## 9. Duty roster — `POST /api/v1/manager/duty/team`
+
+Read-only: rosters are written on the web. The manager app sees every cashier
+and labour of the company (no one else is rostered), **grouped per
+employee** — also those with nothing rostered (their days are not set).
+
+| Field | Required | Notes |
+|---|---|---|
+| `from_date`, `to_date` | no | Both or neither; the current roster week by default; at most 31 days |
+| `state_id`, `branch_id` | no | Lists only staff **working** in the range at a station in that emirate / station — with all their days |
+| `category` | no | `cashier` or `labour` |
+| `search` | no | Name or code |
+| `page` | no | From 1, 50 employees a page, by name |
+
+```json
+{ "code": "ok", "message": "Team duty roster.", "data": {
+  "from_date": "2026-10-11", "to_date": "2026-10-17", "scope": "company",
+  "branches": [ { "branch_id": 12, "code": "CPG1", "name": "Creek Park Gate 1",
+                  "state_id": 2, "state": "Dubai" } ],
+  "counts": { "working": 30, "week_off": 6, "sick_leave": 0, "casual_leave": 1,
+              "on_leave": 2, "not_set": 4 },
+  "employees": [ {
+    "employee": { "employee_code": "BYKY014", "name": "Anil Kumar",
+                  "designation": "Cashier", "category": "cashier" },
+    "days": [
+      { "date": "2026-10-11", "status": "Working", "branch_id": 12,
+        "branch": "Creek Park Gate 1", "branch_code": "CPG1", "state": "Dubai",
+        "shift1_start": "15:00", "shift1_end": "02:00", "shift1_ends_next_day": true,
+        "shift2_start": null, "shift2_end": null, "shift2_ends_next_day": null,
+        "leave_type": null, "leave_reference": null },
+      { "date": "2026-10-12", "status": "On Leave", "branch_id": null, "...": "…",
+        "leave_type": "Annual Leave", "leave_reference": "LEV-2026-00037" },
+      { "date": "2026-10-13", "status": null, "...": "…" }
+    ]
+  } ],
+  "page": 1, "pages": 1, "total": 1
+} }
+```
+
+- `status`: `Working`, `Week Off`, `Sick Leave`, `Casual Leave`, `On Leave`
+  (approved leave), or `null` — **not set**, never read as Working.
+- `shiftN_ends_next_day` — the shift runs past midnight.
+- `counts` cover every page — use them for summary chips.
+- The same call works in the employee app for Supervisors / PROs, scoped by
+  their Team Scope (their Branch Supervisor stations).
+
+---
+
+## 10. Checklist for the app
 
 - [ ] One stored `installation_id` per install; always send `platform_id`.
 - [ ] Store and rotate both tokens; refresh on `not_authenticated`; log out only
@@ -495,6 +701,12 @@ included. They answer different questions and will not always match.
 - [ ] Money as strings / decimals, never floats.
 - [ ] Discount approve: `percent` 2 decimals ≤ 100, `amount` 3 decimals;
       complimentary / reprint: no value.
-- [ ] Hide Revoke for reprints and for anything not `approved`.
+- [ ] Hide Revoke for reprints, cancels, and anything not `approved`.
 - [ ] After any refusal on approve / reject / revoke, reload the row.
 - [ ] Switch on `code`, show `message`, show `data.errors` per field.
+- [ ] Leave: show Approve / Reject only when `can_decide`; label the second
+      decision on a rejected request "Edit Status".
+- [ ] Team Attendance: one date at a time, reload on pull-to-refresh, show the
+      "Missing check-out" label when `missing_check_out` is true.
+- [ ] Duty roster: draw a day with `status: null` as "Not set", never as
+      Working; mark `ends_next_day` shifts.

@@ -10,11 +10,18 @@ from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from apps.company.models import Branch, BranchWorkingTime, WeekDay
+from apps.company.models import (
+    AuthorityType,
+    Branch,
+    BranchApprovalAuthority,
+    BranchWorkingTime,
+    WeekDay,
+)
 from apps.company.services import week_day_of
 from apps.crew.models import (
     AddressType,
     Attendance,
+    AttendanceMethod,
     AttendanceSource,
     BlockAction,
     DutyRoster,
@@ -25,9 +32,11 @@ from apps.crew.models import (
     EmployeeDesignation,
     PunchType,
     RosterCategory,
+    TeamScope,
 )
+from core.enums import Channel
 from core.scoping import scoped_to
-from core.timezones import business_date_for, business_day_range, zone_for
+from core.timezones import business_day_range, zone_for
 
 # A document inside this many days counts as needing attention.
 EXPIRY_WARNING_DAYS = 30
@@ -236,17 +245,23 @@ def _open_punch_in(employee, at):
     )
 
 
-def mark_attendance(user, source, values, device=None):
+def mark_attendance(user, source, values, device=None, channel=None):
     """Record one punch. Returns (row, created) -- created is False when this
     sync_id was already stored, which the app treats as success.
 
     `values` is the validated request_data, times already aware in company
     time. `device` is the signed-in phone, used for a self punch that does not
-    name one. Refusals raise AttendanceRefused; nothing is written then.
+    name one. `channel` is the app that sent it. Refusals raise
+    AttendanceRefused; nothing is written then.
 
-    A self punch (manager app) is always the signed-in manager's own: a code
-    naming anyone else is refused. A manager covers every station, so its
-    branch is optional -- the manager's home branch when not sent, else none.
+    A self punch (manager or employee app) is always the signed-in user's
+    own: a code naming anyone else is refused. It has no station, so its
+    branch is optional -- the user's home branch when not sent, else none.
+
+    The attendance method (Designation, or the employee's own override) is
+    enforced (15 Oct 2026): the employee app self-marks only staff whose
+    method is Self; the operator app scans only staff whose method is QR.
+    The manager app's own punch is always allowed.
     """
     company = user.employee.company
     sync_id = values["sync_id"]
@@ -262,8 +277,11 @@ def mark_attendance(user, source, values, device=None):
         employee = user.employee
         code = (values.get("employee_code") or "").strip()
         if code and code != employee.employee_code:
-            raise AttendanceRefused("not_your_attendance", "A manager marks only their own attendance.",
+            raise AttendanceRefused("not_your_attendance", "You can mark only your own attendance.",
                                     status=403)
+        if channel == Channel.EMPLOYEE and employee.attendance_rule != AttendanceMethod.SELF:
+            raise AttendanceRefused("self_attendance_not_allowed",
+                                    "Your attendance is not marked in this app.", status=403)
         employee_branch = (_branch_by_code(company, branch_code, "employee_branch_code")
                            if branch_code else employee.branch)
         installation_id = (values.get("rms_installation_id") or "").strip() or (
@@ -276,6 +294,9 @@ def mark_attendance(user, source, values, device=None):
         raise AttendanceRefused("employee_blocked", "This employee is blocked.", status=403)
     if not employee.is_active:
         raise AttendanceRefused("employee_inactive", "This employee is not active.", status=403)
+    if source == AttendanceSource.QR_SCAN and employee.attendance_rule != AttendanceMethod.QR_STATION:
+        raise AttendanceRefused("attendance_method_mismatch",
+                                "This employee's attendance is not taken by QR scan.", status=403)
 
     row = Attendance(
         id=sync_id,
@@ -382,6 +403,157 @@ def attendance_history(company, employee_code, from_date, to_date, now=None):
     for session in attendance_sessions(punch_ins, now):
         days.setdefault(session[0].rms_scan_time.astimezone(zone).date(), []).append(session)
     return employee, sorted(days.items())
+
+
+# -- Team Attendance ------------------------------------------------------------
+# Manager app SRS section 10; owner decisions 14-15 Oct 2026. The manager app
+# sees the whole company; in the employee app the designation's Team Scope
+# decides -- a Supervisor or PRO sees the branches they are a Branch Supervisor
+# of (company.BranchApprovalAuthority).
+
+TEAM_PAGE_SIZE = 50
+
+
+class TeamStatus:
+    ALL = "all"
+    CHECKED_IN = "checked_in"
+    CHECKED_OUT = "checked_out"
+    NOT_CHECKED_IN = "not_checked_in"
+
+    CHOICES = (ALL, CHECKED_IN, CHECKED_OUT, NOT_CHECKED_IN)
+
+
+def team_scope_of(employee, channel):
+    """(scope, branch ids or None). None means every branch of the company.
+    Refuses `no_team_scope` for a designation whose Team Scope is Own only."""
+    scope = team_scope_for(employee, channel)
+    if scope == TeamScope.COMPANY:
+        return scope, None
+    if scope == TeamScope.BRANCHES:
+        ids = (
+            BranchApprovalAuthority.objects
+            .filter(employee=employee, authority_type=AuthorityType.BRANCH_SUPERVISOR,
+                    branch__company=employee.company_id)
+            .values_list("branch_id", flat=True)
+        )
+        return scope, set(ids)
+    raise AttendanceRefused("no_team_scope", "You do not see a team's attendance.", status=403)
+
+
+def team_branches(company, branch_ids):
+    """The branches the caller may filter by: every active branch of the
+    company, or the assigned ones."""
+    branches = Branch.objects.filter(company=company)
+    branches = branches.filter(is_active=True) if branch_ids is None else branches.filter(pk__in=branch_ids)
+    return branches.select_related("location__state").order_by("name")
+
+
+def _narrowed(company, branch_ids, state_id=None, branch_id=None):
+    """The scope's branch ids after the emirate / branch filters, or None
+    for "every branch" (company scope, no filter)."""
+    ids = None if branch_ids is None else set(branch_ids)
+    if branch_id is not None:
+        ids = {branch_id} if ids is None else ids & {branch_id}
+    if state_id is not None:
+        in_state = set(Branch.objects.filter(company=company, location__state_id=state_id)
+                       .values_list("pk", flat=True))
+        ids = in_state if ids is None else ids & in_state
+    return ids
+
+
+TEAM_MAX_DAYS = 31
+
+
+def team_attendance(company, branch_ids, from_date, to_date=None, *, state_id=None, branch_id=None,
+                    status=TeamStatus.ALL, search="", now=None):
+    """(rows, counts) for company-local days `from_date` to `to_date` (one
+    day when `to_date` is not given).
+
+    A row is one session -- a punch-in made on a day of the range with its
+    punch-out, even when that fell the next day -- or one rostered day of an
+    employee who did not check in that day. Every row carries its `day`.
+    `branch_ids` is the scope (None: the whole company). A branch scope, and
+    any emirate / branch filter, reads the station a punch was scanned at
+    (`rms_branch`): a self punch has none, so it shows only in the unfiltered
+    whole-company list.
+
+    Not checked in = a DutyRoster day of type Working at an in-scope branch,
+    for an active employee with no punch-in **that day** anywhere. The roster
+    covers cashier and labour only, so nobody else is ever listed as absent.
+
+    Rows run newest day first; within a day, newest check-in first, then that
+    day's not-checked-in rows by name. `counts` cover the whole range and
+    follow every filter but `status`, for the status tabs.
+    """
+    now = now or timezone.now()
+    to_date = to_date or from_date
+    zone = zone_for(company)
+    ids = _narrowed(company, branch_ids, state_id, branch_id)
+    start, _ = business_day_range(company, from_date)
+    _, end = business_day_range(company, to_date)
+
+    range_punch_ins = Attendance.objects.filter(
+        employee__company=company, punch_type=PunchType.PUNCH_IN, rms_scan_time__gte=start, rms_scan_time__lt=end,
+    )
+    punch_ins = range_punch_ins
+    if ids is not None:
+        punch_ins = punch_ins.filter(rms_branch_id__in=ids)
+    punch_ins = punch_ins.select_related(
+        "punch_out", "employee__designation", "employee_branch__location__state", "rms_branch__location__state",
+    ).order_by("-rms_scan_time")
+
+    rows = []
+    for punch_in, punch_out, state, worked in attendance_sessions(punch_ins, now):
+        rows.append({
+            "day": timezone.localtime(punch_in.rms_scan_time, zone).date(),
+            "status": TeamStatus.CHECKED_OUT if punch_out is not None else TeamStatus.CHECKED_IN,
+            "missing_check_out": state == SessionStatus.MISSING_PUNCH_OUT,
+            "employee": punch_in.employee, "punch_in": punch_in, "punch_out": punch_out,
+            "worked_minutes": worked, "roster": None,
+        })
+
+    # Who checked in on which day, anywhere -- a punch at another station still counts.
+    checked_in = {
+        (employee_id, timezone.localtime(at, zone).date())
+        for employee_id, at in range_punch_ins.values_list("employee_id", "rms_scan_time")
+    }
+    roster = (
+        DutyRoster.objects
+        .filter(employee__company=company, employee__is_active=True, date__range=(from_date, to_date),
+                day_type=DutyRosterDayType.WORKING)
+        .select_related("employee__designation", "branch__location__state")
+    )
+    if ids is not None:
+        roster = roster.filter(branch_id__in=ids)
+    for entry in roster:
+        if (entry.employee_id, entry.date) in checked_in:
+            continue
+        rows.append({
+            "day": entry.date, "status": TeamStatus.NOT_CHECKED_IN, "missing_check_out": False,
+            "employee": entry.employee, "punch_in": None, "punch_out": None,
+            "worked_minutes": None, "roster": entry,
+        })
+
+    def order(row):
+        if row["punch_in"] is not None:
+            return (-row["day"].toordinal(), 0, -row["punch_in"].rms_scan_time.timestamp(), "", "")
+        employee = row["employee"]
+        return (-row["day"].toordinal(), 1, 0, employee.full_name.lower(), employee.employee_code)
+
+    rows.sort(key=order)
+
+    needle = (search or "").strip().lower()
+    if needle:
+        rows = [
+            row for row in rows
+            if needle in row["employee"].employee_code.lower() or needle in row["employee"].full_name.lower()
+        ]
+
+    counts = {key: sum(1 for row in rows if row["status"] == key) for key in TeamStatus.CHOICES[1:]}
+    counts[TeamStatus.ALL] = len(rows)
+    if status and status != TeamStatus.ALL:
+        rows = [row for row in rows if row["status"] == status]
+    return rows, counts
 
 
 ADDRESS_TYPES = AddressType
@@ -523,6 +695,20 @@ def default_week(today=None):
 
 
 @transaction.atomic
+def _on_leave(employee, dates):
+    """{date: the approved leave request} for those of `dates` that are On
+    Leave -- days the roster screen may not change (apps/crew/leave.py)."""
+    rows = (DutyRoster.objects
+            .filter(employee=employee, date__in=dates, day_type=DutyRosterDayType.ON_LEAVE)
+            .select_related("leave_request"))
+    return {row.date: row.leave_request for row in rows}
+
+
+def _leave_error(on_date, leave):
+    return {"field": f"{on_date:%d %b}",
+            "message": f"{on_date:%d %b} is approved leave {leave.reference}; it cannot be changed on the roster."}
+
+
 def save_week(employee, days, *, user, branches_qs):
     """Write one employee's week: `days` is
     [{"date", "day_type", "branch", "shift1_start", "shift1_end",
@@ -544,6 +730,8 @@ def save_week(employee, days, *, user, branches_qs):
         errors += day_errors
         if not day_errors:
             clean.append(fields)
+    locked = _on_leave(employee, [fields["date"] for fields in clean])
+    errors += [_leave_error(day, leave) for day, leave in sorted(locked.items())]
     if errors:
         raise Invalid(errors)
 
@@ -572,6 +760,9 @@ def _check_day(entry, *, branches_qs):
     label = on_date.strftime("%d %b")
 
     day_type = entry.get("day_type")
+    if day_type == DutyRosterDayType.ON_LEAVE:
+        errors.append({"field": label, "message": "On Leave is set only by an approved leave request."})
+        return errors, {}
     if day_type not in DutyRosterDayType.values:
         errors.append({"field": label, "message": "Choose a day type."})
         return errors, {}
@@ -666,17 +857,9 @@ def today_assignment(employee, at=None):
     is none or the day is not Working.
 
     This is the function design/device-login.md's employee-login response is
-    built to call. One seam is left for a feature that does not exist yet:
-
-        # TODO once Leave Request exists: an *approved* leave request for
-        # this employee/date should override whatever this function returns
-        # with "on leave, <type>" -- checked here, before the DutyRoster
-        # lookup below, so today_assignment stays the one place login reads.
-
-    Until then, a day typed directly as Sick/Casual Leave on the roster itself
-    already answers None here (only Working carries an assignment) -- the
-    Leave Request table changes *how* a leave day is decided, not what this
-    function returns for one.
+    built to call. An approved leave request writes its days as On Leave
+    (apps/crew/leave.py), so a leave day -- like one typed as Sick/Casual
+    Leave -- answers None here: only Working carries an assignment.
     """
     today = (at or timezone.now())
     if timezone.is_aware(today):
@@ -747,7 +930,7 @@ def roster_payload(user, year, month):
     rows = (
         DutyRoster.objects
         .filter(employee__in=employees, date__range=(weeks[0][0], weeks[-1][-1]))
-        .select_related("branch__company")
+        .select_related("branch__company", "leave_request__leave_type")
     )
     matrix = {}
     for row in rows:
@@ -762,6 +945,7 @@ def roster_payload(user, year, month):
             "shift1_end": _hhmm(row.shift1_end, zone),
             "shift2_start": _hhmm(row.shift2_start, zone),
             "shift2_end": _hhmm(row.shift2_end, zone),
+            **_leave_fields(row),
         }
 
     current_week_index = 0
@@ -791,6 +975,15 @@ def roster_payload(user, year, month):
         "current_week_index": current_week_index,
         "today": today.isoformat(),
         "branches": [{"id": b.pk, "name": b.name} for b in branches],
+    }
+
+
+def _leave_fields(row):
+    """The approved leave behind an On Leave day, else nulls."""
+    leave = row.leave_request if row.leave_request_id else None
+    return {
+        "leave_type": leave.leave_type.name if leave else None,
+        "leave_reference": leave.reference if leave else None,
     }
 
 
@@ -828,6 +1021,8 @@ def assign_day(employee, entry, *, branches_qs, user, require_new=False):
     errors, fields = _check_day(entry, branches_qs=branches_qs)
     if errors:
         raise Invalid(errors)
+    for day, leave in _on_leave(employee, [fields["date"]]).items():
+        raise Invalid([_leave_error(day, leave)])
     if require_new:
         existing = (
             DutyRoster.objects.filter(employee=employee, date=fields["date"])
@@ -852,6 +1047,8 @@ def remove_day(employee, on_date, *, user):
     the wireframe's own chip-remove leaves no day type behind either."""
     if isinstance(on_date, str):
         on_date = datetime.date.fromisoformat(on_date)
+    for day, leave in _on_leave(employee, [on_date]).items():
+        raise Invalid([_leave_error(day, leave)])
     deleted, _ = DutyRoster.objects.filter(employee=employee, date=on_date).delete()
     return deleted > 0
 
@@ -882,6 +1079,8 @@ def import_rows(rows, *, user, employees_qs, branches_qs):
                             "message": "No Cashier or Labour employee with that code."})
             continue
         errors, fields = _check_day(entry, branches_qs=branches_qs)
+        if not errors:
+            errors = [_leave_error(day, leave) for day, leave in _on_leave(employee, [fields["date"]]).items()]
         if errors:
             results.append({"row": i, "employee_code": code, "ok": False,
                             "message": errors[0]["message"]})
@@ -900,9 +1099,26 @@ def import_rows(rows, *, user, employees_qs, branches_qs):
 # relation to roster_payload's multi-employee admin-screen matrix above.
 
 
-def employee_profile(employee):
+def team_scope_for(employee, channel):
+    """Whose attendance this person sees in Team Attendance: the manager app
+    always the whole company, the employee app what the designation says."""
+    if channel == Channel.MANAGER:
+        return TeamScope.COMPANY
+    return employee.designation.team_scope
+
+
+def employee_profile(employee, channel=Channel.EMPLOYEE):
     """Everything the app's profile screen shows. Every field comes straight
-    off Employee/Designation -- nothing here is invented for the app."""
+    off Employee/Designation -- nothing here is invented for the app.
+
+    `attendance_method` tells the employee app which attendance button to
+    show (qr_station: the QR code; self: Mark / Close; not_required: none),
+    `team_scope` whether Team Attendance is offered (anything but own),
+    `can_approve_leave` whether to show Leave Requests to decide: always in
+    the manager app; in the employee app for a Leave Request approver of any
+    station (apps/crew/leave.py)."""
+    from apps.crew import leave
+
     designation = employee.designation
     return {
         "employee_code": employee.employee_code,
@@ -918,61 +1134,23 @@ def employee_profile(employee):
         "email": employee.email,
         "photo_url": employee.photo.url if employee.photo else None,
         "company": employee.company.name,
+        "can_approve_leave": leave.is_approver(employee, channel),
+        "attendance_method": employee.attendance_rule,
+        "team_scope": team_scope_for(employee, channel),
     }
 
 
 def current_week_roster(employee, *, at=None):
-    """This employee's own current Sun-Sat week -- week_dates_all/
-    week_index_for, the same pair roster_payload uses for the admin screen,
-    just for one employee instead of every roster-eligible one.
-
-    A day with no DutyRoster row comes back with status=None, never a
-    defaulted "Working" -- the same rule roster_payload's matrix follows.
-    Shift times go through _hhmm/zone_for, not row.shift1_start.strftime()
-    directly -- that exact shortcut was the bug fixed earlier for the admin
-    screen (a Dubai 07:00 shift printing back as "03:00", the raw UTC the
-    field is stored in); new code reading the same DateTimeFields would
-    reintroduce it without this.
+    """This employee's own current roster week, for the login reply -- the
+    same week the admin screen shows (week_dates_all / week_index_for), each
+    day in apps/crew/duty.py's one day shape: an unset day has status None,
+    never a defaulted "Working"; shift times are the station's own clock.
     """
-    company = employee.company
-    today = business_date_for(company, at or timezone.now())
-    weeks = week_dates_all(today.year, today.month)
-    index = week_index_for(today) - 1
-    days = weeks[index] if 0 <= index < len(weeks) else []
+    from apps.crew import duty
 
-    rows = {
-        row.date: row
-        for row in DutyRoster.objects.filter(employee=employee, date__in=days)
-        .select_related("branch__company")
-    }
-
-    out = []
-    for day in days:
-        row = rows.get(day)
-        if row is None:
-            out.append({
-                "date": day.isoformat(), "status": None, "branch_id": None, "branch": None, "branch_code": None,
-                "shift1_start": None, "shift1_end": None,
-                "shift2_start": None, "shift2_end": None,
-            })
-            continue
-        zone = zone_for(row.branch.company) if row.branch_id else zone_for(company)
-        out.append({
-            "date": day.isoformat(),
-            "status": row.get_day_type_display(),
-            # The station's database id, for the app's QR code.
-            "branch_id": row.branch_id,
-            "branch": row.branch.name if row.branch_id else None,
-            # The QR code carries this as employee_branch_code (attendance/mark).
-            "branch_code": row.branch.short_code if row.branch_id else None,
-            "shift1_start": _hhmm(row.shift1_start, zone),
-            "shift1_end": _hhmm(row.shift1_end, zone),
-            "shift2_start": _hhmm(row.shift2_start, zone),
-            "shift2_end": _hhmm(row.shift2_end, zone),
-        })
-
+    days = duty.current_week(employee.company, at)
     return {
-        "week_start": days[0].isoformat() if days else None,
-        "week_end": days[-1].isoformat() if days else None,
-        "days": out,
+        "week_start": days[0].isoformat(),
+        "week_end": days[-1].isoformat(),
+        "days": duty.my_roster(employee, days[0], days[-1]),
     }

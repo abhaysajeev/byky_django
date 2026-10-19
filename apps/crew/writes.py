@@ -8,13 +8,16 @@ across four tables, and blocking someone.
 from django.db import transaction
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
+from django.urls import reverse
 from django.utils import timezone
 
+from apps.company.scoping import companies_for
 from apps.company.writes import WriteView, _errors, _payload, _translate
-from apps.crew import services
+from apps.crew import leave, services
 from apps.crew.forms import EmployeeDetailForm, EmployeeForm
-from apps.crew.models import Employee
+from apps.crew.models import Employee, LeaveRequest
 from apps.crew.scoping import employees_for
+from core.enums import Channel
 
 # Drawer field id -> model field, as the Company module does it. The ids come
 # from the wireframe's spec and are also used by its filters, so they are
@@ -267,7 +270,10 @@ class DutyRosterRemoveDayView(WriteView):
                 "errors": [{"field": "Date", "message": "Which day?"}],
             }, status=400)
 
-        removed = services.remove_day(employee, on_date, user=request.user)
+        try:
+            removed = services.remove_day(employee, on_date, user=request.user)
+        except services.Invalid as refused:       # an approved leave day
+            return JsonResponse({"ok": False, "code": "invalid", "errors": refused.errors}, status=400)
         return JsonResponse({
             "ok": True,
             "message": f"{employee.full_name} removed from {on_date:%d %b}." if removed else "Nothing to remove.",
@@ -304,3 +310,39 @@ def _date(value):
         return datetime.date.fromisoformat(value)
     except (TypeError, ValueError):
         return None
+
+
+# -- Leave requests: decided here as in the manager app (apps/crew/leave.py) ----------
+
+
+class _LeaveDecision(WriteView):
+    model = LeaveRequest
+    page_code = "crew.leave_request"
+    approve = True
+
+    def post(self, request, pk):
+        if not self.may("approve"):
+            return self.refused()
+        data = _payload(request)
+        company_ids = list(companies_for(request.user).values_list("id", flat=True))
+        try:
+            row, replaced = leave.decide(request.user, Channel.WEB, pk, self.approve,
+                                         str(data.get("remarks") or ""), company_ids=company_ids)
+        except leave.LeaveRefused as refused:
+            return JsonResponse({"ok": False, "code": "invalid",
+                                 "errors": [{"field": "", "message": refused.message}]}, status=400)
+        if self.approve:
+            message = f"Leave {row.reference} approved." + (
+                f" {replaced} working shift{'s' if replaced != 1 else ''} turned into leave." if replaced else "")
+        else:
+            message = f"Leave {row.reference} rejected."
+        return JsonResponse({"ok": True, "message": message,
+                             "redirect": reverse("crew-leave-request-detail", args=[row.pk])})
+
+
+class LeaveApprove(_LeaveDecision):
+    approve = True
+
+
+class LeaveReject(_LeaveDecision):
+    approve = False

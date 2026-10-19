@@ -254,6 +254,11 @@ SPECTACULAR_SETTINGS = {
     "ENUM_NAME_OVERRIDES": {
         "PaymentKindEnum": "apps.rental.models.PaymentKind",
         "OrderRequestKindEnum": "apps.rental.models.OrderRequestKind",
+        # The request lists' kinds: the order-request kinds + credit_note, card_discount.
+        "RequestListKindEnum": "apps.rental.requests.LIST_KINDS",
+        # The two "status" filters: Team Attendance tabs, and leave tabs (all + LeaveStatus).
+        "TeamAttendanceStatusEnum": "apps.crew.services.TeamStatus.CHOICES",
+        "LeaveStatusFilterEnum": "apps.crew.serializers.LEAVE_STATUS_FILTER",
     },
 }
 

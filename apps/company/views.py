@@ -9,7 +9,7 @@ CRUD pass.
 """
 
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.http import JsonResponse
 from django.urls import reverse
 
@@ -28,6 +28,7 @@ from apps.company.models import (
     Location,
     State,
 )
+from apps.crew.models import TeamScope
 from apps.crew.scoping import employees_for
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
@@ -61,6 +62,14 @@ class CompanyScreenView(PagePermissionMixin, ThemedTemplateView):
             "employees_list": [
                 {"id": e.pk, "name": f"{e.employee_code} — {e.full_name}"}
                 for e in employees_for(user).filter(is_active=True)
+            ],
+            # The Branch Supervisors picker: only jobs whose Team Scope is
+            # "Assigned branches" (Supervisors, PROs).
+            "supervisors_list": [
+                {"id": e.pk, "name": f"{e.employee_code} — {e.full_name} ({e.designation.title})"}
+                for e in employees_for(user).filter(
+                    is_active=True, designation__team_scope=TeamScope.BRANCHES,
+                ).select_related("designation")
             ],
             "perm": {
                 action: has_permission(self.request.user, self.page_code, action)
@@ -328,6 +337,8 @@ class BranchListView(CompanyScreenView):
                         (branch.pk, AuthorityType.MAINTENANCE), []),
                     "rms_app_authority": authorities.get(
                         (branch.pk, AuthorityType.RMS_APP_REQUEST), []),
+                    "branch_supervisors": authorities.get(
+                        (branch.pk, AuthorityType.BRANCH_SUPERVISOR), []),
                     "is_active": branch.is_active,
                 },
             })
@@ -484,6 +495,12 @@ AUTHORITY_FIELDS = {
     "leave_request_authority": AuthorityType.LEAVE_REQUEST,
     "maintenance_authority": AuthorityType.MAINTENANCE,
     "rms_app_authority": AuthorityType.RMS_APP_REQUEST,
+    "branch_supervisors": AuthorityType.BRANCH_SUPERVISOR,
+}
+
+# Who may hold an authority, beyond being the branch company's employee.
+AUTHORITY_ELIGIBLE = {
+    AuthorityType.BRANCH_SUPERVISOR: Q(designation__team_scope=TeamScope.BRANCHES),
 }
 
 
@@ -501,22 +518,22 @@ class BranchSave(writes.EntitySaveView):
     noun = "Branch"
 
     def after_save(self, instance, data):
-        """The three Approval Authority pickers.
+        """The three Approval Authority pickers and Branch Supervisors.
 
         They are not on BranchForm because they write a second table, and they
         were collected by the drawer and then dropped -- three filled lists that
         looked recorded and were not. Each save replaces that branch's rows for
         the types the drawer posted, so unpicking someone removes their
-        authority.
+        authority. A Branch Supervisor must hold a designation whose Team
+        Scope is "Assigned branches"; anyone else posted is dropped.
         """
-        allowed = set(
-            employees_for(self.request.user)
-            .filter(company=instance.company_id)
-            .values_list("pk", flat=True)
-        )
+        company_staff = employees_for(self.request.user).filter(company=instance.company_id)
         for field, authority in AUTHORITY_FIELDS.items():
             if field not in data:
                 continue                       # that section was not on screen
+            allowed = set(
+                company_staff.filter(AUTHORITY_ELIGIBLE.get(authority, Q())).values_list("pk", flat=True)
+            )
             picked = {int(pk) for pk in (data.get(field) or []) if str(pk).isdigit()}
             rows = BranchApprovalAuthority.objects.filter(
                 branch=instance, authority_type=authority

@@ -14,6 +14,7 @@ from django.core.paginator import Paginator
 from django.db.models import Count
 from django.db.models.functions import Coalesce
 
+from apps.crew import leave
 from apps.discount.models import CardDiscountClaim, ClaimStatus
 from apps.rental.models import (
     CreditNote,
@@ -151,5 +152,6 @@ def pending_counts(company_ids, *, state_id=None, branch_id=None):
                                    company_ids, state_id, branch_id).count()
     counts["card_discount"] = _where(CardDiscountClaim.objects.filter(status=ClaimStatus.PENDING),
                                      company_ids, state_id, branch_id).count()
+    counts["leave"] = leave.pending_count(company_ids, state_id=state_id, branch_id=branch_id)
     counts["total"] = sum(counts.values())
     return counts

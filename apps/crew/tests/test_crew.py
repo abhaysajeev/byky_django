@@ -350,3 +350,17 @@ def test_an_employee_can_live_where_the_company_has_no_branch(client_in, world):
 
     assert response.json()["ok"] is True, response.content
     assert EmployeeAddress.objects.get().state == sharjah
+
+
+def test_a_designation_saves_its_team_scope(client_in, world):
+    response = post(client_in, "/crew/designation/save/", {
+        "pk": world["supervisor"].pk, "company": world["company"].pk, "code": "SUP", "title": "Supervisor",
+        "attendance_method": "self", "team_scope": "branches", "is_active": True,
+    })
+
+    assert response.json()["ok"] is True, response.content
+    world["supervisor"].refresh_from_db()
+    assert (world["supervisor"].attendance_method, world["supervisor"].team_scope) == ("self", "branches")
+    row = next(d for d in client_in.get("/crew/designation/list/").context["designations"] if d["code"] == "SUP")
+    assert (row["team_scope"], row["fields_json"]["team_scope"]) == ("Assigned branches", "branches")
+    assert Designation.objects.get(code="CASH").team_scope == "own"      # the default

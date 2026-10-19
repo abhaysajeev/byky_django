@@ -17,9 +17,17 @@ together in one transaction (apps/crew/services.py).
 """
 
 from django.db import models
+from django.db.models import Func, Value
 
-from core.enums import ApprovalStatus  # noqa: F401  (documents the shared pattern)
+from core.enums import (
+    ApprovalStatus,  # noqa: F401  (documents the shared pattern)
+    Channel,
+)
 from core.models import ApprovalMixin, TimeStampedModel
+
+# Numbers leave requests: LEV-<year>-<number>. One sequence, never reset, so a
+# number is unique without a per-year counter row to lock.
+LEAVE_REQUEST_SEQUENCE = "leave_request_seq"
 
 
 class AttendanceMethod(models.TextChoices):
@@ -28,10 +36,22 @@ class AttendanceMethod(models.TextChoices):
     NOT_REQUIRED = "not_required", "Not required"
 
 
+class TeamScope(models.TextChoices):
+    """Whose attendance a designation sees in Team Attendance (15 Oct 2026).
+    The manager app always sees the whole company; in the employee app this
+    decides -- a Supervisor or PRO sees the branches they are a Branch
+    Supervisor of (company.BranchApprovalAuthority)."""
+
+    COMPANY = "company", "Whole company"
+    BRANCHES = "branches", "Assigned branches"
+    OWN = "own", "Own only"
+
+
 class AttendanceSource(models.TextChoices):
     """Which app recorded a punch -- never sent, it follows the channel: the
-    operator (RMS) app scans an employee's QR code, the manager app marks its
-    own user's attendance."""
+    operator (RMS) app scans an employee's QR code; the manager app, and the
+    employee app for staff whose attendance method is Self, mark the
+    signed-in user's own."""
 
     QR_SCAN = "qr_scan", "QR scanned"
     SELF = "self", "Self attendance"
@@ -101,6 +121,8 @@ class Designation(ApprovalMixin, TimeStampedModel):
     attendance_method = models.CharField(
         max_length=20, choices=AttendanceMethod.choices, default=AttendanceMethod.QR_STATION
     )
+    # Whose attendance this job sees in the employee app's Team Attendance.
+    team_scope = models.CharField(max_length=16, choices=TeamScope.choices, default=TeamScope.OWN)
 
     class Meta:
         db_table = "designation"
@@ -329,9 +351,10 @@ class Attendance(TimeStampedModel):
       roster; the operator (RMS) app scans it and posts. The `employee_*`
       fields are what the QR code carried, the `rms_*` fields the scanning
       side. QR generation is the apps' business, not the server's.
-    * **self** -- the manager app's own "mark attendance" button. The
-      `employee_*` fields are the manager; the RMS side has only the phone's
-      installation id, clock and GPS.
+    * **self** -- the manager app's own "mark attendance" button, or the
+      employee app's for staff whose attendance method is Self (Supervisors,
+      PROs). The `employee_*` fields are that person; the RMS side has only
+      the phone's installation id, clock and GPS -- no station.
 
     `id` is the app's `sync_id`, a UUIDv7 made on the device and resent
     unchanged on retry, so an offline punch that is sent twice is stored once.
@@ -440,15 +463,159 @@ class Attendance(TimeStampedModel):
         return f"{self.employee_code} {self.get_punch_type_display()} at {self.rms_scan_time}"
 
 
+class LeaveType(ApprovalMixin, TimeStampedModel):
+    """A kind of leave an employee may ask for. A web master per company,
+    seeded with the four the employee app mockup shows (Annual, Sick,
+    Emergency, Casual). No entitlement or balance: none is asked for
+    (owner, 15 Oct 2026)."""
+
+    company = models.ForeignKey("company.Company", on_delete=models.PROTECT, related_name="leave_types")
+    code = models.CharField("Leave Type Code", max_length=20)
+    name = models.CharField("Leave Type Name", max_length=100)
+
+    class Meta:
+        db_table = "leave_type"
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "code"], name="uniq_leave_type_code_per_company",
+                violation_error_message="A leave type with this code already exists.",
+            ),
+            models.UniqueConstraint(
+                fields=["company", "name"], name="uniq_leave_type_name_per_company",
+                violation_error_message="A leave type with this name already exists.",
+            ),
+        ]
+
+    def __str__(self):
+        return self.name
+
+
+class LeaveStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    APPROVED = "approved", "Approved"
+    REJECTED = "rejected", "Rejected"
+    CANCELLED = "cancelled", "Cancelled"
+
+
+# A request in either of these blocks another over the same days.
+LEAVE_LIVE = (LeaveStatus.PENDING, LeaveStatus.APPROVED)
+
+
+class LeaveRequest(TimeStampedModel):
+    """An employee's request for leave over one or more whole days.
+
+    Built from the employee app SRS section 10 and the manager app SRS
+    section 3 -- there is no legacy leave to port (the HRMS leave tables were
+    removed; only CoreBranchDepartments.LeaveSanctionAuthorityID survived, now
+    company.BranchApprovalAuthority). Rules: apps/crew/leave.py.
+
+    `id` is the app's sync_id (UUIDv7), so a resent submit is stored once.
+    `stations` are fixed at submit -- the stations the employee is rostered
+    Working at during the leave, plus their home branch; those stations' Leave
+    Request approvers may decide it, and managers always may. `days` counts
+    calendar days, both ends included.
+
+    Approved is final; a first rejection may be changed once
+    (`status_edited`). An approval turns every day of the range into an On
+    Leave roster day linked here.
+    """
+
+    id = models.UUIDField(primary_key=True, editable=False)
+    number = models.BigIntegerField(
+        unique=True, editable=False, db_default=Func(Value(LEAVE_REQUEST_SEQUENCE), function="nextval"),
+    )
+    company = models.ForeignKey("company.Company", on_delete=models.PROTECT, related_name="leave_requests")
+    employee = models.ForeignKey("crew.Employee", on_delete=models.PROTECT, related_name="leave_requests")
+    leave_type = models.ForeignKey(LeaveType, on_delete=models.PROTECT, related_name="requests")
+    from_date = models.DateField()
+    to_date = models.DateField()
+    days = models.PositiveSmallIntegerField()
+    reason = models.CharField(max_length=500, blank=True)
+    stations = models.ManyToManyField("company.Branch", related_name="leave_requests", db_table="leave_request_station")
+
+    status = models.CharField(max_length=10, choices=LeaveStatus.choices, default=LeaveStatus.PENDING)
+    applied_at = models.DateTimeField()
+
+    # The decision: who, where (web, manager app, or a branch approver in the
+    # employee app), when, and what they wrote.
+    decided_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    decided_at = models.DateTimeField(null=True, blank=True)
+    decided_channel = models.CharField(max_length=16, choices=Channel.choices, blank=True)
+    decision_remarks = models.CharField(max_length=500, blank=True)
+    # The manager app SRS's one-time "Edit Status" of a rejected request.
+    status_edited = models.BooleanField(default=False)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "leave_request"
+        ordering = ["-applied_at"]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(to_date__gte=models.F("from_date")),
+                                   name="leave_request_to_on_or_after_from"),
+            models.CheckConstraint(condition=models.Q(days__gte=1), name="leave_request_days_positive"),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(status__in=[LeaveStatus.APPROVED, LeaveStatus.REJECTED],
+                             decided_at__isnull=False, decided_by__isnull=False)
+                    & ~models.Q(decided_channel="")
+                )
+                | models.Q(status__in=[LeaveStatus.PENDING, LeaveStatus.CANCELLED], decided_at__isnull=True,
+                           decided_by__isnull=True, decided_channel=""),
+                name="leave_request_decided_iff_decided",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(status=LeaveStatus.CANCELLED, cancelled_at__isnull=False)
+                | (~models.Q(status=LeaveStatus.CANCELLED) & models.Q(cancelled_at__isnull=True)),
+                name="leave_request_cancelled_has_time",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["company", "status"]),
+            models.Index(fields=["employee", "from_date"]),
+        ]
+
+    def __str__(self):
+        return f"{self.reference} {self.employee} {self.from_date} to {self.to_date}"
+
+    @property
+    def reference(self):
+        return f"LEV-{self.applied_at.year}-{self.number:05d}"
+
+
+class LeaveStatusLog(TimeStampedModel):
+    """Every status a request has had, in order -- the manager app SRS's
+    Status Log History. `by` is the person who acted (the applicant on submit
+    and cancel)."""
+
+    leave_request = models.ForeignKey(LeaveRequest, on_delete=models.CASCADE, related_name="log")
+    status = models.CharField(max_length=10, choices=LeaveStatus.choices)
+    at = models.DateTimeField()
+    by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    by_name = models.CharField(max_length=150)
+    channel = models.CharField(max_length=16, choices=Channel.choices)
+    remarks = models.CharField(max_length=500, blank=True)
+
+    class Meta:
+        db_table = "leave_status_log"
+        ordering = ["at", "id"]
+        indexes = [models.Index(fields=["leave_request", "at"])]
+
+    def __str__(self):
+        return f"{self.leave_request_id} {self.status} at {self.at}"
+
+
 class DutyRosterDayType(models.TextChoices):
-    """One employee's one day, exactly as the client's mockup records it
-    (design/duty roster/business-logic.md section 1). Leave here is typed
-    directly -- there is no approval workflow yet; see DutyRoster's docstring."""
+    """One employee's one day, as the client's mockup records it
+    (design/duty roster/business-logic.md section 1). Sick and Casual Leave
+    may still be typed directly; On Leave is set only by an approved leave
+    request (apps/crew/leave.py) and links to it."""
 
     WORKING = "working", "Working"
     WEEK_OFF = "week_off", "Week Off"
     SICK_LEAVE = "sick_leave", "Sick Leave"
     CASUAL_LEAVE = "casual_leave", "Casual Leave"
+    ON_LEAVE = "on_leave", "On Leave"
 
 
 class DutyRoster(TimeStampedModel):
@@ -470,16 +637,12 @@ class DutyRoster(TimeStampedModel):
     date (DateTimeField, not TimeField) so an overnight shift is just an end
     that falls on the next calendar day; no flag is needed.
 
-    Two features read against this table are not built yet, by the client's
-    own scoping for the Oct 2 demo, and are recorded here so adding them later
-    is additive, not a rewrite:
-
-    * **Leave Request.** Once it exists, an *approved* request for an
-      employee/date should override what this table's own `day_type` says for
-      that day when it is displayed or read by login -- see the TODO in
-      `services.today_assignment`. This table's own Sick/Casual Leave values
-      stay as the fallback for a day nobody has filed a request for.
-    * **Attendance-derived Absent.** A `working` day with no matching
+    * **Leave Request** (15 Oct 2026). An approved request writes each of its
+      days here as On Leave, linked to the request, replacing whatever the
+      day held (apps/crew/leave.py). Those days are locked: the roster screen
+      cannot change or remove them. Sick/Casual Leave may still be typed
+      directly for a day nobody has filed a request for.
+    * **Attendance-derived Absent** (not built). A `working` day with no matching
       `Attendance` row should read as Absent. Not stored here -- it is always
       computed by comparing the two tables, documented as
       `services.absent_today` (not implemented).
@@ -501,6 +664,10 @@ class DutyRoster(TimeStampedModel):
     shift2_end = models.DateTimeField(null=True, blank=True)
 
     remarks = models.CharField(max_length=200, blank=True)
+    # The approved leave request that made this day On Leave.
+    leave_request = models.ForeignKey(
+        LeaveRequest, null=True, blank=True, on_delete=models.PROTECT, related_name="roster_days",
+    )
 
     class Meta:
         db_table = "duty_roster"
@@ -546,6 +713,12 @@ class DutyRoster(TimeStampedModel):
                     )
                 ),
                 name="duty_roster_shift2_both_or_neither_after_shift1",
+            ),
+            # On Leave exactly when an approved leave request set the day.
+            models.CheckConstraint(
+                condition=models.Q(day_type=DutyRosterDayType.ON_LEAVE, leave_request__isnull=False)
+                | (~models.Q(day_type=DutyRosterDayType.ON_LEAVE) & models.Q(leave_request__isnull=True)),
+                name="duty_roster_on_leave_has_request",
             ),
         ]
         indexes = [

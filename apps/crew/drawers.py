@@ -137,6 +137,13 @@ DESIGNATION = {
                     "help": "How this job's attendance is taken, unless an employee overrides it.",
                 },
                 {
+                    "id": "team_scope", "label": "Team Scope", "kind": "select",
+                    "required": True, "options_from": "team_scopes_list",
+                    "option_key": "name",
+                    "help": "What this job sees in Team Attendance. 'Assigned branches' makes "
+                            "the employee selectable as a Branch Supervisor.",
+                },
+                {
                     "id": "roster_category", "label": "Duty Roster Category", "kind": "select",
                     "required": False, "options_from": "roster_categories_list",
                     "option_key": "name",
@@ -324,6 +331,34 @@ DUTY_ROSTER_ADD_TO_DAY = {
     ],
 }
 
+LEAVE_TYPE = {
+    "drawer_id": "drawerLeaveType",
+    "scr_name": "leave_type",
+    "model": "crew.LeaveType",
+    "add_label": "Add Leave Type",
+    "title_field": "name",
+    "sections": [
+        {
+            "title": "",
+            "fields": [
+                {
+                    "id": "company", "label": "Company", "kind": "select",
+                    "required": True, "options_from": "companies_list",
+                    "option_key": "name", "system_only": True,
+                },
+                {
+                    "id": "code", "label": "Leave Type Code", "kind": "text",
+                    "required": True, "lock_on_edit": True,
+                },
+                {
+                    "id": "name", "label": "Leave Type Name", "kind": "text", "required": True,
+                    "help": "What the employee app shows, e.g. Annual Leave.",
+                },
+            ],
+        },
+    ],
+}
+
 SPECS = {
     "drawer_employee": EMPLOYEE,
     "drawer_designation": DESIGNATION,
@@ -331,4 +366,5 @@ SPECS = {
     "drawer_duty_roster_employee": DUTY_ROSTER_EMPLOYEE,
     "drawer_duty_roster_day": DUTY_ROSTER_EDIT_DAY,
     "drawer_duty_roster_add_to_day": DUTY_ROSTER_ADD_TO_DAY,
+    "drawer_leave_type": LEAVE_TYPE,
 }
