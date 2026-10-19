@@ -135,6 +135,9 @@ class LeaveSubmitRequest(serializers.Serializer):
     from_date = date_field()
     to_date = date_field()
     reason = text_field(max_length=500, required=False, allow_blank=True)
+    # When the employee pressed submit on the phone (company time) -- a request
+    # made offline keeps its own time. Left out: the time it reaches us.
+    applied_at = datetime_field(required=False, allow_null=True)
 
     def validate(self, values):
         return _range(values)

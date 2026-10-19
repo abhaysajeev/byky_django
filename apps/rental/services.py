@@ -5,7 +5,7 @@ import json
 from decimal import Decimal
 
 from django.db import IntegrityError, transaction
-from django.db.models import F
+from django.db.models import F, Q
 from django.utils import timezone
 
 from apps.company.models import PaymentMode
@@ -767,7 +767,9 @@ def settle_order(session, values, request_data, reply_for):
 
         source = (DiscountSource.CARD if card else DiscountSource.MANAGER if manager
                   else DiscountSource.COMPLIMENTARY if free else "")
-        issue_invoice(order, billed, session, at=values["settled_at"], discount_source=source)
+        issue_invoice(order, billed, session, at=values["settled_at"], discount_source=source,
+                      star_rating=values.get("star_rating"))
+        rate_customer(order.customer_id, values.get("star_rating"), values["settled_at"])
         event = {
             "action": OrderAction.SETTLE, "happened_at": values["settled_at"],
             "device": session.device, "user": session.user,
@@ -808,7 +810,18 @@ def _record_payments(session, order, payments, modes):
         )
 
 
-def issue_invoice(order, billed_items, session, *, at, discount_source=""):
+def rate_customer(customer_id, star_rating, rated_at):
+    """The customer's rating becomes this settle's, unless a newer settle has
+    already rated them -- a parked settle can arrive after a later one. No
+    rating, no change."""
+    if star_rating is None:
+        return
+    Customer.objects.filter(
+        Q(star_rating_at__isnull=True) | Q(star_rating_at__lte=rated_at), pk=customer_id,
+    ).update(star_rating=star_rating, star_rating_at=rated_at)
+
+
+def issue_invoice(order, billed_items, session, *, at, discount_source="", star_rating=None):
     """The invoice for a settled order: a frozen copy of the bill, numbered by
     the order, issued by the settling tablet and operator. Only returned lines
     are billed -- replaced and removed ones are not copied."""
@@ -821,7 +834,7 @@ def issue_invoice(order, billed_items, session, *, at, discount_source=""):
         subtotal=order.subtotal, discount_percentage=order.discount_percentage,
         discount_amount=order.discount_amount, discount_source=discount_source,
         tax_percentage=order.tax_percentage, tax_amount=order.tax_amount,
-        rounding_adjustment=order.rounding_adjustment, net_amount=order.net_amount,
+        rounding_adjustment=order.rounding_adjustment, net_amount=order.net_amount, star_rating=star_rating,
         payments=[
             {"mode": payment.mode.name, "kind": payment.kind, "amount": str(payment.amount),
              "reference_no": payment.reference_no}

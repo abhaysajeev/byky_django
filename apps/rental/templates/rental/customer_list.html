@@ -91,6 +91,7 @@
             <th>ID Number</th>
             <th>Mobile No</th>
             <th>Email</th>
+            <th>Rating</th>
             <th>Status</th>
             <th>Actions</th>
           </tr>
@@ -103,6 +104,7 @@
             <td class="scr-contact">{{ c.id_no|default:"—" }}</td>
             <td class="scr-contact">{{ c.mobile }}</td>
             <td class="scr-contact">{{ c.email|default:"—" }}</td>
+            <td class="scr-contact">{% if c.star_rating %}★ {{ c.star_rating }}{% else %}—{% endif %}</td>
             <td><span class="scr-badge {% if c.status == 'Blocked' %}scr-badge-rejected{% else %}scr-badge-approved{% endif %}" data-status-badge><i></i>{{ c.status }}</span></td>
             <td>
               <div class="scr-row-actions">
@@ -113,7 +115,7 @@
           {{ c.fields_json|json_script:c.json_id }}
           {% empty %}
           <tr>
-            <td colspan="7" style="padding:0">
+            <td colspan="8" style="padding:0">
               <div class="scr-empty">
                 <span class="scr-empty-ico">
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 20v-1.6a3.4 3.4 0 0 0-3.4-3.4H9.4A3.4 3.4 0 0 0 6 18.4V20M11.5 12a3.6 3.6 0 1 0 0-7.2 3.6 3.6 0 0 0 0 7.2M21 20v-1.4a3 3 0 0 0-2.3-2.9M16.6 5a3 3 0 0 1 0 5.8"></path></svg>
