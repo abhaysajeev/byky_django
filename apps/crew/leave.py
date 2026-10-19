@@ -106,6 +106,13 @@ def stations_for(employee, from_date, to_date):
 
 # -- The applicant ---------------------------------------------------------------------
 
+def _applied_at(values, now):
+    """The phone's submit time when it sent one, never later than now (a fast
+    phone clock cannot post-date a request); else the time it reached us."""
+    sent = values.get("applied_at")
+    return now if sent is None else min(sent, now)
+
+
 def submit(user, values, now=None):
     """(row, created) -- created is False when this sync_id was already stored."""
     employee = user.employee
@@ -138,7 +145,7 @@ def submit(user, values, now=None):
             row = LeaveRequest.objects.create(
                 id=sync_id, company=company, employee=employee, leave_type=leave_type,
                 from_date=from_date, to_date=to_date, days=days_between(from_date, to_date),
-                reason=(values.get("reason") or "").strip(), applied_at=now,
+                reason=(values.get("reason") or "").strip(), applied_at=_applied_at(values, now),
                 created_by=user, modified_by=user,
             )
             row.refresh_from_db(fields=["number"])

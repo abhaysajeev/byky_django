@@ -98,6 +98,13 @@ class Customer(ApprovalMixin, TimeStampedModel):
     blocked_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT,
                                    related_name="+")
 
+    # The customer's latest star rating, 1.0-5.0 (owner, 19 Oct 2026): the one
+    # the operator entered at the most recent settle that carried a rating
+    # (Invoice.star_rating). star_rating_at is that settle's time, so a parked
+    # settle arriving late never replaces a newer rating. Empty until rated.
+    star_rating = models.DecimalField(max_digits=2, decimal_places=1, null=True, blank=True)
+    star_rating_at = models.DateTimeField(null=True, blank=True)
+
     # The app's own UUIDv7 for a customer it created (customers/create), resent
     # unchanged on retry so an offline create is stored once. Sync checks
     # only -- the integer id stays the key. Empty for customers made on the
@@ -118,6 +125,10 @@ class Customer(ApprovalMixin, TimeStampedModel):
             models.UniqueConstraint(
                 fields=["mobile_full"], name="uniq_customer_mobile_full",
                 violation_error_message="A customer with this phone number already exists.",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(star_rating__isnull=True) | models.Q(star_rating__gte=1, star_rating__lte=5),
+                name="customer_star_rating_1_to_5",
             ),
         ]
         indexes = [models.Index(fields=["company"])]
@@ -514,12 +525,18 @@ class Invoice(TimeStampedModel):
     rounding_adjustment = models.DecimalField(max_digits=7, decimal_places=3)
     net_amount = models.DecimalField(**MONEY)
     payments = models.JSONField(default=list)      # [{mode, kind, amount, reference_no}] at issue
+    # The rating the operator entered at settle, 1.0-5.0; empty when none was given.
+    star_rating = models.DecimalField(max_digits=2, decimal_places=1, null=True, blank=True)
 
     class Meta:
         db_table = "invoice"
         ordering = ["-issued_at"]
         constraints = [
             models.UniqueConstraint(fields=["company", "invoice_no"], name="uniq_invoice_no_per_company"),
+            models.CheckConstraint(
+                condition=models.Q(star_rating__isnull=True) | models.Q(star_rating__gte=1, star_rating__lte=5),
+                name="invoice_star_rating_1_to_5",
+            ),
         ]
         indexes = [models.Index(fields=["branch", "issued_at"])]
 

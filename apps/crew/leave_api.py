@@ -221,8 +221,11 @@ class LeaveSubmitView(_LeaveView):
         description="""
 `sync_id` (a **UUIDv7** made on the phone, resent unchanged on a retry -- a
 second call answers `duplicate` with the stored request), `leave_type_id`
-(from `leave/types`), `from_date`, `to_date`, `reason` (optional). The reply
-is the request as `leave/my` lists it.
+(from `leave/types`), `from_date`, `to_date`, `reason` (optional),
+`applied_at` (optional, `YYYY-MM-DD HH:MM:SS` company time -- when the employee
+pressed submit, so a request made offline keeps its own time; a time later
+than now is taken as now; left out, the time the request reaches us). The
+reply is the request as `leave/my` lists it, `applied_at` included.
 """ + _RULES,
         request=envelope_request("LeaveSubmitEnvelope", LeaveSubmitRequest),
         responses=envelope_responses(
@@ -243,6 +246,8 @@ is the request as `leave/my` lists it.
         return super().post(request, app)
 
     def perform(self, request, app, values, employee, zone):
+        if values.get("applied_at") is not None:
+            values = {**values, "applied_at": timezone.make_aware(values["applied_at"], zone)}
         row, created = leave.submit(request.user, values)
         data = leave_json(leave.with_details(leave.my_requests(employee)).get(pk=row.pk), zone, request.user,
                           app, _working_days([row]))

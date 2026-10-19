@@ -31,7 +31,7 @@ from apps.portal.services import grant_all
 from core.enums import Channel
 from core.ids import uuid7
 from core.models import User
-from core.timezones import business_date_for
+from core.timezones import business_date_for, zone_for
 
 world, fresh_throttle, operator, manager, staff_app = (
     base.world, base.fresh_throttle, base.operator, base.manager, base.staff_app)
@@ -142,6 +142,45 @@ def test_bad_requests_are_refused(client, world, types, staff_app, change, statu
 
 def test_today_is_allowed(client, world, types, staff_app):
     assert submitted(client, staff_app, ask(world, types, start=0, end=0))["days"] == 1
+
+
+def test_the_phone_may_send_when_it_was_applied(client, world, types, staff_app):
+    """Made offline an hour ago: it keeps the phone's time, not the time it
+    reached us."""
+    zone = zone_for(world["company"])
+    then = (timezone.now() - datetime.timedelta(hours=1)).astimezone(zone).replace(microsecond=0)
+
+    data = submitted(client, staff_app, ask(world, types, applied_at=then.strftime("%Y-%m-%d %H:%M:%S")))
+
+    assert data["applied_at"] == then.strftime("%Y-%m-%d %H:%M:%S")
+    assert LeaveRequest.objects.get().applied_at == then
+
+
+def test_a_future_applied_time_is_taken_as_now(client, world, types, staff_app):
+    zone = zone_for(world["company"])
+    later = (timezone.now() + datetime.timedelta(days=2)).astimezone(zone)
+
+    before = timezone.now()
+    submitted(client, staff_app, ask(world, types, applied_at=later.strftime("%Y-%m-%d %H:%M:%S")))
+
+    assert before <= LeaveRequest.objects.get().applied_at <= timezone.now()
+
+
+@pytest.mark.parametrize("sent", ["absent", None])
+def test_without_an_applied_time_it_is_when_it_reached_us(client, world, types, staff_app, sent):
+    data = ask(world, types) if sent == "absent" else ask(world, types, applied_at=None)
+    before = timezone.now()
+
+    submitted(client, staff_app, data)
+
+    assert before <= LeaveRequest.objects.get().applied_at <= timezone.now()
+
+
+def test_a_badly_written_applied_time_is_refused(client, world, types, staff_app):
+    response = submit(client, staff_app, ask(world, types, applied_at="yesterday"))
+
+    assert (response.status_code, response.json()["code"]) == (400, "invalid_request")
+    assert "applied_at" in response.json()["data"]["errors"]
 
 
 def test_overlap_with_pending_or_approved_is_refused_not_cancelled(client, world, types, staff_app):
