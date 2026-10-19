@@ -1932,7 +1932,10 @@ _MANAGER_CARD_ROW = {
     "decided_by": None, "decided_channel": None, "decided_at": None, "decision_note": "",
     "order": _MANAGER_SAMPLE["order"],
     "details": {"card_type": "Esaad", "card_grade": "Gold", "card_number": "ES-448812",
-                "card_photo": "https://photos.example/esaad/448812.jpg", "discount_percent": "20.00",
+                "card_photo": None, "card_photo_id": "01a14a3c-77d2-7f1e-9a10-3f7c2b9d4e51",
+                "card_photo_url": "/api/v1/manager/photos/01a14a3c-77d2-7f1e-9a10-3f7c2b9d4e51?size=display",
+                "card_photo_thumb_url": "/api/v1/manager/photos/01a14a3c-77d2-7f1e-9a10-3f7c2b9d4e51?size=thumb",
+                "discount_percent": "20.00",
                 "fare_basis": "base", "bill_amount": "100.000", "discount_amount": "20.000",
                 "net_amount": "80.000"},
 }
@@ -1962,7 +1965,9 @@ to now) -- plus `details`, `null` for an order request (an invoice `reprint` car
 `invoice_no` and `invoice_net_amount`) and, for the others:
 a credit note's `credit_note_no`, `invoice_no`, `invoice_net_amount`, issued
 `net_amount` / `tax_amount`; a card discount's card type, grade, number,
-**`card_photo`** (the link to show before deciding), %, fare basis and the
+**the card photo** (`card_photo_thumb_url` / `card_photo_url`, paths on this
+server that need the access token; older requests only `card_photo`, a plain
+link), %, fare basis and the
 bill / discount / net amounts. Order-request-only fields (`discount_*`,
 `revoked_*`, `applied_*`, `used_at`) are empty for those two kinds. `status` is
 each kind's own (a credit note can be `cancelled`, a card discount `redeemed`).

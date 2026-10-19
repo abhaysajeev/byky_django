@@ -41,6 +41,8 @@ class RequestLogMiddleware:
             except Exception:                   # noqa: BLE001 -- an unreadable body is the view's to refuse
                 body = b""
             response = self.get_response(request)
+            if request.content_type.startswith("multipart/"):
+                body = _multipart_summary(request, body)
             try:
                 response["X-Request-ID"] = str(request.request_id)
                 writer.enqueue(writer.REQUEST, _row(request, response, body, started_at,
@@ -50,6 +52,21 @@ class RequestLogMiddleware:
             return response
         finally:
             request_context.end(token)
+
+
+def _multipart_summary(request, body):
+    """A file upload (POST .../photos) is logged as its fields and each file's
+    name, type and size -- never the image bytes, here or on the log server."""
+    try:
+        summary = {
+            "multipart": True, "bytes": len(body or b""),
+            "fields": {key: request.POST.get(key) for key in request.POST},
+            "files": {key: {"name": f.name, "content_type": f.content_type, "size": f.size}
+                      for key, f in request.FILES.items()},
+        }
+    except Exception:                           # noqa: BLE001 -- a broken upload still gets a line
+        summary = {"multipart": True, "bytes": len(body or b"")}
+    return json.dumps(summary).encode()
 
 
 def _json(raw):

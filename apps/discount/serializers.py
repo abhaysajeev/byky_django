@@ -57,7 +57,10 @@ class ApprovalRequest(serializers.Serializer):
     net_amount = _money()
     requested_at = datetime_field()
     card_number = text_field(max_length=50, required=False, allow_blank=True)
-    card_photo = text_field(max_length=500, required=False, allow_blank=True)
+    card_photo = text_field(max_length=500, required=False, allow_blank=True)     # older app builds: a link
+    # The photo uploaded first to POST /api/v1/operator/photos (apps/photos).
+    card_photo_id = serializers.UUIDField(required=False, allow_null=True,
+                                          error_messages={"invalid": "must be a photo_id (UUID)"})
 
 
 class ApprovalStatusRequest(serializers.Serializer):

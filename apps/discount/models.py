@@ -197,9 +197,10 @@ class CardDiscountClaim(TimeStampedModel):
     grade and fare basis are copied in as they were when claimed, so later
     edits to the discount never rewrite history. The bill figures -- bill
     amount, %, discount amount, net -- are the device's own, stored as sent
-    and only displayed. card_photo is the link the device sends after
-    uploading the photo to the photo store. At most one request per order is
-    pending at a time (uniq_pending_claim_per_order).
+    and only displayed. The card photo is `photo` -- uploaded first to
+    POST /api/v1/operator/photos and named here by its id (apps/photos);
+    `card_photo` keeps the plain link older app builds send. At most one
+    request per order is pending at a time (uniq_pending_claim_per_order).
     """
 
     id = models.UUIDField(primary_key=True, editable=False)
@@ -216,6 +217,7 @@ class CardDiscountClaim(TimeStampedModel):
     mobile_full = models.CharField("Phone", max_length=30)
     card_number = models.CharField(max_length=50, blank=True)
     card_photo = models.CharField(max_length=500, blank=True)
+    photo = models.ForeignKey("photos.Photo", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
 
     order = models.ForeignKey("rental.Order", on_delete=models.PROTECT, related_name="card_claims")
     bill_amount = models.DecimalField(max_digits=13, decimal_places=3, null=True, blank=True)

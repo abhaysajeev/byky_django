@@ -17,7 +17,11 @@ else:
 PY
 
 mkdir -p staticfiles
-python manage.py migrate --noinput
+# Only `web` migrates: the Celery worker and beat run this same image with
+# DJANGO_MIGRATE=0, so three containers never migrate at once.
+if [ "${DJANGO_MIGRATE:-1}" = "1" ]; then
+    python manage.py migrate --noinput
+fi
 # Runserver (local dev) serves static files itself via the staticfiles app
 # finder while DEBUG=True, so this was never needed there. Gunicorn (qa/prod)
 # relies on WhiteNoise's CompressedManifestStaticFilesStorage, which needs

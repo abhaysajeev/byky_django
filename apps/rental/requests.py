@@ -34,6 +34,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.discount.models import CardDiscountClaim, ClaimStatus
+from apps.photos import services as photo_services
 from apps.rental.models import (
     REQUEST_LIVE,
     DecisionChannel,
@@ -48,6 +49,7 @@ from apps.rental.models import (
     OrderStatus,
 )
 from apps.rental.services import OrderRefused, _open_order, lock_order, run_once
+from core.enums import Channel
 from core.timezones import zone_for
 
 __all__ = ["DecisionChannel"]      # the manager API and the web name channels through this module
@@ -687,9 +689,22 @@ def _manager_rows_of(keys):
             zone = zone_of(claim)
             row = _claim_row(claim, zone)
             loaded[(CARD_DISCOUNT, claim.pk)] = _manager_other(row, claim, zone, now, details={
-                **row["details"], "card_photo": claim.card_photo or None, "fare_basis": claim.fare_basis,
+                **row["details"], "card_photo": claim.card_photo or None,
+                **card_photo_fields(claim), "fare_basis": claim.fare_basis,
             })
     return [loaded[(source, pk)] for pk, _, source in keys]
+
+
+def card_photo_fields(claim):
+    """The uploaded card photo (apps/photos) for the manager app: its id and
+    two URLs relative to the server, which need the access token."""
+    if not claim.photo_id:
+        return {"card_photo_id": None, "card_photo_url": None, "card_photo_thumb_url": None}
+    return {
+        "card_photo_id": str(claim.photo_id),
+        "card_photo_url": photo_services.view_path(Channel.MANAGER, claim.photo_id, "display"),
+        "card_photo_thumb_url": photo_services.view_path(Channel.MANAGER, claim.photo_id, "thumb"),
+    }
 
 
 def _manager_other(row, record, zone, now, *, details):
