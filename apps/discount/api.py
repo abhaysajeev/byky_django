@@ -264,8 +264,12 @@ current status and writes nothing.
 have a customer. `full_number` is the card holder (country code then number,
 digits only). The bill figures -- `bill_amount`, `discount_percent`,
 `discount_amount`, `net_amount` -- are the device's own, stored as sent.
-`card_photo` is the link to the photo the device uploaded. `requested_at` is
-`YYYY-MM-DD HH:MM:SS`, company time.
+**The card photo** -- upload it first (`POST /api/v1/operator/photos`,
+purpose `card_discount`) and send its id as `card_photo_id`. If the upload has
+not reached the server yet the request is refused `photo_not_uploaded`: keep it
+queued and send it again after the upload. `card_photo` (a plain link) is still
+accepted from older app builds. `requested_at` is `YYYY-MM-DD HH:MM:SS`,
+company time.
 
 One pending request per order at a time, and none while the order has a manager
 discount or complimentary request waiting or approved (`discount_requested`,
@@ -300,6 +304,10 @@ class ApprovalRequestView(APIView):
             (409, "discount_requested", "This order already has a manager discount request.", {}),
             (409, "complimentary_requested", "This order already has a complimentary request.", {}),
             (409, "sync_id_conflict", "That sync_id is already used.", {}),
+            (409, "photo_not_uploaded", "That photo has not reached the server yet. Upload it, then send this "
+                                        "again.", {}),
+            (400, "unknown_photo", "No such photo for this request.", {}),
+            (409, "photo_in_use", "That photo is already on another request.", {}),
             (401, "not_authenticated", "Sign in first.", {}),
             (403, "wrong_channel", "Not allowed on this app.", {}),
             (409, "device_not_mapped", "This device has no station.", {}),

@@ -258,6 +258,16 @@ def _order_no(order):
     return order.order_no or str(order.pk)
 
 
+def _photo(claim):
+    """The card photo for the page: the uploaded one (apps/photos), else the
+    link an older app build sent."""
+    if claim.photo_id:
+        return {"photo": reverse("photo", args=[claim.photo_id, "display"]), "photo_is_image": True,
+                "photo_full": reverse("photo", args=[claim.photo_id, "original"])}
+    link = claim.card_photo
+    return {"photo": link, "photo_is_image": link.startswith(("http://", "https://")), "photo_full": link}
+
+
 def _claim_row(claim, zone):
     requested = claim.requested_at.astimezone(zone)
     return {
@@ -274,7 +284,7 @@ def _claim_row(claim, zone):
         "order_status": claim.order.get_status_display(),
         "bill_amount": claim.bill_amount, "discount_amount": claim.discount_amount,
         "net_amount": claim.net_amount,
-        "photo": claim.card_photo, "photo_is_image": claim.card_photo.startswith(("http://", "https://")),
+        **_photo(claim),
         "decided_at": claim.decided_at.astimezone(zone) if claim.decided_at else None,
         "decided_by": claim.decided_by.display_name if claim.decided_by_id else "",
         "decided_channel": claim.decided_channel, "decided_channel_label": claim.get_decided_channel_display(),

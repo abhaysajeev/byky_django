@@ -27,6 +27,8 @@ from apps.discount.models import (
     UsageType,
 )
 from apps.discount.scoping import card_discounts_for, card_grades_for
+from apps.photos import services as photo_services
+from apps.photos.models import PhotoPurpose
 from apps.rental.models import (
     REQUEST_LIVE,
     Customer,
@@ -338,13 +340,19 @@ def _request_approval(session, values, company, sync_id):
         raise DiscountRefused("approval_not_needed", "This card discount needs no approval.", 400)
     if CardDiscountClaim.objects.filter(order=order, status=ClaimStatus.PENDING).exists():
         raise DiscountRefused("request_pending", "This order already has a pending approval request.", 409)
+    photo = None
+    if values.get("card_photo_id"):
+        try:
+            photo = photo_services.attachable(values["card_photo_id"], company, PhotoPurpose.CARD_DISCOUNT)
+        except photo_services.PhotoRefused as refusal:
+            raise DiscountRefused(refusal.code, refusal.message, refusal.status) from None
 
     claim = CardDiscountClaim(
         id=sync_id, company=company, card_discount=discount,
         card_type=discount.card_grade.card_type, card_grade=discount.card_grade,
         fare_basis=discount.fare_basis, requires_approval=True,
         customer=customer, customer_name=customer.full_name, mobile_full=customer.mobile_full,
-        card_number=values.get("card_number") or "", card_photo=values.get("card_photo") or "",
+        card_number=values.get("card_number") or "", card_photo=values.get("card_photo") or "", photo=photo,
         order=order, bill_amount=values["bill_amount"], discount_percent=values["discount_percent"],
         discount_amount=values["discount_amount"], net_amount=values["net_amount"],
         branch=session.branch, requested_by=session.user,
@@ -362,6 +370,8 @@ def _request_approval(session, values, company, sync_id):
             return raced, False
         raise DiscountRefused("request_pending", "This order already has a pending approval request.", 409) \
             from None
+    if photo is not None:
+        photo_services.mark_attached(photo)
     return claim, True
 
 

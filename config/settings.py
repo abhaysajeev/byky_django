@@ -68,6 +68,7 @@ LOCAL_APPS = [
     "apps.discount",
     "apps.monitoring",
     "apps.sync",
+    "apps.photos",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -284,13 +285,21 @@ STATIC_URL = "static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
 WHITENOISE_MAX_AGE = 31536000
+MEDIA_URL = "media/"
+MEDIA_ROOT = BASE_DIR / "media"
+
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+    # Photos from the apps (apps/photos). Private: never under MEDIA_URL; read
+    # only through apps/photos/views.py after a permission check. Local disk
+    # now (the FTP folder on the VPS, docs/deployments.md); object storage
+    # later is this entry's BACKEND and OPTIONS only.
+    "photos": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+        "OPTIONS": {"location": MEDIA_ROOT / "photos", "base_url": None},
+    },
 }
-
-MEDIA_URL = "media/"
-MEDIA_ROOT = BASE_DIR / "media"
 
 # Map tiles need a referer; Django's default strips it (see CLAUDE.md, Maps).
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
@@ -336,3 +345,32 @@ LOG_INGEST_TIMEOUT = 5                  # seconds per POST
 # Which copy sends the logs (qa / dev, docs/deployments.md): carried in every
 # log as log.environment, for the log viewer's qa | dev switch. Empty = not sent.
 LOG_ENVIRONMENT = os.environ.get("LOG_ENVIRONMENT", "")
+
+
+# -- Photos (apps/photos) -------------------------------------------------------------
+# The device compresses (JPEG, long side 1280-1600 px, EXIF removed); the
+# server only checks. Nothing is re-encoded except the two previews.
+PHOTO_MAX_BYTES = 1024 * 1024               # 1 MB
+PHOTO_MIN_LONG_SIDE = 1000                  # px: below this a card is not readable
+PHOTO_MAX_PIXELS = 24_000_000               # refuse oversized ("decompression bomb") images
+PHOTO_UNATTACHED_HOURS = 48                 # an upload no request took is deleted after this
+# How a checked photo is sent: "nginx" (X-Accel-Redirect from an internal
+# location, deploy/nginx/qa.conf) on the deployments, "django" (the app sends
+# the file itself) locally and in tests.
+PHOTO_SERVE = os.environ.get("PHOTO_SERVE", "django")
+
+# -- Celery (config/celery.py) ----------------------------------------------------------
+from celery.schedules import crontab  # noqa: E402  (beside the settings it is used by)
+
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://redis:6379/0")
+CELERY_TASK_IGNORE_RESULT = True            # no result backend: nothing waits on a task's return
+CELERY_TASK_ALWAYS_EAGER = os.environ.get("CELERY_TASK_ALWAYS_EAGER", "0") == "1"
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_TASK_ACKS_LATE = True                # a task cut off by a restart runs again
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_BEAT_SCHEDULE = {
+    "photos-purge-unattached": {"task": "apps.photos.tasks.purge_unattached", "schedule": crontab(hour=3, minute=15)},
+    # A preview the upload could not queue (Redis down) is made here instead.
+    "photos-missing-previews": {"task": "apps.photos.tasks.make_missing_previews", "schedule": crontab(minute=40)},
+}

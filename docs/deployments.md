@@ -32,6 +32,33 @@ A run on the wrong branch for its target is refused. Deploys never overlap:
 a second one waits. Each deploy backs up **its own** database first
 (`deploy/deploy.sh`), then builds, migrates and health-checks that copy only.
 
+## Background jobs and photos
+
+Each copy also runs **redis**, a Celery **worker** and **beat**
+(`docker-compose.qa.yml`): photo previews after an upload, an hourly sweep for
+previews that could not be queued, and the nightly deletion of photos no
+request attached within 48 h. They use the image `web` was built as, so a
+deploy updates all three; only `web` runs migrations.
+
+**Where photos live.** Unset, in the copy's own Docker volume. To use the FTP
+folder on this VPS instead, set `MEDIA_HOST_DIR` in that copy's `.env` to its
+own subfolder (`.../byky/qa`, `.../byky/dev` -- never the same one for both),
+copy what is already in the volume across, then deploy:
+
+```bash
+# once, as deploy, for the copy in ~/byky_django (qa)
+# The FTP login sees /ftp/upload: vsftpd locks ftpuser into its home.
+sudo mkdir -p /home/ftpuser/ftp/upload/byky/qa
+docker run --rm -v byky_f_qa_byky_f_qa_media:/from -v /home/ftpuser/ftp/upload/byky/qa:/to \
+  alpine sh -c 'cp -a /from/. /to/'
+echo 'MEDIA_HOST_DIR=/home/ftpuser/ftp/upload/byky/qa' >> ~/byky_django/.env
+```
+
+The apps never use FTP: they upload through the API, and photos are sent
+only after the app's permission check (nginx `location /_protected/`). The
+containers run as root, so files they write are root-owned: the FTP user can
+read them but not delete them, which is intended.
+
 ## Working with the two branches
 
 ```
