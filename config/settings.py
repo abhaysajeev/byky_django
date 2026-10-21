@@ -69,6 +69,7 @@ LOCAL_APPS = [
     "apps.monitoring",
     "apps.sync",
     "apps.photos",
+    "apps.notifications",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -373,4 +374,16 @@ CELERY_BEAT_SCHEDULE = {
     "photos-purge-unattached": {"task": "apps.photos.tasks.purge_unattached", "schedule": crontab(hour=3, minute=15)},
     # A preview the upload could not queue (Redis down) is made here instead.
     "photos-missing-previews": {"task": "apps.photos.tasks.make_missing_previews", "schedule": crontab(minute=40)},
+    # Notifications the change could not queue (Redis down), and retries due.
+    "notifications-send-due": {"task": "apps.notifications.tasks.send_due", "schedule": crontab()},
+    "notifications-purge": {"task": "apps.notifications.tasks.purge", "schedule": crontab(hour=3, minute=45)},
 }
+
+# -- Push notifications (apps/notifications) ---------------------------------------------
+# The Firebase service-account key file for this deployment (one Firebase
+# project per environment). Kept on the server, never in the repository;
+# unset = nothing is sent and rows end "skipped" (Firebase not set up yet).
+FCM_CREDENTIALS_FILE = os.environ.get("FCM_CREDENTIALS_FILE", "")
+PUSH_TTL_SECONDS = 12 * 3600       # Google drops an alert the phone has not received by then
+PUSH_MAX_ATTEMPTS = 5              # on Firebase being busy or down
+PUSH_KEEP_DAYS = 90

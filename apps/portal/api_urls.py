@@ -12,5 +12,6 @@ urlpatterns = [
     path("auth/login", api.LoginView.as_view(), name="api-app-login"),
     path("auth/refresh", api.AppRefreshView.as_view(), name="api-app-refresh"),
     path("auth/logout", api.AppLogoutView.as_view(), name="api-app-logout"),
+    path("device/push-token", api.PushTokenView.as_view(), name="api-app-push-token"),
     path("server/time", api.ServerTimeView.as_view(), name="api-server-time"),
 ]

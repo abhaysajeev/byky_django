@@ -332,6 +332,33 @@ def close_session(session, reason, *, now=None):
     return session
 
 
+def set_push_token(session, value):
+    """Store this app's FCM token on its session (owner, 21 Oct 2026: the
+    token comes with login, and a device gets pushes only while signed in).
+    A token is one app on one phone, so it is held by one open session: any
+    other open session holding it lets it go -- a reinstall, or another user
+    signing in on the same phone. Anything that is not a token is ignored."""
+    from apps.devices.services import _push_token  # it imports this module
+
+    token = _push_token(value)
+    if not token or token == session.push_token:
+        return session
+    with transaction.atomic():
+        (AppSession.objects.filter(push_token=token, logged_out_at__isnull=True)
+         .exclude(pk=session.pk).update(push_token=""))
+        session.push_token = token
+        session.save(update_fields=["push_token", "modified_on"])
+    return session
+
+
+def push_sessions(*, now=None):
+    """Sessions a push may go to: open, refresh token not expired (an expired
+    session is never closed in the database), holding a token."""
+    return AppSession.objects.filter(
+        logged_out_at__isnull=True, refresh_expires_at__gt=now or timezone.now(),
+    ).exclude(push_token="")
+
+
 def close_sessions_for_user(user, reason, *, channel=None, now=None):
     """Used by force logout, by blocking an employee, and by a password change."""
     sessions = AppSession.objects.filter(user=user, logged_out_at__isnull=True)

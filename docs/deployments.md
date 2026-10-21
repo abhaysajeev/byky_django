@@ -59,6 +59,20 @@ only after the app's permission check (nginx `location /_protected/`). The
 containers run as root, so files they write are root-owned: the FTP user can
 read them but not delete them, which is intended.
 
+**Push notifications.** The worker sends them through Firebase (FCM v1), one
+Firebase project per environment. Until a copy has its key file nothing is
+sent: notifications are stored and marked `skipped`. To switch a copy on, put
+that project's service-account key on the VPS, readable only by deploy, name
+it in `.env`, and deploy -- the worker gets it read-only, nothing else does:
+
+```bash
+# once, as deploy, for the copy in ~/byky_django (qa); dev uses its own file
+mkdir -p ~/secrets && chmod 700 ~/secrets
+# copy the key file from the Firebase console to ~/secrets/byky-qa-fcm.json, then:
+chmod 600 ~/secrets/byky-qa-fcm.json
+echo 'FCM_CREDENTIALS_FILE=/home/deploy/secrets/byky-qa-fcm.json' >> ~/byky_django/.env
+```
+
 ## Working with the two branches
 
 ```

@@ -48,6 +48,12 @@ class AppSession(TimeStampedModel):
     refresh_expires_at = models.DateTimeField(null=True, blank=True)
     refresh_rotated_at = models.DateTimeField(null=True, blank=True)
 
+    # Apps: this app's FCM token on this device, sent at login
+    # (credentials.device_notification_id) and on device/push-token. Pushes go
+    # to open, unexpired sessions holding one (apps/notifications); a token is
+    # held by one open session at a time. Owner, 21 Oct 2026.
+    push_token = models.CharField(max_length=512, blank=True)
+
     app_version = models.CharField(max_length=20, blank=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     user_agent = models.CharField(max_length=255, blank=True)
@@ -67,6 +73,7 @@ class AppSession(TimeStampedModel):
         indexes = [
             models.Index(fields=["device", "logged_out_at"]),
             models.Index(fields=["logged_in_at"]),
+            models.Index(fields=["push_token"], condition=~models.Q(push_token=""), name="app_session_push_token"),
         ]
 
     def __str__(self):

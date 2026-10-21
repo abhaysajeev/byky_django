@@ -40,6 +40,13 @@ class RefreshRequest(serializers.Serializer):
     refresh_token = text_field(2000)
 
 
+class PushTokenRequest(serializers.Serializer):
+    """This app's new FCM token; may instead come as
+    credentials.device_notification_id."""
+
+    push_token = text_field(512, required=False, allow_blank=True)
+
+
 class ServerTimeRequest(serializers.Serializer):
     """design/registration/server-time-api.md section 3. Unlike registration and
     the update check, `company_id` is required here -- several companies share

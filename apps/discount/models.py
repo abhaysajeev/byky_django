@@ -228,6 +228,8 @@ class CardDiscountClaim(TimeStampedModel):
     requested_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT,
                                      related_name="+")
     rms_installation_id = models.CharField(max_length=64, blank=True)
+    # The tablet that asked -- where the manager's decision is pushed (apps/notifications).
+    device = models.ForeignKey("devices.Device", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
 
     status = models.CharField(max_length=10, choices=ClaimStatus.choices)
     requested_at = models.DateTimeField()
