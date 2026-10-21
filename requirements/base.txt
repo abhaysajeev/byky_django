@@ -18,7 +18,9 @@ drf-spectacular==0.30.0
 drf-spectacular-sidecar==2026.9.1
 # Reads the client's Excel masters (apps/fleet/management/commands/import_vehicle_tags.py).
 openpyxl==3.1.5
-# Background jobs: photo previews and cleanup now, push notifications later
+# Background jobs: photo previews and cleanup, push notifications
 # (config/celery.py). Redis is the broker; no result backend is kept.
 celery==5.4.0
 redis==5.2.1
+# Push notifications to the apps, FCM HTTP v1 (apps/notifications/sender.py).
+firebase-admin==7.6.0

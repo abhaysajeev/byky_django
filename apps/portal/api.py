@@ -28,7 +28,12 @@ from apps.devices import services as devices_services
 from apps.portal import auth
 from apps.portal import jwt as app_jwt
 from apps.portal.authentication import AppJWTAuthentication
-from apps.portal.serializers import LoginRequest, RefreshRequest, ServerTimeRequest
+from apps.portal.serializers import (
+    LoginRequest,
+    PushTokenRequest,
+    RefreshRequest,
+    ServerTimeRequest,
+)
 from apps.portal.session_models import AppSession, LogoutReason
 from core.api import PublicAPIView, envelope, request_parts
 from core.enums import Channel
@@ -51,9 +56,10 @@ class RefreshThrottle(AnonRateThrottle):
     scope = "app_refresh"
 
 
-def _issue_tokens(user, session, *, now=None):
+def _issue_tokens(user, session, *, now=None, push_token=None):
     """Issue both tokens and write the refresh half onto the session row --
-    every caller that creates or rotates a session needs exactly this."""
+    every caller that creates or rotates a session needs exactly this. At
+    login, `push_token` is this app's FCM token on the device."""
     now = now or timezone.now()
     access, access_expires = app_jwt.issue_access_token(user, session, now=now)
     refresh, refresh_expires = app_jwt.issue_refresh_token(user, session, now=now)
@@ -70,6 +76,9 @@ def _issue_tokens(user, session, *, now=None):
         "last_seen_at", "modified_on",
     ])
 
+    if push_token is not None:
+        auth.set_push_token(session, push_token)
+
     return {
         "access": access,
         "refresh": refresh,
@@ -78,7 +87,7 @@ def _issue_tokens(user, session, *, now=None):
     }
 
 
-def _employee_login(request, form):
+def _employee_login(request, form, push_token=None):
     installation_id = (form.validated_data.get("installation_id") or "").strip()
     if not installation_id:
         return envelope(
@@ -97,14 +106,14 @@ def _employee_login(request, form):
 
     employee = user.employee
     data = {
-        "tokens": _issue_tokens(user, session),
+        "tokens": _issue_tokens(user, session, push_token=push_token),
         "employee": crew_services.employee_profile(employee),
         "roster": crew_services.current_week_roster(employee),
     }
     return envelope("ok", f"Welcome, {employee.full_name}.", data)
 
 
-def _operator_login(request, form):
+def _operator_login(request, form, push_token=None):
     installation_id = (form.validated_data.get("installation_id") or "").strip()
     if not installation_id:
         return envelope(
@@ -122,7 +131,7 @@ def _operator_login(request, form):
         return envelope(refused.code, refused.message, http_status=refused.status)
 
     data = {
-        "tokens": _issue_tokens(user, session),
+        "tokens": _issue_tokens(user, session, push_token=push_token),
         "first_name": user.employee.first_name,
         # Who is signed in on this tablet -- employee_code is what the app
         # sends as rms_employee_code when it scans an attendance QR code.
@@ -148,7 +157,7 @@ def _operator_login(request, form):
     return envelope("ok", "Logged in.", data)
 
 
-def _manager_login(request, form):
+def _manager_login(request, form, push_token=None):
     """The tokens and who signed in -- the same `employee` block as the
     employee login. No roster: managers are not rostered."""
     installation_id = (form.validated_data.get("installation_id") or "").strip()
@@ -169,7 +178,7 @@ def _manager_login(request, form):
 
     employee = user.employee
     data = {
-        "tokens": _issue_tokens(user, session),
+        "tokens": _issue_tokens(user, session, push_token=push_token),
         "employee": crew_services.employee_profile(employee, Channel.MANAGER),
     }
     return envelope("ok", f"Welcome, {employee.full_name}.", data)
@@ -280,6 +289,10 @@ class LoginView(PublicAPIView):
             "Attendance is offered unless `own`; the manager app is always `company`. "
             "Both are read at login -- a change on the web reaches the app at its next "
             "login (the server applies it at once). "
+            "**Push notifications:** send this app's FCM token as "
+            "`credentials.device_notification_id`. It is kept on this session, so this app "
+            "on this device gets notifications only while signed in; send a new one with "
+            "`device/push-token`. "
             "design/login/login-for-employee.md, design/login/login-for-operator.md."
         ),
         request=envelope_request("LoginEnvelope", LoginRequest),
@@ -314,11 +327,13 @@ class LoginView(PublicAPIView):
                 "wrong_channel", "Not allowed on this app.", http_status=403,
             )
 
-        _, request_data = request_parts(request)
+        credentials, request_data = request_parts(request)
         form = LoginRequest(data=request_data)
         form.is_valid(raise_exception=True)
 
-        return handler(request, form)
+        # This app's FCM token on this device: pushes reach the device only
+        # while this session is open (apps/notifications).
+        return handler(request, form, push_token=credentials.get("device_notification_id") or "")
 
 
 class AppRefreshView(PublicAPIView):
@@ -420,6 +435,58 @@ class AppLogoutView(APIView):
     def post(self, request, app):
         auth.close_session(request.auth, LogoutReason.USER_LOGOUT)
         return envelope("ok", "Signed out.")
+
+
+class PushTokenView(APIView):
+    """POST /api/v1/{app}/device/push-token -- this app's new FCM token."""
+
+    authentication_classes = [AppJWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Operator Auth", "Employee Auth", "Manager Auth"],
+        summary="Send this app's new push token",
+        description=(
+            "Call when Firebase gives the app a new FCM token while signed in "
+            "(`onNewToken`). Send it as `credentials.device_notification_id`, "
+            "the same field login reads, or as `request_data.push_token`. "
+            "Notifications reach this device only while this session is open: "
+            "logout ends them. Nothing to do on an `ok` -- a value that is not "
+            "a token is ignored.\n\n"
+            "**What the apps receive (approval requests).** A visible notification, "
+            "high priority, kept by Google for 12 hours: `title` says what happened, "
+            "`body` the station. Never amounts, names or customer details -- read the item "
+            "from the API after the tap.\n\n"
+            "| To | When | Title (example) |\n|---|---|---|\n"
+            "| every signed-in manager app of the company | a request is raised | New discount request |\n"
+            "| managers | withdrawn / cancelled / closed at settle | Discount request withdrawn |\n"
+            "| managers | approved / rejected / revoked | Discount request approved |\n"
+            "| only the operator device that asked | approved / rejected / revoked | Discount approved |\n\n"
+            "Items: order requests (discount, complimentary ride, cancel order, invoice reprint, "
+            "receipt reprint), card discount requests, credit note requests.\n\n"
+            "Android: `android.notification.tag` = `<subject_type>:<id>` -- a later push about the "
+            "same item replaces the earlier one. `channel_id` is `approvals_new` (sound) or "
+            "`approvals_updates` (quiet) -- create both channels. `data` (all strings): "
+            "`notification_id`, `subject_type` (`order_request`, `card_discount`, `credit_note`), "
+            "`subject_id`, `action` (`raised`, `withdrawn`, `cancelled`, `closed`, `approved`, "
+            "`rejected`, `revoked`), `order_id`, `branch_id`, and `kind` for order requests. "
+            "Open the item from `subject_type` + `subject_id`, then refresh it from the API; "
+            "also refresh when the app opens. Ask for notification permission on Android 13+."
+        ),
+        request=envelope_request("PushTokenEnvelope", PushTokenRequest),
+        responses=envelope_responses(
+            (200, "ok", "Push token saved.", {}),
+            (401, "not_authenticated", "Sign in first.", {}),
+            SERVER_ERROR,
+        ),
+    )
+    def post(self, request, app):
+        credentials, request_data = request_parts(request)
+        form = PushTokenRequest(data=request_data)
+        form.is_valid(raise_exception=True)
+        token = form.validated_data.get("push_token") or credentials.get("device_notification_id") or ""
+        auth.set_push_token(request.auth, token)
+        return envelope("ok", "Push token saved.")
 
 
 # -- Server time ---------------------------------------------------------------

@@ -139,8 +139,14 @@ services:
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
       CELERY_BROKER_URL: redis://redis:6379/0
+      # Push notifications (apps/notifications): set only when .env names this
+      # copy's Firebase key file; unset, nothing is sent.
+      FCM_CREDENTIALS_FILE: ${FCM_CREDENTIALS_FILE:+/run/secrets/fcm.json}
     volumes:
       - ${MEDIA_HOST_DIR:-byky_f_qa_media}:/app/media
+      # The Firebase service-account key, read-only, only in the worker (it
+      # sends the pushes). Unset: an empty stand-in, never read.
+      - ${FCM_CREDENTIALS_FILE:-/dev/null}:/run/secrets/fcm.json:ro
     depends_on:
       db:
         condition: service_healthy

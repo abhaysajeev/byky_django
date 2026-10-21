@@ -34,6 +34,8 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.discount.models import CardDiscountClaim, ClaimStatus
+from apps.notifications import services as notifications
+from apps.notifications.models import Action
 from apps.photos import services as photo_services
 from apps.rental.models import (
     REQUEST_LIVE,
@@ -181,6 +183,7 @@ def create_request(session, values, request_data):
             requested_at=values["requested_at"], reason=(values.get("reason") or "").strip(),
             created_by=session.user, modified_by=session.user,
         )
+        notifications.notify(req, Action.RAISED)
         event = {
             "action": OrderAction.REQUEST, "happened_at": values["requested_at"],
             "device": session.device, "user": session.user,
@@ -212,6 +215,7 @@ def withdraw(session, values, request_data):
             req.status, req.closed_at = OrderRequestStatus.WITHDRAWN, values["withdrawn_at"]
             req.modified_by = session.user
             req.save()
+            notifications.notify(req, Action.WITHDRAWN)
         elif req.status != OrderRequestStatus.WITHDRAWN:
             raise OrderRefused("request_closed")
         event = {
@@ -459,6 +463,7 @@ def approve(user, request_id, company_ids, channel, discount_type=None, value=No
         req.decided_by, req.decided_channel, req.decided_at = user, channel, now
         req.decision_note, req.modified_by = (note or "").strip(), user
         req.save()
+        notifications.notify(req, Action.APPROVED)
         if req.kind == OrderRequestKind.CANCEL:
             cancel_order(order, req, user, now)
     return req
@@ -478,9 +483,10 @@ def cancel_order(order, cancel, user, now):
     order.status, order.cancelled_at, order.modified_by = OrderStatus.CANCELLED, now, user
     order.save(update_fields=["status", "cancelled_at", "modified_by", "modified_on"])
     order.items.filter(status=OrderItemStatus.ACTIVE).update(status=OrderItemStatus.CANCELLED, modified_on=now)
-    order.requests.filter(status=OrderRequestStatus.PENDING).exclude(pk=cancel.pk).update(
-        status=OrderRequestStatus.CLOSED, closed_at=now, modified_on=now,
-    )
+    waiting = order.requests.filter(status=OrderRequestStatus.PENDING).exclude(pk=cancel.pk)
+    closing = list(waiting.select_related("branch"))
+    waiting.update(status=OrderRequestStatus.CLOSED, closed_at=now, modified_on=now)
+    notifications.notify_all(closing, Action.CLOSED)
     cancel_unused_for_order(order, now=now)
 
 
@@ -522,6 +528,7 @@ def reject(user, request_id, company_ids, channel, note=""):
         req.decided_by, req.decided_channel, req.decided_at = user, channel, timezone.now()
         req.decision_note, req.modified_by = (note or "").strip(), user
         req.save()
+        notifications.notify(req, Action.REJECTED)
     return req
 
 
@@ -541,6 +548,7 @@ def revoke(user, request_id, company_ids, channel, note=""):
         req.revoked_by, req.revoked_channel, req.revoked_at = user, channel, timezone.now()
         req.revoke_note, req.modified_by = (note or "").strip(), user
         req.save()
+        notifications.notify(req, Action.REVOKED)
     return req
 
 
@@ -793,6 +801,7 @@ def close_at_settle(order, applied, amount, at, user):
     if applied is not None:
         applied.applied_amount, applied.applied_at, applied.modified_by = amount, at, user
         applied.save(update_fields=["applied_amount", "applied_at", "modified_by", "modified_on"])
-    order.requests.filter(status=OrderRequestStatus.PENDING).update(
-        status=OrderRequestStatus.CLOSED, closed_at=at, modified_on=timezone.now(),
-    )
+    waiting = order.requests.filter(status=OrderRequestStatus.PENDING)
+    closing = list(waiting.select_related("branch"))
+    waiting.update(status=OrderRequestStatus.CLOSED, closed_at=at, modified_on=timezone.now())
+    notifications.notify_all(closing, Action.CLOSED)
