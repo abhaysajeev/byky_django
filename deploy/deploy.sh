@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# Deploys the checked-out code on the VPS: back up the database, build, start,
-# and wait until the app answers. Run from the project folder as the `deploy`
-# user (in the docker group, no sudo); .github/workflows/deploy.yml calls it
-# after checking out the commit being deployed. Also safe to run by hand:
+# Deploys the checked-out code on the VPS: back up the database, pull the image
+# GitHub built (or build it, when run by hand), start, and wait until the app
+# answers. Run from the project folder as the `deploy` user (in the docker
+# group, no sudo); .github/workflows/deploy.yml calls it after checking out the
+# commit being deployed, as `deploy.sh <commit> <image> <user>` with the
+# registry token on stdin. Also safe to run by hand (builds on this server):
 #
 #   cd ~/byky_django && ./deploy/deploy.sh          # qa
 #   cd ~/byky_django_dev && ./deploy/deploy.sh      # dev
+#   cd ~/byky_django_live && ./deploy/deploy.sh     # live
 #
 # Which copy it deploys comes from that folder's .env (docs/deployments.md):
 # COMPOSE_PROJECT, APP_PORT and BACKUP_DIR. Each defaults to qa's value, so a
@@ -17,6 +20,17 @@ set -euo pipefail
 
 COMMIT="${1:-$(git rev-parse HEAD)}"
 SHORT="${COMMIT:0:7}"
+# The image GitHub built for this commit (.github/workflows/deploy.yml), and the
+# account to pull it as; the token comes on stdin. Left out (a run by hand), the
+# image is built here, as before.
+IMAGE="${2:-}"
+PULL_USER="${3:-}"
+PULL_TOKEN=""
+# Read first: the backup's `docker compose exec` would otherwise take stdin.
+if [ -n "$IMAGE" ]; then
+    IFS= read -r PULL_TOKEN || true
+    [ -n "$PULL_TOKEN" ] || { echo "No registry token on stdin -- cannot pull $IMAGE."; exit 1; }
+fi
 KEEP=14
 
 log() { printf '\n== %s\n' "$*"; }
@@ -64,11 +78,31 @@ else
     log "No running database yet (first deploy) -- nothing to back up"
 fi
 
-# 2. Build and start. docker/entrypoint.sh applies migrations and collects
-#    static files when the web container starts.
-log "Building and starting $SHORT"
-"${COMPOSE[@]}" build web
-"${COMPOSE[@]}" up -d
+# 2. Get the image and start. docker/entrypoint.sh applies migrations and
+#    collects static files when the web container starts.
+if [ -n "$IMAGE" ]; then
+    log "Pulling $IMAGE"
+    # A throwaway Docker config: the login never stays on this server.
+    PULL_CONFIG="$(mktemp -d)"
+    trap 'rm -rf "$PULL_CONFIG"' EXIT
+    printf '%s\n' "$PULL_TOKEN" | docker --config "$PULL_CONFIG" login ghcr.io -u "$PULL_USER" --password-stdin >/dev/null
+    PULL_TOKEN=""
+    docker --config "$PULL_CONFIG" pull --quiet "$IMAGE"
+    rm -rf "$PULL_CONFIG"
+    trap - EXIT
+    # Under this copy's own image name -- what web, worker and beat run
+    # (docker-compose.qa.yml), so a later `docker compose up` by hand finds it
+    # and never builds. The ghcr name is dropped; the image before becomes
+    # dangling and is pruned below.
+    docker tag "$IMAGE" "$PROJECT-app"
+    docker rmi "$IMAGE" >/dev/null
+    log "Starting $SHORT"
+    "${COMPOSE[@]}" up -d --no-build
+else
+    log "Building and starting $SHORT (no image given: built on this server)"
+    "${COMPOSE[@]}" build web
+    "${COMPOSE[@]}" up -d
+fi
 
 # 3. Wait for the app to answer -- through nginx (the `proxy` service owns
 #    APP_PORT), so this proves the whole path a browser takes.
