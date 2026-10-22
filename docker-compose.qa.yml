@@ -6,9 +6,11 @@
 # port. deploy/nginx/qa.conf says why -- gunicorn's sync workers must not be
 # left waiting on browser connections.
 #
-# Two copies run from this file on the same VPS (docs/deployments.md): `qa`
-# (testers, old app builds, ~/byky_django, project byky_f_qa, port 8007) and
-# `dev` (the dev team, ~/byky_django_dev, project byky_f_dev, port 8008). Each
+# Three copies run from this file on the same VPS (docs/deployments.md): `qa`
+# (testers, old app builds, ~/byky_django, project byky_f_qa, port 8007),
+# `dev` (the dev team, ~/byky_django_dev, project byky_f_dev, port 8008) and
+# `live` (~/byky_django_live, project byky_f_live, port 8009). The app image is
+# built on GitHub and pulled by deploy/deploy.sh under the name below. Each
 # folder's .env picks its port (APP_PORT), workers (GUNICORN_WORKERS) and log
 # environment; volumes are prefixed by the project name, so the two never share
 # a database. Every default below is qa's.
@@ -37,13 +39,15 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set a real password in .env}
     volumes:
       - byky_f_qa_pgdata:/var/lib/postgresql/data
-    # QA only: published so a DB client (DBeaver) can log in with the database
+    # qa / dev: published so a DB client (DBeaver) can log in with the database
     # credentials directly -- owner's decision, 9 Oct 2026. Host port from
-    # QA_DB_PUBLIC_PORT in .env (default 5434). Production publishes nothing.
+    # QA_DB_PUBLIC_PORT in .env (default 5434). live sets
+    # QA_DB_PUBLIC_BIND=127.0.0.1: reachable only from the server itself (an SSH
+    # tunnel), since a published port bypasses ufw.
     # A one-off psql/pg_dump from the host still works with:
     #   docker compose -f docker-compose.qa.yml -p byky_f_qa exec db psql -U <user> <db>
     ports:
-      - "${QA_DB_PUBLIC_PORT:-5434}:5432"
+      - "${QA_DB_PUBLIC_BIND:-0.0.0.0}:${QA_DB_PUBLIC_PORT:-5434}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-byky_qa} -d ${POSTGRES_DB:-byky_qa}"]
       interval: 5s

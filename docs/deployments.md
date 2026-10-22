@@ -1,23 +1,23 @@
-# Deployments — `qa` and `dev` on one VPS
+# Deployments — `live`, `qa` and `dev` on one VPS
 
-Two independent copies of the app run on the VPS (97.74.81.23), each with its
-own code, database, uploads, backups and settings.
+Three independent copies of the app run on the VPS (97.74.81.23), each with
+its own code, database, uploads, backups and settings.
 
-| | **qa** | **dev** |
-|---|---|---|
-| Used by | testers, **older** app builds | the dev team, newest app builds |
-| Branch | `release/qa` (frozen; fixes and promotions only) | `main` |
-| Folder on the VPS | `/home/deploy/byky_django` | `/home/deploy/byky_django_dev` |
-| Compose project | `byky_f_qa` | `byky_f_dev` |
-| App | `http://97.74.81.23:8007` | `http://97.74.81.23:8008` |
-| Database port (DBeaver) | 5434 | 5435 |
-| Backups | `/home/deploy/backups/` | `/home/deploy/backups/dev/` |
-| Web workers | 3 | 2 |
-| Logs | log viewer, environment `qa` | log viewer, environment `dev` |
+| | **live** | **qa** | **dev** |
+|---|---|---|---|
+| Used by | real stations and customers | testers, **older** app builds | the dev team, newest app builds |
+| Branch | `release/live` (promotions from qa, fixes) | `release/qa` (frozen; fixes and promotions only) | `main` |
+| Folder on the VPS | `/home/deploy/byky_django_live` | `/home/deploy/byky_django` | `/home/deploy/byky_django_dev` |
+| Compose project | `byky_f_live` | `byky_f_qa` | `byky_f_dev` |
+| App | `http://97.74.81.23:8009` (HTTPS + domain before go-live) | `http://97.74.81.23:8007` | `http://97.74.81.23:8008` |
+| Database port | `127.0.0.1:5436` only (SSH tunnel) | 5434 (DBeaver) | 5435 (DBeaver) |
+| Backups | `/home/deploy/backups/live/` | `/home/deploy/backups/` | `/home/deploy/backups/dev/` |
+| Web workers | 3 | 3 | 2 |
+| Logs | log project `byky-live` | log project `byky-qa`, environment `qa` | log project `byky-qa`, environment `dev` |
 
 Each folder's `.env` says which copy it is (`COMPOSE_PROJECT`, `APP_PORT`,
-`QA_DB_PUBLIC_PORT`, `BACKUP_DIR`, `GUNICORN_WORKERS`, `LOG_ENVIRONMENT`; see
-`.env.qa.example`). Left out, each takes qa's value.
+`QA_DB_PUBLIC_BIND`, `QA_DB_PUBLIC_PORT`, `BACKUP_DIR`, `GUNICORN_WORKERS`,
+`LOG_ENVIRONMENT`; see `.env.qa.example`). Left out, each takes qa's value.
 
 ## Deploying
 
@@ -27,10 +27,21 @@ Each folder's `.env` says which copy it is (`COMPOSE_PROJECT`, `APP_PORT`,
 |---|---|---|
 | dev | `main` | `dev` |
 | qa | `release/qa` | `qa` |
+| live | `release/live` | `live` |
 
 A run on the wrong branch for its target is refused. Deploys never overlap:
 a second one waits. Each deploy backs up **its own** database first
-(`deploy/deploy.sh`), then builds, migrates and health-checks that copy only.
+(`deploy/deploy.sh`), then pulls, migrates and health-checks that copy only.
+
+**Images are built on GitHub, never on the VPS.** The workflow's `image` job
+builds the app image once and pushes it to
+`ghcr.io/abhaysajeev/byky_django:tree-<id>`, named by the commit's **file
+tree**: a promotion's merge commit has new ids but the same files, so qa and
+live reuse the exact image dev ran ("exists -- reusing it" in the log). The VPS
+logs in with the run's own short-lived token (never stored there), pulls, tags
+it as the copy's `<project>-app` image and starts it. Rolling back = deploying
+an older commit: its image is still there. `./deploy/deploy.sh` run by hand on
+the VPS still builds there, as before.
 
 ## Background jobs and photos
 
@@ -73,16 +84,19 @@ chmod 600 ~/secrets/byky-qa-fcm.json
 echo 'FCM_CREDENTIALS_FILE=/home/deploy/secrets/byky-qa-fcm.json' >> ~/byky_django/.env
 ```
 
-## Working with the two branches
+## Working with the three branches
 
 ```
 feature/* ──PR──▶ main ──────────────▶ Deploy dev
                    │ promote: tag, PR main → release/qa
                    ▼
 fix/* ──────PR──▶ release/qa ────────▶ Deploy qa
+                   │ promote: PR release/qa → release/live (same tag)
+                   ▼
+fix/* ──────PR──▶ release/live ──────▶ Deploy live
 ```
 
-Both branches are protected: changes only through a PR with green CI.
+All three are protected: changes only through a PR with green CI.
 
 1. **A feature or API change** — branch from `main`, PR into `main`, Deploy
    dev. qa is untouched.
@@ -97,8 +111,14 @@ Both branches are protected: changes only through a PR with green CI.
    → `release/qa`, Deploy qa. qa's database runs the new migrations on that
    deploy, after its backup.
 
-Never put a feature on `release/qa` — it only takes fixes (cases 2–3) or a
-promotion (case 4); otherwise the branches drift and promotions conflict.
+5. **Go live** — once testers sign off on qa: PR `release/qa` → `release/live`
+   (the tag qa was promoted at), Deploy live. Same image as qa, nothing
+   rebuilt. A fix live needs at once follows case 2 one step further: `main`,
+   then `release/qa`, then `release/live`.
+
+Never put a feature on `release/qa` or `release/live` — they only take fixes
+(cases 2–3) or a promotion (cases 4–5); otherwise the branches drift and
+promotions conflict.
 
 **App Releases** are per copy (each has its own database). On qa publish only
 builds that match qa's server version, and never a forced update the older
@@ -164,3 +184,66 @@ Before: `free -h; df -h` — note memory and disk. qa keeps running throughout.
    from each shows its environment.
 
 Anything recorded on qa after step 4 is not in dev's copy — dev is a snapshot.
+
+## One-time setup of `live` (run on the VPS as `deploy`)
+
+live starts **empty** — its data comes from the masters migration, never from
+qa. qa and dev keep running throughout. Before: `free -h; df -h`.
+
+1. **live's code:**
+   ```bash
+   git clone "$(git -C ~/byky_django remote get-url origin)" ~/byky_django_live
+   git -C ~/byky_django_live checkout release/live
+   ```
+2. **live's `.env`** — start from the example, **never from qa's** (new
+   secrets, nothing shared):
+   ```bash
+   cp ~/byky_django_live/.env.qa.example ~/byky_django_live/.env
+   chmod 600 ~/byky_django_live/.env
+   ```
+   Fill in a new `DJANGO_SECRET_KEY` and `POSTGRES_PASSWORD` (see the
+   example), `DJANGO_ALLOWED_HOSTS=97.74.81.23,127.0.0.1,localhost`, and set
+   ```
+   POSTGRES_DB=byky_live
+   POSTGRES_USER=byky_live
+   COMPOSE_PROJECT=byky_f_live
+   APP_PORT=8009
+   QA_DB_PUBLIC_BIND=127.0.0.1
+   QA_DB_PUBLIC_PORT=5436
+   BACKUP_DIR=/home/deploy/backups/live
+   GUNICORN_WORKERS=3
+   LOG_ENVIRONMENT=live
+   ```
+   **Logs:** `LOG_INGEST_URL` as qa's, `LOG_INGEST_KEY` = the ingest key of
+   the separate **`byky-live`** log project (create it on the log server with
+   `scripts/add_project.py`), so the testers' `byky-qa` link never shows live
+   requests. **Push:** `FCM_CREDENTIALS_FILE` = the byky-prod key, once that
+   Firebase project exists (left out, nothing is sent). **Photos:** optionally
+   `MEDIA_HOST_DIR=/home/ftpuser/ftp/upload/byky/live` (`sudo mkdir -p` it
+   first, as for qa).
+3. **Backups** — add the live database to the backup script (the deploy's own
+   dump before each deploy goes to `BACKUP_DIR`).
+4. **Firewall** — open 8009 in the provider's firewall if it has one. Do not
+   open 5436: live's database answers only on 127.0.0.1.
+5. **Deploy** — Actions → Deploy, "Use workflow from" `release/live`, target
+   `live`. The first deploy migrates the empty database.
+6. **First administrator** (the password is typed, never on the command line):
+   ```bash
+   cd ~/byky_django_live
+   read -rs -p 'New admin password: ' PW; echo
+   docker compose -f docker-compose.qa.yml -p byky_f_live exec -T web \
+     python manage.py create_admin --username <admin> --password "$PW" \
+     --company "BYKY" --company-code BYKY
+   unset PW
+   ```
+7. **Check:**
+   ```bash
+   curl -fsS http://127.0.0.1:8009/healthz/
+   ss -ltn | grep 5436        # must show 127.0.0.1:5436, never 0.0.0.0
+   free -h
+   ```
+
+**Before real users:** HTTPS on a domain. `msync-web-1` (Caddy) owns ports
+80/443 on this VPS, so the live domain is added there as a site proxying to
+`127.0.0.1:8009`; then `DJANGO_FORCE_HTTPS=1` and the domain in
+`DJANGO_ALLOWED_HOSTS` / `DJANGO_CSRF_TRUSTED_ORIGINS`.

@@ -1,14 +1,19 @@
 # Deploys to the VPS. Started by hand: Actions -> Deploy -> Run workflow, then
-# pick the target. Two copies run on the one VPS (docs/deployments.md):
+# pick the target. Three copies run on the one VPS (docs/deployments.md):
 #
-#   qa   testers, older app builds   branch release/qa   ~/byky_django       port 8007
-#   dev  the dev team                branch main         ~/byky_django_dev   port 8008
+#   live  real stations and customers  branch release/live  ~/byky_django_live  port 8009
+#   qa    testers, older app builds    branch release/qa    ~/byky_django       port 8007
+#   dev   the dev team                 branch main          ~/byky_django_dev   port 8008
 #
 # Run the workflow on the target's own branch ("Use workflow from"): a run on
-# any other branch is refused, so main can never land on qa or release/qa on
-# dev. The server-side steps (backup, build, start, health check) are in
-# deploy/deploy.sh, versioned with the code; each folder's .env says which copy
-# it is.
+# any other branch is refused, so main can never land on qa or live.
+#
+# The image is built here on GitHub, never on the VPS (the server live runs on
+# must not spend its CPUs on builds), and pushed to ghcr.io named by the commit's
+# file tree. A promotion's merge commit has new ids but the same files, so qa
+# and live pull exactly the image dev ran; nothing is rebuilt. The server-side
+# steps (backup, pull, start, health check) are in deploy/deploy.sh, versioned
+# with the code; each folder's .env says which copy it is.
 #
 # Secrets live in the `vps` environment (repo Settings -> Environments):
 #   VPS_HOST         the server's address
@@ -22,13 +27,13 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: "Which copy: qa (from release/qa) or dev (from main)"
+        description: "Which copy: live (from release/live), qa (from release/qa) or dev (from main)"
         type: choice
-        options: [qa, dev]
+        options: [qa, dev, live]
         required: true
 
-# Never two deploys at once, whichever copy: both build on the same 2-vCPU
-# host. A second one waits for the first.
+# Never two deploys at once, whichever copy: they share one 2-vCPU host.
+# A second one waits for the first.
 concurrency:
   group: deploy
   cancel-in-progress: false
@@ -36,23 +41,27 @@ concurrency:
 permissions:
   contents: read
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    environment: vps
+env:
+  IMAGE_REPO: ghcr.io/${{ github.repository }}
 
+jobs:
+  target:
+    runs-on: ubuntu-latest
+    outputs:
+      branch: ${{ steps.pick.outputs.branch }}
+      folder: ${{ steps.pick.outputs.folder }}
     steps:
       - name: Pick the copy
-        id: target
+        id: pick
         env:
           TARGET: ${{ inputs.target }}
           REF: ${{ github.ref }}
         run: |
           case "$TARGET" in
-            qa)  branch=release/qa; folder=byky_django ;;
-            dev) branch=main;       folder=byky_django_dev ;;
-            *)   echo "Unknown target: $TARGET"; exit 1 ;;
+            live) branch=release/live; folder=byky_django_live ;;
+            qa)   branch=release/qa;   folder=byky_django ;;
+            dev)  branch=main;         folder=byky_django_dev ;;
+            *)    echo "Unknown target: $TARGET"; exit 1 ;;
           esac
           if [ "$REF" != "refs/heads/$branch" ]; then
             echo "::error::$TARGET deploys only $branch -- this run is on ${REF#refs/heads/}. Re-run it with 'Use workflow from: $branch'."
@@ -61,6 +70,68 @@ jobs:
           echo "branch=$branch" >> "$GITHUB_OUTPUT"
           echo "folder=$folder" >> "$GITHUB_OUTPUT"
 
+  image:
+    needs: target
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      ref: ${{ steps.name.outputs.ref }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Named by the file tree: the same files are the same image, whichever
+      # branch or merge commit carries them.
+      - name: Name the image
+        id: name
+        run: echo "ref=$IMAGE_REPO:tree-$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Is it built already?
+        id: found
+        env:
+          REF: ${{ steps.name.outputs.ref }}
+        run: |
+          if docker manifest inspect "$REF" >/dev/null 2>&1; then
+            echo "built=true" >> "$GITHUB_OUTPUT"
+            echo "$REF exists -- reusing it, nothing to build."
+          else
+            echo "built=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up the builder
+        if: steps.found.outputs.built != 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push the production image
+        if: steps.found.outputs.built != 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          build-args: REQUIREMENTS=requirements/base.txt
+          tags: ${{ steps.name.outputs.ref }}
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: [target, image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: vps
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
       - name: Set up the SSH key
         env:
           SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
@@ -71,17 +142,23 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
 
+      # This run's own token goes to the VPS over the SSH session's stdin --
+      # never in a command line or a file there. deploy.sh logs in with it,
+      # pulls, and logs out; it stops working when this run ends.
       - name: Deploy ${{ inputs.target }} at ${{ github.sha }}
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
-          BRANCH: ${{ steps.target.outputs.branch }}
-          FOLDER: ${{ steps.target.outputs.folder }}
+          BRANCH: ${{ needs.target.outputs.branch }}
+          FOLDER: ${{ needs.target.outputs.folder }}
           SHA: ${{ github.sha }}
+          IMAGE: ${{ needs.image.outputs.ref }}
+          PULL_USER: ${{ github.actor }}
+          PULL_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+          printf '%s\n' "$PULL_TOKEN" | ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             "$VPS_USER@$VPS_HOST" \
-            "cd ~/$FOLDER && git fetch --quiet origin $BRANCH && git reset --hard $SHA && ./deploy/deploy.sh $SHA"
+            "cd ~/$FOLDER && git fetch --quiet origin $BRANCH && git reset --hard $SHA && ./deploy/deploy.sh $SHA $IMAGE $PULL_USER"
 
       - name: Remove the key
         if: always()
