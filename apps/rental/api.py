@@ -70,12 +70,13 @@ _CUSTOMER_SAMPLE = {
     "mobile_country_code": "+971", "mobile_no": "501234567", "mobile_full": "971501234567",
     "email": "ahmed.almansoori@example.com",
     "address": "Dubai, UAE", "is_blocked": False, "block_reason": "", "blocked_at": None, "blocked_by": None,
+    "star_rating": None,
 }
 
 _CUSTOMER_BLOCKED_SAMPLE = {
     **_CUSTOMER_SAMPLE, "customer_id": 4022, "customer_code": "CU015", "first_name": "Fatima",
     "last_name": "Hassan", "mobile_no": "501234568", "mobile_full": "971501234568", "is_blocked": True,
-    "block_reason": "Repeated late returns", "blocked_at": "2026-10-10 11:20:00", "blocked_by": "Sara K",
+    "block_reason": "Repeated late returns", "blocked_at": "2026-10-10 11:20:00", "blocked_by": "Sara K", "star_rating": "2.5",
 }
 
 _CREATED_SAMPLE = {
@@ -100,6 +101,7 @@ _INVOICE_SAMPLE = {
     "tax_percentage": "5.00", "tax_amount": "5.238", "rounding_adjustment": "0.000", "net_amount": "110.000",
     "payments": [{"mode": "Cash", "kind": "advance", "amount": "60.000", "reference_no": ""},
                  {"mode": "Card", "kind": "settlement", "amount": "50.000", "reference_no": "448812"}],
+    "star_rating": "4.5",
 }
 
 
@@ -150,6 +152,11 @@ company, with no details.
 """
 
 
+def _rating(value):
+    """A star rating as text with its one decimal ("4.5", "5.0"), or None."""
+    return None if value is None else str(value)
+
+
 def _customer_json(customer, zone=None):
     zone = zone or zone_for(customer.company)
     return {
@@ -166,6 +173,8 @@ def _customer_json(customer, zone=None):
         "blocked_at": _local(customer.blocked_at, zone),
         "blocked_by": (customer.blocked_by.display_name or customer.blocked_by.username)
         if customer.blocked_by_id else None,
+        # The latest rating from a settle, 1.0-5.0; null until rated.
+        "star_rating": _rating(customer.star_rating),
     }
 
 
@@ -326,6 +335,7 @@ def invoice_json(invoice, zone):
         "rounding_adjustment": _money(invoice.rounding_adjustment),
         "net_amount": _money(invoice.net_amount),
         "payments": invoice.payments,
+        "star_rating": _rating(invoice.star_rating),
     }
 
 
@@ -504,7 +514,7 @@ _SETTLED_SAMPLE = {
 _BOOK_ERRORS = (
     "sync_id_conflict", "order_no_used", "vehicle_already_rented", "vehicle_repeated", "item_id_used",
     "payment_id_used", "unknown_customer", "unknown_payment_mode", "unknown_vehicle",
-    "vehicle_not_at_station", "unknown_fare", "unknown_offer",
+    "vehicle_not_at_station", "unknown_fare", "unknown_offer", "package_not_available",
 )
 
 _ORDER_DESCRIPTION = """
@@ -930,6 +940,12 @@ COMPLIMENTARY.
 when the customer paid more than the bill. After them the bill must be paid
 in full: what was received minus refunded = `net_amount`
 (`balance_not_settled`; nothing is written). A bill of 0 settles too.
+
+**`star_rating`** (optional) -- the customer's rating of this rental, 1 to 5
+with at most one decimal (`4.5`, `5`, `2.5`); leave it out or send null when
+none was given. Stored on the invoice and returned as the customer's
+`star_rating` until a later settle rates them again. A settle that arrives late
+(parked offline) never replaces a rating from a later `settled_at`.
 """ + _FLOW + """
 """ + _error_table(*_SETTLE_ERRORS)
 
@@ -943,6 +959,7 @@ def _settle_example(name, discount, **bill):
         "payments": [{"sync_id": "01923e1c-0a16-7b22-8c33-d4e5f6a7b8c9", "kind": "settlement",
                       "payment_mode_id": 2, "amount": "4.500", "reference_no": "4421",
                       "reference_date": "2026-10-02", "paid_at": "2026-10-02 17:13:30"}],
+        "star_rating": "4.5",
         **bill,
     }
     return OpenApiExample(name, request_only=True, value={"credentials": {}, "request_data": body})
@@ -1056,7 +1073,7 @@ _REMOVED_SAMPLE = {
 _CHANGE_ERRORS = ("order_not_synced", "sync_id_conflict", "order_closed")
 _NEW_LINE_ERRORS = (
     "vehicle_already_rented", "vehicle_not_at_station", "unknown_vehicle", "unknown_fare", "unknown_offer",
-    "item_id_used",
+    "package_not_available", "item_id_used",
 )
 _ADD_ERRORS = (*_CHANGE_ERRORS, *_NEW_LINE_ERRORS, "unknown_payment_mode", "payment_id_used")
 _REPLACE_ERRORS = (*_CHANGE_ERRORS, "unknown_item", "item_not_active", "invalid_time", "vehicle_repeated",
@@ -1932,7 +1949,10 @@ _MANAGER_CARD_ROW = {
     "decided_by": None, "decided_channel": None, "decided_at": None, "decision_note": "",
     "order": _MANAGER_SAMPLE["order"],
     "details": {"card_type": "Esaad", "card_grade": "Gold", "card_number": "ES-448812",
-                "card_photo": "https://photos.example/esaad/448812.jpg", "discount_percent": "20.00",
+                "card_photo": None, "card_photo_id": "01a14a3c-77d2-7f1e-9a10-3f7c2b9d4e51",
+                "card_photo_url": "/api/v1/manager/photos/01a14a3c-77d2-7f1e-9a10-3f7c2b9d4e51?size=display",
+                "card_photo_thumb_url": "/api/v1/manager/photos/01a14a3c-77d2-7f1e-9a10-3f7c2b9d4e51?size=thumb",
+                "discount_percent": "20.00",
                 "fare_basis": "base", "bill_amount": "100.000", "discount_amount": "20.000",
                 "net_amount": "80.000"},
 }
@@ -1962,7 +1982,9 @@ to now) -- plus `details`, `null` for an order request (an invoice `reprint` car
 `invoice_no` and `invoice_net_amount`) and, for the others:
 a credit note's `credit_note_no`, `invoice_no`, `invoice_net_amount`, issued
 `net_amount` / `tax_amount`; a card discount's card type, grade, number,
-**`card_photo`** (the link to show before deciding), %, fare basis and the
+**the card photo** (`card_photo_thumb_url` / `card_photo_url`, paths on this
+server that need the access token; older requests only `card_photo`, a plain
+link), %, fare basis and the
 bill / discount / net amounts. Order-request-only fields (`discount_*`,
 `revoked_*`, `applied_*`, `used_at`) are empty for those two kinds. `status` is
 each kind's own (a credit note can be `cancelled`, a card discount `redeemed`).

@@ -27,6 +27,10 @@ from apps.discount.models import (
     UsageType,
 )
 from apps.discount.scoping import card_discounts_for, card_grades_for
+from apps.notifications import services as notifications
+from apps.notifications.models import Action
+from apps.photos import services as photo_services
+from apps.photos.models import PhotoPurpose
 from apps.rental.models import (
     REQUEST_LIVE,
     Customer,
@@ -223,6 +227,7 @@ def decide_claim(user, claim, approve, remarks="", channel=DecisionChannel.WEB):
         claim.decided_channel = channel
         claim.save(update_fields=["status", "decided_at", "decided_by", "remarks", "decided_channel",
                                   "modified_by", "modified_on"])
+        notifications.notify(claim, Action.APPROVED if approve else Action.REJECTED)
     return claim
 
 
@@ -338,17 +343,24 @@ def _request_approval(session, values, company, sync_id):
         raise DiscountRefused("approval_not_needed", "This card discount needs no approval.", 400)
     if CardDiscountClaim.objects.filter(order=order, status=ClaimStatus.PENDING).exists():
         raise DiscountRefused("request_pending", "This order already has a pending approval request.", 409)
+    photo = None
+    if values.get("card_photo_id"):
+        try:
+            photo = photo_services.attachable(values["card_photo_id"], company, PhotoPurpose.CARD_DISCOUNT)
+        except photo_services.PhotoRefused as refusal:
+            raise DiscountRefused(refusal.code, refusal.message, refusal.status) from None
 
     claim = CardDiscountClaim(
         id=sync_id, company=company, card_discount=discount,
         card_type=discount.card_grade.card_type, card_grade=discount.card_grade,
         fare_basis=discount.fare_basis, requires_approval=True,
         customer=customer, customer_name=customer.full_name, mobile_full=customer.mobile_full,
-        card_number=values.get("card_number") or "", card_photo=values.get("card_photo") or "",
+        card_number=values.get("card_number") or "", card_photo=values.get("card_photo") or "", photo=photo,
         order=order, bill_amount=values["bill_amount"], discount_percent=values["discount_percent"],
         discount_amount=values["discount_amount"], net_amount=values["net_amount"],
         branch=session.branch, requested_by=session.user,
         rms_installation_id=session.device.installation_id if session.device_id else "",
+        device=session.device,
         status=ClaimStatus.PENDING, requested_at=values["requested_at"],
         created_by=session.user, modified_by=session.user,
     )
@@ -362,6 +374,9 @@ def _request_approval(session, values, company, sync_id):
             return raced, False
         raise DiscountRefused("request_pending", "This order already has a pending approval request.", 409) \
             from None
+    if photo is not None:
+        photo_services.mark_attached(photo)
+    notifications.notify(claim, Action.RAISED)
     return claim, True
 
 
@@ -426,6 +441,7 @@ def redeem_for_order(session, order, discount, *, at, bill_amount, net_amount):
             card_number=discount.get("card_number") or "", order=order, branch=session.branch,
             requested_by=session.user,
             rms_installation_id=session.device.installation_id if session.device_id else "",
+        device=session.device,
             status=ClaimStatus.REDEEMED, requested_at=at, redeemed_at=at,
             created_by=session.user, modified_by=session.user, **figures,
         )
@@ -440,6 +456,9 @@ def cancel_unused_for_order(order, *, keep=None, now=None):
     unused = CardDiscountClaim.objects.filter(order=order, status__in=[ClaimStatus.PENDING, ClaimStatus.APPROVED])
     if keep is not None:
         unused = unused.exclude(pk=keep.pk)
+    # Managers still see the waiting ones; an approved one never used is the tablet's own.
+    closing = list(unused.filter(status=ClaimStatus.PENDING).select_related("branch"))
+    notifications.notify_all(closing, Action.CLOSED)
     return unused.update(
         status=ClaimStatus.CANCELLED, decided_at=Coalesce(F("decided_at"), Value(now)), modified_on=timezone.now(),
     )

@@ -927,9 +927,19 @@ textarea.scr-drawer-input { height: auto; min-height: 72px; padding: 10px 13px; 
 .scr-fare-grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .scr-fare-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .scr-fare-span { grid-column: 1 / -1; }
+.scr-span-2 { grid-column: span 2; }
+.scr-span-3 { grid-column: span 3; }
+/* A non-input control (radios, a switch, a read-out) at an input's height, so
+   it lines up with the inputs beside it in the same row. */
+.scr-control-height { min-height: 40px; display: flex; align-items: center; }
+.scr-radio-row.scr-control-height { padding: 0; flex-wrap: wrap; column-gap: 18px; row-gap: 6px; }
+/* Holds its grid cell while not in use, so showing it moves nothing. */
+.scr-is-reserved { visibility: hidden; }
+.scr-package-band { font-size: 12.5px; color: #4b4770; line-height: 1.4; }
+.scr-package-band b { color: #1a1640; }
 .scr-fare-spacer { min-height: 0; }
 .scr-fare-price-grid { margin-top: 16px; }
-[data-fare] .scr-input:disabled { background: #f8f7fb; color: #8b87b0; cursor: not-allowed; opacity: 1; }
+[data-fare] .scr-input:disabled, [data-package] .scr-input:disabled { background: #f8f7fb; color: #8b87b0; cursor: not-allowed; opacity: 1; }
 .scr-input.is-invalid { border-color: #d81f26; background: #fffafa; }
 .scr-fare-field-error { font-size: 10.5px; color: #c2141a; margin-top: 6px; }
 /* the live banner sits under the page head; empty, it takes no room */
@@ -941,10 +951,14 @@ textarea.scr-drawer-input { height: auto; min-height: 72px; padding: 10px 13px; 
 .scr-fare-banner .scr-msg-field { font-weight: 600; margin-right: 4px; }
 @media (max-width: 1100px) {
   .scr-fare-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .scr-fare-grid-4 > .scr-span-3 { grid-column: 1 / -1; }
 }
 @media (max-width: 640px) {
   .scr-fare-grid-4, .scr-fare-grid-3 { grid-template-columns: 1fr; }
+  .scr-span-2, .scr-span-3 { grid-column: 1 / -1; }
   .scr-fare-spacer { display: none; }
+  /* one column: a reserved cell would only be an empty gap */
+  .scr-is-reserved { display: none; }
 }
 /* the rules table sits inside a card body, so it gets its own frame */
 .scr-fare-table { border: 1px solid #eeedf5; border-radius: 12px; }

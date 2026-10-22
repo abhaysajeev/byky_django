@@ -23,7 +23,7 @@
     all_days: 'All Days', monday: 'Monday', tuesday: 'Tuesday', wednesday: 'Wednesday',
     thursday: 'Thursday', friday: 'Friday', saturday: 'Saturday', sunday: 'Sunday'
   };
-  var PROMOTION_LABEL = { quantity: 'Quantity', amount: 'Amount', percentage: 'Percentage', each: 'Each', package_price: 'Package Price' };
+  var PROMOTION_LABEL = { quantity: 'Quantity', amount: 'Amount', percentage: 'Percentage', package_price: 'Package Price' };
   var VEHICLE_NAME = {};
   options.vehicle_types.forEach(function (v) { VEHICLE_NAME[v.id] = v.name; });
 
@@ -85,12 +85,12 @@
   var status = $('[data-package-field="is_active"]');
   var branch = $('[data-package-field="branch"]');
   var location = $('[data-package-field="location"]');
-  var branchWrap = $('[data-package-branch-wrap]');
-  var locationWrap = $('[data-package-location-wrap]');
+  var scopeAll = $('[data-package-scope-all]');
+  var scopeLabel = $('[data-package-scope-label]');
+  var band = $('[data-package-band]');
   var validFrom = $('[data-package-date="valid_from"]');
   var validTo = $('[data-package-date="valid_to"]');
   var promotionFor = $('[data-package-field="promotion_for"]');
-  var inventoryType = $('[data-package-field="inventory_type"]');
   var lowerValue = $('[data-package-field="lower_value"]');
   var upperValue = $('[data-package-field="upper_value"]');
   var promotionType = $('[data-package-field="promotion_type"]');
@@ -105,7 +105,34 @@
 
   function level() { var on = $('[data-package-field="level"]:checked'); return on ? on.value : ''; }
   function toggledOn(el) { return el ? el.classList.contains('is-on') : false; }
-  function setToggle(el, on) { if (el) el.classList.toggle('is-on', !!on); }
+  function setToggle(el, on) { if (el) el.classList.toggle('is-on', !!on); showToggleState(el); }
+  /* The switch says what it is: aria-checked for screen readers, On / Off beside it. */
+  function showToggleState(el) {
+    if (!el) return;
+    var on = toggledOn(el);
+    el.setAttribute('aria-checked', on ? 'true' : 'false');
+    var state = el.parentNode.querySelector('[data-toggle-state]');
+    if (state) state.textContent = on ? 'On' : 'Off';
+  }
+
+  /* What each value column means, by promotion type / free mode. */
+  var ITEM_VALUE = { amount: 'Discount (AED)', percentage: 'Discount (%)', package_price: 'Package Price (AED)' };
+  function itemValueLabel() { return ITEM_VALUE[promotionType.value] || 'Value'; }
+  function freeValueLabel() { return freeOrPackagePrice.value === 'package_price' ? 'Package Price (AED)' : 'Free Quantity'; }
+
+  /* The band in words, beside the two numbers: "A rental of 2 to 5 vehicles". */
+  function showBand() {
+    var lo = lowerValue.value.trim(), hi = upperValue.value.trim();
+    var forWhat = promotionFor.value;
+    lowerValue.placeholder = upperValue.placeholder = forWhat === 'quantity' ? 'e.g. 2' : '0.000';
+    if (!forWhat || lo === '' || hi === '') { band.textContent = 'Choose Promotion For and the band.'; return; }
+    var a = +lo, b = +hi;
+    if (isNaN(a) || isNaN(b)) { band.textContent = 'Enter numbers for the band.'; return; }
+    // One element: the cell is a flex row, which would drop the spaces between bare pieces.
+    band.innerHTML = '<span>' + (forWhat === 'quantity'
+      ? 'A rental of <b>' + esc(String(a)) + (a === b ? '' : ' to ' + esc(String(b))) + '</b> vehicle' + (b === 1 ? '' : 's')
+      : 'A rental of <b>AED ' + esc(money(lo)) + (a === b ? '' : ' to ' + esc(money(hi))) + '</b>') + '</span>';
+  }
 
   function fillStatic() {
     if (company) company.value = initial.company || '';
@@ -118,9 +145,10 @@
     setIso(validFrom, initial.valid_from);
     setIso(validTo, initial.valid_to);
     promotionFor.value = initial.promotion_for || '';
-    inventoryType.value = initial.inventory_type || 'vehicle_type';
-    lowerValue.value = initial.lower_value || '';
-    upperValue.value = initial.upper_value || '';
+    // A vehicle count is a whole number: "2", not the stored "2.000".
+    var whole = function (v) { return initial.promotion_for === 'quantity' && v ? String(+v) : (v || ''); };
+    lowerValue.value = whole(initial.lower_value);
+    upperValue.value = whole(initial.upper_value);
     promotionType.value = initial.promotion_type || '';
     freeOrPackagePrice.value = initial.free_or_package_price || 'free';
     setToggle(timeSlabToggle, initial.time_slab_applicable);
@@ -129,12 +157,17 @@
     applyFilters();
     showLevel();
     showRuleFields();
+    showBand();
   }
 
+  /* One cell holds the scope for every level, so the row never changes shape. */
   function showLevel() {
     var l = level();
-    branchWrap.hidden = l !== 'branch';
-    locationWrap.hidden = l !== 'location';
+    scopeAll.hidden = l === 'branch' || l === 'location';
+    branch.hidden = l !== 'branch';
+    location.hidden = l !== 'location';
+    scopeLabel.innerHTML = l === 'branch' ? 'Branch<span class="scr-required">*</span>'
+      : l === 'location' ? 'Location<span class="scr-required">*</span>' : 'Applies To';
   }
 
   function showRuleFields() {
@@ -142,7 +175,12 @@
     var freeOn = toggledOn(freeItemToggle);
     var slabOn = toggledOn(timeSlabToggle);
     freeNoteWrap.hidden = !freeOn;
-    freeOrPackagePriceWrap.hidden = !(freeOn || slabOn);
+    // Reserved, not hidden: the toggles before it stay where they are.
+    var priceOn = freeOn || slabOn;
+    freeOrPackagePriceWrap.classList.toggle('scr-is-reserved', !priceOn);
+    freeOrPackagePrice.disabled = !priceOn || !canSave;
+    showToggleState(timeSlabToggle);
+    showToggleState(freeItemToggle);
     freeItemsCard.hidden = !(type === 'quantity' && freeOn);
     timeSlabsCard.hidden = !slabOn;
     // The value column on Promotion Items is meaningless for Quantity -- the
@@ -177,7 +215,7 @@
       level: level(), branch: level() === 'branch' ? branch.value : '', location: level() === 'location' ? location.value : '',
       valid_from: isoOf(validFrom), valid_to: isoOf(validTo),
       is_active: status.value === '1',
-      promotion_for: promotionFor.value, inventory_type: inventoryType.value,
+      promotion_for: promotionFor.value,
       lower_value: lowerValue.value.trim(), upper_value: upperValue.value.trim(),
       promotion_type: promotionType.value,
       time_slab_applicable: toggledOn(timeSlabToggle), free_item_selectable: toggledOn(freeItemToggle),
@@ -196,7 +234,8 @@
       return;
     }
     host.innerHTML = '<div class="scr-table-scroll scr-sb scr-fare-table"><table><thead><tr>' +
-      '<th>Vehicle Type</th><th class="scr-fare-num">Package Time</th>' + (showValue ? '<th class="scr-fare-num">Value</th>' : '') +
+      '<th>Vehicle Type</th><th class="scr-fare-num">Package Time</th>' +
+      (showValue ? '<th class="scr-fare-num">' + esc(itemValueLabel()) + '</th>' : '') +
       (canSave ? '<th></th>' : '') + '</tr></thead><tbody>' + state.items.map(function (row) {
         return '<tr>' +
           '<td>' + esc(VEHICLE_NAME[row.vehicle_type] || 'Vehicle #' + row.vehicle_type) + '</td>' +
@@ -218,7 +257,7 @@
       return;
     }
     host.innerHTML = '<div class="scr-table-scroll scr-sb scr-fare-table"><table><thead><tr>' +
-      '<th>Vehicle Type</th><th class="scr-fare-num">Package Time</th><th class="scr-fare-num">Value</th>' +
+      '<th>Vehicle Type</th><th class="scr-fare-num">Package Time</th><th class="scr-fare-num">' + esc(freeValueLabel()) + '</th>' +
       (canSave ? '<th></th>' : '') + '</tr></thead><tbody>' + state.free_items.map(function (row) {
         return '<tr>' +
           '<td>' + esc(VEHICLE_NAME[row.vehicle_type] || 'Vehicle #' + row.vehicle_type) + '</td>' +
@@ -240,7 +279,7 @@
       return;
     }
     host.innerHTML = '<div class="scr-table-scroll scr-sb scr-fare-table"><table><thead><tr>' +
-      '<th>Date</th><th>Day</th><th>Time</th><th>Vehicle Type</th><th class="scr-fare-num">Package Time</th><th class="scr-fare-num">Value</th>' +
+      '<th>Date</th><th>Day</th><th>Time</th><th>Vehicle Type</th><th class="scr-fare-num">Package Time</th><th class="scr-fare-num">' + esc(freeValueLabel()) + '</th>' +
       (canSave ? '<th></th>' : '') + '</tr></thead><tbody>' + state.time_slabs.map(function (row) {
         return '<tr>' +
           '<td>' + (row.date_mode === 'specific_date' ? esc(dateLabel(row.specific_date)) : 'All Dates') + '</td>' +
@@ -350,6 +389,8 @@
     itemPackage.value = row.package_minutes || '';
     itemValue.value = row.value == null ? '' : row.value;
     var showValue = !(listName === 'items' && promotionType.value === 'quantity');
+    itemBox.querySelector('[data-item-value-label]').textContent =
+      listName === 'items' ? itemValueLabel() : freeValueLabel();
     itemValueWrap.hidden = !showValue;
     itemValue.disabled = !showValue;
     itemErrors.hidden = true;
@@ -416,6 +457,7 @@
     slabVehicleType.value = row.vehicle_type || '';
     slabPackage.value = row.package_minutes || '';
     slabValue.value = row.value == null ? '' : row.value;
+    slabBox.querySelector('[data-slab-value-label]').textContent = freeValueLabel();
     slabErrors.hidden = true;
     slabErrors.innerHTML = '';
     showSlabDateMode();
@@ -545,6 +587,12 @@
   slabBox.querySelector('[data-slab-save]').addEventListener('click', saveSlab);
   $$('[data-slab-date-mode]', slabBox).forEach(function (r) { r.addEventListener('change', showSlabDateMode); });
   [validFrom, validTo].forEach(function (el) { picker(el, changed); });
+
+  [promotionFor, lowerValue, upperValue].forEach(function (el) {
+    el.addEventListener('input', showBand);
+    el.addEventListener('change', showBand);
+  });
+  freeOrPackagePrice.addEventListener('change', function () { renderFreeItems(); renderSlabs(); });
 
   // The toggle buttons themselves are wired by byky-screen.js's delegated
   // handler (adds/removes .is-on); this page only reacts once that happens.

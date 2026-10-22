@@ -11,8 +11,8 @@ from drf_spectacular.utils import extend_schema
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
-from apps.fare import services
-from apps.fare.serializers import FaresRequest
+from apps.fare import package_device, services
+from apps.fare.serializers import FaresRequest, PackagesRequest
 from apps.portal.authentication import AppJWTAuthentication
 from core.api import envelope, request_parts, session_station
 from core.enums import Channel
@@ -159,3 +159,125 @@ class FaresView(APIView):
             return envelope("unknown_vehicle_type", "That vehicle type is not set up for this station.",
                             http_status=400)
         return envelope("ok", "Fares.", data)
+
+
+
+# -- Packages --------------------------------------------------------------------------
+
+_PACKAGES_SAMPLE = {
+    "date": "2026-10-19",
+    "packages": [
+        {
+            "package_id": 14, "version": "2026-10-18T09:12:40.120311+04:00",
+            "code": "ADD-ECAR", "name": "Kids E-Car Add-On", "level": "branch",
+            "valid_from": "2026-10-01", "valid_to": "2027-04-30",
+            "qualifies": {"promotion_for": "quantity", "lower": "1", "upper": "3"},
+            "promotion_type": "quantity",
+            "items": [
+                {"item_id": 40, "vehicle_type_id": 56, "package_minutes": 45, "value": None},
+                {"item_id": 41, "vehicle_type_id": 57, "package_minutes": 30, "value": None},
+            ],
+            "free_items": {"mode": "package_price", "items": [
+                {"free_item_id": 7, "vehicle_type_id": 60, "package_minutes": 15, "value": "20.000"}]},
+            "time_slabs": [
+                {"slab_id": 3, "on_date": None, "weekday": 0, "start": "10:00", "end": "13:00",
+                 "vehicle_type_id": 60, "package_minutes": 15, "value": "20.000"}],
+            "free_item_note": "",
+        },
+        {
+            "package_id": 12, "version": "2026-10-17T16:02:11.009812+04:00",
+            "code": "SCOOT-2", "name": "Couple Scooter Ride", "level": "company",
+            "valid_from": "2026-10-01", "valid_to": "2026-12-31",
+            "qualifies": {"promotion_for": "quantity", "lower": "2", "upper": "2"},
+            "promotion_type": "package_price",
+            "items": [{"item_id": 31, "vehicle_type_id": 58, "package_minutes": 15, "value": "22.500"}],
+            "free_items": None, "time_slabs": [], "free_item_note": "",
+        },
+    ],
+    "by_vehicle_type": {"56": [14], "57": [14], "58": [12], "60": [14]},
+}
+
+_PACKAGES_DESCRIPTION = """
+The packages this station can offer, for one working day -- the same contract
+as `fares`: call it at login with that day's `date` and again when online;
+each answer **replaces** what the app holds. Clear the package cache at every
+login.
+
+**Request** (`request_data`): `date` required (`YYYY-MM-DD`, company date);
+`vehicle_type_id` optional -- only packages that mention it (as an item, a
+free item or a time slab). The station comes from the login session.
+
+**Sent:** active, approved packages that cover this station -- the company's,
+this station's own (`level` `branch`) and its location's (`location`) -- in
+force on `date` **or the day after**. Most specific first (`branch`, then
+`location`, then `company`), then by code. A package is sent **even when an
+item has no fare at this station**: check the fares before offering it.
+
+**A package** comes whole:
+* `qualifies` -- the band a rental must fall in: `promotion_for` `quantity`
+  (a number of vehicles; `lower` / `upper` whole numbers) or `amount` (AED).
+* `promotion_type` and each item's `value`:
+  `amount` -- AED off; `percentage` -- % off; `package_price` -- the price
+  for that vehicle type and package time; `quantity` -- no value (`null`), the
+  reward is `free_items`.
+* `free_items` -- `null` unless `quantity` with free items: `mode` `free`
+  (each `value` a free count) or `package_price` (each `value` a price).
+* `time_slabs` -- `[]` unless the package uses them: `on_date` (or `null`),
+  `weekday` (Monday=0 ... Sunday=6, `null` = every day), `start` / `end`
+  (`HH:MM`, company time) and the vehicle type, package time and value for
+  that window (its meaning follows `free_items.mode`).
+* `version` -- when the package last changed; a different value means the
+  cached copy is stale.
+
+`by_vehicle_type` lists, per vehicle type id, the packages that mention it,
+for offering packages as soon as a vehicle is scanned.
+
+**On the order:** a vehicle line names its package as `offer_id` (orders/book,
+add, replace). The server refuses `package_not_available` when that package is
+paused, does not cover this station or is not in force on the line's start
+date. Money is a 3-decimal string. Nothing here prices a rental: the app
+applies the package and sends the `base_fare` it agreed, as today.
+"""
+
+
+class PackagesView(APIView):
+    """POST /api/v1/{app}/packages -- operator app only."""
+
+    authentication_classes = [AppJWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Operator Fares"],
+        summary="The station's packages for a working day",
+        description=_PACKAGES_DESCRIPTION,
+        request=envelope_request("PackagesEnvelope", PackagesRequest),
+        responses=envelope_responses(
+            (200, "ok", "Packages.", _PACKAGES_SAMPLE),
+            (400, "invalid_request", "date is required.", {"errors": {"date": "is required"}}),
+            (400, "unknown_vehicle_type", "That vehicle type is not set up for this station.", {}),
+            (401, "not_authenticated", "Sign in first.", {}),
+            (403, "wrong_channel", "Not allowed on this app.", {}),
+            (409, "device_not_mapped", "This device has no station.", {}),
+            (409, "branch_inactive", "This station is closed.", {}),
+            SERVER_ERROR,
+        ),
+    )
+    def post(self, request, app):
+        if app != Channel.OPERATOR:
+            return envelope("wrong_channel", "Not allowed on this app.", http_status=403)
+        branch, refused = session_station(request)
+        if refused:
+            return refused
+
+        _, request_data = request_parts(request)
+        form = PackagesRequest(data=request_data)
+        form.is_valid(raise_exception=True)
+        values = form.validated_data
+        try:
+            if values.get("vehicle_type_id") is not None:
+                services.check_vehicle_type(branch, values["vehicle_type_id"])
+        except services.UnknownVehicleType:
+            return envelope("unknown_vehicle_type", "That vehicle type is not set up for this station.",
+                            http_status=400)
+        return envelope("ok", "Packages.", package_device.device_packages(
+            branch, values["date"], vehicle_type_id=values.get("vehicle_type_id")))

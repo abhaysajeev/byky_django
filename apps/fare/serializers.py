@@ -12,3 +12,8 @@ class FaresRequest(serializers.Serializer):
     date = date_field()
     vehicle_type_id = whole_number_field(required=False)
     package_minutes = whole_number_field(required=False, min_value=1, max_value=MAX_MINUTES)
+
+
+class PackagesRequest(serializers.Serializer):
+    date = date_field()
+    vehicle_type_id = whole_number_field(required=False)

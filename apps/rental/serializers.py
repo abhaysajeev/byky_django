@@ -364,6 +364,17 @@ class OrderSettleRequest(serializers.Serializer):
     )
     net_amount = _money_field()
     payments = SettlePaymentRequest(many=True, required=False)
+    # The customer's rating of this rental, 1.0-5.0 in steps of 0.1 (4.5, 5,
+    # 2.5); left out or null when the customer gave none. Stored on the
+    # invoice, and becomes the customer's rating until a later one.
+    star_rating = serializers.DecimalField(
+        max_digits=2, decimal_places=1, min_value=Decimal(1), max_value=Decimal(5),
+        required=False, allow_null=True,
+        error_messages={"invalid": "must be a number", "min_value": "must be from 1 to 5",
+                        "max_value": "must be from 1 to 5", "max_digits": "must be from 1 to 5",
+                        "max_decimal_places": "must have at most 1 decimal place",
+                        "max_whole_digits": "must be from 1 to 5"},
+    )
 
     def validate_payments(self, payments):
         if _repeated(payment["sync_id"] for payment in payments):

@@ -15,7 +15,7 @@ from apps.company import writes as company_writes
 from apps.company.models import UAE_WEEK
 from apps.company.scoping import branches_for, companies_for, locations_for
 from apps.fare import package_payload, package_services, payload, pricing, services
-from apps.fare.models import Fare, FareLevel, Package, PackageLevel
+from apps.fare.models import Fare, FareLevel, Package, PackageLevel, PromotionFor
 from apps.fare.scoping import fares_for, packages_for
 from apps.fleet.scoping import categories_for, vehicle_types_for
 from apps.portal.permissions import PagePermissionMixin
@@ -283,7 +283,7 @@ class PackageListView(PackageScreenView):
                 "validity": f"{pricing.date_label(package.valid_from)} – {pricing.date_label(package.valid_to)}",
                 "period": _package_period(package, today),
                 "promotion_type": package.get_promotion_type_display(),
-                "band": f"{package.lower_value} – {package.upper_value}",
+                "band": _band(package),
                 "active": package.is_active,
                 "edit_url": reverse("fare-package-edit", args=[package.pk]),
             })
@@ -298,11 +298,21 @@ class PackageListView(PackageScreenView):
         return context
 
 
+def _band(package):
+    """The qualifying band in words: "2 – 5 vehicles", "AED 200.000 – 500.000"."""
+    lo, hi = package.lower_value, package.upper_value
+    if package.promotion_for == PromotionFor.QUANTITY:
+        lo, hi = f"{lo.normalize():f}", f"{hi.normalize():f}"
+        span = lo if lo == hi else f"{lo} – {hi}"
+        return f"{span} vehicle{'' if span == '1' else 's'}"
+    return f"AED {lo}" if lo == hi else f"AED {lo} – {hi}"
+
+
 def _package_blank(user):
     return {
         "pk": None, "company": user.company_id, "package_code": "", "package_name": "",
         "level": PackageLevel.COMPANY, "branch": None, "location": None,
-        "valid_from": "", "valid_to": "", "promotion_for": "", "inventory_type": "vehicle_type",
+        "valid_from": "", "valid_to": "", "promotion_for": "",
         "lower_value": "", "upper_value": "", "promotion_type": "",
         "time_slab_applicable": False, "free_item_selectable": False, "free_item_selectable_note": "",
         "free_or_package_price": "free", "is_active": True,

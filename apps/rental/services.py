@@ -5,13 +5,14 @@ import json
 from decimal import Decimal
 
 from django.db import IntegrityError, transaction
-from django.db.models import F
+from django.db.models import F, Q
 from django.utils import timezone
 
 from apps.company.models import PaymentMode
 from apps.devices import services as devices_services
 from apps.devices.models import BillKind
 from apps.discount import services as discount_services
+from apps.fare import package_device
 from apps.fare.models import Fare, Package
 from apps.fleet.models import Vehicle
 from apps.rental.models import (
@@ -33,6 +34,7 @@ from apps.rental.models import (
     full_number,
 )
 from core.ids import uuid7
+from core.timezones import business_date_for
 
 
 def next_customer_code(company):
@@ -119,6 +121,8 @@ ORDER_ERRORS = {
     "vehicle_not_at_station": (400, "That vehicle is not at this station.", False),
     "unknown_fare": (400, "No fare with that id.", False),
     "unknown_offer": (400, "No offer with that id.", False),
+    # Paused, not at this station, or not in force on the line's start date.
+    "package_not_available": (409, "That package cannot be used here on this date.", False),
     "unknown_order": (404, "No order with that id at this station.", False),
     "order_closed": (409, "This order is already completed or cancelled.", False),
     "unknown_item": (404, "That item is not on this order.", False),
@@ -446,6 +450,14 @@ def _line_refs(company, branch, items_input):
     # A package (sent as offer_id: the tablet API kept the old name).
     offers = _by_id(Package, company, {item["offer_id"] for item in items_input if item.get("offer_id")},
                     "unknown_offer", "offer")
+    # ...that is active, covers this station and is in force on the line's
+    # start date (apps/fare/package_device.py).
+    for item in items_input:
+        package = offers.get(item.get("offer_id"))
+        if package is not None:
+            problem = package_device.unavailable(package, branch, business_date_for(company, item["start_time"]))
+            if problem:
+                raise OrderRefused("package_not_available", problem)
     if OrderItem.objects.filter(pk__in=[item["sync_id"] for item in items_input]).exists():
         raise OrderRefused("item_id_used")
     return vehicles, fares, offers
@@ -755,7 +767,9 @@ def settle_order(session, values, request_data, reply_for):
 
         source = (DiscountSource.CARD if card else DiscountSource.MANAGER if manager
                   else DiscountSource.COMPLIMENTARY if free else "")
-        issue_invoice(order, billed, session, at=values["settled_at"], discount_source=source)
+        issue_invoice(order, billed, session, at=values["settled_at"], discount_source=source,
+                      star_rating=values.get("star_rating"))
+        rate_customer(order.customer_id, values.get("star_rating"), values["settled_at"])
         event = {
             "action": OrderAction.SETTLE, "happened_at": values["settled_at"],
             "device": session.device, "user": session.user,
@@ -796,7 +810,18 @@ def _record_payments(session, order, payments, modes):
         )
 
 
-def issue_invoice(order, billed_items, session, *, at, discount_source=""):
+def rate_customer(customer_id, star_rating, rated_at):
+    """The customer's rating becomes this settle's, unless a newer settle has
+    already rated them -- a parked settle can arrive after a later one. No
+    rating, no change."""
+    if star_rating is None:
+        return
+    Customer.objects.filter(
+        Q(star_rating_at__isnull=True) | Q(star_rating_at__lte=rated_at), pk=customer_id,
+    ).update(star_rating=star_rating, star_rating_at=rated_at)
+
+
+def issue_invoice(order, billed_items, session, *, at, discount_source="", star_rating=None):
     """The invoice for a settled order: a frozen copy of the bill, numbered by
     the order, issued by the settling tablet and operator. Only returned lines
     are billed -- replaced and removed ones are not copied."""
@@ -809,7 +834,7 @@ def issue_invoice(order, billed_items, session, *, at, discount_source=""):
         subtotal=order.subtotal, discount_percentage=order.discount_percentage,
         discount_amount=order.discount_amount, discount_source=discount_source,
         tax_percentage=order.tax_percentage, tax_amount=order.tax_amount,
-        rounding_adjustment=order.rounding_adjustment, net_amount=order.net_amount,
+        rounding_adjustment=order.rounding_adjustment, net_amount=order.net_amount, star_rating=star_rating,
         payments=[
             {"mode": payment.mode.name, "kind": payment.kind, "amount": str(payment.amount),
              "reference_no": payment.reference_no}

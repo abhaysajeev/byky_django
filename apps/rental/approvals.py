@@ -23,7 +23,7 @@ from apps.rental.models import (
     OrderRequestKind,
     OrderRequestStatus,
 )
-from apps.rental.requests import PAGE_SIZE, _local, _money, _name
+from apps.rental.requests import PAGE_SIZE, _local, _money, _name, card_photo_fields
 from core.timezones import zone_for
 
 
@@ -113,7 +113,7 @@ def claim_json(claim, zone):
         "order": {"order_id": str(claim.order_id), "order_no": claim.order.order_no},
         "customer_name": claim.customer_name, "customer_mobile": claim.mobile_full,
         "card_type": claim.card_type.name, "card_grade": claim.card_grade.name,
-        "card_number": claim.card_number, "card_photo": claim.card_photo or None,
+        "card_number": claim.card_number, "card_photo": claim.card_photo or None, **card_photo_fields(claim),
         "discount_percent": str(claim.discount_percent), "fare_basis": claim.fare_basis,
         "bill_amount": _money(claim.bill_amount), "discount_amount": _money(claim.discount_amount),
         "net_amount": _money(claim.net_amount),

@@ -40,6 +40,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-byky}
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
+      # No Redis locally: background jobs (photo previews) run inline.
+      CELERY_TASK_ALWAYS_EAGER: "1"
     volumes:
       - .:/app
     ports:

@@ -342,7 +342,9 @@ _CLAIM_ROW = {
     "order": {"order_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9", "order_no": "ADC1019000231"},
     "customer_name": "Ahmed Al Mansoori", "customer_mobile": "971501234567",
     "card_type": "Esaad", "card_grade": "Gold", "card_number": "ES-448812",
-    "card_photo": "https://photos.example/esaad/448812.jpg",
+    "card_photo": None, "card_photo_id": "01a14a3c-77d2-7f1e-9a10-3f7c2b9d4e51",
+    "card_photo_url": "/api/v1/manager/photos/01a14a3c-77d2-7f1e-9a10-3f7c2b9d4e51?size=display",
+    "card_photo_thumb_url": "/api/v1/manager/photos/01a14a3c-77d2-7f1e-9a10-3f7c2b9d4e51?size=thumb",
     "discount_percent": "20.00", "fare_basis": "base",
     "bill_amount": "100.000", "discount_amount": "20.000", "net_amount": "80.000",
     "branch_id": 3, "station": "Abu Dhabi Corniche 1",
@@ -467,9 +469,12 @@ class ClaimListView(_ManagerView):
     @extend_schema(
         tags=["Manager Card Discounts"],
         summary="Card-discount approval requests from every station, newest first",
-        description=_APPROVAL_LIST + "\n`card_photo` is the link to the photo the tablet uploaded -- show it "
-                                     "before deciding. A claim still pending when its order was billed is "
-                                     "`cancelled`.",
+        description=_APPROVAL_LIST + "\nThe card photo -- show it before deciding: `card_photo_thumb_url` "
+                                     "(320 px, for the list) and `card_photo_url` (1280 px; `?size=original` "
+                                     "for zooming), paths on this server that need the access token "
+                                     "(`GET /api/v1/manager/photos/<id>`). Older requests may carry only "
+                                     "`card_photo`, a plain link the tablet sent. A claim still pending when "
+                                     "its order was billed is `cancelled`.",
         request=envelope_request("ManagerClaimListEnvelope", ManagerApprovalListRequest),
         responses=envelope_responses(
             (200, "ok", "List.", {"claims": [_CLAIM_ROW], **_PAGED}),

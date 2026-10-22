@@ -52,3 +52,19 @@ def logs_off(monkeypatch):
     from apps.monitoring import writer
 
     monkeypatch.setattr(writer, "enqueue", lambda kind, fields: None)
+
+
+@pytest.fixture(autouse=True)
+def private_photo_store(settings, tmp_path):
+    """Photos (apps/photos) go to a folder of the test's own, and their
+    background jobs run inline -- no Redis in tests."""
+    settings.STORAGES = {
+        **settings.STORAGES,
+        "photos": {"BACKEND": "django.core.files.storage.FileSystemStorage",
+                   "OPTIONS": {"location": tmp_path / "photos", "base_url": None}},
+    }
+    settings.PHOTO_SERVE = "django"
+    # Celery reads Django's settings object itself (namespace CELERY), so the
+    # override goes there; changing app.conf directly does not stick.
+    settings.CELERY_TASK_ALWAYS_EAGER = True
+    settings.CELERY_TASK_EAGER_PROPAGATES = True
