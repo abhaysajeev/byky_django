@@ -18,7 +18,7 @@
 <div class="scr" data-device-approval
      data-url-approve="{{ action_urls.approve }}" data-url-reconnect="{{ action_urls.reconnect }}"
      data-url-reject="{{ action_urls.reject }}" data-url-block="{{ action_urls.block }}"
-     data-url-unblock="{{ action_urls.unblock }}">
+     data-url-unblock="{{ action_urls.unblock }}" data-url-rename="{{ action_urls.rename }}">
 
   <div class="scr-head">
     <div>
@@ -41,8 +41,10 @@
           <button type="button" class="scr-btn-primary" data-device-action="approve" data-pk="{{ device.pk }}" data-number="{{ device.device_registration_id }}" data-name="{{ device.name }}" data-channel="{{ device.channel }}">Approve</button>
           <button type="button" class="scr-btn-danger" data-device-action="reject" data-pk="{{ device.pk }}" data-number="{{ device.device_registration_id }}" data-name="{{ device.name }}" data-channel="{{ device.channel }}">Reject</button>
         {% elif device.status == "approved" and perm.update %}
+          <button type="button" class="scr-btn" data-device-action="rename" data-pk="{{ device.pk }}" data-number="{{ device.device_registration_id }}" data-name="{{ device.name }}" data-channel="{{ device.channel }}">Rename</button>
           <button type="button" class="scr-btn-danger" data-device-action="block" data-pk="{{ device.pk }}" data-number="{{ device.device_registration_id }}" data-name="{{ device.name }}" data-channel="{{ device.channel }}">Block</button>
         {% elif device.status == "blocked" and perm.update %}
+          <button type="button" class="scr-btn" data-device-action="rename" data-pk="{{ device.pk }}" data-number="{{ device.device_registration_id }}" data-name="{{ device.name }}" data-channel="{{ device.channel }}">Rename</button>
           <button type="button" class="scr-btn-primary" data-device-action="unblock" data-pk="{{ device.pk }}" data-number="{{ device.device_registration_id }}" data-name="{{ device.name }}" data-channel="{{ device.channel }}">Unblock</button>
         {% endif %}
       {% endif %}

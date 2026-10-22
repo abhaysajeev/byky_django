@@ -625,11 +625,7 @@ def approve_device(devices_qs, pk, *, user, name, branch=None, replaces_pk=None,
     mapped (login step 9, device_not_mapped).
     """
     now = now or timezone.now()
-    name = (name or "").strip()
-    if not name:
-        raise DeviceActionError("Enter a name for the device.", "Name")
-    if len(name) > NAME_MAX:
-        raise DeviceActionError(f"Keep the name to {NAME_MAX} characters.", "Name")
+    name = _device_name(name)
 
     with transaction.atomic():
         device = _locked(devices_qs, pk)
@@ -758,6 +754,32 @@ def block_device(devices_qs, pk, *, user, reason="", now=None):
         close_sessions_for_device(device, LogoutReason.DEVICE_BLOCKED, now=now)
         _log(device, DeviceAction.BLOCKED, DeviceStatus.APPROVED, DeviceStatus.BLOCKED, user,
              reason=reason)
+    return device
+
+
+def _device_name(name):
+    """A device's name as entered: required, at most NAME_MAX characters."""
+    name = (name or "").strip()
+    if not name:
+        raise DeviceActionError("Enter a name for the device.", "Name")
+    if len(name) > NAME_MAX:
+        raise DeviceActionError(f"Keep the name to {NAME_MAX} characters.", "Name")
+    return name
+
+
+def rename_device(devices_qs, pk, *, user, name):
+    """Give an approved or blocked device a new name. Nothing else changes:
+    its sessions, station and status stay as they are. A device awaiting
+    approval is named when it is approved."""
+    name = _device_name(name)
+    with transaction.atomic():
+        device = _locked(devices_qs, pk)
+        if device.status not in (DeviceStatus.APPROVED, DeviceStatus.BLOCKED):
+            raise DeviceActionError("Only an approved or blocked device can be renamed.")
+        if device.name != name:
+            device.name = name
+            device.modified_by = user
+            device.save(update_fields=["name", "modified_by", "modified_on"])
     return device
 
 
