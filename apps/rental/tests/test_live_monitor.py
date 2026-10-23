@@ -13,6 +13,7 @@ from channels.layers import get_channel_layer
 from django.utils import timezone
 
 from apps.portal.page_registry import PAGES
+from apps.portal.page_sync import sync
 from apps.rental import live, requests, services
 from apps.rental.models import Order, OrderAction, OrderEvent, OrderStatus, Payment, PaymentKind
 from apps.rental.tests import test_order_screens as screens
@@ -235,8 +236,16 @@ def _cookie(client):
     return "; ".join(f"{k}={v.value}" for k, v in client.cookies.items())
 
 
+@pytest.fixture
+def pages(db):
+    """The screens the migrations register. A transactional test runs on
+    emptied tables -- any earlier one (the migration tests) flushes them, pages
+    included -- so put them back before client_in grants its role everything."""
+    sync()
+
+
 @pytest.mark.django_db(transaction=True)
-def test_the_socket_carries_this_companys_changes_only(client_in, world):
+def test_the_socket_carries_this_companys_changes_only(pages, client_in, world):
     async def scenario():
         communicator = _connect(_cookie(client_in))
         connected, _ = await communicator.connect()
@@ -252,7 +261,7 @@ def test_the_socket_carries_this_companys_changes_only(client_in, world):
 
 
 @pytest.mark.django_db(transaction=True)
-def test_the_socket_refuses_strangers_and_users_without_the_screen(client, client_in, world):
+def test_the_socket_refuses_strangers_and_users_without_the_screen(pages, client, client_in, world):
     async def refused(cookie):
         communicator = _connect(cookie)
         connected, code = await communicator.connect()
