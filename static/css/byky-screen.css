@@ -653,53 +653,94 @@ textarea.scr-drawer-input { height: auto; min-height: 72px; padding: 10px 13px; 
 .scr-alloc-badge { display: inline-flex; align-items: center; font-size: 12px; font-weight: 700; padding: 5px 11px; border-radius: 99px; background: #eaf1fd; color: #2b52a0; font-variant-numeric: tabular-nums; }
 .scr-alloc-badge.is-warn { background: #fdeced; color: #c2141a; }
 
-/* ── duty-count badge pair (Duty Roster State Wise grid) ──────────────
-   "2C" cashiers on duty / "3L" labour on duty, clickable to open the
-   Branch-Day records modal for that cell. */
-.scr-duty-badges { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
-.scr-duty-badge { border: none; cursor: pointer; font-size: 10.5px; font-weight: 700; padding: 3px 7px; border-radius: 7px; font-variant-numeric: tabular-nums; transition: filter 0.14s; }
-.scr-duty-badge:hover { filter: brightness(0.96); }
-.scr-duty-badge-c { background: #eaf1fd; color: #2b52a0; }
-.scr-duty-badge-l { background: #e9f8f0; color: #14764a; }
-.scr-duty-badge-empty { font-size: 11px; color: #c3bfd8; }
+/* ── Duty Roster (apps/crew/templates/crew/duty_roster_list.html) ──────
+   Rules from the taste-skill app-screen guide (accent-ladder style, kept to
+   BYKY's colours and Sora): nothing under 11px, sentence-case labels, colour
+   only on data -- the role (cashier blue, labour green) and the one gap that
+   needs action (a day with staff and no cashier, in the red pair) -- and no
+   shadow on anything at rest. */
+.scr-roster-toolbar .scr-input { width: auto; min-width: 220px; height: 38px; }
+.scr-roster-legend { margin-left: auto; display: flex; align-items: center; gap: 16px; font-size: 12px; color: #6b6790; }
+.scr-roster-legend span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.scr-roster-dot { width: 8px; height: 8px; border-radius: 99px; display: inline-block; flex: none; }
+.scr-roster-dot.is-cashier { background: #2b52a0; }
+.scr-roster-dot.is-labour { background: #14764a; }
+.scr-roster-person { min-width: 280px; }
+.scr-roster-profile { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; padding: 2px 20px 0; font-size: 12.5px; color: #6b6790; }
+.scr-roster-profile b { color: #1a1640; font-weight: 600; }
+.scr-roster-profile:empty { display: none; }
+.scr-roster-note { padding: 0 20px 18px; font-size: 12px; color: #6b6790; }
+@media (max-width: 767px) {
+  [data-duty-roster] .scr-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  [data-duty-roster] .scr-tile { padding: 12px 14px; }
+  .scr-roster-toolbar .scr-input { flex: 1 1 160px; min-width: 0; }
+  .scr-roster-legend { margin-left: 0; }
+  .scr-roster-person { min-width: 0; flex: 1 1 auto; }
+}
 
-/* ── month calendar grid (Duty Roster Employee View) ──────────────────
-   7-column CSS grid; each cell shows a status pill, shift time, branch and
-   a hover-reveal edit pencil. */
-.scr-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; padding: 18px 20px; }
-.scr-cal-dow { font-size: 10px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: #a9a6c4; text-align: center; padding-bottom: 4px; }
+/* The day popup (byky/partials/detail_modal.html): status pill, rows, note. */
+.scr-detail-badge:not(:empty) { margin-bottom: 10px; }
+.scr-detail-badge .scr-badge { font-size: 11.5px; }
+.scr-detail-note { margin-top: 12px !important; font-size: 12px; color: #6b6790; line-height: 1.5; }
+.scr-detail-foot { justify-content: flex-end; }
+
+/* Employee View: one person's month. */
+.scr-cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; padding: 16px 20px 20px; }
+.scr-cal-dow { font-size: 12px; font-weight: 500; color: #8b87b0; padding: 0 2px 2px; }
 .scr-cal-cell {
-  position: relative; min-height: 84px; border: 1px solid #f0eff7; border-radius: 11px; padding: 8px;
+  position: relative; min-height: 88px; border: 1px solid #f0eff7; border-radius: 11px; padding: 8px;
   display: flex; flex-direction: column; gap: 4px; background: #fff; cursor: pointer; transition: border-color 0.14s;
 }
 .scr-cal-cell:hover { border-color: #d9d5ea; }
 .scr-cal-cell.is-today { border-color: #f3c3c5; background: #fdf5f5; }
-.scr-cal-date { font-size: 11.5px; font-weight: 700; color: #4b4770; }
-.scr-cal-cell .scr-badge { font-size: 9.5px; padding: 3px 7px; align-self: flex-start; }
-.scr-cal-shift { font-size: 10px; color: #9490bb; font-variant-numeric: tabular-nums; }
-.scr-cal-branch { font-size: 10px; color: #9490bb; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scr-cal-date { font-size: 12px; font-weight: 600; color: #1a1640; font-variant-numeric: tabular-nums; }
+.scr-cal-cell .scr-badge { font-size: 11px; padding: 3px 7px; align-self: flex-start; }
+.scr-cal-shift { font-size: 11.5px; color: #4b4770; font-variant-numeric: tabular-nums; }
+.scr-cal-branch { font-size: 11px; color: #6b6790; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .scr-cal-edit {
-  position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; border-radius: 7px; border: none;
-  background: #fff; color: #6b6790; display: grid; place-items: center; opacity: 0; transition: opacity 0.14s;
-  box-shadow: 0 2px 8px -2px rgba(26, 22, 64, 0.25); cursor: pointer;
+  position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; border-radius: 7px; border: 1px solid #eeedf5;
+  background: #fff; color: #6b6790; display: grid; place-items: center; opacity: 0; transition: opacity 0.14s; cursor: pointer;
 }
-.scr-cal-cell:hover .scr-cal-edit { opacity: 1; }
+.scr-cal-cell:hover .scr-cal-edit, .scr-cal-edit:focus-visible { opacity: 1; }
 
-/* ── week-block / day-column grid (Duty Roster Branch Roster + Add
-   Weekly Branch Roster drawer) ───────────────────────────────────────
-   7 day-cards in a row; each lists assigned staff as small removable
-   chips. Horizontally scrollable under 1024px per CLAUDE.md 4.6. */
-.scr-wk-grid { display: flex; gap: 10px; padding: 18px 20px; overflow-x: auto; }
-.scr-wk-day-card { flex: 1 1 150px; min-width: 150px; border: 1px solid #f0eff7; border-radius: 12px; background: #fbfaff; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
-.scr-wk-day-head { font-size: 11px; font-weight: 700; color: #4b4770; }
-.scr-wk-day-date { font-size: 10px; color: #9490bb; margin-bottom: 4px; }
-.scr-wk-chip { display: flex; align-items: center; justify-content: space-between; gap: 6px; background: #fff; border: 1px solid #eeedf5; border-radius: 8px; padding: 6px 8px; font-size: 11px; }
-.scr-wk-chip-name { font-weight: 600; color: #1a1640; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.scr-wk-chip-time { font-size: 10px; color: #9490bb; font-variant-numeric: tabular-nums; }
-.scr-wk-chip-x { border: none; background: transparent; color: #c3bfd8; cursor: pointer; flex: 0 0 auto; display: grid; place-items: center; }
-.scr-wk-chip-x:hover { color: #c2141a; }
-.scr-wk-add { border: 1px dashed #d9d5ea; border-radius: 8px; background: transparent; color: #6b6790; font-size: 10.5px; font-weight: 600; padding: 6px 8px; cursor: pointer; text-align: center; }
-.scr-wk-add:hover { border-color: #c2141a; color: #c2141a; }
+/* Branch Roster: one station's week, a card per day. Each card says its
+   cover first, then lists its Cashiers and its Labour under their own
+   labels, every person on a chip edged in the role's colour. Seven columns
+   that share the width on a desktop; narrower, the days wrap onto more rows
+   (one a row on a phone) -- the week never scrolls sideways. The weekly
+   form's day cards (Add Employee Roster) reuse the card. */
+.scr-wk-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; padding: 16px 20px 20px; }
+@media (max-width: 1279px) { .scr-wk-grid { grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); } }
+@media (max-width: 480px) { .scr-wk-grid { grid-template-columns: 1fr; padding: 12px 16px 16px; } }
+.scr-wk-day-card { min-width: 0; border: 1px solid #f0eff7; border-radius: 14px; background: #fbfaff; padding: 10px 8px; display: flex; flex-direction: column; gap: 8px; }
+.scr-wk-day-card.is-today { border-color: #f3c3c5; background: #fffafa; }
+.scr-wk-day-head { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; padding: 0 2px; font-size: 13px; font-weight: 600; color: #1a1640; }
+.scr-wk-day-date { font-size: 12px; font-weight: 500; color: #8b87b0; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.scr-wk-day-card.is-today .scr-wk-day-date { color: #c2141a; }
+.scr-wk-cover { padding: 0 2px; font-size: 12px; font-weight: 600; color: #4b4770; font-variant-numeric: tabular-nums; }
+.scr-wk-cover.is-gap { align-self: flex-start; color: #a8161c; background: #fdeced; border-radius: 6px; padding: 3px 8px; }
+.scr-wk-cover.is-none { color: #8b87b0; font-weight: 500; }
+.scr-wk-role { display: flex; flex-direction: column; gap: 6px; }
+.scr-wk-role + .scr-wk-role { padding-top: 8px; border-top: 1px solid #eeedf5; }
+.scr-wk-role-head { display: flex; align-items: center; gap: 6px; padding: 0 2px; font-size: 12px; font-weight: 600; color: #6b6790; }
+.scr-wk-chip {
+  position: relative; display: flex; align-items: flex-start; background: #fff;
+  border: 1px solid #eeedf5; border-left: 3px solid #d3d0e6; border-radius: 8px; padding: 6px 8px;
+}
+.scr-wk-chip.is-cashier { border-left-color: #2b52a0; }
+.scr-wk-chip.is-labour { border-left-color: #14764a; }
+.scr-wk-chip-main { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.scr-wk-chip-name { font-size: 12.5px; font-weight: 600; color: #1a1640; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scr-wk-chip-time { font-size: 12px; color: #6b6790; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.scr-wk-chip-x {
+  position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border: none; border-radius: 6px;
+  background: #fff; color: #a9a6c4; cursor: pointer; display: grid; place-items: center; opacity: 0; transition: opacity 0.14s;
+}
+.scr-wk-chip:hover .scr-wk-chip-x, .scr-wk-chip-x:focus-visible { opacity: 1; }
+.scr-wk-chip-x:hover, .scr-wk-chip-x:focus-visible { color: #c2141a; background: #fdeced; }
+@media (hover: none) { .scr-wk-chip-x { opacity: 1; } .scr-wk-chip { padding-right: 28px; } }
+.scr-wk-add { border: 1px dashed #d9d5ea; border-radius: 8px; background: transparent; color: #6b6790; font-size: 12px; font-weight: 600; padding: 6px 8px; cursor: pointer; text-align: left; }
+.scr-wk-add:hover, .scr-wk-add:focus-visible { border-color: #c2141a; color: #c2141a; }
 
 /* ── header action menu (reuses .scr-menu-wrap/.scr-menu, repurposed
    for a page-level split-button rather than a row's kebab) ──────────── */

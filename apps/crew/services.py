@@ -709,13 +709,19 @@ def _leave_error(on_date, leave):
             "message": f"{on_date:%d %b} is approved leave {leave.reference}; it cannot be changed on the roster."}
 
 
+# The weekly form's "Not set": the day goes back to no roster row at all.
+NOT_SET = "not_set"
+
+
 def save_week(employee, days, *, user, branches_qs):
     """Write one employee's week: `days` is
     [{"date", "day_type", "branch", "shift1_start", "shift1_end",
       "shift2_start", "shift2_end", "remarks"}, ...], `branch` an id or None,
-    the four shift fields "HH:MM" strings or None. One transaction, every
+    the four shift fields "HH:MM" strings or None. A day sent as
+    {"date", "day_type": "not_set"} is cleared; a day not sent is left as it
+    is, so the form may set one day and leave the rest. One transaction, every
     day's problems collected before anything is written -- a half-saved week
-    is worse than none.
+    is worse than none. Approved-leave days are refused either way.
     """
     if employee.designation.roster_category not in RosterCategory.values:
         raise Invalid([{
@@ -725,24 +731,44 @@ def save_week(employee, days, *, user, branches_qs):
 
     errors = []
     clean = []
+    clear = []                  # days set back to "Not set": their rows go
     for entry in days:
+        if entry.get("day_type") == NOT_SET:
+            on_date = _iso_date(entry.get("date"))
+            if on_date is None:
+                errors.append({"field": "Date", "message": "Every day needs a date."})
+            else:
+                clear.append(on_date)
+            continue
         day_errors, fields = _check_day(entry, branches_qs=branches_qs)
         errors += day_errors
         if not day_errors:
             clean.append(fields)
-    locked = _on_leave(employee, [fields["date"] for fields in clean])
+    locked = _on_leave(employee, [fields["date"] for fields in clean] + clear)
     errors += [_leave_error(day, leave) for day, leave in sorted(locked.items())]
     if errors:
         raise Invalid(errors)
 
     written = []
-    for fields in clean:
-        row, _ = DutyRoster.objects.update_or_create(
-            employee=employee, date=fields["date"],
-            defaults={**fields, "modified_by": user},
-        )
-        written.append(row)
+    with transaction.atomic():
+        if clear:
+            DutyRoster.objects.filter(employee=employee, date__in=clear).delete()
+        for fields in clean:
+            row, _ = DutyRoster.objects.update_or_create(
+                employee=employee, date=fields["date"],
+                defaults={**fields, "modified_by": user},
+            )
+            written.append(row)
     return written
+
+
+def _iso_date(value):
+    if isinstance(value, datetime.date):
+        return value
+    try:
+        return datetime.date.fromisoformat(value) if isinstance(value, str) else None
+    except ValueError:
+        return None
 
 
 def _check_day(entry, *, branches_qs):
