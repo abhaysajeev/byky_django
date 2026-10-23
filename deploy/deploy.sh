@@ -104,6 +104,16 @@ else
     "${COMPOSE[@]}" up -d
 fi
 
+# nginx reads deploy/nginx/qa.conf only when its container is created, and
+# `up` leaves a running proxy alone when just that file changed (the bind
+# mount even keeps the old copy: git replaces the file). So when the config
+# this deploy brings differs from the one nginx runs, recreate the proxy --
+# a second's gap, and only on deploys that change it.
+if ! "${COMPOSE[@]}" exec -T proxy cat /etc/nginx/conf.d/default.conf 2>/dev/null | cmp -s - deploy/nginx/qa.conf; then
+    log "nginx config changed -- recreating the proxy"
+    "${COMPOSE[@]}" up -d --no-deps --force-recreate proxy
+fi
+
 # 3. Wait for the app to answer -- through nginx (the `proxy` service owns
 #    APP_PORT), so this proves the whole path a browser takes.
 log "Waiting for $HEALTH_URL"
