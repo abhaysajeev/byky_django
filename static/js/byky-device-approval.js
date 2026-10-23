@@ -1,6 +1,6 @@
 /* byky-device-approval.js -- the Device Approval actions.
  *
- * Approve, Reconnect, Reject, Block, Unblock -- and the Pending tab's
+ * Approve, Reconnect, Reject, Block, Unblock, Rename -- and the Pending tab's
  * registration-number lookup.
  * Each posts to /devices/approval/<pk>/<action>/; the rules are server-side in
  * apps/devices/services.py, which re-checks the device's status under a row
@@ -93,6 +93,31 @@
       name: nameInput.value.trim(),
       branch: station.value || null
     }, 'device-approve');
+  });
+
+  /* ── Rename (approved or blocked) ─────────────────────────────────── */
+
+  var rename = document.querySelector('[data-scr-modal="device-rename"]');
+  var renameInput = rename && rename.querySelector('[data-rename-name]');
+  var renameGo = rename && rename.querySelector('[data-rename-go]');
+  var renaming = null;
+
+  function openRename(d) {
+    if (!rename) return;
+    renaming = d;
+    rename.querySelector('[data-rename-title]').textContent = 'Rename device ' + d.number;
+    renameInput.value = d.name || '';
+    renameGo.disabled = false;
+    openModal('device-rename');
+    setTimeout(function () { renameInput.focus(); renameInput.select(); }, 50);
+  }
+
+  if (renameGo) renameGo.addEventListener('click', function () {
+    if (!renaming) return;
+    send(renameGo, 'rename', renaming.pk, { name: renameInput.value.trim() }, 'device-rename');
+  });
+  if (renameInput) renameInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); renameGo.click(); }
   });
 
   /* ── Reconnect / Reject / Block / Unblock ─────────────────────────── */
@@ -283,6 +308,7 @@
     var menu = btn.closest('.scr-menu');
     if (menu) menu.hidden = true;
     if (btn.dataset.deviceAction === 'approve') openApprove(d);
+    else if (btn.dataset.deviceAction === 'rename') openRename(d);
     else openAction(btn.dataset.deviceAction, d);
   });
 })();

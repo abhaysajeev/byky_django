@@ -306,6 +306,63 @@ def test_an_action_on_the_wrong_status_is_refused(devices, admin, company, act, 
         act(devices, device.pk, user=admin)
 
 
+def test_rename_changes_only_the_name(devices, admin, company, branch):
+    device = approve(devices, pending(company), admin, branch=branch)
+    session = live_session(device, branch)
+
+    services.rename_device(devices, device.pk, user=admin, name="  Zabeel-POS2  ")
+
+    device.refresh_from_db()
+    session.refresh_from_db()
+    assert (device.name, device.status, device.current_branch, device.modified_by) == (
+        "Zabeel-POS2", DeviceStatus.APPROVED, branch, admin)
+    assert session.is_open                                  # nobody is signed out
+
+
+def test_a_blocked_device_can_be_renamed(devices, admin, company, branch):
+    device = approve(devices, pending(company), admin, branch=branch)
+    services.block_device(devices, device.pk, user=admin)
+
+    services.rename_device(devices, device.pk, user=admin, name="Old tablet")
+
+    device.refresh_from_db()
+    assert (device.name, device.status) == ("Old tablet", DeviceStatus.BLOCKED)
+
+
+@pytest.mark.parametrize("status", [DeviceStatus.PENDING, DeviceStatus.RETIRED])
+def test_only_approved_or_blocked_devices_are_renamed(devices, admin, company, status):
+    device = pending(company)
+    Device.objects.filter(pk=device.pk).update(status=status)
+
+    with pytest.raises(services.DeviceActionError):
+        services.rename_device(devices, device.pk, user=admin, name="New name")
+
+
+@pytest.mark.parametrize("name", ["", "   ", "x" * (services.NAME_MAX + 1)])
+def test_a_rename_needs_a_proper_name(devices, admin, company, branch, name):
+    device = approve(devices, pending(company), admin, branch=branch)
+
+    with pytest.raises(services.DeviceActionError) as refused:
+        services.rename_device(devices, device.pk, user=admin, name=name)
+
+    assert refused.value.field == "Name"
+    device.refresh_from_db()
+    assert device.name == "AlMamzar-POS1"
+
+
+def test_another_companys_device_cannot_be_renamed(devices, admin, branch):
+    other = Company.objects.create(short_code="OTH", name="Other", country=branch.company.country,
+                                   state=branch.company.state, phone_number="+9710000001",
+                                   email="ops@other.test")
+    device = pending(other, installation_id="theirs")
+    Device.objects.filter(pk=device.pk).update(status=DeviceStatus.APPROVED, name="Theirs",
+                                               approved_at=timezone.now())
+
+    with pytest.raises(services.DeviceActionError, match="not found"):
+        services.rename_device(devices, device.pk, user=admin, name="Mine now")
+    assert Device.objects.get(pk=device.pk).name == "Theirs"
+
+
 # -- Endpoints -----------------------------------------------------------------------------
 
 
@@ -323,6 +380,22 @@ def test_approve_endpoint(signed_in, company, branch):
     assert Device.objects.get(pk=device.pk).status == DeviceStatus.APPROVED
 
 
+def test_rename_endpoint_and_the_screens_offer_it(signed_in, company, branch):
+    device = pending(company)
+    post(signed_in, f"/devices/approval/{device.pk}/approve/", {"name": "AlMamzar-POS1", "branch": branch.pk})
+
+    response = post(signed_in, f"/devices/approval/{device.pk}/rename/", {"name": "Zabeel-POS2"})
+
+    assert response.json() == {"ok": True, "message": "Renamed to Zabeel-POS2."}
+    assert Device.objects.get(pk=device.pk).name == "Zabeel-POS2"
+    listing = signed_in.get("/devices/approval/").content.decode()
+    detail = signed_in.get(f"/devices/approval/{device.device_registration_id}/").content.decode()
+    for html in (listing, detail):
+        assert f'data-device-action="rename" data-pk="{device.pk}"' in html
+        assert 'data-scr-modal="device-rename"' in html
+        assert "/devices/approval/0/rename/" in html
+
+
 def test_a_refusal_comes_back_as_a_message(signed_in, company):
     response = post(signed_in, f"/devices/approval/{pending(company).pk}/approve/", {"name": " "})
 
@@ -332,7 +405,7 @@ def test_a_refusal_comes_back_as_a_message(signed_in, company):
 
 def test_actions_need_permission(no_permissions, company):
     device = pending(company)
-    for action in ("approve", "reconnect", "reject", "block", "unblock"):
+    for action in ("approve", "reconnect", "reject", "block", "unblock", "rename"):
         assert post(no_permissions, f"/devices/approval/{device.pk}/{action}/").status_code == 403
     assert Device.objects.get(pk=device.pk).status == DeviceStatus.PENDING
 
