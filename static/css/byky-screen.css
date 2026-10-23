@@ -1015,6 +1015,8 @@ textarea.scr-drawer-input { height: auto; min-height: 72px; padding: 10px 13px; 
 .scr-fare-warn-inline { color: #8a5200; font-weight: 600; }
 .scr-fare-banner { list-style: none; margin: 0 0 14px; padding: 10px 14px; border-radius: 10px; background: #fff4e0; color: #6b4200; font-size: 12.5px; display: flex; flex-direction: column; gap: 4px; }
 .scr-fare-hint { margin-bottom: 14px; }
+/* Direct-rent vehicle types have no concurrent pricing: hide its fields, columns and lines. */
+.is-direct-rent [data-concurrent] { display: none; }
 .scr-fare-empty { margin: 0; padding: 18px; text-align: center; color: #9490bb; border: 1px dashed #e4e3ee; border-radius: 12px; font-size: 12.5px; }
 /* a season is a block with its own base price and its own rules table */
 .scr-fare-season { border: 1px solid #eeedf5; border-radius: 12px; }

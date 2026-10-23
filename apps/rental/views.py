@@ -474,6 +474,10 @@ def _clock(moment):
 
 
 def _rate(amount, minutes):
+    """The fare's extra-time rate, or a dash when the fare has none (the
+    concurrent values are optional)."""
+    if amount is None or not minutes:
+        return "—"
     return f"{amount:.3f}/{minutes} MINS"
 
 

@@ -58,9 +58,10 @@ class Price:
 
     base_fare: Decimal
     grace_minutes: int
-    concurrent_interval_minutes: int
-    concurrent_fare: Decimal
-    concurrent_grace_minutes: int
+    # Optional: None when not set -- the tablet decides what that means.
+    concurrent_interval_minutes: int | None
+    concurrent_fare: Decimal | None
+    concurrent_grace_minutes: int | None
 
 
 @dataclass(frozen=True)
@@ -222,11 +223,14 @@ def _price_issues(price, key, where):
     issues = []
     if price.base_fare < 0:
         issues.append(Issue(key, where, "Basic fare cannot be negative."))
-    if price.concurrent_fare < 0:
+    # The concurrent values are optional; one that is set is still checked.
+    if price.concurrent_fare is not None and price.concurrent_fare < 0:
         issues.append(Issue(key, where, "Concurrent fare cannot be negative."))
-    if not 1 <= price.concurrent_interval_minutes <= MAX_MINUTES:
+    interval = price.concurrent_interval_minutes
+    if interval is not None and not 1 <= interval <= MAX_MINUTES:
         issues.append(Issue(key, where, f"Concurrent interval must be 1 to {MAX_MINUTES} minutes."))
-    if not (0 <= price.grace_minutes <= MAX_MINUTES and 0 <= price.concurrent_grace_minutes <= MAX_MINUTES):
+    grace = price.concurrent_grace_minutes
+    if not (0 <= price.grace_minutes <= MAX_MINUTES and (grace is None or 0 <= grace <= MAX_MINUTES)):
         issues.append(Issue(key, where, f"Grace periods must be 0 to {MAX_MINUTES} minutes."))
     return issues
 
