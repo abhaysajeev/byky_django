@@ -18,11 +18,12 @@
 {% comment %}
 Rental -> Live Monitoring (apps/rental/live.py). The rows are drawn by
 static/js/byky-live.js from the JSON above and kept current over the websocket;
-the server renders only the frame. Wall view (for a TV) hides the app's chrome
-and enlarges the type; the same page, no separate route.
+the server renders only the frame. A row opens its order's detail page. Wall
+view (for a TV) hides the app's chrome and enlarges the type; the same page,
+no separate route.
 {% endcomment %}
 <div class="scr scr-live" data-live
-     data-rows-url="{{ rows_url }}" data-order-url="{{ order_url }}" data-ws-url="{{ ws_url }}"
+     data-rows-url="{{ rows_url }}" data-ws-url="{{ ws_url }}"
      data-day="{{ day|date:'Y-m-d' }}" data-today="{{ is_today|yesno:'1,0' }}">
 
   <div class="scr-head">
@@ -93,18 +94,4 @@ and enlarges the type; the same page, no separate route.
     </div>
   </div>
 </div>
-
-<div class="scr-veil" data-live-veil hidden></div>
-<aside class="scr-drawer scr-live-drawer" data-live-drawer hidden aria-label="Order preview">
-  <div class="scr-drawer-head">
-    <div class="scr-drawer-head-top">
-      <div class="scr-drawer-id"><div><div class="scr-drawer-title" data-d="order_no"></div><div class="scr-live-dsub" data-d="sub"></div></div></div>
-      <button type="button" class="scr-drawer-close" data-live-close aria-label="Close">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
-      </button>
-    </div>
-  </div>
-  <div class="scr-drawer-body" data-d="body"></div>
-  <div class="scr-drawer-foot scr-live-dfoot"><a class="scr-btn scr-live-open" data-d="open" href="#">Open order →</a></div>
-</aside>
 {% endblock %}

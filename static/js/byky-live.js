@@ -6,9 +6,10 @@
      may see and how it reads;
    - after a dropped connection the whole list is fetched again, so nothing
      missed while away is lost;
-   - rows being read are never moved: scrolled down or with the drawer open,
-     updates wait behind a "N updates" pill. Wall view (for a TV) applies them
-     at once -- nobody is there to click.
+   - rows being read are never moved: scrolled down, updates wait behind a
+     "N updates" pill. Wall view (for a TV) applies them at once -- nobody is
+     there to click;
+   - a row opens its order's detail page (Ctrl/Cmd-click: a new tab).
    A past day (?day=) is a static look back: no socket. */
 (function () {
   'use strict';
@@ -17,19 +18,15 @@
   if (!root) return;
 
   var rowsUrl = root.dataset.rowsUrl;
-  var orderUrl = root.dataset.orderUrl;          // ends in the zero uuid, replaced per order
   var isToday = root.dataset.today === '1';
   var host = root.querySelector('[data-live-rows]');
   var pill = root.querySelector('[data-live-pill]');
   var stateEl = root.querySelector('[data-live-state]');
-  var drawer = document.querySelector('[data-live-drawer]');
-  var veil = document.querySelector('[data-live-veil]');
   var form = root.querySelector('[data-live-filters]');
 
   var initial = JSON.parse(document.getElementById('live-initial').textContent);
   var rows = {};                                   // id -> row
   var held = {};                                   // id -> 'new' | 'changed', waiting behind the pill
-  var selected = null;
   var tab = 'rent';
   var stopped = false;                             // signed out / not allowed: no more fetching
 
@@ -98,7 +95,7 @@
   }
 
   function rowHtml(r) {
-    return '<div class="scr-live-row is-' + esc(r.status) + (selected === r.id ? ' is-sel' : '') + '" data-id="' + esc(r.id) + '">' +
+    return '<div class="scr-live-row is-' + esc(r.status) + '" data-id="' + esc(r.id) + '">' +
       '<div><div class="scr-live-p"><a class="scr-live-no" href="' + esc(r.url) + '">' + esc(r.order_no) + '</a></div><div class="scr-live-q">' + esc(r.booked) + '</div></div>' +
       '<div><div class="scr-live-p">' + esc(r.station) + '</div><div class="scr-live-q">' + esc(r.emirate) + '</div></div>' +
       '<div><div class="scr-live-p">' + esc(r.customer) + '</div><div class="scr-live-q scr-live-num">' + esc(r.mobile) + '</div></div>' +
@@ -201,13 +198,11 @@
       ids.forEach(function (id) { if (!found[id]) delete rows[id]; });   // no longer matches the filters
       totals(payload);
       apply(marks);
-      if (selected && ids.indexOf(selected) >= 0) openDrawer(selected, true);
     }).catch(function () {});
   }
 
-  function reading() {
-    var top = host.getBoundingClientRect().top;
-    return !drawer.hidden || top < -40;
+  function reading() {                             // scrolled down into the list
+    return host.getBoundingClientRect().top < -40;
   }
   function apply(marks) {
     if (!walled() && reading()) {
@@ -274,64 +269,18 @@
     };
   }
 
-  // ---- the drawer ---------------------------------------------------------------
-  function openDrawer(id, quiet) {
-    selected = id;
-    host.querySelectorAll('.scr-live-row').forEach(function (el) { el.classList.toggle('is-sel', el.dataset.id === id); });
-    get(orderUrl.replace(/00000000-0000-0000-0000-000000000000/, id)).then(function (o) {
-      if (selected !== id) return;
-      drawer.querySelector('[data-d="order_no"]').textContent = o.order_no;
-      drawer.querySelector('[data-d="sub"]').innerHTML =
-        '<span class="scr-live-badge is-' + esc(o.status) + '"><i></i>' + esc(o.status_label) + '</span>' +
-        esc(o.station) + ' · ' + esc(o.emirate) + (o.direct ? ' · Direct bill' : '');
-      drawer.querySelector('[data-d="open"]').href = o.url;
-      drawer.querySelector('[data-d="body"]').innerHTML =
-        '<div class="scr-live-sec"><h4>Customer</h4><div class="scr-live-kv"><span>Name</span><b>' + esc(o.customer) +
-          '</b><span>Mobile</span><b>' + esc(o.mobile || '—') + '</b></div></div>' +
-        '<div class="scr-live-sec"><h4>Order</h4><div class="scr-live-kv"><span>Booked</span><b>' + esc(o.booked_full) +
-          '</b><span>Opened by</span><b>' + esc(o.opened_by) + '</b><span>Closed by</span><b>' + esc(o.closed_by) +
-          '</b><span>Package</span><b>' + esc(o.package) + '</b></div></div>' +
-        '<div class="scr-live-sec"><h4>Vehicles</h4><div class="scr-live-vl">' + o.items.map(function (v) {
-          return '<div class="scr-live-vi"><div><b>' + esc(v.no) + '</b><small>' + esc(v.from) + ' – ' + esc(v.to || 'now') +
-            '</small></div><span class="scr-live-chip is-' + esc(v.state) + '"><i></i>' + esc(v.label) + '</span></div>';
-        }).join('') + '</div></div>' +
-        '<div class="scr-live-sec"><h4>Bill (AED)</h4><div class="scr-live-kv">' + o.bill.map(function (b) {
-          return '<span>' + esc(b.label) + '</span><b>' + esc(b.amount) + '</b>';
-        }).join('') + '<span class="is-total">' + esc(o.total_label) + '</span><b class="is-total">' + esc(o.total) + '</b></div></div>' +
-        '<div class="scr-live-sec"><h4>Activity</h4><ul class="scr-live-tl">' + (o.events.length ? o.events.map(function (e) {
-          return '<li>' + esc(e.label) + '<small>' + esc(e.at) + ' · ' + esc(e.who) + '</small></li>';
-        }).join('') : '<li>Booked<small>' + esc(o.booked) + '</small></li>') + '</ul></div>';
-      if (!quiet) { drawer.hidden = false; veil.hidden = false; }
-    }).catch(function () {});
-  }
-  function closeDrawer() {
-    drawer.hidden = true;
-    veil.hidden = true;
-    selected = null;
-    host.querySelectorAll('.scr-live-row.is-sel').forEach(function (el) { el.classList.remove('is-sel'); });
-    if (Object.keys(held).length && !reading()) pill.click();
-  }
-
+  // ---- a row opens its order ----------------------------------------------------
   host.addEventListener('click', function (e) {
     if (walled()) { e.preventDefault(); return; }
-    if (e.target.closest('a')) return;                       // the order no: straight to the order
+    if (e.target.closest('a')) return;                       // the order no is a real link already
     var row = e.target.closest('.scr-live-row');
-    if (!row) return;
-    var r = rows[row.dataset.id];
-    if (e.ctrlKey || e.metaKey) { window.open(r.url, '_blank'); return; }
-    openDrawer(row.dataset.id);
+    var r = row && rows[row.dataset.id];
+    if (!r) return;
+    if (e.ctrlKey || e.metaKey) window.open(r.url, '_blank');
+    else location.href = r.url;
   });
-  drawer.querySelector('[data-live-close]').addEventListener('click', closeDrawer);
-  veil.addEventListener('click', closeDrawer);
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') {
-      if (!drawer.hidden) closeDrawer(); else if (walled()) setWall(false);
-      return;
-    }
-    if (drawer.hidden || !selected || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return;
-    var ids = Array.prototype.map.call(host.querySelectorAll('.scr-live-row'), function (el) { return el.dataset.id; });
-    var next = ids[ids.indexOf(selected) + (e.key === 'ArrowDown' ? 1 : -1)];
-    if (next) { e.preventDefault(); openDrawer(next); }
+    if (e.key === 'Escape' && walled()) setWall(false);
   });
 
   // ---- filters ------------------------------------------------------------------
@@ -367,7 +316,6 @@
   var wakeLock = null;
   function setWall(on) {
     document.body.classList.toggle('scr-live-wall', on);
-    closeDrawer();
     if (on && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(function () {});
     if (!on && document.fullscreenElement) document.exitFullscreen().catch(function () {});
     if (on && navigator.wakeLock) {
