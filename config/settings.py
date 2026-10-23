@@ -48,6 +48,7 @@ DJANGO_APPS = [
 ]
 
 THIRD_PARTY_APPS = [
+    "channels",
     "rest_framework",
     "drf_spectacular",
     "drf_spectacular_sidecar",
@@ -362,6 +363,22 @@ PHOTO_SERVE = os.environ.get("PHOTO_SERVE", "django")
 
 # -- Celery (config/celery.py) ----------------------------------------------------------
 from celery.schedules import crontab  # noqa: E402  (beside the settings it is used by)
+
+# -- Live updates (core/realtime.py) -----------------------------------------------------
+# Pages that update themselves (Rental -> Live Monitoring) listen on a websocket
+# served by the `realtime` container; the app publishes through Redis (database
+# 1, beside Celery's 0). In-memory -- one process only -- when DEBUG, so tests
+# and CI need no Redis; local compose sets REALTIME_LAYER=redis.
+REALTIME_LAYER = os.environ.get("REALTIME_LAYER", "memory" if DEBUG else "redis")
+CHANNEL_LAYERS = {
+    "default": {"BACKEND": "channels.layers.InMemoryChannelLayer"} if REALTIME_LAYER == "memory" else {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {"hosts": [os.environ.get("REALTIME_REDIS_URL", "redis://redis:6379/1")], "expiry": 30},
+    },
+}
+# Where the browser connects. Empty: this site's own /ws/ (nginx sends it to
+# `realtime`). Local compose points it at the realtime container's own port.
+REALTIME_WS_URL = os.environ.get("REALTIME_WS_URL", "")
 
 CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://redis:6379/0")
 CELERY_TASK_IGNORE_RESULT = True            # no result backend: nothing waits on a task's return

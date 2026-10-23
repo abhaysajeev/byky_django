@@ -15,6 +15,7 @@ from apps.discount import services as discount_services
 from apps.fare import package_device
 from apps.fare.models import Fare, Package
 from apps.fleet.models import Vehicle
+from apps.rental import live
 from apps.rental.models import (
     MONEY_IN,
     Customer,
@@ -254,6 +255,7 @@ def run_once(*, event_id, company, request_data, apply):
             OrderEvent.objects.create(
                 id=event_id, order=order, request_hash=fingerprint, response=reply, **event,
             )
+            live.order_changed(order)       # sent once this commits (Live Monitoring)
     except IntegrityError as error:
         stored = _stored_reply(event_id, company, fingerprint)
         if stored is not None:

@@ -123,5 +123,7 @@ log "The app did not become healthy in 90 s -- last log lines:"
 echo
 "${COMPOSE[@]}" logs --tail 30 proxy || true
 echo
+"${COMPOSE[@]}" logs --tail 30 realtime || true
+echo
 echo "The database backup taken before this deploy is the newest file in $BACKUPS."
 exit 1

@@ -3,24 +3,26 @@
 Mode lists + drawers."""
 
 import datetime
+import uuid
 from decimal import Decimal
 
+from django.conf import settings
 from django.core.paginator import Paginator
 from django.db.models import Count, Q, Sum
-from django.http import Http404
+from django.http import Http404, JsonResponse
 from django.shortcuts import render
 from django.urls import reverse
 from django.utils import timezone
 from django.views import View
 
 from apps.company import writes as company_writes
-from apps.company.models import PaymentMode
+from apps.company.models import PaymentMode, State
 from apps.company.scoping import branches_for, companies_for, payment_modes_for
 from apps.devices import services as devices_services
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
-from apps.rental import drawers, forms, scoping
+from apps.rental import drawers, forms, live, scoping
 from apps.rental.models import (
     CREDIT_NOTE_LIVE,
     CreditNoteSource,
@@ -932,3 +934,100 @@ class RequestDetailView(RentalScreenView):
             "revoke_url": reverse("rental-request-revoke", args=[req.pk]),
         })
         return context
+
+
+# -- Live Monitoring (apps/rental/live.py) ------------------------------------------------
+
+LIVE_PAGE = "rental.live"
+
+
+def _live_day(request):
+    """The day on screen (?day=), and whether it is today -- only today is
+    live; another day is a static look back."""
+    company = getattr(request.user, "company", None)
+    zone, today = zone_for(company), business_date_for(company)
+    day = _date_param(request.GET.get("day", "")) or today
+    return day, zone, day == today
+
+
+def _live_payload(request, ids=None):
+    user, params = request.user, request.GET
+    day, zone, is_today = _live_day(request)
+    orders = live.orders_for_day(user, params, day, zone, today=is_today)
+    if ids is not None:
+        orders = orders.filter(pk__in=ids)
+    rows = [live.row(order, zone) for order in live.with_rows(orders)]
+    return {
+        "rows": rows,
+        "kpis": live.kpis(user, params, day, zone),
+        "counts": live.counts(user, params, day, zone, today=is_today),
+        "live": is_today,
+    }
+
+
+def _uuids(value):
+    found = []
+    for part in (value or "").split(","):
+        try:
+            found.append(uuid.UUID(part.strip()))
+        except ValueError:
+            continue
+    return found
+
+
+class LiveMonitorView(RentalScreenView):
+    """The screen: filters, KPIs and the day's orders, kept current by the
+    websocket (static/js/byky-live.js)."""
+
+    template_name = "rental/live_monitor.html"
+    page_code = LIVE_PAGE
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        day, _, is_today = _live_day(self.request)
+        branches = branches_for(user).filter(is_active=True)
+        context.update({
+            "initial": _live_payload(self.request),
+            "day": day, "is_today": is_today,
+            "branches": list(branches.order_by("name").values("id", "name", "location__state_id")),
+            "states": list(State.objects.filter(locations__branches__in=branches).distinct()
+                           .order_by("name").values("id", "name")),
+            "rows_url": reverse("rental-live-rows"),
+            "order_url": reverse("rental-live-order", args=[uuid.UUID(int=0)]),
+            "ws_url": settings.REALTIME_WS_URL,
+        })
+        return context
+
+
+class _LiveJson(View):
+    """JSON for the Live Monitoring page: 401 once signed out (the page then
+    says so instead of following a redirect), 403 without the permission."""
+
+    def dispatch(self, request, *args, **kwargs):
+        if not getattr(request, "user", None):
+            return JsonResponse({"detail": "Signed out."}, status=401)
+        if not has_permission(request.user, LIVE_PAGE, "read"):
+            return JsonResponse({"detail": "Not allowed."}, status=403)
+        return super().dispatch(request, *args, **kwargs)
+
+
+class LiveRowsView(_LiveJson):
+    """The whole list (on load, after a reconnect, on a filter change), or
+    just `?ids=` -- the orders a push said changed. An id that no longer
+    matches the filters is simply absent: the page drops it."""
+
+    def get(self, request):
+        ids = _uuids(request.GET.get("ids")) if "ids" in request.GET else None
+        return JsonResponse(_live_payload(request, ids))
+
+
+class LiveOrderView(_LiveJson):
+    """One order for the drawer."""
+
+    def get(self, request, pk):
+        zone = zone_for(getattr(request.user, "company", None))
+        order = live.with_rows(scoping.orders_for(request.user).filter(pk=pk)).first()
+        if order is None:
+            return JsonResponse({"detail": "No such order."}, status=404)
+        return JsonResponse(live.detail(order, zone))

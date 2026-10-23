@@ -1,0 +1,110 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Live Monitoring - Rental{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+{{ initial|json_script:"live-initial" }}
+<script src="{% static 'js/byky-live.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+{% comment %}
+Rental -> Live Monitoring (apps/rental/live.py). The rows are drawn by
+static/js/byky-live.js from the JSON above and kept current over the websocket;
+the server renders only the frame. Wall view (for a TV) hides the app's chrome
+and enlarges the type; the same page, no separate route.
+{% endcomment %}
+<div class="scr scr-live" data-live
+     data-rows-url="{{ rows_url }}" data-order-url="{{ order_url }}" data-ws-url="{{ ws_url }}"
+     data-day="{{ day|date:'Y-m-d' }}" data-today="{{ is_today|yesno:'1,0' }}">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Rental</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Live Monitoring</b>
+      </div>
+      <h1 class="scr-title scr-live-title">Live Monitoring
+        {% if is_today %}
+        <span class="scr-live-state" data-live-state><i></i><span>Connecting…</span></span>
+        {% else %}
+        <span class="scr-live-state is-past"><i></i><span>{{ day|date:"d M Y" }}</span></span>
+        {% endif %}
+      </h1>
+    </div>
+    <div class="scr-head-actions scr-live-head-actions">
+      <div class="scr-live-clock"><div class="scr-live-clock-t" data-live-clock>--:--</div><div class="scr-live-clock-d" data-live-date></div></div>
+      <button type="button" class="scr-btn-secondary scr-live-wall-btn" data-live-wall>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="4" width="20" height="13" rx="2"></rect><path d="M8 21h8M12 17v4"></path></svg>
+        Wall view
+      </button>
+      <button type="button" class="scr-btn-secondary scr-live-exit-btn" data-live-unwall>Exit wall view</button>
+    </div>
+  </div>
+
+  <div class="scr-tiles scr-live-tiles">
+    <div class="scr-tile" data-kpi="vehicles"><div><div class="scr-tile-val" data-kpi-val>{{ initial.kpis.vehicles }}</div><div class="scr-tile-lab">Vehicles out now</div></div></div>
+    <div class="scr-tile" data-kpi="running"><div><div class="scr-tile-val" data-kpi-val>{{ initial.kpis.running }}</div><div class="scr-tile-lab">Running orders</div></div></div>
+    <div class="scr-tile" data-kpi="today"><div><div class="scr-tile-val" data-kpi-val>{{ initial.kpis.today }}</div><div class="scr-tile-lab">Orders {% if is_today %}today{% else %}that day{% endif %}</div></div></div>
+    <div class="scr-tile" data-kpi="cancelled"><div><div class="scr-tile-val" data-kpi-val>{{ initial.kpis.cancelled }}</div><div class="scr-tile-lab">Cancelled</div></div></div>
+    <div class="scr-tile" data-kpi="collected"><div><div class="scr-tile-val"><small class="scr-live-cur">AED</small><span data-kpi-val>{{ initial.kpis.collected }}</span></div><div class="scr-tile-lab">Collected</div></div></div>
+  </div>
+
+  <div class="scr-card scr-live-card">
+    <form class="scr-toolbar scr-live-toolbar" data-live-filters>
+      <div class="scr-live-seg" role="tablist" aria-label="Bill type">
+        <button type="button" class="is-on" data-tab="rent" role="tab">Rent bill<span data-count="rent">{{ initial.counts.rent }}</span></button>
+        <button type="button" data-tab="direct" role="tab">Direct bill<span data-count="direct">{{ initial.counts.direct }}</span></button>
+      </div>
+      <select name="state" class="scr-input scr-list-select scr-live-filter" aria-label="Emirate">
+        <option value="">All emirates</option>
+        {% for s in states %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
+      </select>
+      <select name="branch" class="scr-input scr-list-select scr-live-filter" aria-label="Station">
+        <option value="">All stations</option>
+        {% for b in branches %}<option value="{{ b.id }}" data-state="{{ b.location__state_id }}">{{ b.name }}</option>{% endfor %}
+      </select>
+      <select name="status" class="scr-input scr-list-select scr-live-filter" aria-label="Show">
+        <option value="">Running + closed</option>
+        <option value="active">Running only</option>
+      </select>
+      <input type="date" name="day" class="scr-input scr-live-filter" value="{{ day|date:'Y-m-d' }}" aria-label="Day" title="Day" />
+      <div class="scr-search scr-live-filter">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="text" name="q" placeholder="Order no, customer, mobile or vehicle" aria-label="Search" autocomplete="off" />
+      </div>
+    </form>
+
+    <div class="scr-live-list">
+      <div class="scr-live-cols" aria-hidden="true">
+        <div>Order</div><div>Station</div><div>Customer</div><div>Vehicles</div>
+        <div>Started</div><div>Staff</div><div class="is-r">Amount</div><div>Status</div>
+      </div>
+      <button type="button" class="scr-live-pill" data-live-pill hidden></button>
+      <div class="scr-live-rows" data-live-rows></div>
+    </div>
+  </div>
+</div>
+
+<div class="scr-veil" data-live-veil hidden></div>
+<aside class="scr-drawer scr-live-drawer" data-live-drawer hidden aria-label="Order preview">
+  <div class="scr-drawer-head">
+    <div class="scr-drawer-head-top">
+      <div class="scr-drawer-id"><div><div class="scr-drawer-title" data-d="order_no"></div><div class="scr-live-dsub" data-d="sub"></div></div></div>
+      <button type="button" class="scr-drawer-close" data-live-close aria-label="Close">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+      </button>
+    </div>
+  </div>
+  <div class="scr-drawer-body" data-d="body"></div>
+  <div class="scr-drawer-foot scr-live-dfoot"><a class="scr-btn scr-live-open" data-d="open" href="#">Open order →</a></div>
+</aside>
+{% endblock %}
