@@ -22,7 +22,10 @@
   function csrf() {
     var input = document.querySelector('[name="csrfmiddlewaretoken"]');
     if (input) return input.value;
-    var match = document.cookie.match(/csrftoken=([^;]+)/);
+    // The cookie is named per copy (dev, qa and live share one host), so read
+    // this page's own name and match it whole -- never another copy's token.
+    var name = document.documentElement.getAttribute('data-csrf-cookie') || 'csrftoken';
+    var match = document.cookie.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]+)'));
     return match ? match[1] : '';
   }
 
