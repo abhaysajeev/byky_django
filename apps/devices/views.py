@@ -133,7 +133,7 @@ def _action_context(user):
         ),
         "action_urls": {
             action: reverse(f"devices-device-{action}", args=[0])
-            for action in ("approve", "reconnect", "reject", "block", "unblock")
+            for action in ("approve", "reconnect", "reject", "block", "unblock", "rename")
         },
     }
 
@@ -456,6 +456,16 @@ class DeviceBlockView(DeviceActionView):
 
     def act(self, devices, pk, data):
         return services.block_device(devices, pk, user=self.request.user, reason=_reason(data))
+
+
+class DeviceRenameView(DeviceActionView):
+    """A new name for an approved or blocked device; nothing else changes."""
+
+    permission = "update"
+    done = "Renamed to {device}."
+
+    def act(self, devices, pk, data):
+        return services.rename_device(devices, pk, user=self.request.user, name=data.get("name"))
 
 
 class DeviceUnblockView(DeviceActionView):
