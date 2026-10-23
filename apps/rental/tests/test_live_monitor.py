@@ -96,12 +96,7 @@ def test_a_row_carries_the_legacy_fields(client_in, world, shop, user):
     assert row["opened_by"] == "Sara K" and row["closed_by"] == "—"
     assert row["vehicles"] == [{"no": "MO 41", "state": "out"}, {"no": "DC 02", "state": "replaced"}]
     assert (row["out"], row["status"], row["status_label"], row["collected"]) == (1, "active", "Running", "30.00")
-    assert row["url"] == f"/rental/order/{order.pk}/"
-
-    detail = client_in.get(f"/rental/live/{order.pk}/").json()
-    bill = {b["label"]: b["amount"] for b in detail["bill"]}
-    assert bill == {"Fare": "50.00", "Deposit": "30.00"}      # the replaced line does not bill
-    assert (detail["total_label"], detail["total"]) == ("Collected so far", "30.00")
+    assert row["url"] == f"/rental/order/{order.pk}/"         # a row opens the order's own page
 
 
 def test_a_settled_row_names_who_closed_it_and_the_bill(client_in, world, shop, user):
@@ -112,8 +107,6 @@ def test_a_settled_row_names_who_closed_it_and_the_bill(client_in, world, shop, 
     [row] = rows(client_in)["rows"]
     assert (row["status"], row["closed_by"], row["net"], row["tax"], row["last"]) == (
         "completed", "Sara K", "63.00", "3.00", "Settled")
-    bill = {b["label"]: b["amount"] for b in client_in.get(f"/rental/live/{order.pk}/").json()["bill"]}
-    assert bill["Bill (excl. VAT)"] == "60.00" and bill["Tax"] == "3.00"
 
 
 def test_ids_returns_just_those_and_drops_what_no_longer_matches(client_in, world, shop):
@@ -123,13 +116,12 @@ def test_ids_returns_just_those_and_drops_what_no_longer_matches(client_in, worl
     assert rows(client_in, ids=str(b.pk), status="active")["rows"] == []
 
 
-def test_another_companys_order_is_not_found_in_the_drawer(client_in, world, shop):
+def test_another_companys_order_never_comes_back_by_id(client_in, world, shop):
     theirs = Order.objects.create(
         id=uuid7(), company=world["other"], branch=world["theirs"], device=shop["their_tablet"],
         customer=make_customer({"company": world["other"]}, customer_code="CU9", mobile_no="509999999"),
         order_no="THEIRS-1", booked_at=at(world=world), start_time=at(world=world),
     )
-    assert client_in.get(f"/rental/live/{theirs.pk}/").status_code == 404
     assert rows(client_in, ids=str(theirs.pk))["rows"] == []
 
 

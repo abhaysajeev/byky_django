@@ -1199,7 +1199,6 @@ textarea.scr-mon-json { display: block; width: 100%; min-height: 420px; resize: 
 .scr-live-group b { color: #4b4770; margin-right: 6px; }
 .scr-live-row { position: relative; min-height: calc(64px * var(--live-s)); padding-top: calc(11px * var(--live-s)); padding-bottom: calc(11px * var(--live-s)); border-bottom: 1px solid #f4f3f9; cursor: pointer; transition: background 0.2s; }
 .scr-live-row:hover { background: #fbfaff; }
-.scr-live-row.is-sel { background: #faf6ff; }
 .scr-live-row::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; background: transparent; }
 .scr-live-row.is-active::before { background: #14764a; }
 .scr-live-row.is-cancelled::before { background: #f3c3c5; }
@@ -1236,29 +1235,6 @@ textarea.scr-mon-json { display: block; width: 100%; min-height: 420px; resize: 
 .scr-live-pill { position: absolute; left: 50%; top: 52px; transform: translateX(-50%); z-index: 3; border: 0; border-radius: 99px; padding: 8px 14px; background: #1a1640; color: #fff; font-size: 12px; font-weight: 600; box-shadow: 0 8px 24px rgba(26, 22, 64, 0.18); cursor: pointer; }
 .scr-live-pill[hidden] { display: none; }
 .scr-live-empty { padding: 40px; text-align: center; color: #9490bb; font-size: 13px; }
-
-/* Drawer content (the frame is the house .scr-drawer). */
-.scr-live-dsub { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; color: #9490bb; }
-.scr-live-sec { padding: 16px 0; border-bottom: 1px solid #f4f3f9; }
-.scr-live-sec:first-child { padding-top: 0; }
-.scr-live-sec:last-child { border-bottom: 0; }
-.scr-live-sec h4 { margin: 0 0 10px; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em; color: #a9a6c4; font-weight: 600; }
-.scr-live-kv { display: grid; grid-template-columns: 1fr auto; gap: 7px 12px; font-size: 12.5px; }
-.scr-live-kv span { color: #9490bb; }
-.scr-live-kv b { font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
-.scr-live-kv .is-total { border-top: 1px dashed #eeedf5; padding-top: 8px; font-size: 14px; }
-.scr-live-vl { display: flex; flex-direction: column; gap: 8px; }
-.scr-live-vi { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid #eeedf5; border-radius: 11px; font-size: 12px; }
-.scr-live-vi b { font-weight: 600; }
-.scr-live-vi small { display: block; color: #9490bb; margin-top: 2px; }
-.scr-live-tl { list-style: none; margin: 0; padding: 0; }
-.scr-live-tl li { position: relative; padding: 0 0 12px 18px; font-size: 12px; }
-.scr-live-tl li::before { content: ""; position: absolute; left: 3px; top: 5px; width: 7px; height: 7px; border-radius: 50%; background: #a9a6c4; }
-.scr-live-tl li::after { content: ""; position: absolute; left: 6px; top: 14px; bottom: 0; width: 1px; background: #eeedf5; }
-.scr-live-tl li:last-child::after { display: none; }
-.scr-live-tl li:first-child::before { background: #d81f26; }
-.scr-live-tl small { color: #9490bb; margin-left: 6px; }
-.scr-live-open { flex: 1; justify-content: center; text-decoration: none; }
 
 /* Wall view: the page alone, larger, for a TV. Updates insert themselves;
    nothing to click, nothing scrolls by itself. */

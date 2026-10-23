@@ -3,7 +3,8 @@ screen current.
 
 Rebuilds the legacy RMS Live Monitoring grid (DMSGetAllStatusTrackingDetails-
 ForPartialView_New: Rent Bill; LiveMonitoring_DirectBillSearch: Direct Bill)
-with the same fields, grouped Running / Closed. Every order change publishes
+with the same fields, grouped Running / Closed; a row opens the order's own
+detail page, which holds the full bill. Every order change publishes
 `order.changed` with the order's id (`order_changed`, called from
 services.run_once and requests.cancel_order); the open screens fetch that one
 row back through `rows_json`, so scoping and formatting live only here.
@@ -34,9 +35,6 @@ ITEM_STATE = {
     OrderItemStatus.REMOVED: "removed", OrderItemStatus.CANCELLED: "cancelled",
 }
 _ACTION_LABEL = dict(OrderAction.choices)
-# The lines that make up the bill: what is out or came back. Replaced, removed
-# and cancelled lines do not bill.
-BILLED = (OrderItemStatus.ACTIVE, OrderItemStatus.RETURNED)
 
 
 def company_group(company_id):
@@ -92,7 +90,6 @@ def with_rows(orders):
     return orders.select_related("branch__location__state", "created_by").prefetch_related(
         Prefetch("items", queryset=OrderItem.objects.select_related("vehicle").order_by("start_time", "created_on")),
         Prefetch("events", queryset=OrderEvent.objects.select_related("user").order_by("happened_at", "received_at")),
-        "payments",
     )
 
 
@@ -113,14 +110,6 @@ def _closed_by(events):
         if event.action == OrderAction.SETTLE:
             return event.user.display_name
     return ""
-
-
-def _deposit(payments):
-    """Legacy DepositAmount: the advance taken against the order
-    (Save_Order_Booking.sql:314), less anything refunded."""
-    advance = sum((p.amount for p in payments if p.kind == PaymentKind.ADVANCE), ZERO)
-    refunded = sum((p.amount for p in payments if p.kind == PaymentKind.REFUND), ZERO)
-    return advance - refunded
 
 
 def _last(order, events, zone):
@@ -166,42 +155,6 @@ def row(order, zone):
         "last_at": last_at.isoformat() if last_at else None,
         "direct": order.is_direct_bill,
         "url": reverse("rental-order-detail", args=[order.pk]),
-    }
-
-
-def detail(order, zone):
-    """The drawer: who, the vehicles, the bill and what happened."""
-    items, events, payments = list(order.items.all()), list(order.events.all()), list(order.payments.all())
-    billed = [i for i in items if i.status in BILLED]
-    fare = order.subtotal if order.subtotal is not None else sum((i.base_fare for i in billed), ZERO)
-    settled = order.status == OrderStatus.COMPLETED
-    bill = [("Fare", fare), ("Deposit", _deposit(payments))]
-    if settled:
-        bill += [("Bill (excl. VAT)", (order.net_amount or ZERO) - (order.tax_amount or ZERO)),
-                 ("Tax", order.tax_amount or ZERO), ("Discount", order.discount_amount or ZERO)]
-    packages = sorted({i.package_minutes for i in billed or items})
-
-    def hm(moment):
-        local = _local(moment, zone)
-        return f"{local:%H:%M}" if local else ""
-
-    booked = _local(order.booked_at, zone)
-    return {
-        **row(order, zone),
-        "booked_full": f"{booked:%d %b %Y, %H:%M}",
-        "package": " / ".join(f"{m} min" for m in packages) or "—",
-        "items": [
-            {"no": i.vehicle.vehicle_name, "state": ITEM_STATE[i.status], "label": i.get_status_display(),
-             "from": hm(i.start_time), "to": hm(i.end_time)}
-            for i in items
-        ],
-        "bill": [{"label": label, "amount": _money(amount)} for label, amount in bill],
-        "total_label": "Net" if settled else "Collected so far",
-        "total": _money(order.net_amount if settled else order.paid_amount),
-        "events": [
-            {"label": _ACTION_LABEL.get(e.action, e.action), "at": hm(e.happened_at), "who": e.user.display_name}
-            for e in reversed(events)
-        ],
     }
 
 

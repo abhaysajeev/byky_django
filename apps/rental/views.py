@@ -994,7 +994,6 @@ class LiveMonitorView(RentalScreenView):
             "states": list(State.objects.filter(locations__branches__in=branches).distinct()
                            .order_by("name").values("id", "name")),
             "rows_url": reverse("rental-live-rows"),
-            "order_url": reverse("rental-live-order", args=[uuid.UUID(int=0)]),
             "ws_url": settings.REALTIME_WS_URL,
         })
         return context
@@ -1020,14 +1019,3 @@ class LiveRowsView(_LiveJson):
     def get(self, request):
         ids = _uuids(request.GET.get("ids")) if "ids" in request.GET else None
         return JsonResponse(_live_payload(request, ids))
-
-
-class LiveOrderView(_LiveJson):
-    """One order for the drawer."""
-
-    def get(self, request, pk):
-        zone = zone_for(getattr(request.user, "company", None))
-        order = live.with_rows(scoping.orders_for(request.user).filter(pk=pk)).first()
-        if order is None:
-            return JsonResponse({"detail": "No such order."}, status=404)
-        return JsonResponse(live.detail(order, zone))
