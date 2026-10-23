@@ -127,6 +127,8 @@ PAGES = [
     ("fare.package", "fare", "Packages", "fare-package-list", CRUD_PRINT, 2, False),
     ("fare.privileges", "fare", "Privileges", "fare-privileges", ["read", "update"], 9, False),
 
+    # The day's orders, updating themselves (websocket) -- legacy Live Monitoring.
+    ("rental.live", "rental", "Live Monitoring", "rental-live", ["read"], 0, False),
     ("rental.order", "rental", "Orders", "rental-order-list", ["read"], 0, False),
     ("rental.invoice", "rental", "Invoices", "rental-invoice-list", ["read", "print"], 1, False),
     # create = issue directly on the web; approve = approve or reject a tablet's request.

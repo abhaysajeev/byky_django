@@ -51,6 +51,15 @@ previews that could not be queued, and the nightly deletion of photos no
 request attached within 48 h. They use the image `web` was built as, so a
 deploy updates all three; only `web` runs migrations.
 
+**Live updates.** A fourth service, **realtime**, serves the websockets of
+pages that update themselves (Rental → Live Monitoring). It is the same image
+run under uvicorn (`config/asgi.py`); nginx sends `/ws/` to it and everything
+else to `web` (`deploy/nginx/qa.conf`). An order change is published through
+redis database 1 after it commits (`core/realtime.py`); if redis or realtime
+is down nothing is lost — the order still saves, and the page fetches the
+whole list again when it reconnects. Nothing to set in `.env`; a deploy starts
+it like the others. A domain in front (Caddy) passes websockets through as is.
+
 **Where photos live.** Unset, in the copy's own Docker volume. To use the FTP
 folder on this VPS instead, set `MEDIA_HOST_DIR` in that copy's `.env` to its
 own subfolder (`.../byky/qa`, `.../byky/dev` -- never the same one for both),

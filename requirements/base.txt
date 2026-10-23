@@ -24,3 +24,8 @@ celery==5.4.0
 redis==5.2.1
 # Push notifications to the apps, FCM HTTP v1 (apps/notifications/sender.py).
 firebase-admin==7.6.0
+# Live updates to the browser over websockets (core/realtime.py, config/asgi.py):
+# a separate `realtime` container runs uvicorn; Redis carries the messages.
+channels==4.2.2
+channels-redis==4.2.1
+uvicorn[standard]==0.34.0
