@@ -106,6 +106,7 @@ TEMPLATES = [
                 "django.contrib.messages.context_processors.messages",
                 "theme.context_processors.sidebar_menu",
                 "theme.context_processors.alert_feed",
+                "theme.context_processors.cookie_names",
             ],
             "libraries": {"theme": "theme.templatetags.theme"},
             # The ported sidebar templates use these filters with no {% load %},
@@ -146,6 +147,15 @@ SESSION_ENGINE = "django.contrib.sessions.backends.db"
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
+
+# dev, qa and live share one IP (ports 8008 / 8007 / 8009), and a browser sends
+# a cookie to every port of a host. Under one name, signing in to one copy
+# overwrote the other's session -- going back to qa after live logged you out.
+# So each copy names its own cookies; docker-compose.qa.yml passes the copy's
+# COMPOSE_PROJECT (byky_f_qa_sessionid, ...). Unset (local, tests): Django's.
+COOKIE_PREFIX = os.environ.get("DJANGO_COOKIE_PREFIX", "").strip()
+SESSION_COOKIE_NAME = f"{COOKIE_PREFIX}_sessionid" if COOKIE_PREFIX else "sessionid"
+CSRF_COOKIE_NAME = f"{COOKIE_PREFIX}_csrftoken" if COOKIE_PREFIX else "csrftoken"
 
 # Not simply `not DEBUG`: a deployment can have DEBUG=False before it has TLS
 # in front of it (this project's first QA pass -- IP:port, no domain/cert

@@ -75,6 +75,9 @@ services:
       # One proxy (nginx) in front: trust exactly one X-Forwarded-For entry,
       # the one nginx writes (core/network.py, DRF's throttles).
       DJANGO_NUM_PROXIES: "1"
+      # Cookies named after the copy: dev, qa and live share one IP, and a
+      # browser shares cookies across its ports (config/settings.py).
+      DJANGO_COOKIE_PREFIX: ${COMPOSE_PROJECT:-byky_f_qa}
       DJANGO_COLLECTSTATIC: "1"
       # A copy of each device request for the central log server (the
       # log-ingestion project). Empty = not sent. apps/monitoring/shipper.py.
@@ -134,6 +137,8 @@ services:
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:?set the VPS IP or QA domain in .env}
       DJANGO_TIME_ZONE: ${DJANGO_TIME_ZONE:-Asia/Dubai}
       DJANGO_MIGRATE: "0"
+      # The same cookie names as web: realtime reads the session cookie.
+      DJANGO_COOKIE_PREFIX: ${COMPOSE_PROJECT:-byky_f_qa}
       LOG_INGEST_URL: ${LOG_INGEST_URL:-}
       LOG_INGEST_KEY: ${LOG_INGEST_KEY:-}
       LOG_ENVIRONMENT: ${LOG_ENVIRONMENT:-}
