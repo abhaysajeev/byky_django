@@ -366,6 +366,8 @@ def test_leave_days_are_locked_on_the_roster(world, on_leave):
 
     for attempt in (
         lambda: services.save_week(world["staff"], [entry], user=user, branches_qs=world["company"].branches.all()),
+        lambda: services.save_week(world["staff"], [{"date": entry["date"], "day_type": "not_set"}], user=user,
+                                   branches_qs=world["company"].branches.all()),
         lambda: services.assign_day(world["staff"], entry, user=user, branches_qs=world["company"].branches.all()),
         lambda: services.remove_day(world["staff"], day(world, 1), user=user),
     ):
