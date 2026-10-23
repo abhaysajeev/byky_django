@@ -64,3 +64,27 @@ Needs approve_stations in the context.
     <button type="button" class="scr-btn-primary" data-action-go></button>
   </div>
 </div>
+
+{# Rename an approved or blocked device: only its name changes. #}
+<div class="scr-modal-veil" data-scr-modal-veil="device-rename" hidden></div>
+<div class="scr-modal scr-dev-modal" data-scr-modal="device-rename" hidden>
+  <div class="scr-modal-head">
+    <div>
+      <div class="scr-modal-title" data-rename-title>Rename device</div>
+      <p class="scr-modal-sub">Only the name changes: anyone logged in stays logged in, and its station stays.</p>
+    </div>
+    <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+    </button>
+  </div>
+  <div class="scr-modal-body scr-dev-fields">
+    <div class="scr-field">
+      <label class="scr-label" for="dev-rename">Device name<span class="scr-required">*</span></label>
+      <input id="dev-rename" type="text" class="scr-input" maxlength="120" placeholder="e.g. AlMamzar-POS1" autocomplete="off" data-rename-name />
+    </div>
+  </div>
+  <div class="scr-modal-foot scr-dev-foot">
+    <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+    <button type="button" class="scr-btn-primary" data-rename-go>Save</button>
+  </div>
+</div>
