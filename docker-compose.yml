@@ -40,8 +40,12 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-byky}
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
-      # No Redis locally: background jobs (photo previews) run inline.
+      # No Celery worker locally: background jobs (photo previews) run inline.
       CELERY_TASK_ALWAYS_EAGER: "1"
+      # Live updates go through the local redis to `realtime` below, which the
+      # browser reaches on its own port.
+      REALTIME_LAYER: redis
+      REALTIME_WS_URL: ws://127.0.0.1:${REALTIME_PORT:-8011}/ws/live/
     volumes:
       - .:/app
     ports:
@@ -55,6 +59,40 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+
+  # Live updates (core/realtime.py): redis carries them, `realtime` serves the
+  # websockets (config/asgi.py), reloading on code changes like runserver.
+  redis:
+    image: redis:7.4-alpine
+    command: redis-server --save "" --appendonly no
+
+  realtime:
+    build:
+      context: .
+      args:
+        REQUIREMENTS: requirements/dev.txt
+    command: uvicorn config.asgi:application --host 0.0.0.0 --port 8000 --reload --ws-ping-interval 20
+    user: "1000:1000"
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-dev-only-insecure-key}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-True}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      DJANGO_MIGRATE: "0"
+      POSTGRES_DB: ${POSTGRES_DB:-byky}
+      POSTGRES_USER: ${POSTGRES_USER:-byky}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-byky}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      REALTIME_LAYER: redis
+    volumes:
+      - .:/app
+    ports:
+      - "${REALTIME_PORT:-8011}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
 
 volumes:
   byky_pgdata:

@@ -170,6 +170,31 @@ services:
     mem_limit: 256m
     restart: unless-stopped
 
+  # Websockets for pages that update themselves (Rental -> Live Monitoring):
+  # the same image, run under uvicorn (config/asgi.py). gunicorn keeps serving
+  # every page and API; nginx sends only /ws/ here. web publishes each change
+  # through redis (database 1), this passes it on to the open pages.
+  realtime:
+    image: ${COMPOSE_PROJECT:-byky_f_qa}-app
+    command: uvicorn config.asgi:application --host 0.0.0.0 --port 8000 --ws-ping-interval 20 --no-access-log
+    environment:
+      <<: *celery_env
+      DJANGO_NUM_PROXIES: "1"
+      DJANGO_FORCE_HTTPS: ${DJANGO_FORCE_HTTPS:-0}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/healthz/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    mem_limit: 256m
+    restart: unless-stopped
+
   proxy:
     image: nginx:1.30-alpine
     volumes:
