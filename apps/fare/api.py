@@ -111,6 +111,10 @@ amounts it sends at return (the server stores them, it never recalculates):
 - `concurrent_grace_minutes` -- the tablet's own grace within extra time, used in
   its overtime calculation.
 
+The three concurrent values are optional: each is `null` when not set, and
+always `null` for a direct-rent vehicle type. The tablet decides what an unset
+value means.
+
 **Formats:** weekdays Monday=0 ... Sunday=6; times `HH:MM` in the company's
 timezone, `"24:00"` is midnight; dates inclusive; money a 2-decimal string.
 An unknown vehicle type is an error; a known one with no fare is an empty list.
