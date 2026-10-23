@@ -8,15 +8,15 @@ design/duty roster/duty-roster.md. Built on the client's own partially
 designed wireframe (byky-main/.../apps/byky_hrms/templates/hrms_duty_roster.html,
 .../drawers.py, .../src/assets/js/byky-hrms-duty-roster.js), re-wired to real
 data -- the markup below is that screen's structure with our own context
-variables; State Wise / Branch Roster / Employee View are its own 3 tabs
-(byky-screen.js's [data-scr-tabgroup]).
+variables. Two tabs (byky-screen.js's [data-scr-tabgroup]): Branch Roster --
+one station's week, picked by station and week, each day split into
+Cashiers and Labour -- and Employee View. The wireframe's third tab (State
+Wise / By Branch, a counts-only table of every station) was removed on 23 Oct
+2026: a station's week is read in Branch Roster.
 
 Everywhere that project filled every cell from a deterministic hash, this
 reads real DutyRoster rows through one consolidated roster_json payload
-(services.roster_payload) and leaves an unset day blank. No "State" filter --
-employees carry no state of their own (duty-roster.md), so By Branch lists
-every branch with any roster-eligible staff scheduled this month, unfiltered.
-Employees also carry no fixed branch (the wireframe's did): which branch
+(services.roster_payload) and leaves an unset day blank. Employees also carry no fixed branch (the wireframe's did): which branch
 someone is working is read from the matrix per day, in the JS, never from a
 static employee field.
 
@@ -86,52 +86,40 @@ would add nothing.
   <div class="scr-card">
 
     <div class="scr-content-tabs" data-scr-tabgroup="roster">
-      <button type="button" class="scr-content-tab is-on" data-tab="state">By Branch</button>
-      <button type="button" class="scr-content-tab" data-tab="branch">Branch Roster</button>
+      <button type="button" class="scr-content-tab is-on" data-tab="branch">Branch Roster</button>
       <button type="button" class="scr-content-tab" data-tab="employee">Employee View</button>
     </div>
 
-    <div class="scr-panel" data-tabgroup="roster" data-tab="state">
-      <div class="scr-toolbar">
-        <span class="scr-help">Showing the current week ({{ roster_json.current_week_index|add:"1" }} of {{ roster_weeks|length }}). <span style="color:#2b52a0">●</span> Cashiers on duty &nbsp; <span style="color:#14764a">●</span> Labour on duty</span>
-      </div>
-      <div class="scr-table-scroll scr-sb">
-        <table id="roster-state-table">
-          <thead><tr><th>Branch</th><th colspan="7">This week</th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <p class="scr-help" id="roster-state-empty" style="padding:0 20px 16px" hidden>No branch has a Cashier or Labour rostered this week yet.</p>
-    </div>
-
-    <div class="scr-panel" data-tabgroup="roster" data-tab="branch" hidden>
-      <div class="scr-toolbar">
-        <div class="scr-field" style="min-width:220px">
-          <select class="scr-input" id="roster-branch-select">
-            {% for b in branches_list %}<option value="{{ b.name }}">{{ b.name }}</option>{% endfor %}
-          </select>
+    <div class="scr-panel" data-tabgroup="roster" data-tab="branch">
+      <div class="scr-toolbar scr-roster-toolbar">
+        <select class="scr-input" id="roster-branch-select" aria-label="Station">
+          {% for b in branches_list %}<option value="{{ b.name }}">{{ b.name }}</option>{% endfor %}
+        </select>
+        <select class="scr-input" id="roster-week-select" aria-label="Week"></select>
+        <div class="scr-roster-legend">
+          <span><i class="scr-roster-dot is-cashier"></i>Cashier</span>
+          <span><i class="scr-roster-dot is-labour"></i>Labour</span>
         </div>
-        <span class="scr-help">Click +Cashier or +Labour on a day to assign someone. Remove a chip to unassign them for that day only.</span>
       </div>
-      <div class="scr-wk-grid" id="roster-branch-grid"></div>
+      <div class="scr-wk-grid scr-sb" id="roster-branch-grid"></div>
     </div>
 
     <div class="scr-panel" data-tabgroup="roster" data-tab="employee" hidden>
       <div class="scr-toolbar">
-        <div class="scr-combo" data-scr-combo="roster-employee-view" data-combo-source="roster-employees-data" data-combo-key="name" data-combo-sub="emp_no" style="min-width:280px">
+        <div class="scr-combo scr-roster-person" data-scr-combo="roster-employee-view" data-combo-source="roster-employees-data" data-combo-key="name" data-combo-sub="emp_no">
           <input type="text" class="scr-input scr-combo-input" placeholder="Search employee by name or code..." autocomplete="off" />
           <div class="scr-combo-list" hidden></div>
           <input type="hidden" id="roster-employee-selected" />
         </div>
       </div>
-      <div id="roster-employee-profile" class="scr-help" style="padding:0 20px 12px"></div>
+      <div id="roster-employee-profile" class="scr-roster-profile"></div>
       <div class="scr-cal-grid" id="roster-employee-calendar"></div>
-      <p class="scr-help" id="roster-employee-empty" style="padding:0 20px 16px" hidden>No Cashier or Labour employees yet. Give a Designation the Cashier or Labour roster category, and its employees appear here.</p>
+      <p class="scr-roster-note" id="roster-employee-empty" hidden>No Cashier or Labour employees yet. Give a Designation the Cashier or Labour roster category, and its employees appear here.</p>
     </div>
 
   </div>
 
-  <div class="scr-card" id="roster-bulk-import" style="margin-top:24px">
+  <div class="scr-card" id="roster-bulk-import">
     <div class="scr-form-head">
       <div>
         <div class="scr-form-title-row"><h2 class="scr-form-title">Bulk Import (Excel)</h2></div>
@@ -193,6 +181,5 @@ its own Save handlers instead -- see its docstring.
 {% include "byky/partials/drawer.html" with spec=drawer_duty_roster_employee module_label="Human Resources · Duty Roster" %}
 {% include "byky/partials/drawer.html" with spec=drawer_duty_roster_day module_label="Human Resources · Duty Roster" %}
 {% include "byky/partials/drawer.html" with spec=drawer_duty_roster_add_to_day module_label="Human Resources · Duty Roster" %}
-{% include "byky/partials/records_modal.html" %}
 {% include "byky/partials/detail_modal.html" %}
 {% endblock %}
