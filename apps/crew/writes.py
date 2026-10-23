@@ -198,7 +198,7 @@ class DutyRosterSaveWeekView(WriteView):
 
         return JsonResponse({
             "ok": True, "count": len(written),
-            "message": f"{employee.full_name}'s week saved ({len(written)} days).",
+            "message": f"{employee.full_name}'s week saved ({len(written)} day{'' if len(written) == 1 else 's'}).",
         })
 
 

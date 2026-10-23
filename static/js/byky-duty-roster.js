@@ -51,7 +51,7 @@
     'Sick Leave': 'sick_leave', 'Casual Leave': 'casual_leave',
   };
   var DAY_TYPE_OPTIONS = [
-    ['working', 'Working'], ['week_off', 'Week Off'],
+    ['', 'Not set'], ['working', 'Working'], ['week_off', 'Week Off'],
     ['sick_leave', 'Sick Leave'], ['casual_leave', 'Casual Leave'],
   ];
   // Set only by an approved leave request (apps/crew/leave.py): shown, never
@@ -110,30 +110,28 @@
     return fetch(url, { credentials: 'same-origin' }).then(function (r) { return r.json(); }).catch(function () { return { shift1: null, shift2: null }; });
   }
 
-  // ---- shared read-only modals (populated directly -- their content is
-  // computed per click, not a static per-row json_script blob) ----------
-  function openRecordsModal(title, columns, labels, rows) {
-    var modalEl = document.getElementById('scr-records-modal');
-    if (!modalEl || typeof bootstrap === 'undefined') return;
-    document.getElementById('scr-records-modal-title').textContent = title;
-    var thead = document.getElementById('scr-records-thead');
-    var tbody = document.getElementById('scr-records-tbody');
-    thead.innerHTML = labels.map(function (l) { return '<th>' + l + '</th>'; }).join('');
-    tbody.innerHTML = rows.map(function (row) {
-      return '<tr>' + columns.map(function (c) { return '<td>' + (row[c] == null ? '' : row[c]) + '</td>'; }).join('') + '</tr>';
-    }).join('');
-    document.getElementById('scr-records-empty').hidden = rows.length > 0;
-    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+  // ---- the day popup -----------------------------------------------------
+  // The house modal (theme/templates/byky/partials/detail_modal.html): a
+  // title and a subline, an optional status pill, label/value rows, an
+  // optional note, and an optional primary action.
+  var detailModal = document.getElementById('scr-detail-modal');
+  var detailVeil = document.getElementById('scr-detail-veil');
+  var detailAction = null;
+  function closeDetailModal() {
+    if (!detailModal) return;
+    detailModal.hidden = true;
+    if (detailVeil) detailVeil.hidden = true;
+    detailAction = null;
   }
-
-  function openDetailModal(title, fields) {
-    var modalEl = document.getElementById('scr-detail-modal');
-    if (!modalEl || typeof bootstrap === 'undefined') return;
-    document.getElementById('scr-detail-modal-title').textContent = title;
+  function openDetailModal(opts) {
+    if (!detailModal) return;
+    document.getElementById('scr-detail-modal-title').textContent = opts.title;
+    document.getElementById('scr-detail-modal-sub').textContent = opts.sub || '';
+    document.getElementById('scr-detail-badge').innerHTML = opts.badge || '';
     var rows = document.getElementById('scr-detail-rows');
     rows.innerHTML = '';
     var shown = 0;
-    fields.forEach(function (pair) {
+    (opts.fields || []).forEach(function (pair) {
       if (pair[1] === '' || pair[1] == null) return;
       shown++;
       var row = document.createElement('div');
@@ -141,8 +139,32 @@
       row.innerHTML = '<span class="scr-detail-label">' + pair[0] + '</span><span class="scr-detail-value">' + pair[1] + '</span>';
       rows.appendChild(row);
     });
-    document.getElementById('scr-detail-empty').hidden = shown > 0;
-    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    var empty = document.getElementById('scr-detail-empty');
+    empty.textContent = opts.empty || 'No details.';
+    empty.hidden = shown > 0;
+    var note = document.getElementById('scr-detail-note');
+    note.textContent = opts.note || '';
+    note.hidden = !opts.note;
+    var action = document.getElementById('scr-detail-action');
+    detailAction = opts.action || null;
+    action.hidden = !detailAction;
+    action.textContent = detailAction ? detailAction.label : '';
+    detailModal.hidden = false;
+    if (detailVeil) detailVeil.hidden = false;
+    (detailAction ? action : detailModal.querySelector('[data-detail-close]')).focus();
+  }
+  if (detailModal) {
+    document.addEventListener('click', function (e) {
+      if (e.target.closest('[data-detail-close]') || e.target === detailVeil) closeDetailModal();
+      if (e.target.closest('#scr-detail-action') && detailAction) {
+        var run = detailAction.run;
+        closeDetailModal();
+        run();
+      }
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !detailModal.hidden) closeDetailModal();
+    });
   }
 
   // ============================================================
@@ -205,68 +227,27 @@
   }
 
   // ============================================================
-  // By Branch tab
-  // ============================================================
-  function renderStateTable() {
-    var theadRow = document.querySelector('#roster-state-table thead tr');
-    if (!theadRow) return;
-    theadRow.innerHTML = '<th>Branch</th>' + currentWeek.days.map(function (d) { return '<th>' + dayLabel(d) + '</th>'; }).join('') + '<th>Action</th>';
-
-    var tbody = document.querySelector('#roster-state-table tbody');
-    tbody.innerHTML = '';
-    R.branches.forEach(function (b) {
-      var tr = document.createElement('tr');
-      tr.className = 'scr-row';
-      var cells = '<td style="font-weight:600">' + b.name + '</td>';
-      currentWeek.days.forEach(function (day) {
-        var working = workingOnDay(b.name, day);
-        var c = working.filter(function (w) { return w.emp.role === 'Cashier'; }).length;
-        var l = working.filter(function (w) { return w.emp.role !== 'Cashier'; }).length;
-        if (c || l) {
-          cells += '<td><div class="scr-duty-badges">' +
-            (c ? '<button type="button" class="scr-duty-badge scr-duty-badge-c" data-branch-day="' + b.name + '|' + day + '">' + c + 'C</button>' : '') +
-            (l ? '<button type="button" class="scr-duty-badge scr-duty-badge-l" data-branch-day="' + b.name + '|' + day + '">' + l + 'L</button>' : '') +
-            '</div></td>';
-        } else {
-          cells += '<td><span class="scr-duty-badge-empty">—</span></td>';
-        }
-      });
-      cells += '<td><button type="button" class="scr-icon-btn" title="View branch roster" data-goto-branch="' + b.name + '">' +
-        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7"></path><circle cx="12" cy="12" r="3"></circle></svg></button></td>';
-      tr.innerHTML = cells;
-      tbody.appendChild(tr);
-    });
-    var empty = document.getElementById('roster-state-empty');
-    if (empty) empty.hidden = R.branches.length > 0;
-  }
-
-  var stateTable = document.getElementById('roster-state-table');
-  if (stateTable) {
-    stateTable.addEventListener('click', function (e) {
-      var badge = e.target.closest('[data-branch-day]');
-      if (badge) {
-        var parts = badge.dataset.branchDay.split('|');
-        var branch = parts[0], day = parts[1];
-        var rows = workingOnDay(branch, day).map(function (w) {
-          return { name: w.emp.name, role: w.emp.role, status: w.rec.status, time: shiftLabel(w.rec) };
-        });
-        openRecordsModal(branch + ' — ' + dayLabel(day), ['name', 'role', 'status', 'time'], ['Employee', 'Role', 'Status', 'Time'], rows);
-        return;
-      }
-      var gotoBtn = e.target.closest('[data-goto-branch]');
-      if (gotoBtn) {
-        var branchName = gotoBtn.dataset.gotoBranch;
-        var branchTab = document.querySelector('.scr-content-tab[data-tab="branch"]');
-        if (branchTab) branchTab.click();
-        var select = document.getElementById('roster-branch-select');
-        if (select) { select.value = branchName; select.dispatchEvent(new Event('change')); }
-      }
-    });
-  }
-
-  // ============================================================
   // Branch Roster tab
   // ============================================================
+  function shortDate(iso) {
+    var d = new Date(iso + 'T00:00:00');
+    return d.getDate() + ' ' + d.toLocaleDateString('en-US', { month: 'short' });
+  }
+  function weekLabel(week) {
+    var a = new Date(week.days[0] + 'T00:00:00'), b = new Date(week.days[week.days.length - 1] + 'T00:00:00');
+    return a.getMonth() === b.getMonth()
+      ? a.getDate() + '–' + b.getDate() + ' ' + b.toLocaleDateString('en-US', { month: 'short' })
+      : shortDate(week.days[0]) + ' – ' + shortDate(week.days[week.days.length - 1]);
+  }
+  function shiftLines(rec) {
+    if (!rec || rec.status !== 'Working' || !rec.shift1_start) return '';
+    return '<span class="scr-wk-chip-time">' + rec.shift1_start + '–' + rec.shift1_end + '</span>' +
+      (rec.shift2_start ? '<span class="scr-wk-chip-time">' + rec.shift2_start + '–' + rec.shift2_end + '</span>' : '');
+  }
+
+  // One day of one station: the cover in words first (the gap a planner is
+  // looking for is a day with staff and no cashier), then the day's Cashiers
+  // and its Labour, each under its own label with its own Add.
   function renderWeekGrid(host, branchName, week) {
     if (!host) return;
     host.innerHTML = '';
@@ -274,28 +255,35 @@
       var working = workingOnDay(branchName, day);
       var cashiers = working.filter(function (w) { return w.emp.role === 'Cashier'; });
       var labour = working.filter(function (w) { return w.emp.role !== 'Cashier'; });
+      var d = new Date(day + 'T00:00:00');
 
       var card = document.createElement('div');
-      card.className = 'scr-wk-day-card';
+      card.className = 'scr-wk-day-card' + (day === R.today ? ' is-today' : '');
       card.dataset.day = day;
-      var d = new Date(day + 'T00:00:00');
-      var html = '<div class="scr-wk-day-head">' + d.toLocaleDateString('en-US', { weekday: 'long' }) + '</div>' +
-        '<div class="scr-wk-day-date">' + d.toLocaleDateString('en-US', { day: 'numeric', month: 'short' }) + '</div>';
 
-      function chip(w) {
-        return '<div class="scr-wk-chip" data-emp="' + w.emp.id + '">' +
-          '<span class="scr-wk-chip-name">' + w.emp.name + '</span>' +
-          '<span class="scr-wk-chip-time">' + shiftLabel(w.rec) + '</span>' +
-          '<button type="button" class="scr-wk-chip-x" title="Remove" data-wk-remove="' + w.emp.id + '">' +
+      var cover;
+      if (!working.length) cover = '<div class="scr-wk-cover is-none">No one rostered</div>';
+      else if (!cashiers.length) cover = '<div class="scr-wk-cover is-gap">No cashier</div>';
+      else cover = '<div class="scr-wk-cover">' + cashiers.length + ' cashier' + (cashiers.length > 1 ? 's' : '') +
+        ' · ' + labour.length + ' labour</div>';
+
+      function chip(w, role) {
+        return '<div class="scr-wk-chip is-' + role + '" data-emp="' + w.emp.id + '" title="' + w.emp.name + ' (' + w.emp.emp_no + ')">' +
+          '<div class="scr-wk-chip-main"><span class="scr-wk-chip-name">' + w.emp.name + '</span>' + shiftLines(w.rec) + '</div>' +
+          '<button type="button" class="scr-wk-chip-x" title="Remove from ' + shortDate(day) + '" aria-label="Remove ' + w.emp.name + ' from ' + shortDate(day) + '" data-wk-remove="' + w.emp.id + '">' +
           '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg></button></div>';
       }
+      function role(name, people) {
+        var key = name === 'Cashier' ? 'cashier' : 'labour';
+        return '<div class="scr-wk-role">' +
+          '<div class="scr-wk-role-head"><i class="scr-roster-dot is-' + key + '"></i>' + (name === 'Cashier' ? 'Cashiers' : 'Labour') + '</div>' +
+          people.map(function (w) { return chip(w, key); }).join('') +
+          '<button type="button" class="scr-wk-add" data-wk-add="' + name + '" data-wk-day="' + day + '">+ Add ' + name.toLowerCase() + '</button></div>';
+      }
 
-      html += cashiers.map(chip).join('') || '<div class="scr-help" style="font-size:10.5px">No cashier assigned</div>';
-      html += '<button type="button" class="scr-wk-add" data-wk-add="Cashier" data-wk-day="' + day + '">+ Cashier</button>';
-      html += labour.map(chip).join('');
-      html += '<button type="button" class="scr-wk-add" data-wk-add="Labour" data-wk-day="' + day + '">+ Labour</button>';
-
-      card.innerHTML = html;
+      card.innerHTML = '<div class="scr-wk-day-head"><span>' + d.toLocaleDateString('en-US', { weekday: 'short' }) + '</span>' +
+        '<span class="scr-wk-day-date">' + shortDate(day) + (day === R.today ? ' · today' : '') + '</span></div>' +
+        cover + role('Cashier', cashiers) + role('Labour', labour);
       host.appendChild(card);
     });
   }
@@ -305,8 +293,49 @@
   var addToDayDrawer = document.getElementById('drawerDutyRosterAddToDay');
   var addToDayContext = null;
 
+  var weekPick = document.getElementById('roster-week-select');
+  var query = new URLSearchParams(window.location.search);
+
+  function remember() {
+    query.set('station', branchSelect.value);
+    query.set('week', String(R.weeks.indexOf(currentWeek) + 1));
+    window.history.replaceState(null, '', '?' + query.toString());
+  }
+
+  if (weekPick && R.weeks.length) {
+    var first = new Date(R.weeks[0].days[0] + 'T00:00:00');
+    var shown = { year: first.getFullYear(), month: first.getMonth() + 1 };
+    var weekFromAddress = R.weeks[(parseInt(query.get('week'), 10) || 0) - 1];
+    if (weekFromAddress) currentWeek = weekFromAddress;
+    weekPick.innerHTML = '<option value="prev">‹ Previous month</option>' +
+      R.weeks.map(function (w, i) {
+        var thisWeek = w.days.indexOf(R.today) >= 0;
+        return '<option value="' + i + '"' + (w === currentWeek ? ' selected' : '') + '>' +
+          weekLabel(w) + (thisWeek ? ' · this week' : '') + '</option>';
+      }).join('') +
+      '<option value="next">Next month ›</option>';
+    weekPick.addEventListener('change', function () {
+      if (weekPick.value === 'prev' || weekPick.value === 'next') {
+        var step = weekPick.value === 'next' ? 1 : -1;
+        var month = shown.month + step, year = shown.year;
+        if (month === 0) { month = 12; year -= 1; }
+        if (month === 13) { month = 1; year += 1; }
+        var next = new URLSearchParams({ year: String(year), month: String(month), station: branchSelect.value, week: '1' });
+        window.location.search = '?' + next.toString();
+        return;
+      }
+      currentWeek = R.weeks[+weekPick.value];
+      remember();
+      renderWeekGrid(branchGrid, branchSelect.value, currentWeek);
+    });
+  }
+
   if (branchGrid && branchSelect) {
+    if (query.get('station') && Array.prototype.some.call(branchSelect.options, function (o) { return o.value === query.get('station'); })) {
+      branchSelect.value = query.get('station');
+    }
     branchSelect.addEventListener('change', function () {
+      remember();
       renderWeekGrid(branchGrid, branchSelect.value, currentWeek);
     });
     renderWeekGrid(branchGrid, branchSelect.value, currentWeek);
@@ -452,8 +481,9 @@
     allDays.forEach(function (d) { var st = (monthMatrix[d] || {}).status; if (st) counts[st] = (counts[st] || 0) + 1; });
 
     if (empProfile) {
-      empProfile.innerHTML = '<b style="color:#1a1640">' + emp.name + '</b> (' + emp.emp_no + ') · ' + emp.role + ' · ' + emp.designation +
-        ' &nbsp;·&nbsp; Working days: ' + counts.Working + ' · Week-offs: ' + counts['Week Off'] + ' · Sick leave: ' + counts['Sick Leave'] + ' · Casual leave: ' + counts['Casual Leave'] + ' · On leave: ' + counts['On Leave'];
+      empProfile.innerHTML = '<b>' + emp.name + '</b> (' + emp.emp_no + ') · ' + emp.role + ' · ' + emp.designation +
+        '<span>Working ' + counts.Working + ' · Week off ' + counts['Week Off'] + ' · Sick ' + counts['Sick Leave'] +
+        ' · Casual leave ' + counts['Casual Leave'] + ' · On leave ' + counts['On Leave'] + '</span>';
     }
 
     empCalendar.innerHTML = '';
@@ -479,15 +509,20 @@
         '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10a2.1 2.1 0 0 0-3-3L5 17z"></path></svg></button>');
       cell.addEventListener('click', function (e) {
         if (e.target.closest('[data-cal-edit]')) return;
-        openDetailModal(emp.name + ' — ' + day, [
-          ['Employee', emp.name + ' (' + emp.emp_no + ')'],
-          ['Date & Day', d.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })],
-          ['Status', rec ? statusText(rec) : 'Not set'],
-          ['Leave request', isLeave(rec) ? rec.leave_reference : ''],
-          ['Branch', rec && rec.status === 'Working' ? rec.branch : ''],
-          ['Shift 1', shiftLabel(rec)],
-          ['Shift 2', rec && rec.shift2_start ? rec.shift2_start + ' – ' + rec.shift2_end : ''],
-        ]);
+        openDetailModal({
+          title: emp.name + ' · ' + d.toLocaleDateString('en-US', { weekday: 'short' }) + ' ' + shortDate(day),
+          sub: emp.role + ' · ' + emp.emp_no,
+          badge: rec ? '<span class="scr-badge ' + statusBadgeClass(rec.status) + '"><i></i>' + statusText(rec) + '</span>' : '',
+          fields: [
+            ['Station', rec && rec.status === 'Working' ? rec.branch : ''],
+            ['Shift 1', shiftLabel(rec)],
+            ['Shift 2', rec && rec.shift2_start ? rec.shift2_start + ' – ' + rec.shift2_end : ''],
+            ['Leave request', isLeave(rec) ? rec.leave_reference : ''],
+          ],
+          empty: rec ? 'No station or shift for this day.' : 'Nothing is rostered for this day.',
+          note: isLeave(rec) ? 'Set by the approved leave request; it changes only if the leave is cancelled.' : '',
+          action: isLeave(rec) ? null : { label: rec ? 'Edit day' : 'Set this day', run: function () { openEditDay(emp, day); } },
+        });
       });
       if (cell.querySelector('[data-cal-edit]')) cell.querySelector('[data-cal-edit]').addEventListener('click', function (ev) {
         ev.stopPropagation();
@@ -541,12 +576,12 @@
           '<span class="scr-badge scr-badge-rejected"><i></i>' + statusText(rec) + '</span>' +
           '<div class="byky-help" style="margin-top:6px">Approved leave ' + (rec.leave_reference || '') + ' — cannot be changed here.</div></div>';
       }
-      var dayType = rec ? (DAY_TYPE_VALUE[rec.status] || 'working') : 'working';
+      var dayType = rec ? (DAY_TYPE_VALUE[rec.status] || 'working') : '';
       var working = dayType === 'working';
       var branchId = rec && rec.branch ? (branchNameToId[rec.branch] || '') : '';
       var hasShift2 = !!(rec && rec.shift2_start);
 
-      return '<div class="scr-wk-day-card" style="min-width:0" data-emp-day="' + day + '">' +
+      return '<div class="scr-wk-day-card" style="min-width:0" data-emp-day="' + day + '"' + (rec ? ' data-was-set' : '') + '>' +
         '<div class="scr-wk-day-head">' + d.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'short' }) + '</div>' +
         '<select class="byky-input byky-select" data-emp-day-type style="margin-bottom:6px">' +
         DAY_TYPE_OPTIONS.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === dayType ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
@@ -616,6 +651,11 @@
       var days = [];
       host.querySelectorAll('[data-emp-day]').forEach(function (card) {
         var dayType = card.querySelector('[data-emp-day-type]').value;
+        // "Not set": an unset day is left alone; a day that was set is cleared.
+        if (!dayType) {
+          if (card.hasAttribute('data-was-set')) days.push({ date: card.dataset.empDay, day_type: 'not_set' });
+          return;
+        }
         var working = dayType === 'working';
         var hasShift2 = working && card.querySelector('[data-emp-day-shift2-toggle]').checked;
         days.push({

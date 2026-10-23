@@ -281,6 +281,36 @@ def test_saving_twice_updates_rather_than_duplicating(cashier, world):
     assert timezone.localtime(DutyRoster.objects.get(employee=cashier).shift1_start).strftime("%H:%M") == "09:00"
 
 
+def test_a_week_may_set_one_day_and_leave_the_rest(cashier, world):
+    """The weekly form sends only the days that are set: the rest stay as
+    they were (here: none), not Week Off."""
+    services.save_week(cashier, [one_day(datetime.date(2026, 9, 22), day_type="week_off")], user=None,
+                       branches_qs=Branch.objects.all())
+
+    assert list(DutyRoster.objects.filter(employee=cashier).values_list("date", flat=True)) == [
+        datetime.date(2026, 9, 22)]
+
+
+def test_not_set_clears_a_saved_day_and_keeps_the_others(cashier, world):
+    working = one_day(datetime.date(2026, 9, 20), day_type="working", branch=world["branch"].pk,
+                      shift1_start="08:00", shift1_end="17:00")
+    services.save_week(cashier, [working, one_day(datetime.date(2026, 9, 21))], user=None,
+                       branches_qs=Branch.objects.all())
+
+    written = services.save_week(cashier, [{"date": "2026-09-21", "day_type": "not_set"}], user=None,
+                                 branches_qs=Branch.objects.all())
+
+    assert written == []
+    assert list(DutyRoster.objects.filter(employee=cashier).values_list("date", flat=True)) == [
+        datetime.date(2026, 9, 20)]
+
+
+def test_not_set_needs_a_date(cashier, world):
+    with pytest.raises(services.Invalid, match="needs a date"):
+        services.save_week(cashier, [{"date": "someday", "day_type": "not_set"}], user=None,
+                           branches_qs=Branch.objects.all())
+
+
 def test_a_working_day_with_no_branch_is_refused_by_name(cashier, world):
     days = [one_day(datetime.date(2026, 9, 20), day_type="working")]
     with pytest.raises(services.Invalid) as refused:
@@ -612,16 +642,18 @@ def test_new_endpoints_need_permission(client, world, cashier):
     assert post(client, "/crew/duty-roster/import/", {"rows": []}).status_code == 403
 
 
-# -- the rebuilt screen: 3 tabs, KPI tiles, Bulk Import ----------------------------
+# -- the rebuilt screen: 2 tabs, KPI tiles, Bulk Import ----------------------------
 
 
-def test_the_screen_renders_its_three_tabs_and_kpi_tiles(client_in, cashier, world):
+def test_the_screen_renders_its_two_tabs_and_kpi_tiles(client_in, cashier, world):
     working_day(cashier, world["branch"], timezone.localdate())
     response = client_in.get("/crew/duty-roster/")
     body = response.content.decode()
     assert response.status_code == 200
-    for tab in ("By Branch", "Branch Roster", "Employee View"):
+    for tab in ("Branch Roster", "Employee View"):
         assert tab in body
+    assert "By Branch" not in body                       # removed 23 Oct 2026
+    assert 'id="roster-week-select"' in body             # Branch Roster picks its week
     assert "Roster-eligible staff" in body and "On duty today" in body
     assert "Bulk Import (Excel)" in body
     assert "roster-branches-data" in body
