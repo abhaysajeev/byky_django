@@ -229,7 +229,10 @@ def test_no_customer_or_money_in_any_push(client, world, token, booked, manager,
            discount_value="5.00")
 
     for row in Notification.objects.all():
-        text = f"{row.title} {row.body} {row.data}"
+        # The words the phone shows and the data's words -- not its ids: a
+        # random UUID may well contain "971".
+        words = [row.title, row.body] + [v for k, v in row.data.items() if not k.endswith("_id")]
+        text = " ".join(words)
         assert "Ahmed" not in text and "5.00" not in text and "971" not in text
 
 
