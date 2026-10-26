@@ -128,11 +128,9 @@ optional -- upload it first with purpose `service_request`. `sync_id` is
 this call's id (UUIDv7) and becomes the request's id: a resend is answered
 `duplicate` with the request as it stands.
 
-**A reported vehicle cannot be rented from this moment** -- `vehicles` shows
-it `under_maintenance`, and a booking, add or replace of it is refused
-(`vehicle_under_maintenance`) -- until a manager rejects the report, or the
-back office puts it back in service. A vehicle out on rent may be reported:
-the ride goes on, and it cannot be rented again afterwards.
+`vehicles` shows a reported vehicle `under_maintenance` until a manager
+rejects the report or the back office puts it back in service -- information
+only: renting it is not refused. A vehicle out on rent may be reported.
 
 The target must be at this station; one open report per vehicle / asset
 (`already_reported`). Managers are notified. `request_no` (SRV-<station
@@ -234,9 +232,9 @@ tablet; `has_photo` says whether one was sent.
 
 _DECIDE_DESCRIPTION = """
 Decide a **pending** service request (find them in `requests/list`, kind
-`service`). **Approve**: the fault is confirmed -- the vehicle stays out of
-renting until the back office puts it back in service (web). **Reject**: not a
-fault -- the request closes and the vehicle can be rented again at once.
+`service`). **Approve**: the fault is confirmed -- under maintenance until the
+back office puts it back in service (web). **Reject**: not a fault -- the
+request closes.
 `note` optional (at most 500 characters). The reporting tablet is notified.
 """
 

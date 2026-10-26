@@ -43,6 +43,7 @@ from apps.rental.serializers import (
     ManagerRequestListRequest,
     OperatorRequestListRequest,
     OrderAddRequest,
+    OrderChangesRequest,
     OrderCreateRequest,
     OrderDetailRequest,
     OrderPaymentsRequest,
@@ -512,8 +513,7 @@ _SETTLED_SAMPLE = {
 }
 
 _BOOK_ERRORS = (
-    "sync_id_conflict", "order_no_used", "vehicle_already_rented", "vehicle_under_maintenance",
-    "vehicle_repeated", "item_id_used",
+    "sync_id_conflict", "order_no_used", "vehicle_already_rented", "vehicle_repeated", "item_id_used",
     "payment_id_used", "unknown_customer", "unknown_payment_mode", "unknown_vehicle",
     "vehicle_not_at_station", "unknown_fare", "unknown_offer", "package_not_available",
 )
@@ -628,7 +628,8 @@ class OrderCreateView(_OperatorView):
 
 _DETAIL_DESCRIPTION = """
 One order, whole -- in the same shape every order call answers with. Look it
-up by `sync_id` **or** `order_no`, not both.
+up by `sync_id` **or** `order_no`, not both. A station-sync push
+(`type: order_changed`) carries the `order_id` to send as `sync_id`.
 
 Any tablet at the order's station can read it, so a rental is never stuck on
 a dead tablet. An order at another station is `unknown_order`, the same as
@@ -669,6 +670,70 @@ class OrderDetailView(_OperatorView):
             return _refused(refusal)
         data = order_json(order, zone=zone_for(branch.company), next_order_number=_counter_number(request.auth))
         return envelope("ok", "Order.", data)
+
+
+_CHANGES_DESCRIPTION = """
+**Catch up** with what the station's other tablets did -- for the pushes this
+tablet missed (offline, app closed, notification swiped away). Call it at
+**login**, on **resume** and on **reconnect**.
+
+* **No `since`** (login, or nothing saved): every order **still running** at
+  this station, whatever day it was booked, **and** every order booked or
+  changed **today** (company day).
+* **`since`** = the `synced_at` of the last answer, sent back unchanged: the
+  orders changed after it -- never further back than **24 hours**; older
+  than that, call again without `since`.
+
+Save each answer's `synced_at` (the **server's** time -- never use the
+tablet's clock) for the next call. Orders come whole, in the shape of
+`orders/detail`, most recently changed first; one may come twice across two
+calls (a short overlap so none is missed) -- just replace it. At most 500;
+`truncated: true` means more changed than that: call again without `since`.
+
+**Station-sync pushes** (sent to the station's *other* operator tablets on
+each order change -- not to the tablet that made it): a visible notification
+on the Android channel **`station_activity`** (create it, low importance),
+`tag` = `order:<order_id>` (one tray entry per order), with data
+`type: order_changed`, `order_id`, `order_no`, `action` (book, add, replace,
+remove, return, payment, settle, cancel), `branch_id`, `at`. On it, call
+`orders/detail` with that `order_id`.
+"""
+
+
+class OrderChangesView(_OperatorView):
+    """POST /api/v1/{app}/orders/changes -- operator app only."""
+
+    @extend_schema(
+        tags=["Operator Orders"],
+        summary="Orders changed at this station since the last call (catch-up)",
+        description=_CHANGES_DESCRIPTION,
+        request=envelope_request("OrderChangesEnvelope", OrderChangesRequest, request_data_required=False),
+        responses=envelope_responses(
+            (200, "ok", "Changes.", {"synced_at": "2026-10-26 15:47:12", "orders": [_ORDER_SAMPLE], "total": 1,
+                                     "truncated": False}),
+            (400, "invalid_request", "since must be YYYY-MM-DD HH:MM:SS.",
+             {"errors": {"since": "must be YYYY-MM-DD HH:MM:SS"}}),
+            *_COMMON,
+        ),
+    )
+    def post(self, request, app):
+        branch, refused = self.station(request, app)
+        if refused:
+            return refused
+        _, request_data = request_parts(request)
+        form = OrderChangesRequest(data=request_data)
+        form.is_valid(raise_exception=True)
+        zone = zone_for(branch.company)
+        since = form.validated_data.get("since")
+        since = timezone.make_aware(since, zone) if since else None
+        now = timezone.now()
+        orders, truncated = services.station_changes(branch, since, now=now)
+        counter = _counter_number(request.auth)
+        return envelope("ok", "Changes.", {
+            "synced_at": now.astimezone(zone).strftime("%Y-%m-%d %H:%M:%S"),
+            "orders": [order_json(order, zone=zone, next_order_number=counter) for order in orders],
+            "total": len(orders), "truncated": truncated,
+        })
 
 
 _RECENT_DESCRIPTION = f"""
@@ -1073,8 +1138,8 @@ _REMOVED_SAMPLE = {
 
 _CHANGE_ERRORS = ("order_not_synced", "sync_id_conflict", "order_closed")
 _NEW_LINE_ERRORS = (
-    "vehicle_already_rented", "vehicle_under_maintenance", "vehicle_not_at_station", "unknown_vehicle",
-    "unknown_fare", "unknown_offer", "package_not_available", "item_id_used",
+    "vehicle_already_rented", "vehicle_not_at_station", "unknown_vehicle", "unknown_fare", "unknown_offer",
+    "package_not_available", "item_id_used",
 )
 _ADD_ERRORS = (*_CHANGE_ERRORS, *_NEW_LINE_ERRORS, "unknown_payment_mode", "payment_id_used")
 _REPLACE_ERRORS = (*_CHANGE_ERRORS, "unknown_item", "item_not_active", "invalid_time", "vehicle_repeated",

@@ -1,7 +1,7 @@
 """Service & Maintenance (apps/fleet/service_requests.py): the operator app
-reports a vehicle or a station asset; a reported vehicle cannot be rented from
-that moment; a manager approves or rejects (manager app or web); the web puts it
-back in service."""
+reports a vehicle or a station asset; a manager approves or rejects (manager app
+or web); the web puts it back in service. A report is information: renting a
+reported vehicle is not refused (owner, 26 Oct 2026)."""
 
 import pytest
 from django.db import IntegrityError, transaction
@@ -76,27 +76,22 @@ def vehicle_row(client, token, vehicle):
 # -- Report ---------------------------------------------------------------------------
 
 
-def test_a_vehicle_report_takes_it_off_rent_at_once(client, world, token, shop):
+def test_a_reported_vehicle_is_shown_under_maintenance_and_can_still_be_booked(client, world, token, shop):
     row = reported(client, token, vehicle_report(shop["mo41"]))
     assert (row["request_no"], row["status"], row["target"], row["vehicle_name"]) == (
         "SRV-ADC1-00001", "pending", "vehicle", "MO 41")
     assert row["has_photo"] is False
     listed = vehicle_row(client, token, shop["mo41"])
     assert (listed["under_maintenance"], listed["service_request_no"], listed["can_rent"]) == (
-        True, "SRV-ADC1-00001", False)
-    # Booking it is refused on the server, whatever the tablet shows.
-    body = call(client, orders.BOOK, booking(world, shop), token=token).json()
-    assert body["code"] == "vehicle_under_maintenance"
+        True, "SRV-ADC1-00001", True)                                  # information only
+    assert call(client, orders.BOOK, booking(world, shop), token=token).json()["code"] == "ok"
 
 
-def test_add_and_replace_refuse_a_reported_vehicle(client, world, token, shop):
+def test_add_and_replace_take_a_reported_vehicle(client, world, token, shop):
     booked = booking(world, shop)
     assert call(client, orders.BOOK, booked, token=token).json()["code"] == "ok"
     reported(client, token, vehicle_report(shop["mo42"]))
-    assert call(client, changes.ADD, changes.add(booked, shop["mo42"], shop), token=token).json()["code"] == \
-        "vehicle_under_maintenance"
-    assert call(client, changes.REPLACE, changes.replace(booked, shop["mo42"], shop), token=token).json()["code"] \
-        == "vehicle_under_maintenance"
+    assert call(client, changes.ADD, changes.add(booked, shop["mo42"], shop), token=token).json()["code"] == "ok"
 
 
 def test_a_vehicle_out_on_rent_may_be_reported_and_still_comes_back(client, world, token, shop):
@@ -165,22 +160,22 @@ def test_a_photo_is_optional_and_must_be_a_service_photo(client, world, token, s
 # -- Decide ---------------------------------------------------------------------------
 
 
-def test_reject_puts_the_vehicle_back_on_rent(client, world, token, shop, manager):
+def test_reject_closes_the_report(client, world, token, shop, manager):
     row = reported(client, token, vehicle_report(shop["mo41"]))
     body = call(client, REJECT, {"request_sync_id": row["request_sync_id"], "note": "Brakes fine"},
                 token=manager).json()
     assert body["code"] == "ok" and body["data"]["status"] == "rejected"
-    assert vehicle_row(client, token, shop["mo41"])["can_rent"] is True
-    assert call(client, orders.BOOK, booking(world, shop), token=token).json()["code"] == "ok"
+    assert vehicle_row(client, token, shop["mo41"])["under_maintenance"] is False
 
 
-def test_approve_keeps_it_out_until_back_in_service_on_the_web(client, world, token, shop, manager):
+def test_approve_keeps_it_under_maintenance_until_back_in_service_on_the_web(client, world, token, shop,
+                                                                              manager):
     row = reported(client, token, vehicle_report(shop["mo41"]))
     body = call(client, APPROVE, {"request_sync_id": row["request_sync_id"]}, token=manager).json()
     assert body["code"] == "ok" and body["data"]["status"] == "approved"
     again = call(client, REJECT, {"request_sync_id": row["request_sync_id"]}, token=manager).json()
     assert again["code"] == "request_decided"
-    assert vehicle_row(client, token, shop["mo41"])["can_rent"] is False
+    assert vehicle_row(client, token, shop["mo41"])["under_maintenance"] is True
 
     from apps.fleet import service_requests
     req = ServiceRequest.objects.get(pk=row["request_sync_id"])
@@ -190,7 +185,7 @@ def test_approve_keeps_it_out_until_back_in_service_on_the_web(client, world, to
     service_requests.complete(req.decided_by, req.pk, company_ids, "Pads replaced")
     req.refresh_from_db()
     assert req.status == ServiceRequestStatus.COMPLETED and req.completion_note == "Pads replaced"
-    assert vehicle_row(client, token, shop["mo41"])["can_rent"] is True
+    assert vehicle_row(client, token, shop["mo41"])["under_maintenance"] is False
 
 
 def test_only_an_approved_request_goes_back_in_service(client, world, token, shop):

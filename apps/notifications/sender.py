@@ -43,12 +43,16 @@ class FcmSender:
     def message(self, notification, token):
         from firebase_admin import messaging
 
+        # A Notification row, or a station-sync push (apps/rental/station_sync.py)
+        # that also sets how long it may wait and what it collapses with.
         return messaging.Message(
             token=token,
             notification=messaging.Notification(title=notification.title, body=notification.body),
             data={key: str(value) for key, value in notification.data.items()},
             android=messaging.AndroidConfig(
-                priority="high", ttl=timedelta(seconds=settings.PUSH_TTL_SECONDS),
+                priority="high",
+                ttl=timedelta(seconds=getattr(notification, "ttl_seconds", None) or settings.PUSH_TTL_SECONDS),
+                collapse_key=getattr(notification, "collapse_key", None),
                 notification=messaging.AndroidNotification(
                     tag=notification.tag, channel_id=notification.android_channel),
             ),

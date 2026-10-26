@@ -37,7 +37,7 @@ from apps.discount.models import CardDiscountClaim, ClaimStatus
 from apps.notifications import services as notifications
 from apps.notifications.models import Action
 from apps.photos import services as photo_services
-from apps.rental import live
+from apps.rental import live, station_sync
 from apps.rental.models import (
     REQUEST_LIVE,
     DecisionChannel,
@@ -495,8 +495,9 @@ def cancel_order(order, cancel, user, now):
     notifications.notify_all(closing, Action.CLOSED)
     cancel_unused_for_order(order, now=now)
     # A web or manager cancel writes no OrderEvent, so it is not seen by
-    # services.run_once: tell Live Monitoring here.
+    # services.run_once: tell Live Monitoring, and the station's tablets, here.
     live.order_changed(order)
+    station_sync.order_changed(order, station_sync.CANCEL)
 
 
 def cancel_directly(user, order_id, company_ids, reason):

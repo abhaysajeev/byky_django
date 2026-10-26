@@ -94,12 +94,11 @@ taken from the access token's session.
   `order_no` and the vehicle's `expected_end_time` (company time), else `null`.
 - `under_maintenance`: the vehicle was reported for service (`service-requests`) and is
   not back in service yet; `service_request_no` (`SRV-ADC1-00001`) is that request, else
-  `null`. A booking of it is refused (`vehicle_under_maintenance`).
-- `can_rent` = `is_available` and not `on_rent` and not `under_maintenance` -- the one
-  flag to grey a vehicle out by. `is_available` alone is the manual switch (held back); a
-  rental never changes it. A booking is still refused if the vehicle was rented or
-  reported from another tablet since this list was fetched (`vehicle_already_rented`,
-  `vehicle_under_maintenance`).
+  `null`. Information only -- renting it is not refused.
+- `can_rent` = `is_available` and not `on_rent` -- the one flag to grey a vehicle out by.
+  `is_available` alone is the manual switch (maintenance, held back); a rental never
+  changes it. A booking is still refused if the vehicle was rented from another tablet
+  since this list was fetched (`vehicle_already_rented`).
 
 A category or vehicle type this station cannot use (another company's, inactive, not
 approved) is an error; a usable one with no vehicle here is an empty list.

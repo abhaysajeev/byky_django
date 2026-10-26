@@ -176,6 +176,13 @@ def _repeated(values):
     return len(set(values)) != len(values)
 
 
+class OrderChangesRequest(serializers.Serializer):
+    """What changed at this station since the tablet's last answer. `since`
+    is that answer's `synced_at`, sent back as it came; left out at login."""
+
+    since = datetime_field(required=False, allow_null=True)
+
+
 class OrderDetailRequest(serializers.Serializer):
     """One order, by its sync_id or its order number -- exactly one."""
 

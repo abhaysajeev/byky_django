@@ -1,7 +1,9 @@
 """Rental Management services."""
 
+import datetime
 import hashlib
 import json
+from datetime import timedelta
 from decimal import Decimal
 
 from django.db import IntegrityError, transaction
@@ -15,7 +17,7 @@ from apps.discount import services as discount_services
 from apps.fare import package_device
 from apps.fare.models import Fare, Package
 from apps.fleet.models import Vehicle
-from apps.rental import live
+from apps.rental import live, station_sync
 from apps.rental.models import (
     MONEY_IN,
     Customer,
@@ -113,7 +115,6 @@ ORDER_ERRORS = {
     "sync_id_conflict": (409, "That sync_id is already used for something else.", False),
     "order_no_used": (409, "That order number is already used.", False),
     "vehicle_already_rented": (409, "A vehicle in this order is already on an active rental.", False),
-    "vehicle_under_maintenance": (409, "That vehicle is under maintenance.", False),
     "vehicle_repeated": (400, "The same vehicle is in this order twice.", False),
     "item_id_used": (409, "An item sync_id is already used.", False),
     "payment_id_used": (409, "A payment sync_id is already used.", False),
@@ -257,6 +258,9 @@ def run_once(*, event_id, company, request_data, apply):
                 id=event_id, order=order, request_hash=fingerprint, response=reply, **event,
             )
             live.order_changed(order)       # sent once this commits (Live Monitoring)
+            # ...and the station's other tablets, for an order change (not a request).
+            station_sync.order_changed(order, event["action"], device=event.get("device"),
+                                       item=event.get("item"), new_item=event.get("new_item"))
     except IntegrityError as error:
         stored = _stored_reply(event_id, company, fingerprint)
         if stored is not None:
@@ -288,6 +292,49 @@ def order_at_station(branch, *, sync_id=None, order_no=None):
     if order is None:
         raise OrderRefused("unknown_order")
     return order
+
+
+# -- Station sync: the catch-up call (orders/changes; station_sync.py pushes) ----------
+
+CHANGES_WINDOW = timedelta(hours=24)       # the furthest back a `since` reaches
+CHANGES_OVERLAP = timedelta(seconds=30)    # a change saved as the last answer went out is not missed
+CHANGES_LIMIT = 500
+
+
+def station_changes(branch, since=None, *, now=None):
+    """(orders, truncated) a tablet at `branch` must refresh, most recently
+    changed first.
+
+    No `since` (login, nothing saved): every order still running at the
+    station, whatever day it was booked, and every order booked or changed
+    today (company day). With `since` (the `synced_at` of the tablet's last
+    answer): the orders changed after it, never further back than 24 hours.
+    "Changed" = booked, any recorded call on it (OrderEvent), or the order row
+    itself saved (a cancel writes no event)."""
+    from django.db.models import Max
+    from django.db.models.functions import Greatest
+
+    from core.timezones import zone_for
+
+    now = now or timezone.now()
+    orders = Order.objects.filter(branch=branch)
+    if since is None:
+        zone = zone_for(branch.company)
+        start = datetime.datetime.combine(business_date_for(branch.company, now), datetime.time.min, tzinfo=zone)
+        changed = _changed_after(orders, start)
+        orders = orders.filter(Q(status=OrderStatus.ACTIVE) | Q(pk__in=changed.values("pk")))
+    else:
+        cutoff = max(since - CHANGES_OVERLAP, now - CHANGES_WINDOW)
+        orders = _changed_after(orders, cutoff)
+    orders = orders.annotate(last_event=Max("events__received_at")).annotate(
+        last_change=Greatest("modified_on", "created_on", "last_event")).order_by("-last_change", "-pk")
+    rows = list(orders[:CHANGES_LIMIT + 1])
+    return rows[:CHANGES_LIMIT], len(rows) > CHANGES_LIMIT
+
+
+def _changed_after(orders, moment):
+    return orders.filter(Q(created_on__gte=moment) | Q(modified_on__gte=moment)
+                         | Q(events__received_at__gte=moment)).distinct()
 
 
 RECENT_INVOICES = 5
@@ -438,24 +485,13 @@ def _line_refs(company, branch, items_input):
     vehicle_list = [item["vehicle_id"] for item in items_input]
     if len(set(vehicle_list)) != len(vehicle_list):
         raise OrderRefused("vehicle_repeated")
-    # Locked (the lock a service report takes): a bike reported while this
-    # booking runs waits for it, and the other way round.
-    vehicles = {v.pk: v for v in Vehicle.objects.select_for_update()
-                .filter(pk__in=vehicle_list, company=company).order_by("pk")}
+    vehicles = {v.pk: v for v in Vehicle.objects.filter(pk__in=vehicle_list, company=company)}
     missing = set(vehicle_list) - set(vehicles)
     if missing:
         raise OrderRefused("unknown_vehicle", f"No vehicle with id {sorted(missing)[0]}.")
     off_station = sorted(v.pk for v in vehicles.values() if v.current_branch_id != branch.pk)
     if off_station:
         raise OrderRefused("vehicle_not_at_station", f"Vehicle {off_station[0]} is not at this station.")
-    # Under maintenance: an open service request holds the bike from the
-    # moment it is reported (apps/fleet/service_requests.py).
-    from apps.fleet.service_requests import under_maintenance
-
-    held = under_maintenance(vehicle_list)
-    if held:
-        first = min(held)
-        raise OrderRefused("vehicle_under_maintenance", f"Vehicle {first} is under maintenance ({held[first]}).")
     rented = active_rentals(vehicle_list)
     if rented:
         raise OrderRefused("vehicle_already_rented", f"Vehicle {min(rented)} is already on an active rental.")

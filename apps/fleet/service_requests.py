@@ -4,11 +4,10 @@ app, decided by a manager, put back in service on the web.
 Owner decisions, 23-26 Oct 2026 (design/inventory/service-and-image-sharing.md):
 - the operator app reports a vehicle or an asset of its station: free-text
   issue, optional photo;
-- **a reported vehicle is out of renting at once** -- "under maintenance" is
-  simply an open request on it (pending or approved); booking refuses it
-  (apps/rental/services.py::_line_refs);
-- a manager (manager app or web) approves -- it stays out -- or rejects --
-  back to renting at once;
+- "under maintenance" is simply an open request on a vehicle (pending or
+  approved) -- information only: renting it is **not** refused (the client
+  does not want that, 26 Oct 2026); the tablet's vehicle list shows it;
+- a manager (manager app or web) approves or rejects;
 - back in service on the web only; numbers SRV-<station code>-00001, counted
   per station.
 New: legacy had no maintenance tables (the AMS/EMS areas were switched off).
@@ -72,10 +71,8 @@ def report(session, values):
     """A new service request from the tablet. Returns (request, created):
     created is False when this sync_id was already stored (a resend).
 
-    The target must be at the tablet's own station. The vehicle row is locked
-    -- the lock booking takes -- so a report and a booking of one bike never
-    pass each other; one open request per vehicle / asset is also a database
-    rule (uniq_open_service_request_per_*)."""
+    The target must be at the tablet's own station; one open request per
+    vehicle / asset (also a database rule, uniq_open_service_request_per_*)."""
     branch = session.branch
     company = branch.company
     sync_id = values["sync_id"]
@@ -90,8 +87,7 @@ def report(session, values):
 
 def _target(values, branch, company):
     if values["target"] == VEHICLE:
-        vehicle = (Vehicle.objects.select_for_update()
-                   .filter(pk=values["vehicle_id"], company=company, is_active=True).first())
+        vehicle = Vehicle.objects.filter(pk=values["vehicle_id"], company=company, is_active=True).first()
         if vehicle is None:
             raise ServiceRefused("unknown_vehicle", "No vehicle with that id.", 404)
         if vehicle.current_branch_id != branch.pk:
@@ -177,18 +173,18 @@ def _decide(user, request_id, company_ids, channel, note, status):
 
 
 def approve(user, request_id, company_ids, channel, note=""):
-    """The fault is confirmed: the vehicle stays out of renting until it is
-    put back in service on the web."""
+    """The fault is confirmed: under maintenance until it is put back in
+    service on the web."""
     return _decide(user, request_id, company_ids, channel, note, ServiceRequestStatus.APPROVED)
 
 
 def reject(user, request_id, company_ids, channel, note=""):
-    """Not a fault: the request closes and a vehicle is rentable again at once."""
+    """Not a fault: the request closes."""
     return _decide(user, request_id, company_ids, channel, note, ServiceRequestStatus.REJECTED)
 
 
 def complete(user, request_id, company_ids, note):
-    """Back in service (web only): the repair is done, the vehicle is rentable."""
+    """Back in service (web only): the repair is done."""
     note = (note or "").strip()
     if not note:
         raise ServiceRefused("invalid_request", "Say what was done.", 400)
