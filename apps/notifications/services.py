@@ -53,6 +53,7 @@ AUDIENCES = {
     Action.APPROVED: (Audience.OPERATOR, Audience.MANAGER),
     Action.REJECTED: (Audience.OPERATOR, Audience.MANAGER),
     Action.REVOKED: (Audience.OPERATOR, Audience.MANAGER),
+    Action.COMPLETED: (Audience.OPERATOR, Audience.MANAGER),
 }
 
 # Firebase answers that mean the token is gone for good.
@@ -65,8 +66,9 @@ RETRY = {"unavailable", "internal", "quota_exceeded", "unknown"}
 
 def _describe(subject):
     """(subject_type, label, branch, device_id, order_id, extra data) of an
-    OrderRequest, CardDiscountClaim or CreditNote."""
+    OrderRequest, CardDiscountClaim, CreditNote or ServiceRequest."""
     from apps.discount.models import CardDiscountClaim
+    from apps.fleet.models import ServiceRequest
     from apps.rental.models import CreditNote, OrderRequest
 
     if isinstance(subject, OrderRequest):
@@ -76,19 +78,26 @@ def _describe(subject):
         return SubjectType.CARD_DISCOUNT, "Card discount", subject.branch, subject.device_id, subject.order_id, {}
     if isinstance(subject, CreditNote):
         return SubjectType.CREDIT_NOTE, "Credit note", subject.branch, subject.device_id, subject.order_id, {}
+    if isinstance(subject, ServiceRequest):
+        # No order: the reporting tablet hears the outcome (device_id).
+        return (SubjectType.SERVICE_REQUEST, "Service request", subject.branch, subject.device_id, None,
+                {"request_no": subject.request_no, "target": "vehicle" if subject.vehicle_id else "asset"})
     raise TypeError(f"Not a notification subject: {subject!r}")
 
 
 def _title(label, action, audience):
     """What happened, in a few words. The operator is told the outcome of
     their own request ("Discount approved"); managers the state of a request."""
+    request = label if label.endswith("request") else f"{label} request"   # "Service request"
     if action == Action.RAISED:
-        return f"New {label.lower()} request"
+        return f"New {request.lower()}"
     if action == Action.REVOKED:
         return f"{label} approval revoked"
+    if action == Action.COMPLETED:
+        return "Back in service"
     if audience == Audience.OPERATOR:
         return f"{label} {action}"
-    return f"{label} request {action}"
+    return f"{request} {action}"
 
 
 def _channel(action, audience):

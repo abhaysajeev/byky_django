@@ -153,5 +153,9 @@ def pending_counts(company_ids, *, state_id=None, branch_id=None):
     counts["card_discount"] = _where(CardDiscountClaim.objects.filter(status=ClaimStatus.PENDING),
                                      company_ids, state_id, branch_id).count()
     counts["leave"] = leave.pending_count(company_ids, state_id=state_id, branch_id=branch_id)
+    from apps.fleet.models import ServiceRequest, ServiceRequestStatus
+
+    counts["service"] = _where(ServiceRequest.objects.filter(status=ServiceRequestStatus.PENDING),
+                               company_ids, state_id, branch_id).count()
     counts["total"] = sum(counts.values())
     return counts

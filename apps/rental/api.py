@@ -512,7 +512,8 @@ _SETTLED_SAMPLE = {
 }
 
 _BOOK_ERRORS = (
-    "sync_id_conflict", "order_no_used", "vehicle_already_rented", "vehicle_repeated", "item_id_used",
+    "sync_id_conflict", "order_no_used", "vehicle_already_rented", "vehicle_under_maintenance",
+    "vehicle_repeated", "item_id_used",
     "payment_id_used", "unknown_customer", "unknown_payment_mode", "unknown_vehicle",
     "vehicle_not_at_station", "unknown_fare", "unknown_offer", "package_not_available",
 )
@@ -1072,8 +1073,8 @@ _REMOVED_SAMPLE = {
 
 _CHANGE_ERRORS = ("order_not_synced", "sync_id_conflict", "order_closed")
 _NEW_LINE_ERRORS = (
-    "vehicle_already_rented", "vehicle_not_at_station", "unknown_vehicle", "unknown_fare", "unknown_offer",
-    "package_not_available", "item_id_used",
+    "vehicle_already_rented", "vehicle_under_maintenance", "vehicle_not_at_station", "unknown_vehicle",
+    "unknown_fare", "unknown_offer", "package_not_available", "item_id_used",
 )
 _ADD_ERRORS = (*_CHANGE_ERRORS, *_NEW_LINE_ERRORS, "unknown_payment_mode", "payment_id_used")
 _REPLACE_ERRORS = (*_CHANGE_ERRORS, "unknown_item", "item_not_active", "invalid_time", "vehicle_repeated",
@@ -1966,9 +1967,19 @@ newest first, 50 a page (`page`, from 1), sorted and paged together:
 | `discount`, `complimentary`, `reprint`, `order_reprint`, `cancel` | order requests | `requests/approve` / `reject` (`revoke` for discount, complimentary) |
 | `credit_note` | a tablet's credit-note request | `credit-notes/approve` (with `net_amount`) / `reject` |
 | `card_discount` | a card discount that needs approval | `card-discounts/claims/approve` / `reject` |
+| `service` | a vehicle or station asset reported for service | `service-requests/approve` / `reject` |
 
 `request_sync_id` is the id that kind's call takes (`credit_note_id`,
-`claim_id` for the last two). Listing only -- nothing is decided here.
+`claim_id` for credit notes and card discounts). Listing only -- nothing is
+decided here.
+
+A **`service`** row has no order (`order`, `order_id`, `order_no` are `null`);
+`reason` is the reported issue and `details` carries the request:
+`request_no` (SRV-<station code>-00001), `target` (`vehicle` / `asset`) with the
+vehicle's or asset's id and name, `issue`, `photo_url` / `photo_thumb_url`
+(`null` when no photo was sent), and once back in service `completed_by` /
+`completed_at` / `completion_note`. Its `status`: `pending`, `approved` (under
+maintenance), `rejected`, `completed` (back in service, on the web).
 
 Filters, all optional, for every kind together: `"pending": true` for only
 those waiting, `kind` for one kind, `state_id` for one state's stations,

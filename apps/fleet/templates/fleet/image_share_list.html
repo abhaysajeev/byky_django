@@ -1,0 +1,130 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Image Sharing - Inventory{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+<script src="{% static 'js/byky-image-share.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+{% comment %}
+Photos shared from the tablet with remarks: who, when, where. A photo opens
+full size with its details; Delete (delete right) takes it out of every list
+and stops its photo being served -- the record is kept
+(apps/fleet/image_shares.py). Nothing to approve.
+{% endcomment %}
+<div class="scr" data-image-shares>
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Inventory</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Image Sharing</b>
+      </div>
+      <h1 class="scr-title">Image Sharing</h1>
+      <p class="scr-sub">Photos shared from the stations' tablets, with their remarks.</p>
+    </div>
+  </div>
+
+  <div class="scr-card" data-scr-server-paged>
+    <form method="get" class="scr-toolbar scr-mon-toolbar" data-scr-autosubmit>
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="text" name="q" value="{{ params.q }}" placeholder="Remarks or shared by" aria-label="Search" />
+      </div>
+      <div class="scr-mon-dates">
+        <input type="date" name="from" class="scr-input" value="{{ params.from }}" aria-label="Shared from" title="Shared from" />
+        <span>to</span>
+        <input type="date" name="to" class="scr-input" value="{{ params.to }}" aria-label="Shared to" title="Shared to" />
+      </div>
+      <select name="state" class="scr-input scr-list-select" aria-label="Emirate">
+        <option value="">All emirates</option>
+        {% for s in states %}<option value="{{ s.id }}"{% if params.state == s.id|stringformat:"s" %} selected{% endif %}>{{ s.name }}</option>{% endfor %}
+      </select>
+      <select name="branch" class="scr-input scr-list-select" aria-label="Station">
+        <option value="">All stations</option>
+        {% for b in branches %}<option value="{{ b.id }}"{% if params.branch == b.id|stringformat:"s" %} selected{% endif %}>{{ b.name }}</option>{% endfor %}
+      </select>
+      <button type="submit" class="scr-btn">Filter</button>
+      {% if filtered %}<a href="{% url 'fleet-image-share-list' %}" class="scr-btn-secondary">Clear</a>{% endif %}
+      <span class="scr-toolbar-count">{{ page.paginator.count }} image{{ page.paginator.count|pluralize }}</span>
+    </form>
+
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Photo</th>
+            <th>Remarks</th>
+            <th>Station</th>
+            <th>Shared</th>
+            <th class="scr-th-actions"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in rows %}
+          <tr>
+            <td>
+              <button type="button" class="scr-photo-thumb scr-share-thumb" data-share-open
+                      data-full="{{ s.full }}" data-remarks="{{ s.remarks }}" data-station="{{ s.station }} · {{ s.emirate }}"
+                      data-shared="{{ s.shared_at|date:'d M Y, H:i' }}{% if s.shared_by %} · {{ s.shared_by }}{% endif %}{% if s.tablet %} · Tablet {{ s.tablet }}{% endif %}"
+                      data-received="{{ s.received_at|date:'d M Y, H:i' }}" data-delete-url="{{ s.delete_url }}"
+                      aria-label="View photo">
+                <img src="{{ s.thumb }}" alt="Shared photo" loading="lazy" />
+              </button>
+            </td>
+            <td class="scr-state scr-mon-wrap">{{ s.remarks|truncatechars:120 }}</td>
+            <td><div class="scr-co-name">{{ s.station }}</div><div class="scr-contact-sub">{{ s.emirate }}</div></td>
+            <td><div class="scr-co-name">{{ s.shared_at|date:"d M Y, H:i" }}</div><div class="scr-contact-sub">{{ s.shared_by|default:"—" }}{% if s.tablet %} · Tablet {{ s.tablet }}{% endif %}</div></td>
+            <td>
+              <div class="scr-row-actions">
+                <button type="button" class="scr-icon-btn" data-share-open-row title="View" aria-label="View photo">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                </button>
+              </div>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="5" style="padding:0"><div class="scr-empty"><div><div class="scr-empty-title">{% if filtered %}No images match{% else %}No images shared yet{% endif %}</div><p class="scr-empty-sub">Operators share a photo with remarks from the tablet.</p></div></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% include "byky/partials/server_pager.html" %}
+  </div>
+
+  <button type="button" hidden data-scr-modal-open="share-photo" data-share-modal-trigger></button>
+  <div class="scr-modal-veil" data-scr-modal-veil="share-photo" hidden></div>
+  <div class="scr-modal scr-photo-modal scr-share-modal" data-scr-modal="share-photo" hidden>
+    <div class="scr-modal-head">
+      <div><div class="scr-modal-title" data-share-station></div><p class="scr-modal-sub" data-share-shared></p></div>
+      <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+      </button>
+    </div>
+    <div class="scr-modal-body">
+      <img data-share-img alt="Shared photo" />
+      <p class="scr-mon-wrap" data-share-remarks></p>
+      <p class="scr-help" data-share-received></p>
+    </div>
+    {% if perm.delete %}
+    <div class="scr-modal-foot">
+      <button type="button" class="scr-btn-secondary" data-scr-modal-close>Close</button>
+      <button type="button" class="scr-btn-danger" data-share-delete>Delete</button>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}

@@ -113,6 +113,7 @@ ORDER_ERRORS = {
     "sync_id_conflict": (409, "That sync_id is already used for something else.", False),
     "order_no_used": (409, "That order number is already used.", False),
     "vehicle_already_rented": (409, "A vehicle in this order is already on an active rental.", False),
+    "vehicle_under_maintenance": (409, "That vehicle is under maintenance.", False),
     "vehicle_repeated": (400, "The same vehicle is in this order twice.", False),
     "item_id_used": (409, "An item sync_id is already used.", False),
     "payment_id_used": (409, "A payment sync_id is already used.", False),
@@ -437,13 +438,24 @@ def _line_refs(company, branch, items_input):
     vehicle_list = [item["vehicle_id"] for item in items_input]
     if len(set(vehicle_list)) != len(vehicle_list):
         raise OrderRefused("vehicle_repeated")
-    vehicles = {v.pk: v for v in Vehicle.objects.filter(pk__in=vehicle_list, company=company)}
+    # Locked (the lock a service report takes): a bike reported while this
+    # booking runs waits for it, and the other way round.
+    vehicles = {v.pk: v for v in Vehicle.objects.select_for_update()
+                .filter(pk__in=vehicle_list, company=company).order_by("pk")}
     missing = set(vehicle_list) - set(vehicles)
     if missing:
         raise OrderRefused("unknown_vehicle", f"No vehicle with id {sorted(missing)[0]}.")
     off_station = sorted(v.pk for v in vehicles.values() if v.current_branch_id != branch.pk)
     if off_station:
         raise OrderRefused("vehicle_not_at_station", f"Vehicle {off_station[0]} is not at this station.")
+    # Under maintenance: an open service request holds the bike from the
+    # moment it is reported (apps/fleet/service_requests.py).
+    from apps.fleet.service_requests import under_maintenance
+
+    held = under_maintenance(vehicle_list)
+    if held:
+        first = min(held)
+        raise OrderRefused("vehicle_under_maintenance", f"Vehicle {first} is under maintenance ({held[first]}).")
     rented = active_rentals(vehicle_list)
     if rented:
         raise OrderRefused("vehicle_already_rented", f"Vehicle {min(rented)} is already on an active rental.")
