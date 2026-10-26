@@ -272,6 +272,10 @@ def _requested_between(rows, zone, from_date=None, to_date=None):
 # (orders/requests/status, orders/credit-notes/status,
 # card-discounts/approval/status) stays the way to follow one.
 CREDIT_NOTE, CARD_DISCOUNT = "credit_note", "card_discount"
+# A vehicle or station asset reported for service (apps/fleet/service_requests.py):
+# in the manager's list only -- the tablet follows its reports with
+# service-requests/list.
+SERVICE = "service"
 LIST_KINDS = (*OrderRequestKind.values, CREDIT_NOTE, CARD_DISCOUNT)
 
 
@@ -300,7 +304,8 @@ def _station_sources(branch, kind, device=None):
     return sources
 
 
-_PENDING = {"request": OrderRequestStatus.PENDING, CREDIT_NOTE: "pending", CARD_DISCOUNT: ClaimStatus.PENDING}
+_PENDING = {"request": OrderRequestStatus.PENDING, CREDIT_NOTE: "pending", CARD_DISCOUNT: ClaimStatus.PENDING,
+            SERVICE: "pending"}
 
 
 def station_list(branch, *, pending_only=False, kind=None, from_date=None, to_date=None, page=1, device=None):
@@ -642,6 +647,10 @@ def _company_sources(company_ids, kind, state_id, branch_id):
         sources.append((CREDIT_NOTE, where(CreditNote.objects.filter(source=CreditNoteSource.DEVICE))))
     if kind in (None, CARD_DISCOUNT):
         sources.append((CARD_DISCOUNT, where(CardDiscountClaim.objects.filter(requires_approval=True))))
+    if kind in (None, SERVICE):
+        from apps.fleet.models import ServiceRequest
+
+        sources.append((SERVICE, where(ServiceRequest.objects.all())))
     return sources
 
 
@@ -704,6 +713,12 @@ def _manager_rows_of(keys):
                 **row["details"], "card_photo": claim.card_photo or None,
                 **card_photo_fields(claim), "fare_basis": claim.fare_basis,
             })
+    if SERVICE in wanted:
+        from apps.fleet import service_requests
+        from apps.fleet.models import ServiceRequest
+
+        for req in service_requests.with_rows(ServiceRequest.objects.filter(pk__in=wanted[SERVICE])):
+            loaded[(SERVICE, req.pk)] = service_requests.manager_json(req, zone_of(req))
     return [loaded[(source, pk)] for pk, _, source in keys]
 
 

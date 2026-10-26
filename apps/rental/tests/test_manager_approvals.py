@@ -131,7 +131,7 @@ def test_pending_counts_cover_every_kind(client, token, manager, asked, claim, s
     body = call(client, COUNTS, token=manager).json()
 
     assert body["data"] == {"discount": 0, "complimentary": 0, "reprint": 0, "order_reprint": 0, "cancel": 0, "credit_note": 1,
-                            "card_discount": 1, "leave": 0, "total": 2}
+                            "card_discount": 1, "leave": 0, "service": 0, "total": 2}
     other_station = call(client, COUNTS, {"branch_id": settled.branch_id + 1000}, token=manager).json()
     assert other_station["data"]["total"] == 0
 

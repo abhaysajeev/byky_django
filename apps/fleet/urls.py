@@ -1,6 +1,6 @@
 from django.urls import path
 
-from apps.fleet import views
+from apps.fleet import maintenance_views, views
 
 urlpatterns = [
     path("brand/list/", views.BrandListView.as_view(), name="fleet-brand-list"),
@@ -31,5 +31,18 @@ urlpatterns = [
     path("vehicle/export/", views.VehicleExport.as_view(), name="fleet-vehicle-export"),
     path("vehicle/save/", views.VehicleSave.as_view(), name="fleet-vehicle-save"),
     path("vehicle/<int:pk>/delete/", views.VehicleDelete.as_view(), name="fleet-vehicle-delete"),
+    path("service-request/list/", maintenance_views.ServiceRequestListView.as_view(),
+         name="fleet-service-request-list"),
+    path("service-request/<uuid:pk>/", maintenance_views.ServiceRequestDetailView.as_view(),
+         name="fleet-service-request-detail"),
+    path("service-request/<uuid:pk>/approve/", maintenance_views.ServiceRequestApprove.as_view(),
+         name="fleet-service-request-approve"),
+    path("service-request/<uuid:pk>/reject/", maintenance_views.ServiceRequestReject.as_view(),
+         name="fleet-service-request-reject"),
+    path("service-request/<uuid:pk>/complete/", maintenance_views.ServiceRequestComplete.as_view(),
+         name="fleet-service-request-complete"),
+    path("image-share/list/", maintenance_views.ImageShareListView.as_view(), name="fleet-image-share-list"),
+    path("image-share/<uuid:pk>/delete/", maintenance_views.ImageShareDelete.as_view(),
+         name="fleet-image-share-delete"),
     path("privileges/", views.FleetPrivilegeView.as_view(), name="fleet-privileges"),
 ]

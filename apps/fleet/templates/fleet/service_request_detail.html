@@ -1,0 +1,183 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}{{ req.request_no }} - Service & Maintenance{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+<script src="{% static 'js/byky-service-request.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+{% comment %}
+One reported vehicle or station asset. Pending: Approve (it stays out of
+service) or Reject (a vehicle can be rented again at once) -- approve right.
+Under maintenance: Back in service, with what was done -- update right; the web
+is the only place for it.
+{% endcomment %}
+<div class="scr" data-service-request data-approve-url="{{ approve_url }}" data-reject-url="{{ reject_url }}" data-complete-url="{{ complete_url }}">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Inventory</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <a href="{{ list_url }}">Service &amp; Maintenance</a>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>{{ req.request_no }}</b>
+      </div>
+      <h1 class="scr-title">{{ req.request_no }}</h1>
+      <p class="scr-sub">{{ target.kind }} {{ target.name }} · {{ req.branch.name }}</p>
+    </div>
+    <div class="scr-head-actions">
+      <a href="{{ list_url }}" class="scr-btn-secondary">Back</a>
+      {% if req.status == "pending" and perm.approve %}
+      <button type="button" class="scr-btn-danger" data-scr-modal-open="service-reject">Reject</button>
+      <button type="button" class="scr-btn-primary" data-scr-modal-open="service-approve">Approve</button>
+      {% elif req.status == "approved" and perm.update %}
+      <button type="button" class="scr-btn-primary" data-scr-modal-open="service-complete">Back in service</button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="scr-mon-grid">
+    <div class="scr-card">
+      <div class="scr-form-head">
+        <div class="scr-form-title-row">
+          <h2 class="scr-form-title">Report</h2>
+          {% include "fleet/partials/service_status.html" with status=req.status %}
+        </div>
+      </div>
+      <div class="scr-form-body scr-mon-body">
+        <div class="scr-detail-rows">
+          <div class="scr-detail-row"><span class="scr-detail-label">{{ target.kind }}</span><span class="scr-detail-value">{% if target.url %}<a class="scr-link-blue" href="{{ target.url }}">{{ target.name }}</a>{% else %}{{ target.name }}{% endif %} · {{ target.code }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Station</span><span class="scr-detail-value">{{ req.branch.name }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label"><b>Issue</b></span><span class="scr-detail-value scr-mon-wrap"><b>{{ req.issue }}</b></span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Reported</span><span class="scr-detail-value">{{ requested_at|date:"d M Y, H:i" }}{% if req.requested_by %} · {{ req.requested_by.display_name|default:req.requested_by.username }}{% endif %}{% if tablet %} · Tablet {{ tablet }}{% endif %}</span></div>
+          {% if req.decided_at %}
+          <div class="scr-detail-row"><span class="scr-detail-label">{% if req.status == "rejected" %}Rejected{% else %}Approved{% endif %}</span><span class="scr-detail-value">{{ decided_at|date:"d M Y, H:i" }}{% if req.decided_by %} · {{ req.decided_by.display_name|default:req.decided_by.username }}{% endif %} · {{ req.get_decided_channel_display }}</span></div>
+          {% if req.decision_note %}<div class="scr-detail-row"><span class="scr-detail-label">Note</span><span class="scr-detail-value scr-mon-wrap">{{ req.decision_note }}</span></div>{% endif %}
+          {% endif %}
+          {% if req.completed_at %}
+          <div class="scr-detail-row"><span class="scr-detail-label">Back in service</span><span class="scr-detail-value">{{ completed_at|date:"d M Y, H:i" }}{% if req.completed_by %} · {{ req.completed_by.display_name|default:req.completed_by.username }}{% endif %}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Work done</span><span class="scr-detail-value scr-mon-wrap">{{ req.completion_note }}</span></div>
+          {% endif %}
+          {% if out_for %}
+          <div class="scr-detail-row"><span class="scr-detail-label">Out of service</span><span class="scr-detail-value">{{ out_for }}{% if req.is_open %} so far{% endif %}</span></div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="scr-card">
+      <div class="scr-form-head"><div class="scr-form-title-row"><h2 class="scr-form-title">Photo</h2></div></div>
+      <div class="scr-form-body scr-mon-body">
+        {% if photo %}
+        <button type="button" class="scr-photo-thumb" data-scr-modal-open="service-photo" aria-label="View photo">
+          <img src="{{ photo }}" alt="Photo of the issue" loading="lazy" />
+        </button>
+        {% else %}
+        <div class="scr-empty">
+          <span class="scr-empty-ico">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7a2 2 0 0 1 2-2h2l1.5-2h5L16 5h2a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8"></path></svg>
+          </span>
+          <div><div class="scr-empty-title">No photo</div><p class="scr-empty-sub">The report was sent without one.</p></div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {% if photo %}
+  <div class="scr-modal-veil" data-scr-modal-veil="service-photo" hidden></div>
+  <div class="scr-modal scr-photo-modal" data-scr-modal="service-photo" hidden>
+    <div class="scr-modal-head">
+      <div><div class="scr-modal-title">{{ req.request_no }}</div><p class="scr-modal-sub">{{ target.kind }} {{ target.name }} · {{ req.branch.name }}</p></div>
+      <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+      </button>
+    </div>
+    <div class="scr-modal-body"><img src="{{ photo_full }}" alt="Photo of the issue" /></div>
+  </div>
+  {% endif %}
+
+  {% if req.status == "pending" and perm.approve %}
+  <div class="scr-modal-veil" data-scr-modal-veil="service-approve" hidden></div>
+  <div class="scr-modal" data-scr-modal="service-approve" hidden>
+    <div class="scr-modal-head">
+      <div>
+        <div class="scr-modal-title">Approve {{ req.request_no }}</div>
+        <p class="scr-modal-sub">{% if req.vehicle_id %}{{ target.name }} stays off rent until it is put back in service here.{% else %}{{ target.name }} is marked under maintenance until it is put back in service here.{% endif %}</p>
+      </div>
+      <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+      </button>
+    </div>
+    <div class="scr-modal-body">
+      <div class="scr-field">
+        <label class="scr-label" for="sr-approve-note">Note</label>
+        <textarea id="sr-approve-note" class="scr-input scr-textarea" rows="3" maxlength="500" data-sr-note></textarea>
+      </div>
+    </div>
+    <div class="scr-modal-foot">
+      <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+      <button type="button" class="scr-btn-primary" data-sr-go="approve">Approve</button>
+    </div>
+  </div>
+
+  <div class="scr-modal-veil" data-scr-modal-veil="service-reject" hidden></div>
+  <div class="scr-modal" data-scr-modal="service-reject" hidden>
+    <div class="scr-modal-head">
+      <div>
+        <div class="scr-modal-title">Reject {{ req.request_no }}</div>
+        <p class="scr-modal-sub">{% if req.vehicle_id %}{{ target.name }} can be rented again at once.{% else %}The report is closed.{% endif %} The tablet is told.</p>
+      </div>
+      <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+      </button>
+    </div>
+    <div class="scr-modal-body">
+      <div class="scr-field">
+        <label class="scr-label" for="sr-reject-note">Reason for rejecting</label>
+        <textarea id="sr-reject-note" class="scr-input scr-textarea" rows="3" maxlength="500" data-sr-note></textarea>
+      </div>
+    </div>
+    <div class="scr-modal-foot">
+      <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+      <button type="button" class="scr-btn-danger" data-sr-go="reject">Reject</button>
+    </div>
+  </div>
+  {% elif req.status == "approved" and perm.update %}
+  <div class="scr-modal-veil" data-scr-modal-veil="service-complete" hidden></div>
+  <div class="scr-modal" data-scr-modal="service-complete" hidden>
+    <div class="scr-modal-head">
+      <div>
+        <div class="scr-modal-title">Back in service</div>
+        <p class="scr-modal-sub">{% if req.vehicle_id %}{{ target.name }} can be rented again.{% else %}{{ target.name }} is working again.{% endif %} Say what was done.</p>
+      </div>
+      <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+      </button>
+    </div>
+    <div class="scr-modal-body">
+      <div class="scr-field">
+        <label class="scr-label" for="sr-complete-note">Work done <span class="scr-required">*</span></label>
+        <textarea id="sr-complete-note" class="scr-input scr-textarea" rows="3" maxlength="500" data-sr-note></textarea>
+      </div>
+    </div>
+    <div class="scr-modal-foot">
+      <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+      <button type="button" class="scr-btn-primary" data-sr-go="complete">Back in service</button>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}
