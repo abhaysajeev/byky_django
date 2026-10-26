@@ -16,8 +16,8 @@
 
 {% block content %}
 {% comment %}
-One reported vehicle or station asset. Pending: Approve (it stays out of
-service) or Reject (a vehicle can be rented again at once) -- approve right.
+One reported vehicle or station asset. Pending: Approve (under maintenance)
+or Reject (the report closes) -- approve right.
 Under maintenance: Back in service, with what was done -- update right; the web
 is the only place for it.
 {% endcomment %}
@@ -113,7 +113,7 @@ is the only place for it.
     <div class="scr-modal-head">
       <div>
         <div class="scr-modal-title">Approve {{ req.request_no }}</div>
-        <p class="scr-modal-sub">{% if req.vehicle_id %}{{ target.name }} stays off rent until it is put back in service here.{% else %}{{ target.name }} is marked under maintenance until it is put back in service here.{% endif %}</p>
+        <p class="scr-modal-sub">{{ target.name }} is marked under maintenance until it is put back in service here.</p>
       </div>
       <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
@@ -136,7 +136,7 @@ is the only place for it.
     <div class="scr-modal-head">
       <div>
         <div class="scr-modal-title">Reject {{ req.request_no }}</div>
-        <p class="scr-modal-sub">{% if req.vehicle_id %}{{ target.name }} can be rented again at once.{% else %}The report is closed.{% endif %} The tablet is told.</p>
+        <p class="scr-modal-sub">The report is closed. The tablet is told.</p>
       </div>
       <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
@@ -159,7 +159,7 @@ is the only place for it.
     <div class="scr-modal-head">
       <div>
         <div class="scr-modal-title">Back in service</div>
-        <p class="scr-modal-sub">{% if req.vehicle_id %}{{ target.name }} can be rented again.{% else %}{{ target.name }} is working again.{% endif %} Say what was done.</p>
+        <p class="scr-modal-sub">{{ target.name }} is working again. Say what was done.</p>
       </div>
       <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>

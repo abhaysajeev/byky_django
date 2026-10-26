@@ -351,9 +351,9 @@ class Vehicle(ApprovalMixin, TimeStampedModel):
 # New in the rebuild: legacy had no maintenance tables (the AMS/EMS areas were
 # switched off). Built from the 2026 manager-app spec §5 and the owner's
 # decisions of 23-26 Oct 2026 (design/inventory/service-and-image-sharing.md):
-# the operator reports a vehicle or a station asset; a reported vehicle is out of
-# renting from that moment; a manager approves or rejects; the web puts it back
-# in service.
+# the operator reports a vehicle or a station asset; a manager approves or
+# rejects; the web puts it back in service. Renting a reported vehicle is not
+# refused -- the report is information (26 Oct 2026).
 
 class ServiceRequestStatus(models.TextChoices):
     PENDING = "pending", "Pending"
@@ -362,7 +362,7 @@ class ServiceRequestStatus(models.TextChoices):
     COMPLETED = "completed", "Completed"
 
 
-# A request still holding its vehicle or asset: the vehicle cannot be rented.
+# A request still open on its vehicle or asset ("under maintenance").
 SERVICE_OPEN = (ServiceRequestStatus.PENDING, ServiceRequestStatus.APPROVED)
 
 

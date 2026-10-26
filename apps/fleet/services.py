@@ -116,11 +116,11 @@ def _rental_status(vehicle, rental, zone, service_request_no=None):
     return {
         "on_rent": rental is not None,
         "rental": rental_json,
-        # Reported for service (pending or approved): not rentable until it
-        # is put back in service (apps/fleet/service_requests.py).
+        # Reported for service and not back in service yet -- information
+        # only: renting it is not refused (owner, 26 Oct 2026).
         "under_maintenance": service_request_no is not None,
         "service_request_no": service_request_no,
-        "can_rent": vehicle.is_available and rental is None and service_request_no is None,
+        "can_rent": vehicle.is_available and rental is None,
     }
 
 
