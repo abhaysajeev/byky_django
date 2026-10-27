@@ -185,6 +185,7 @@ def create_request(session, values, request_data):
             created_by=session.user, modified_by=session.user,
         )
         notifications.notify(req, Action.RAISED)
+        station_sync.request_changed(req, Action.RAISED, device=session.device)
         event = {
             "action": OrderAction.REQUEST, "happened_at": values["requested_at"],
             "device": session.device, "user": session.user,
@@ -217,6 +218,7 @@ def withdraw(session, values, request_data):
             req.modified_by = session.user
             req.save()
             notifications.notify(req, Action.WITHDRAWN)
+            station_sync.request_changed(req, Action.WITHDRAWN, device=session.device)
         elif req.status != OrderRequestStatus.WITHDRAWN:
             raise OrderRefused("request_closed")
         event = {
@@ -245,6 +247,7 @@ def mark_used(session, values, request_data):
             raise OrderRefused("request_not_approved")
         req.status, req.used_at, req.modified_by = OrderRequestStatus.USED, values["used_at"], session.user
         req.save()
+        station_sync.request_changed(req, "used", device=session.device)
         event = {
             "action": OrderAction.REQUEST_USED, "happened_at": values["used_at"],
             "device": session.device, "user": session.user,
@@ -470,6 +473,7 @@ def approve(user, request_id, company_ids, channel, discount_type=None, value=No
         req.decision_note, req.modified_by = (note or "").strip(), user
         req.save()
         notifications.notify(req, Action.APPROVED)
+        station_sync.request_changed(req, Action.APPROVED)
         if req.kind == OrderRequestKind.CANCEL:
             cancel_order(order, req, user, now)
     return req
@@ -539,6 +543,7 @@ def reject(user, request_id, company_ids, channel, note=""):
         req.decision_note, req.modified_by = (note or "").strip(), user
         req.save()
         notifications.notify(req, Action.REJECTED)
+        station_sync.request_changed(req, Action.REJECTED)
     return req
 
 
@@ -559,6 +564,7 @@ def revoke(user, request_id, company_ids, channel, note=""):
         req.revoke_note, req.modified_by = (note or "").strip(), user
         req.save()
         notifications.notify(req, Action.REVOKED)
+        station_sync.request_changed(req, Action.REVOKED)
     return req
 
 

@@ -11,3 +11,10 @@ from apps.rental import station_sync
 def station_push(order_id, action, device_id, item_id, at):
     """Tell the station's other tablets an order changed (station_sync)."""
     return station_sync.push(order_id, action, device_id, item_id, datetime.datetime.fromisoformat(at))
+
+
+@shared_task(name="apps.rental.tasks.station_request_push", ignore_result=True)
+def station_request_push(request_type, subject_id, action, status, left_out, at):
+    """Tell the order's station's other tablets a request on it changed (station_sync)."""
+    return station_sync.request_push(request_type, subject_id, action, status, left_out,
+                                     datetime.datetime.fromisoformat(at))

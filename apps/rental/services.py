@@ -311,8 +311,10 @@ def station_changes(branch, since=None, *, now=None):
     station, whatever day it was booked, and every order booked or changed
     today (company day). With `since` (the `synced_at` of the tablet's last
     answer): the orders changed after it, never further back than 24 hours.
-    "Changed" = booked, any recorded call on it (OrderEvent), or the order row
-    itself saved (a cancel writes no event)."""
+    "Changed" = booked, any recorded call on it (OrderEvent), the order row
+    itself saved (a cancel writes no event), or a request on it changed -- an
+    order request, credit note or card-discount claim raised, decided or closed
+    (a manager's decision writes no event)."""
     from django.db.models import Max
     from django.db.models.functions import Greatest
 
@@ -335,8 +337,17 @@ def station_changes(branch, since=None, *, now=None):
 
 
 def _changed_after(orders, moment):
+    from django.db.models import Exists, OuterRef
+
+    from apps.discount.models import CardDiscountClaim
+    from apps.rental.models import CreditNote, OrderRequest
+
+    def touched(model):
+        return Exists(model.objects.filter(order=OuterRef("pk"), modified_on__gte=moment))
+
     return orders.filter(Q(created_on__gte=moment) | Q(modified_on__gte=moment)
-                         | Q(events__received_at__gte=moment)).distinct()
+                         | Q(events__received_at__gte=moment) | Q(touched(OrderRequest))
+                         | Q(touched(CreditNote)) | Q(touched(CardDiscountClaim))).distinct()
 
 
 RECENT_INVOICES = 5

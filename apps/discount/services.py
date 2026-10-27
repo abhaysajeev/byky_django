@@ -31,6 +31,7 @@ from apps.notifications import services as notifications
 from apps.notifications.models import Action
 from apps.photos import services as photo_services
 from apps.photos.models import PhotoPurpose
+from apps.rental import station_sync
 from apps.rental.models import (
     REQUEST_LIVE,
     Customer,
@@ -228,6 +229,7 @@ def decide_claim(user, claim, approve, remarks="", channel=DecisionChannel.WEB):
         claim.save(update_fields=["status", "decided_at", "decided_by", "remarks", "decided_channel",
                                   "modified_by", "modified_on"])
         notifications.notify(claim, Action.APPROVED if approve else Action.REJECTED)
+        station_sync.request_changed(claim, Action.APPROVED if approve else Action.REJECTED)
     return claim
 
 
@@ -377,6 +379,7 @@ def _request_approval(session, values, company, sync_id):
     if photo is not None:
         photo_services.mark_attached(photo)
     notifications.notify(claim, Action.RAISED)
+    station_sync.request_changed(claim, Action.RAISED, device=session.device)
     return claim, True
 
 
