@@ -704,11 +704,14 @@ remove, return, payment, settle, cancel), `branch_id`, `at`. On it, call
 order request's kind, else empty), `status`, `action` (raised, withdrawn,
 cancelled, approved, rejected, revoked, used), `branch_id`, `at`. Never to the
 tablet that acted; a decision never to the asking tablet either (it has its own
-alert). On it, refresh that order's requests: `orders/requests/status`,
-`orders/credit-notes/status` or `card-discounts/approval/status`.
+alert). On it, refresh the request: `orders/requests/status` or
+`orders/credit-notes/status` with `order_ids: [order_id]`, or
+`card-discounts/approval/status` with `order_id` and `sync_id` = `request_id`.
 
 An order whose requests changed also comes back here (a manager's decision
-included): refresh the requests of the orders you receive the same way.
+included): refresh the order requests and credit notes of the orders you
+receive (`order_ids`, as above); card discounts from `orders/requests/list`
+with `kind: card_discount` (its rows carry `order_id` and `request_sync_id`).
 """
 
 
