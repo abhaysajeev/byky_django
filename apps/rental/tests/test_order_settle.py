@@ -260,6 +260,41 @@ def test_only_an_approved_request_on_this_order_can_be_redeemed(client, world, t
     assert_nothing_settled(returned)
 
 
+def test_an_approved_card_discount_must_be_applied(client, world, token, shop, grade, returned):
+    """Another tablet settling without the card discount approved for the
+    first is refused, with the claim to apply -- the claim is not cancelled."""
+    approval = make_discount(grade, requires_approval=True)
+    claim = make_claim(approval, shop["ahmed"], status=ClaimStatus.APPROVED,
+                       order=Order.objects.get(pk=returned["sync_id"]), when=timezone.now())
+
+    body = settle(client, token, bill(returned, shop))
+
+    assert body["code"] == "approved_card_discount_not_applied", body
+    assert {k: body["data"][k] for k in ("request_sync_id", "card_discount_id", "discount_percentage")} == {
+        "request_sync_id": str(claim.pk), "card_discount_id": approval.pk, "discount_percentage": "10.00"}
+    claim.refresh_from_db()
+    assert claim.status == ClaimStatus.APPROVED
+    assert_nothing_settled(returned)
+
+    request_data = bill(returned, shop, net_amount="104.50",
+                        card_discount={"request_sync_id": str(claim.pk), "discount_percentage": "5.00",
+                                       "discount_amount": "5.50"})
+    request_data["payments"][0]["amount"] = "4.50"
+    assert settle(client, token, request_data)["code"] == "ok"
+    claim.refresh_from_db()
+    assert claim.status == ClaimStatus.REDEEMED
+
+
+def test_a_pending_card_discount_does_not_hold_the_settle(client, world, token, shop, grade, returned):
+    approval = make_discount(grade, requires_approval=True)
+    claim = make_claim(approval, shop["ahmed"], status=ClaimStatus.PENDING,
+                       order=Order.objects.get(pk=returned["sync_id"]), when=timezone.now())
+
+    assert settle(client, token, bill(returned, shop))["code"] == "ok"
+    claim.refresh_from_db()
+    assert claim.status == ClaimStatus.CANCELLED
+
+
 def test_an_unknown_card_discount_is_refused(client, token, shop, returned):
     request_data = bill(returned, shop, net_amount="104.50",
                         card_discount={"card_discount_id": 999999, "discount_percentage": "5.00",
