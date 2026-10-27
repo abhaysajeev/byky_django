@@ -7,6 +7,7 @@ from django.db.models import F
 from django.utils import timezone
 
 from apps.fleet.models import IDENTIFIER_SEQUENCE, Category, Vehicle, VehicleType
+from apps.fleet.service_requests import under_maintenance
 from apps.rental import services as rental_services
 from core.enums import ApprovalStatus
 from core.timezones import zone_for
@@ -64,6 +65,7 @@ def device_vehicles(branch, *, vehicle_category_id=None, vehicle_type_id=None, a
 
     vehicles = list(vehicles)
     rentals = rental_services.active_rentals([vehicle.pk for vehicle in vehicles])
+    held = under_maintenance(vehicle.pk for vehicle in vehicles)
     zone = zone_for(branch.company)
 
     categories = {}
@@ -86,7 +88,7 @@ def device_vehicles(branch, *, vehicle_category_id=None, vehicle_type_id=None, a
             "vehicle_id": vehicle.pk, "vehicle_identifier": vehicle.identifier, "vehicle_code": vehicle.vehicle_code,
             "vehicle_name": vehicle.vehicle_name, "rfid_epc": vehicle.rfid_epc,
             "uom": vehicle.uom.uom_name, "is_available": vehicle.is_available,
-            **_rental_status(vehicle, rentals.get(vehicle.pk), zone),
+            **_rental_status(vehicle, rentals.get(vehicle.pk), zone, held.get(vehicle.pk)),
         })
         type_entry["vehicle_count"] += 1
         entry["vehicle_count"] += 1
@@ -103,7 +105,7 @@ def device_vehicles(branch, *, vehicle_category_id=None, vehicle_type_id=None, a
     }
 
 
-def _rental_status(vehicle, rental, zone):
+def _rental_status(vehicle, rental, zone, service_request_no=None):
     rental_json = None
     if rental is not None:
         order_no, expected_end = rental
@@ -114,6 +116,10 @@ def _rental_status(vehicle, rental, zone):
     return {
         "on_rent": rental is not None,
         "rental": rental_json,
+        # Reported for service and not back in service yet -- information
+        # only: renting it is not refused (owner, 26 Oct 2026).
+        "under_maintenance": service_request_no is not None,
+        "service_request_no": service_request_no,
         "can_rent": vehicle.is_available and rental is None,
     }
 

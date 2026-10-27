@@ -104,7 +104,7 @@ class FareListView(FareScreenView):
 
 
 BLANK_PRICE = {"base_fare": "", "grace_minutes": 0, "concurrent_interval_minutes": "",
-               "concurrent_fare": "", "concurrent_grace_minutes": 0}
+               "concurrent_fare": "", "concurrent_grace_minutes": ""}
 
 
 def _blank(user):
@@ -152,7 +152,9 @@ class FareFormView(FareScreenView):
             "vehicle_types": [
                 {"id": v.pk, "name": v.vehicle_type_name, "company": v.company_id,
                  "category": v.category.category_name,
-                 "tax": str(v.tax_percentage) if v.tax_percentage is not None else ""}
+                 "tax": str(v.tax_percentage) if v.tax_percentage is not None else "",
+                 # A direct-rent type has no concurrent pricing: the form hides it.
+                 "direct_rent": v.is_direct_rent}
                 for v in vehicle_types
             ],
             "branches": [{"id": b.pk, "name": b.name, "company": b.company_id} for b in branches],

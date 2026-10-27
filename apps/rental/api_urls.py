@@ -13,6 +13,7 @@ urlpatterns = [
     path("customers/blocked", api.CustomerBlockedView.as_view(), name="api-app-customer-blocked"),
     path("orders", api.OrderCreateView.as_view(), name="api-app-order-create"),
     path("orders/detail", api.OrderDetailView.as_view(), name="api-app-order-detail"),
+    path("orders/changes", api.OrderChangesView.as_view(), name="api-app-order-changes"),
     path("invoices/recent", api.InvoiceRecentView.as_view(), name="api-app-invoice-recent"),
     path("invoices/detail", api.InvoiceDetailView.as_view(), name="api-app-invoice-detail"),
     path("orders/return", api.OrderReturnView.as_view(), name="api-app-order-return"),
