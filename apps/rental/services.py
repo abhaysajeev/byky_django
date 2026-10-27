@@ -1,7 +1,9 @@
 """Rental Management services."""
 
+import datetime
 import hashlib
 import json
+from datetime import timedelta
 from decimal import Decimal
 
 from django.db import IntegrityError, transaction
@@ -15,7 +17,7 @@ from apps.discount import services as discount_services
 from apps.fare import package_device
 from apps.fare.models import Fare, Package
 from apps.fleet.models import Vehicle
-from apps.rental import live
+from apps.rental import live, station_sync
 from apps.rental.models import (
     MONEY_IN,
     Customer,
@@ -256,6 +258,9 @@ def run_once(*, event_id, company, request_data, apply):
                 id=event_id, order=order, request_hash=fingerprint, response=reply, **event,
             )
             live.order_changed(order)       # sent once this commits (Live Monitoring)
+            # ...and the station's other tablets, for an order change (not a request).
+            station_sync.order_changed(order, event["action"], device=event.get("device"),
+                                       item=event.get("item"), new_item=event.get("new_item"))
     except IntegrityError as error:
         stored = _stored_reply(event_id, company, fingerprint)
         if stored is not None:
@@ -287,6 +292,49 @@ def order_at_station(branch, *, sync_id=None, order_no=None):
     if order is None:
         raise OrderRefused("unknown_order")
     return order
+
+
+# -- Station sync: the catch-up call (orders/changes; station_sync.py pushes) ----------
+
+CHANGES_WINDOW = timedelta(hours=24)       # the furthest back a `since` reaches
+CHANGES_OVERLAP = timedelta(seconds=30)    # a change saved as the last answer went out is not missed
+CHANGES_LIMIT = 500
+
+
+def station_changes(branch, since=None, *, now=None):
+    """(orders, truncated) a tablet at `branch` must refresh, most recently
+    changed first.
+
+    No `since` (login, nothing saved): every order still running at the
+    station, whatever day it was booked, and every order booked or changed
+    today (company day). With `since` (the `synced_at` of the tablet's last
+    answer): the orders changed after it, never further back than 24 hours.
+    "Changed" = booked, any recorded call on it (OrderEvent), or the order row
+    itself saved (a cancel writes no event)."""
+    from django.db.models import Max
+    from django.db.models.functions import Greatest
+
+    from core.timezones import zone_for
+
+    now = now or timezone.now()
+    orders = Order.objects.filter(branch=branch)
+    if since is None:
+        zone = zone_for(branch.company)
+        start = datetime.datetime.combine(business_date_for(branch.company, now), datetime.time.min, tzinfo=zone)
+        changed = _changed_after(orders, start)
+        orders = orders.filter(Q(status=OrderStatus.ACTIVE) | Q(pk__in=changed.values("pk")))
+    else:
+        cutoff = max(since - CHANGES_OVERLAP, now - CHANGES_WINDOW)
+        orders = _changed_after(orders, cutoff)
+    orders = orders.annotate(last_event=Max("events__received_at")).annotate(
+        last_change=Greatest("modified_on", "created_on", "last_event")).order_by("-last_change", "-pk")
+    rows = list(orders[:CHANGES_LIMIT + 1])
+    return rows[:CHANGES_LIMIT], len(rows) > CHANGES_LIMIT
+
+
+def _changed_after(orders, moment):
+    return orders.filter(Q(created_on__gte=moment) | Q(modified_on__gte=moment)
+                         | Q(events__received_at__gte=moment)).distinct()
 
 
 RECENT_INVOICES = 5

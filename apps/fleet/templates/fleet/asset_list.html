@@ -73,7 +73,7 @@
             <td>{{ a.brand|default:"—" }}</td>
             <td>{{ a.custodian|default:"—" }}</td>
             <td>{{ a.branch|default:"—" }}</td>
-            <td>{% if a.active %}<span class="scr-badge scr-badge-active"><i></i>Active</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Inactive</span>{% endif %}</td>
+            <td>{% if a.active %}<span class="scr-badge scr-badge-active"><i></i>Active</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Inactive</span>{% endif %}{% if a.reported %} <a href="{{ a.reported.url }}" class="scr-badge scr-badge-rejected" title="{{ a.reported.request_no }}"><i></i>Reported</a>{% endif %}</td>
             <td>
               <div class="scr-row-actions">
                 {% include "byky/partials/row_actions.html" with edit_open="asset:edit" %}

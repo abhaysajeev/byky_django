@@ -33,6 +33,8 @@ class IssueKind(models.TextChoices):
     REQUEST_USED = "request_used", "Reprint printed"
     CARD_DISCOUNT_APPROVAL = "card_discount_approval", "Card discount approval"
     ATTENDANCE = "attendance", "Attendance"
+    SERVICE_REQUEST = "service_request", "Service request"
+    IMAGE_SHARE = "image_share", "Image share"
 
 
 class IssueReason(models.TextChoices):

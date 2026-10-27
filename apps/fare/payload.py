@@ -29,13 +29,14 @@ from apps.fare import pricing
 from apps.fare.models import FareLevel, RuleKind
 from apps.fare.pricing import MAX_MINUTES, MIDNIGHT, FareSpec, Issue, Price, Rule, Season
 
-# (name, label, kind, minimum) -- minutes are whole numbers up to one day.
+# (name, label, kind, minimum, required) -- minutes are whole numbers up to one
+# day. The concurrent three are optional (owner, 23 Oct 2026): blank is None.
 PRICE_FIELDS = (
-    ("base_fare", "Basic fare", "money", 0),
-    ("grace_minutes", "Grace period", "minutes", 0),
-    ("concurrent_interval_minutes", "Concurrent interval", "minutes", 1),
-    ("concurrent_fare", "Concurrent fare", "money", 0),
-    ("concurrent_grace_minutes", "Concurrent grace", "minutes", 0),
+    ("base_fare", "Basic fare", "money", 0, True),
+    ("grace_minutes", "Grace period", "minutes", 0, True),
+    ("concurrent_interval_minutes", "Concurrent interval", "minutes", 1, False),
+    ("concurrent_fare", "Concurrent fare", "money", 0, False),
+    ("concurrent_grace_minutes", "Concurrent grace", "minutes", 0, False),
 )
 TIME = re.compile(r"^([01]\d|2[0-4]):([0-5]\d)$")
 WHOLE = re.compile(r"^\d+$")                      # "010" is 10; "1.5", "-1", "1e3" are not minutes
@@ -108,13 +109,17 @@ class _Reader:
     def price(self, data, key, where):
         data = data if isinstance(data, dict) else {}
         values = {}
-        for name, label, kind, minimum in PRICE_FIELDS:
+        errors_before = len(self.errors)
+        for name, label, kind, minimum, required in PRICE_FIELDS:
             place = f"{where} · {label}"
-            if kind == "money":
-                values[name] = self.money(data.get(name), key, place)
+            value = data.get(name)
+            if not required and (value is None or str(value).strip() == ""):
+                values[name] = None                 # optional and left blank
+            elif kind == "money":
+                values[name] = self.money(value, key, place)
             else:
-                values[name] = self.whole(data.get(name), key, place, minimum=minimum)
-        if any(v is None for v in values.values()):
+                values[name] = self.whole(value, key, place, minimum=minimum)
+        if len(self.errors) > errors_before:
             return None
         return Price(**values)
 
@@ -228,9 +233,15 @@ def _hhmm(minute):
 def _price(row):
     return {
         "base_fare": str(row.base_fare), "grace_minutes": row.grace_minutes,
-        "concurrent_interval_minutes": row.concurrent_interval_minutes,
-        "concurrent_fare": str(row.concurrent_fare), "concurrent_grace_minutes": row.concurrent_grace_minutes,
+        # Blank in the form when not set.
+        "concurrent_interval_minutes": _blank(row.concurrent_interval_minutes),
+        "concurrent_fare": _blank(row.concurrent_fare),
+        "concurrent_grace_minutes": _blank(row.concurrent_grace_minutes),
     }
+
+
+def _blank(value):
+    return "" if value is None else (str(value) if isinstance(value, Decimal) else value)
 
 
 def _rule(row):

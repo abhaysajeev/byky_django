@@ -20,6 +20,7 @@ class SubjectType(models.TextChoices):
     ORDER_REQUEST = "order_request", "Order request"
     CARD_DISCOUNT = "card_discount", "Card discount request"
     CREDIT_NOTE = "credit_note", "Credit note request"
+    SERVICE_REQUEST = "service_request", "Service request"
 
 
 class Action(models.TextChoices):
@@ -30,6 +31,7 @@ class Action(models.TextChoices):
     APPROVED = "approved", "Approved"
     REJECTED = "rejected", "Rejected"
     REVOKED = "revoked", "Revoked"
+    COMPLETED = "completed", "Back in service"     # a service request, on the web
 
 
 class Audience(models.TextChoices):

@@ -18,7 +18,17 @@ from apps.company import writes as company_writes
 from apps.company.scoping import branches_for, companies_for
 from apps.crew.scoping import employees_for
 from apps.fleet import drawers, forms, scoping
-from apps.fleet.models import UOM, Asset, AssetType, Brand, Category, Vehicle, VehicleType
+from apps.fleet.models import (
+    SERVICE_OPEN,
+    UOM,
+    Asset,
+    AssetType,
+    Brand,
+    Category,
+    ServiceRequest,
+    Vehicle,
+    VehicleType,
+)
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
@@ -27,6 +37,17 @@ from theme import drawers as theme_drawers
 from theme.views import ThemedTemplateView
 
 ACTIONS = ("create", "read", "update", "delete", "print")
+
+
+def _open_service(**target):
+    """{vehicle or asset id: {request_no, url}} of the open service requests
+    (pending or under maintenance) on the given vehicles or assets."""
+    key = "vehicle_id" if "vehicle_id__in" in target else "asset_id"
+    return {
+        row[key]: {"request_no": row["request_no"], "url": reverse("fleet-service-request-detail", args=[row["pk"]])}
+        for row in ServiceRequest.objects.filter(status__in=SERVICE_OPEN, **target)
+        .values("pk", "request_no", key)
+    }
 
 
 class FleetScreenView(PagePermissionMixin, ThemedTemplateView):
@@ -316,10 +337,11 @@ class AssetListView(FleetScreenView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         rows = []
-        assets = (
+        assets = list(
             recent_first(scoping.assets_for(self.request.user))
             .select_related("asset_type", "brand", "custodian", "branch")
         )
+        reported = _open_service(asset_id__in=[a.pk for a in assets])
         for i, asset in enumerate(assets):
             rows.append({
                 "code": asset.asset_code,
@@ -328,6 +350,7 @@ class AssetListView(FleetScreenView):
                 "custodian": asset.custodian.full_name if asset.custodian_id else "",
                 "branch": asset.branch.name if asset.branch_id else "",
                 "active": asset.is_active,
+                "reported": reported.get(asset.pk),
                 "pk": asset.pk,
                 "json_id": f"scr-record-asset-{i}",
                 "fields_json": {
@@ -420,6 +443,7 @@ class VehicleListView(FleetScreenView):
         page = Paginator(filtered_vehicles(self.request), PER_PAGE).get_page(self.request.GET.get("page"))
         query = self.request.GET.copy()
         query.pop("page", None)
+        held = _open_service(vehicle_id__in=[v.pk for v in page.object_list])
         rows = []
         for i, vehicle in enumerate(page.object_list):
             rows.append({
@@ -431,6 +455,7 @@ class VehicleListView(FleetScreenView):
                 "rfid_epc": vehicle.rfid_epc,
                 "branch": vehicle.current_branch.name if vehicle.current_branch_id else "",
                 "available": vehicle.is_available,
+                "maintenance": held.get(vehicle.pk),
                 "active": vehicle.is_active,
                 "pk": vehicle.pk,
                 "json_id": f"scr-record-vehicle-{i}",

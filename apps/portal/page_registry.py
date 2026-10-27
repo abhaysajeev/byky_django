@@ -121,6 +121,11 @@ PAGES = [
     ("fleet.asset_type", "fleet", "Asset Type", "fleet-asset-type-list", CRUD_PRINT, 5, False),
     ("fleet.asset", "fleet", "Asset", "fleet-asset-list", CRUD_PRINT, 6, False),
     ("fleet.vehicle", "fleet", "Vehicle", "fleet-vehicle-list", CRUD_PRINT, 7, False),
+    # approve = approve or reject a report (web and manager app); update = back in service.
+    ("fleet.service_request", "fleet", "Service & Maintenance", "fleet-service-request-list",
+     ["read", "approve", "update"], 8, False),
+    # Photos with remarks from the tablet: view, and delete.
+    ("fleet.image_share", "fleet", "Image Sharing", "fleet-image-share-list", ["read", "delete"], 8, False),
     ("fleet.privileges", "fleet", "Privileges", "fleet-privileges", ["read", "update"], 9, False),
 
     ("fare.fare", "fare", "Fares", "fare-fare-list", CRUD_PRINT, 1, False),

@@ -145,6 +145,18 @@ def test_the_days_fares_come_whole_in_first_match_order(client, world, token):
     assert shape(data) == shape(api._FARES_SAMPLE)
 
 
+
+def test_unset_concurrent_values_go_to_the_device_as_null(client, world, token):
+    # Optional since 23 Oct 2026: the keys are always there, null when not set.
+    fare = make_fare(world, concurrent_interval_minutes=None, concurrent_fare=None,
+                     concurrent_grace_minutes=None, **APPROVED)
+    make_rule(fare, "every_day", 480, 1200, concurrent_fare=None)
+    [sent] = fares(client, token).json()["data"]["vehicle_types"][0]["packages"][0]["fares"]
+    assert sent["price"] == {"base_fare": "50.000", "grace_minutes": 5, "concurrent_interval_minutes": None,
+                             "concurrent_fare": None, "concurrent_grace_minutes": None}
+    assert sent["special_prices"][0]["price"]["concurrent_fare"] is None
+    assert sent["special_prices"][0]["price"]["concurrent_interval_minutes"] == 10
+
 def shape(value):
     """Every key path with its value's type -- lists merged -- so an example
     and a real answer compare by structure, not by ids or amounts."""

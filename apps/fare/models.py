@@ -57,21 +57,32 @@ class PricedModel(models.Model):
 
     base_fare = models.DecimalField("Basic Fare", max_digits=13, decimal_places=3)
     grace_minutes = models.PositiveSmallIntegerField("Grace Period", default=0)
-    concurrent_interval_minutes = models.PositiveSmallIntegerField("Concurrent Interval")
-    concurrent_fare = models.DecimalField("Concurrent Fare", max_digits=13, decimal_places=3)
-    concurrent_grace_minutes = models.PositiveSmallIntegerField("Concurrent Grace", default=0)
+    # Optional (owner, 23 Oct 2026): stored and sent to the tablet as entered,
+    # null when left blank -- the tablet decides how a late return is priced.
+    # Always null for a direct-rent vehicle type (services.save_fare).
+    concurrent_interval_minutes = models.PositiveSmallIntegerField("Concurrent Interval", null=True, blank=True)
+    concurrent_fare = models.DecimalField("Concurrent Fare", max_digits=13, decimal_places=3, null=True, blank=True)
+    concurrent_grace_minutes = models.PositiveSmallIntegerField("Concurrent Grace", null=True, blank=True)
 
     class Meta:
         abstract = True
 
 
 def price_checks(prefix):
+    # A concurrent value may be empty; one that is set is still checked.
     return [
-        CheckConstraint(condition=Q(base_fare__gte=0, concurrent_fare__gte=0), name=f"{prefix}_money_not_negative"),
-        CheckConstraint(condition=Q(concurrent_interval_minutes__gt=0), name=f"{prefix}_interval_positive"),
         CheckConstraint(
-            condition=Q(grace_minutes__lte=MAX_MINUTES, concurrent_interval_minutes__lte=MAX_MINUTES,
-                        concurrent_grace_minutes__lte=MAX_MINUTES),
+            condition=Q(base_fare__gte=0) & (Q(concurrent_fare__isnull=True) | Q(concurrent_fare__gte=0)),
+            name=f"{prefix}_money_not_negative",
+        ),
+        CheckConstraint(
+            condition=Q(concurrent_interval_minutes__isnull=True) | Q(concurrent_interval_minutes__gt=0),
+            name=f"{prefix}_interval_positive",
+        ),
+        CheckConstraint(
+            condition=Q(grace_minutes__lte=MAX_MINUTES)
+            & (Q(concurrent_interval_minutes__isnull=True) | Q(concurrent_interval_minutes__lte=MAX_MINUTES))
+            & (Q(concurrent_grace_minutes__isnull=True) | Q(concurrent_grace_minutes__lte=MAX_MINUTES)),
             name=f"{prefix}_minutes_max",
         ),
     ]

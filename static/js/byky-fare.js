@@ -21,11 +21,14 @@
   var KIND = { single_date: 'Single date', selected_days: 'Selected days', every_day: 'Every day' };
   var RANK = { single_date: 0, selected_days: 1, every_day: 2 };
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  // [field, label, unit, minimum]. Minutes run to 1440 (one day).
+  // [field, label, unit, minimum, required]. Minutes run to 1440 (one day).
+  // The concurrent three are optional (owner, 23 Oct 2026): left blank they
+  // are sent to the tablet as null, and the tablet decides. A direct-rent
+  // vehicle type has none: the form hides them (is-direct-rent below).
   var PRICE = [
-    ['base_fare', 'Basic fare', 'AED', 0], ['grace_minutes', 'Grace period', 'min', 0],
-    ['concurrent_interval_minutes', 'Concurrent interval', 'min', 1],
-    ['concurrent_fare', 'Concurrent fare', 'AED', 0], ['concurrent_grace_minutes', 'Concurrent grace', 'min', 0]
+    ['base_fare', 'Basic fare', 'AED', 0, true], ['grace_minutes', 'Grace period', 'min', 0, true],
+    ['concurrent_interval_minutes', 'Concurrent interval', 'min', 1, false],
+    ['concurrent_fare', 'Concurrent fare', 'AED', 0, false], ['concurrent_grace_minutes', 'Concurrent grace', 'min', 0, false]
   ];
   var MAX_MINUTES = 1440;
   var MAX_MONEY = 9999999999.99;
@@ -98,6 +101,7 @@
     return rule.start === '00:00' && end === '24:00' ? 'All day' : rule.start + ' – ' + end;
   }
   function money(value) { var n = parseFloat(value); return isNaN(n) ? '—' : n.toFixed(3); }
+  function minutes(value) { return value === '' || value == null ? '—' : esc(value) + ' min'; }
 
   // -- Static fields ---------------------------------------------------------
 
@@ -124,9 +128,12 @@
       var attrs = minutes
         ? 'inputmode="numeric" maxlength="4" data-num="minutes" data-min="' + f[3] + '" data-max="' + MAX_MINUTES + '" placeholder="0"'
         : 'inputmode="decimal" maxlength="14" data-num="money" placeholder="0.000"';
-      return '<div class="scr-field"><label class="scr-label" for="' + id + '">' + f[1] + ' (' + f[2] + ')' +
-        '<span class="scr-required">*</span></label><input id="' + id + '" class="scr-input" autocomplete="off" ' + attrs +
-        ' data-price="' + f[0] + '" value="' + esc(price[f[0]]) + '" /></div>' +
+      var optional = !f[4];
+      var value = price[f[0]] == null ? '' : price[f[0]];
+      return '<div class="scr-field"' + (optional ? ' data-concurrent' : '') + '><label class="scr-label" for="' + id + '">' +
+        f[1] + ' (' + f[2] + ')' + (optional ? ' <span class="scr-dev-optional">optional</span>' : '<span class="scr-required">*</span>') +
+        '</label><input id="' + id + '" class="scr-input" autocomplete="off" ' + attrs +
+        ' data-price="' + f[0] + '" value="' + esc(value) + '" /></div>' +
         (spacer && i === 1 ? '<div class="scr-fare-spacer" aria-hidden="true"></div>' : '');
     }).join('');
   }
@@ -165,6 +172,18 @@
     var option = vehicleType.selectedOptions[0];
     var value = option && option.dataset.tax;
     tax.value = value ? value + ' %' : '';
+    showConcurrent();
+  }
+
+  function showConcurrent() {
+    var option = vehicleType.selectedOptions[0];
+    var direct = !!(option && option.dataset.directRent === '1');
+    var form = $('[data-fare]');
+    if (!form) return;
+    if (direct && !form.classList.contains('is-direct-rent')) {
+      $$('[data-concurrent] [data-price]', form).forEach(function (input) { input.value = ''; });
+    }
+    form.classList.toggle('is-direct-rent', direct);
   }
 
   /* Company (system users) and category narrow the vehicle types; company
@@ -217,7 +236,8 @@
     }
     host.innerHTML = '<div class="scr-table-scroll scr-sb scr-fare-table"><table><thead><tr>' +
       '<th>Applies on</th><th>Time</th><th class="scr-fare-num">Basic fare</th><th class="scr-fare-num">Grace</th>' +
-      '<th class="scr-fare-num">Interval</th><th class="scr-fare-num">Conc. fare</th><th class="scr-fare-num">Conc. grace</th>' +
+      '<th class="scr-fare-num" data-concurrent>Interval</th><th class="scr-fare-num" data-concurrent>Conc. fare</th>' +
+      '<th class="scr-fare-num" data-concurrent>Conc. grace</th>' +
       (canSave ? '<th></th>' : '') + '</tr></thead><tbody>' + rules.map(function (r) {
         var never = marks.never[r.key], note = marks.notes[r.key];
         return '<tr>' +
@@ -228,9 +248,9 @@
           '</td><td>' + esc(windowLabel(r)) + '</td>' +
           '<td class="scr-fare-num">' + money(r.price.base_fare) + '</td>' +
           '<td class="scr-fare-num">' + esc(r.price.grace_minutes) + ' min</td>' +
-          '<td class="scr-fare-num">' + esc(r.price.concurrent_interval_minutes) + ' min</td>' +
-          '<td class="scr-fare-num">' + money(r.price.concurrent_fare) + '</td>' +
-          '<td class="scr-fare-num">' + esc(r.price.concurrent_grace_minutes) + ' min</td>' +
+          '<td class="scr-fare-num" data-concurrent>' + minutes(r.price.concurrent_interval_minutes) + '</td>' +
+          '<td class="scr-fare-num" data-concurrent>' + money(r.price.concurrent_fare) + '</td>' +
+          '<td class="scr-fare-num" data-concurrent>' + minutes(r.price.concurrent_grace_minutes) + '</td>' +
           (canSave ? '<td><div class="scr-fare-actions">' +
             '<button type="button" class="scr-icon-btn scr-icon-btn-edit" title="Edit" data-rule-edit="' + esc(r.key) + '" data-owner="' + esc(owner) + '">' +
             '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10a2.1 2.1 0 0 0-3-3L5 17z"></path></svg></button>' +
@@ -597,8 +617,9 @@
         '<dl class="scr-fare-result-grid">' +
           '<div><dt>Price</dt><dd>AED ' + esc(p.base_fare) + '</dd></div>' +
           '<div><dt>Grace</dt><dd>' + esc(p.grace_minutes) + ' min</dd></div>' +
-          '<div><dt>Concurrent</dt><dd>AED ' + esc(p.concurrent_fare) + ' / ' + esc(p.concurrent_interval_minutes) + ' min</dd></div>' +
-          '<div><dt>Concurrent grace</dt><dd>' + esc(p.concurrent_grace_minutes) + ' min</dd></div>' +
+          '<div data-concurrent><dt>Concurrent</dt><dd>' + (p.concurrent_fare == null && p.concurrent_interval_minutes == null
+            ? '—' : 'AED ' + money(p.concurrent_fare) + ' / ' + minutes(p.concurrent_interval_minutes)) + '</dd></div>' +
+          '<div data-concurrent><dt>Concurrent grace</dt><dd>' + minutes(p.concurrent_grace_minutes) + '</dd></div>' +
         '</dl>' +
       '</div>';
     });
