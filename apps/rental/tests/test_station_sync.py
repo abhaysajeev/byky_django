@@ -95,15 +95,17 @@ def test_each_order_change_is_pushed(client, world, token, shop, station, fcm,
             ("tok-till-2", True, True)]
 
 
-def test_a_resend_and_a_request_push_nothing(client, world, token, shop, station, fcm,
-                                             django_capture_on_commit_callbacks):
+def test_a_resend_pushes_nothing_and_a_request_is_a_request_push(client, world, token, shop, station, fcm,
+                                                                 django_capture_on_commit_callbacks):
     data = booked(client, world, token, shop, django_capture_on_commit_callbacks)
     fcm.sent.clear()
     with django_capture_on_commit_callbacks(execute=True):
         assert call(client, orders.BOOK, data, token=token).json()["code"] == "duplicate"
+    assert fcm.sent == []
+    with django_capture_on_commit_callbacks(execute=True):
         asked = requests_tests.ask(data, kind="discount")
         assert call(client, requests_tests.ASK, asked, token=token).json()["code"] == "ok"
-    assert fcm.sent == []
+    assert [s[3]["type"] for s in fcm.sent] == ["request_changed"]     # not an order_changed
 
 
 def test_a_web_cancel_reaches_every_tablet_at_the_station(client, world, token, shop, station, fcm,

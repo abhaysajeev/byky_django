@@ -697,6 +697,18 @@ on the Android channel **`station_activity`** (create it, low importance),
 `type: order_changed`, `order_id`, `order_no`, `action` (book, add, replace,
 remove, return, payment, settle, cancel), `branch_id`, `at`. On it, call
 `orders/detail` with that `order_id`.
+
+**Requests on an order** are pushed the same way (same channel, same `tag`):
+`type: request_changed`, `order_id`, `order_no`, `request_type`
+(`order_request`, `credit_note`, `card_discount`), `request_id`, `kind` (an
+order request's kind, else empty), `status`, `action` (raised, withdrawn,
+cancelled, approved, rejected, revoked, used), `branch_id`, `at`. Never to the
+tablet that acted; a decision never to the asking tablet either (it has its own
+alert). On it, refresh that order's requests: `orders/requests/status`,
+`orders/credit-notes/status` or `card-discounts/approval/status`.
+
+An order whose requests changed also comes back here (a manager's decision
+included): refresh the requests of the orders you receive the same way.
 """
 
 
