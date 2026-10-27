@@ -272,6 +272,8 @@ SPECTACULAR_SETTINGS = {
         # The two "status" filters: Team Attendance tabs, and leave tabs (all + LeaveStatus).
         "TeamAttendanceStatusEnum": "apps.crew.services.TeamStatus.CHOICES",
         "LeaveStatusFilterEnum": "apps.crew.serializers.LEAVE_STATUS_FILTER",
+        # Asset-check "status" (apps/fleet): the serializers offer bare values.
+        "AssetCheckStatusEnum": "apps.fleet.models.AssetCheckStatus.values",
     },
 }
 

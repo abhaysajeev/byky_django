@@ -24,7 +24,7 @@ class PhotoUploadRequest(serializers.Serializer):
     photo_id = uuid7_field()
     purpose = serializers.ChoiceField(
         choices=PhotoPurpose.choices,
-        error_messages={**REQUIRED, "invalid_choice": "must be card_discount, service_request or image_share"},
+        error_messages={**REQUIRED, "invalid_choice": "must be card_discount, service_request, image_share or asset_check"},
     )
     file = serializers.FileField(error_messages={**REQUIRED, "invalid": "must be a file",
                                                  "empty": "must not be empty"})
@@ -48,7 +48,7 @@ Bearer` header as on every call. Fields:
   **unchanged** on retry: a second upload with the same id is answered
   `duplicate` and stores nothing. Make it before uploading, so the request
   can be queued offline with it.
-* `purpose` -- `card_discount`, `service_request` or `image_share` (operator app).
+* `purpose` -- `card_discount`, `service_request`, `image_share` or `asset_check` (operator app).
 * `file` -- the image.
 
 **Compress on the device before uploading:** JPEG, long side **1280-1600

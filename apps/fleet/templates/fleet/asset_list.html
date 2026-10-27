@@ -61,6 +61,7 @@
             <th>Brand</th>
             <th>Custodian</th>
             <th>Branch</th>
+            <th>Last check</th>
             <th>Status</th>
             <th>Actions</th>
           </tr>
@@ -73,6 +74,7 @@
             <td>{{ a.brand|default:"—" }}</td>
             <td>{{ a.custodian|default:"—" }}</td>
             <td>{{ a.branch|default:"—" }}</td>
+            <td>{% if a.last_check %}{% if a.last_check.status == "needs_inspection" %}<span class="scr-badge scr-badge-pending"><i></i>Needs inspection</span>{% else %}<span class="scr-badge scr-badge-active"><i></i>Active</span>{% endif %}<div class="scr-contact-sub">{{ a.last_check.checked_at|date:"d M Y, H:i" }}</div>{% else %}<span class="scr-contact-sub">Not checked</span>{% endif %}</td>
             <td>{% if a.active %}<span class="scr-badge scr-badge-active"><i></i>Active</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Inactive</span>{% endif %}{% if a.reported %} <a href="{{ a.reported.url }}" class="scr-badge scr-badge-rejected" title="{{ a.reported.request_no }}"><i></i>Reported</a>{% endif %}</td>
             <td>
               <div class="scr-row-actions">
@@ -83,7 +85,7 @@
           {{ a.fields_json|json_script:a.json_id }}
           {% empty %}
           <tr>
-            <td colspan="7" style="padding:0">
+            <td colspan="8" style="padding:0">
               <div class="scr-empty">
                 <span class="scr-empty-ico">
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"></path></svg>

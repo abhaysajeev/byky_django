@@ -18,4 +18,8 @@ urlpatterns = [
          name="api-app-service-request-reject"),
     path("image-shares", maintenance_api.ImageShareCreateView.as_view(), name="api-app-image-shares"),
     path("image-shares/list", maintenance_api.ImageShareListView.as_view(), name="api-app-image-share-list"),
+    path("issue-types", maintenance_api.IssueTypesView.as_view(), name="api-app-issue-types"),
+    path("asset-checks", maintenance_api.AssetCheckCreateView.as_view(), name="api-app-asset-checks"),
+    path("asset-checks/list", maintenance_api.AssetCheckListView.as_view(), name="api-app-asset-check-list"),
+    path("asset-checks/detail", maintenance_api.AssetCheckDetailView.as_view(), name="api-app-asset-check-detail"),
 ]
