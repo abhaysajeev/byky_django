@@ -34,6 +34,7 @@ UPLOADERS = {
     PhotoPurpose.CARD_DISCOUNT: {Channel.OPERATOR},
     PhotoPurpose.SERVICE_REQUEST: {Channel.OPERATOR},
     PhotoPurpose.IMAGE_SHARE: {Channel.OPERATOR},
+    PhotoPurpose.ASSET_CHECK: {Channel.OPERATOR},
 }
 
 # The previews: (field, long side px, WebP quality).
@@ -198,6 +199,7 @@ WEB_PAGES = {
     PhotoPurpose.CARD_DISCOUNT: "discount.approval",
     PhotoPurpose.SERVICE_REQUEST: "fleet.service_request",
     PhotoPurpose.IMAGE_SHARE: "fleet.image_share",
+    PhotoPurpose.ASSET_CHECK: "fleet.asset_check",
 }
 
 

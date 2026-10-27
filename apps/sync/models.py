@@ -35,6 +35,7 @@ class IssueKind(models.TextChoices):
     ATTENDANCE = "attendance", "Attendance"
     SERVICE_REQUEST = "service_request", "Service request"
     IMAGE_SHARE = "image_share", "Image share"
+    ASSET_CHECK = "asset_check", "Asset check"
 
 
 class IssueReason(models.TextChoices):

@@ -19,8 +19,14 @@ from django.utils import timezone
 from apps.company.models import State
 from apps.company.scoping import branches_for, companies_for
 from apps.company.writes import WriteView, _payload
-from apps.fleet import image_shares, service_requests
-from apps.fleet.models import ImageShare, ServiceRequest, ServiceRequestStatus
+from apps.fleet import asset_checks, image_shares, service_requests
+from apps.fleet.models import (
+    AssetCheck,
+    AssetCheckStatus,
+    ImageShare,
+    ServiceRequest,
+    ServiceRequestStatus,
+)
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.services import has_permission
 from apps.rental.models import DecisionChannel
@@ -28,7 +34,7 @@ from core.scoping import scoped_to
 from core.timezones import business_date_for, zone_for
 from theme.views import ThemedTemplateView
 
-SERVICE_PAGE, SHARE_PAGE = "fleet.service_request", "fleet.image_share"
+SERVICE_PAGE, SHARE_PAGE, CHECK_PAGE = "fleet.service_request", "fleet.image_share", "fleet.asset_check"
 PER_PAGE = 50
 
 # (tab, label, statuses) -- Pending first: what someone has to act on.
@@ -98,7 +104,8 @@ def _service_rows(request, zone):
         rows = rows.filter(asset__isnull=False)
     text = params.get("q", "").strip()
     if text:
-        rows = rows.filter(Q(request_no__icontains=text) | Q(vehicle__vehicle_name__icontains=text)
+        rows = rows.filter(Q(request_no__icontains=text) | Q(issue_type__name__icontains=text)
+                           | Q(vehicle__vehicle_name__icontains=text)
                            | Q(vehicle__vehicle_code__icontains=text) | Q(asset__asset_code__icontains=text)
                            | Q(issue__icontains=text) | Q(requested_by__display_name__icontains=text))
     start, end = _date(params.get("from")), _date(params.get("to"))
@@ -157,7 +164,7 @@ class ServiceRequestListView(_InventoryScreen):
                     status=ServiceRequestStatus.COMPLETED, completed_at__gte=month_start).count()},
             ],
             "rows": [{
-                "request_no": r.request_no, "station": r.branch.name, "target": _target(r), "issue": r.issue,
+                "request_no": r.request_no, "station": r.branch.name, "target": _target(r), "issue": service_requests.summary(r),
                 "requested_by": r.requested_by.display_name if r.requested_by_id else "",
                 "requested_at": r.requested_at.astimezone(zone), "status": r.status,
                 "out_for": _out_for(r, now), "detail_url": reverse("fleet-service-request-detail", args=[r.pk]),
@@ -245,6 +252,47 @@ class ServiceRequestComplete(_ServiceWrite):
 
 
 # -- Image Sharing -----------------------------------------------------------------------
+
+
+class AssetCheckListView(_InventoryScreen):
+    """Every asset check, newest first -- read only (owner, 27 Oct 2026: just
+    recorded, nothing to approve). A photo opens full size with its details."""
+
+    template_name = "fleet/asset_check_list.html"
+    page_code = CHECK_PAGE
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user, params = self.request.user, self.request.GET
+        zone = zone_for(getattr(user, "company", None))
+        rows = _where(scoped_to(AssetCheck.objects.all(), user), params)
+        if params.get("status") in AssetCheckStatus.values:
+            rows = rows.filter(status=params["status"])
+        text = params.get("q", "").strip()
+        if text:
+            rows = rows.filter(Q(asset__asset_code__icontains=text) | Q(remarks__icontains=text)
+                               | Q(checked_by__display_name__icontains=text))
+        rows = asset_checks.between(rows, zone, _date(params.get("from")), _date(params.get("to")))
+        page = Paginator(asset_checks.with_rows(rows).order_by("-checked_at", "-pk"), PER_PAGE).get_page(
+            params.get("page"))
+        query = params.copy()
+        query.pop("page", None)
+        context.update({
+            "rows": [{
+                "asset": c.asset.asset_code, "asset_type": c.asset.asset_type.asset_type_name,
+                "status": c.status, "status_label": c.get_status_display(), "remarks": c.remarks,
+                "station": c.branch.name, "emirate": c.branch.location.state.name,
+                "checked_by": (c.checked_by.display_name or c.checked_by.username) if c.checked_by_id else "",
+                "tablet": c.device.device_registration_id if c.device_id else "",
+                "checked_at": c.checked_at.astimezone(zone), "received_at": c.created_on.astimezone(zone),
+                "thumb": reverse("photo", args=[c.photo_id, "thumb"]),
+                "full": reverse("photo", args=[c.photo_id, "original"]),
+            } for c in page.object_list],
+            "statuses": AssetCheckStatus.choices,
+            "page": page, "query": query.urlencode(), "params": params,
+            "filtered": any(params.get(k) for k in ("q", "state", "branch", "status", "from", "to")),
+        })
+        return context
 
 
 class ImageShareListView(_InventoryScreen):

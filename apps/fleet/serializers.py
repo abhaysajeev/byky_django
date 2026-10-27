@@ -4,7 +4,7 @@ device may ask for is decided in apps/fleet/services.py::device_vehicles."""
 
 from rest_framework import serializers
 
-from apps.fleet.models import ServiceRequestStatus
+from apps.fleet.models import AssetCheckStatus, ServiceRequestStatus
 from core.api import REQUIRED, date_field, datetime_field, uuid7_field, whole_number_field
 
 
@@ -52,11 +52,16 @@ class ServiceRequestCreateRequest(serializers.Serializer):
                                      error_messages={**REQUIRED, "invalid_choice": "must be vehicle or asset"})
     vehicle_id = whole_number_field(min_value=1, required=False, allow_null=True)
     asset_id = whole_number_field(min_value=1, required=False, allow_null=True)
-    issue = _text()
+    # From issue-types; and/or the operator's own words -- at least one.
+    issue_type_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    issue = serializers.CharField(max_length=500, required=False, allow_blank=True, trim_whitespace=True,
+                                  error_messages={"max_length": "must be at most 500 characters"})
     photo_id = serializers.UUIDField(required=False, allow_null=True, error_messages={"invalid": "must be a UUID"})
     requested_at = datetime_field()
 
     def validate(self, values):
+        if not values.get("issue_type_id") and not (values.get("issue") or "").strip():
+            raise serializers.ValidationError({"issue": "is required when no issue_type_id is sent"})
         # Exactly the id of what is reported.
         if values["target"] == "vehicle":
             if not values.get("vehicle_id"):
@@ -113,3 +118,51 @@ class ManagerImageShareListRequest(_DatesMixin):
     state_id = whole_number_field(min_value=1, required=False, allow_null=True)
     branch_id = whole_number_field(min_value=1, required=False, allow_null=True)
     page = whole_number_field(min_value=1, required=False, default=1)
+
+
+# -- Issue types and asset checks (apps/fleet/asset_checks.py) -------------------------
+
+
+class IssueTypesRequest(serializers.Serializer):
+    """Optional: only the types for a vehicle or for an asset (each includes
+    the ones for both)."""
+
+    target = serializers.ChoiceField(choices=["vehicle", "asset"], required=False, allow_blank=True,
+                                     error_messages={"invalid_choice": "must be vehicle or asset"})
+
+
+class AssetCheckCreateRequest(serializers.Serializer):
+    """The tablet checks an asset of its station: photo (uploaded first,
+    purpose asset_check) and condition; remarks optional. `sync_id` is this
+    call's id and becomes the check's id."""
+
+    sync_id = uuid7_field()
+    asset_id = whole_number_field(min_value=1)
+    status = serializers.ChoiceField(
+        choices=AssetCheckStatus.values,
+        error_messages={**REQUIRED, "invalid_choice": "must be active or needs_inspection"})
+    photo_id = serializers.UUIDField(error_messages={**REQUIRED, "invalid": "must be a UUID"})
+    remarks = serializers.CharField(max_length=500, required=False, allow_blank=True, trim_whitespace=True,
+                                    error_messages={"max_length": "must be at most 500 characters"})
+    checked_at = datetime_field()
+
+
+class AssetCheckListRequest(_DatesMixin):
+    status = serializers.ChoiceField(choices=AssetCheckStatus.values, required=False, allow_blank=True,
+                                     error_messages={"invalid_choice": "must be active or needs_inspection"})
+    mine = serializers.BooleanField(required=False, default=False,
+                                    error_messages={"invalid": "must be true or false"})
+    page = whole_number_field(min_value=1, required=False, default=1)
+
+
+class ManagerAssetCheckListRequest(_DatesMixin):
+    state_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    branch_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    asset_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    status = serializers.ChoiceField(choices=AssetCheckStatus.values, required=False, allow_blank=True,
+                                     error_messages={"invalid_choice": "must be active or needs_inspection"})
+    page = whole_number_field(min_value=1, required=False, default=1)
+
+
+class AssetCheckDetailRequest(serializers.Serializer):
+    asset_check_id = serializers.UUIDField(error_messages={**REQUIRED, "invalid": "must be a UUID"})

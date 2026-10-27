@@ -58,7 +58,8 @@ is the only place for it.
         <div class="scr-detail-rows">
           <div class="scr-detail-row"><span class="scr-detail-label">{{ target.kind }}</span><span class="scr-detail-value">{% if target.url %}<a class="scr-link-blue" href="{{ target.url }}">{{ target.name }}</a>{% else %}{{ target.name }}{% endif %} · {{ target.code }}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Station</span><span class="scr-detail-value">{{ req.branch.name }}</span></div>
-          <div class="scr-detail-row"><span class="scr-detail-label"><b>Issue</b></span><span class="scr-detail-value scr-mon-wrap"><b>{{ req.issue }}</b></span></div>
+          {% if req.issue_type %}<div class="scr-detail-row"><span class="scr-detail-label"><b>Issue type</b></span><span class="scr-detail-value"><b>{{ req.issue_type.name }}</b></span></div>{% endif %}
+          {% if req.issue %}<div class="scr-detail-row"><span class="scr-detail-label">{% if req.issue_type %}Details{% else %}<b>Issue</b>{% endif %}</span><span class="scr-detail-value scr-mon-wrap">{% if req.issue_type %}{{ req.issue }}{% else %}<b>{{ req.issue }}</b>{% endif %}</span></div>{% endif %}
           <div class="scr-detail-row"><span class="scr-detail-label">Reported</span><span class="scr-detail-value">{{ requested_at|date:"d M Y, H:i" }}{% if req.requested_by %} · {{ req.requested_by.display_name|default:req.requested_by.username }}{% endif %}{% if tablet %} · Tablet {{ tablet }}{% endif %}</span></div>
           {% if req.decided_at %}
           <div class="scr-detail-row"><span class="scr-detail-label">{% if req.status == "rejected" %}Rejected{% else %}Approved{% endif %}</span><span class="scr-detail-value">{{ decided_at|date:"d M Y, H:i" }}{% if req.decided_by %} · {{ req.decided_by.display_name|default:req.decided_by.username }}{% endif %} · {{ req.get_decided_channel_display }}</span></div>

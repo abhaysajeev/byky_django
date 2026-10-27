@@ -126,6 +126,10 @@ PAGES = [
      ["read", "approve", "update"], 8, False),
     # Photos with remarks from the tablet: view, and delete.
     ("fleet.image_share", "fleet", "Image Sharing", "fleet-image-share-list", ["read", "delete"], 8, False),
+    # What can be wrong -- the list the tablet offers when reporting.
+    ("fleet.issue_type", "fleet", "Issue Type", "fleet-issue-type-list", CRUD_PRINT, 5, False),
+    # Inspections from the tablet, with photos: view only.
+    ("fleet.asset_check", "fleet", "Asset Checks", "fleet-asset-check-list", ["read"], 8, False),
     ("fleet.privileges", "fleet", "Privileges", "fleet-privileges", ["read", "update"], 9, False),
 
     ("fare.fare", "fare", "Fares", "fare-fare-list", CRUD_PRINT, 1, False),
