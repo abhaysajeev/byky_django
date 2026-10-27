@@ -449,6 +449,16 @@ def redeem_for_order(session, order, discount, *, at, bill_amount, net_amount):
     return claim
 
 
+def approved_claim_unapplied(order):
+    """The order's approved card-discount claim, or None -- for a settle that
+    carries no card discount. The order's live claims are locked, so a claim
+    approved while this settle runs waits for it (then finds it billed)."""
+    live = list(CardDiscountClaim.objects.select_for_update()
+                .filter(order=order, status__in=[ClaimStatus.PENDING, ClaimStatus.APPROVED])
+                .order_by("-decided_at", "-created_on"))
+    return next((claim for claim in live if claim.status == ClaimStatus.APPROVED), None)
+
+
 def cancel_unused_for_order(order, *, keep=None, now=None):
     """The order was billed: every claim on it still pending, or approved but
     not the one applied (`keep`), is cancelled. Returns how many."""

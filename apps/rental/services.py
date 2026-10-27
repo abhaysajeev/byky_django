@@ -155,6 +155,8 @@ ORDER_ERRORS = {
     "discount_request_not_approved": (409, "That discount request is not approved.", False),
     "discount_mismatch": (400, "The discount is not the one approved.", False),
     "approved_discount_not_applied": (409, "This order has an approved discount that must be applied.", False),
+    "approved_card_discount_not_applied": (409, "This order has an approved card discount that must be applied.",
+                                           False),
     # Complimentary and reprint requests.
     "complimentary_request_pending": (409, "A complimentary request is already waiting for this order.", False),
     "complimentary_approved": (409, "This order is already approved as complimentary.", False),
@@ -779,6 +781,15 @@ def settle_order(session, values, request_data, reply_for):
             )
 
         approval = order_requests.check_at_settle(order, values)
+        if not card:
+            # An approved card discount is the customer's: a settle without it
+            # (e.g. from another tablet) is refused, not left to cancel it.
+            waiting = discount_services.approved_claim_unapplied(order)
+            if waiting is not None:
+                raise OrderRefused("approved_card_discount_not_applied", data={
+                    "request_sync_id": str(waiting.pk), "card_discount_id": waiting.card_discount_id,
+                    "discount_percentage": f"{Decimal(waiting.discount_percent):.2f}",
+                })
         claim = None
         if card:
             try:

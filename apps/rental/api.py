@@ -939,7 +939,8 @@ _SETTLE_ERRORS = (
     "balance_not_settled", "unknown_card_claim", "card_claim_not_approved", "unknown_card_discount",
     "unknown_discount_request", "discount_request_not_approved", "discount_mismatch",
     "approved_discount_not_applied", "unknown_complimentary_request", "complimentary_request_not_approved",
-    "approved_complimentary_not_applied", "unknown_payment_mode", "payment_id_used", "cancel_requested",
+    "approved_complimentary_not_applied", "approved_card_discount_not_applied", "unknown_payment_mode",
+    "payment_id_used", "cancel_requested",
 )
 
 _SETTLE_DESCRIPTION = """
@@ -973,6 +974,12 @@ are stored as sent and printed on the tax invoice, never part of the sum.
 
 Every other card-discount request on the order still pending, or approved but
 not applied, is cancelled.
+
+An order **with an approved card-discount request must apply a card
+discount**: settling without `card_discount` is
+`approved_card_discount_not_applied`, with `request_sync_id`,
+`card_discount_id` and `discount_percentage` in `data` -- e.g. another tablet
+at the station settling an order whose card discount was approved for the first.
 
 **`manager_discount`** -- a manager's approved discount
 (`orders/requests`, kind `discount`):
