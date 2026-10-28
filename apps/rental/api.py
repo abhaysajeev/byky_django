@@ -2008,16 +2008,24 @@ class OrderRequestStatusView(_OperatorView):
 _MANAGER_SAMPLE = {
     **_REQUEST_PENDING_SAMPLE, "branch_id": 3, "station": "Creek Park 1", "requested_by": "Rashed K",
     "order": {
-        "order_no": "DUBPP60182000231", "status": "active", "customer_name": "Ahmed Al Mansoori",
+        "order_no": "DUBPP60182000231", "transaction_no": "DUBPP-A-12", "status": "active",
+        "customer_name": "Ahmed Al Mansoori",
         "customer_mobile": "971501234567", "booked_at": "2026-10-08 16:00:00", "advance_paid": "100.000",
         "net_amount": None,
+        # The money (owner, 28 Oct 2026): before settle there is no bill --
+        # tax_amount, bill_amount, closed_by and closed_at are null.
+        "fare_amount": "80.000", "deposit_amount": "100.000", "amount_received": "100.000",
+        "amount_refunded": "0.000", "tax_percentage": "5.00", "tax_amount": None, "bill_amount": None,
+        "closed_by": None, "closed_at": None,
         "vehicles": [
             {"vehicle": "MO 41", "identifier": "VB1241", "vehicle_type": "Monaco", "status": "active",
              "start_time": "2026-10-08 16:00:00", "expected_end_time": "2026-10-08 17:00:00",
-             "end_time": None, "minutes_run": 40},
+             "end_time": None, "minutes_run": 40,
+             "base_fare": "50.000", "overtime_amount": None, "total_amount": None},
             {"vehicle": "MO 42", "identifier": "VB1242", "vehicle_type": "Monaco", "status": "returned",
              "start_time": "2026-10-08 16:00:00", "expected_end_time": "2026-10-08 16:30:00",
-             "end_time": "2026-10-08 16:31:00", "minutes_run": 31},
+             "end_time": "2026-10-08 16:31:00", "minutes_run": 31,
+             "base_fare": "30.000", "overtime_amount": "0.000", "total_amount": "30.000"},
         ],
     },
 }
@@ -2049,7 +2057,9 @@ _MANAGER_CREDIT_NOTE_ROW = {
     "order_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9", "order_no": "DUBPP60182000231", "kind": "credit_note",
     "status": "pending", "reason": "Chain broke after 10 minutes", "requested_at": "2026-10-08 17:05:00",
     "decided_by": None, "decided_channel": None, "decided_at": None, "decision_note": "",
-    "order": {**_MANAGER_SAMPLE["order"], "status": "completed", "net_amount": "110.000"},
+    "order": {**_MANAGER_SAMPLE["order"], "status": "completed", "net_amount": "110.000",
+              "fare_amount": "110.000", "tax_amount": "5.240", "bill_amount": "110.000", "closed_by": "Rashed K",
+              "closed_at": "2026-10-08 17:15:00"},
     "details": {"credit_note_no": None, "invoice_no": "DUBPP60182000231", "invoice_net_amount": "110.000",
                 "net_amount": None, "tax_amount": None},
 }
@@ -2109,6 +2119,17 @@ link), %, fare basis and the
 bill / discount / net amounts. Order-request-only fields (`discount_*`,
 `revoked_*`, `applied_*`, `used_at`) are empty for those two kinds. `status` is
 each kind's own (a credit note can be `cancelled`, a card discount `redeemed`).
+
+**The order's money** (every kind with an order): `transaction_no`,
+`fare_amount` (running total -- returned vehicles' totals plus the base fare of
+those still out; once settled, the bill's subtotal), `deposit_amount` (the
+advance taken at booking), `amount_received`, `amount_refunded`,
+`tax_percentage` (the vehicle type's VAT % until settle, then the bill's),
+and -- **only once settled** -- `tax_amount`, `bill_amount` (the bill's net),
+`closed_by` (who settled) and `closed_at`; before settle these four are `null`
+(a discount, complimentary or receipt-reprint request is on a running order).
+Each vehicle also has `base_fare`, and `overtime_amount` / `total_amount` once
+back.
 """
 
 _MANAGER_APPROVE_DESCRIPTION = _MANAGER_RULES + """
