@@ -97,13 +97,17 @@
 
   function rowHtml(r) {
     var n = r.vehicles.length;
-    var bike = '<button type="button" class="scr-icon-btn scr-live-veh-btn' + (open[r.id] ? ' is-on' : '') +
-      '" data-live-veh="' + esc(r.id) + '" title="View vehicles" aria-label="View vehicles of ' + esc(r.order_no) +
+    // A diamond-frame bicycle: wheels, rear triangle, top / down tubes, fork,
+    // saddle and bars. The whole row opens the order; this opens its vehicles.
+    var bike = '<button type="button" class="scr-live-veh-btn' + (open[r.id] ? ' is-on' : '') +
+      '" data-live-veh="' + esc(r.id) + '" title="Show vehicles" aria-label="Show vehicles of ' + esc(r.order_no) +
       '" aria-expanded="' + (open[r.id] ? 'true' : 'false') + '">' +
-      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="17" r="3.5"></circle><circle cx="18.5" cy="17" r="3.5"></circle><path d="M5.5 17 9 9h6l3.5 8"></path><path d="M9 9 7.5 6H5M15 9l1.5-3H19"></path></svg>' +
-      '<span class="scr-live-veh-n">' + n + '</span></button>';
-    var eye = '<a class="scr-icon-btn" href="' + esc(r.url) + '" title="View order" aria-label="View order ' + esc(r.order_no) + '">' +
-      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12"></path><circle cx="12" cy="12" r="3"></circle></svg></a>';
+      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<circle cx="5.5" cy="16.5" r="3.5"></circle><circle cx="18.5" cy="16.5" r="3.5"></circle>' +
+      '<path d="M5.5 16.5 9 9.5h6.5"></path><path d="M9 9.5l2.5 7h-6"></path><path d="M11.5 16.5l4-7 3 7"></path>' +
+      '<path d="M9 9.5 8.3 7.2M6.8 7.2h3.2"></path><path d="M15.5 9.5 14.6 6.8h2.4"></path></svg>' +
+      '<span class="scr-live-veh-n">' + n + '</span><span class="scr-live-veh-t">' + (n === 1 ? 'vehicle' : 'vehicles') +
+      '</span></button>';
     return '<tr class="scr-live-row is-' + esc(r.status) + '" data-id="' + esc(r.id) + '">' +
       cell('c-no', 'Order', '<a class="scr-live-no" href="' + esc(r.url) + '">' + esc(r.order_no) + '</a>' +
         '<div class="scr-live-q scr-live-num">' + (r.transaction_no ? esc(r.transaction_no) + ' · ' : '') +
@@ -124,7 +128,7 @@
         (r.discount != null ? '<div class="scr-live-q scr-live-fold">Disc ' + money(r.discount) + '</div>' : '')) +
       cell('c-status', 'Status', '<span class="scr-live-badge is-' + esc(r.status) + '"><i></i>' + esc(r.status_label) + '</span>' +
         '<div class="scr-live-q">' + esc(r.last) + (r.last_at ? ' · ' + ago(r.last_at) : '') + '</div>') +
-      '<td class="c-act"><div class="scr-live-acts">' + bike + eye + '</div></td>' +
+      '<td class="c-act">' + bike + '</td>' +
       '</tr>' + vehicleRow(r);
   }
 

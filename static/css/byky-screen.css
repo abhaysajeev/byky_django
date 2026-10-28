@@ -1238,20 +1238,22 @@ textarea.scr-mon-json { display: block; width: 100%; min-height: 420px; resize: 
 .scr-live-table .c-no { position: sticky; left: 0; z-index: 1; min-width: 132px; box-shadow: 1px 0 0 #f0eff7; }
 .scr-live-table th.c-no { z-index: 3; background: #fbfaff; }
 /* Cells keep to their width; long text ellipses (the .scr-live-p / -q). */
-.scr-live-table .c-station > div, .scr-live-table .c-cust > div { max-width: 116px; }
-.scr-live-table .c-staff > div { max-width: 108px; }
+.scr-live-table .c-station > div, .scr-live-table .c-cust > div { max-width: 128px; }
+.scr-live-table .c-staff > div { max-width: 124px; }
 .scr-live-table .c-no > .scr-live-q { max-width: 130px; }
-.scr-live-table .c-status > .scr-live-q { max-width: 112px; }
+.scr-live-table .c-status > .scr-live-q { max-width: 150px; }
 /* One-cell rows read from the left (.scr's last-cell rule right-aligns). */
 .scr-live .scr-live-table tr.scr-live-group td, .scr-live .scr-live-table tr.scr-live-veh-row td,
 .scr-live .scr-live-table tr.scr-live-empty-row td { text-align: left; }
 .scr-live-staff b { color: #6b6790; font-weight: 600; margin-right: 3px; }
 .scr-live-fold { display: none; text-align: right; }
 .scr-live-table .c-act { width: 1%; }
-.scr-live-acts { display: flex; gap: 4px; justify-content: flex-end; }
-.scr-live-acts .scr-icon-btn { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; position: relative; color: #6b6790; }
-.scr-live-veh-btn.is-on { background: #fdeced; color: #c2141a; }
-.scr-live-veh-n { position: absolute; top: -3px; right: -3px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 99px; background: #1a1640; color: #fff; font-size: 9.5px; font-weight: 700; line-height: 16px; text-align: center; }
+/* Show vehicles: a bicycle and the count; the row itself opens the order. */
+.scr-live-veh-btn { display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 9px 0 7px; border: 1px solid #eeedf5; border-radius: 9px; background: #fff; color: #4b4770; font: inherit; font-size: calc(12px * var(--live-s)); font-weight: 700; cursor: pointer; white-space: nowrap; }
+.scr-live-veh-btn:hover { border-color: #e1dfee; background: #fbfaff; }
+.scr-live-veh-btn.is-on { background: #fdeced; border-color: #f8d3d5; color: #c2141a; }
+.scr-live-veh-n { font-variant-numeric: tabular-nums; }
+.scr-live-veh-t { display: none; font-weight: 600; }
 .scr-live-row { cursor: pointer; }
 .scr-live-row:hover td { background: #fbfaff; }
 .scr-live-row.is-active td.c-no { box-shadow: inset 3px 0 0 #14764a, 1px 0 0 #f0eff7; }
@@ -1369,9 +1371,8 @@ body.scr-live-wall .scr-live-table td > div, body.scr-live-wall .scr-live-table 
   .scr-live-row .c-staff { display: block !important; grid-column: 1 / -1; }
   .scr-live-row .scr-live-fold { display: block; text-align: left; }
   .scr-live-row .c-act { grid-column: 1 / -1; width: auto; }
-  .scr-live-acts { justify-content: stretch; }
-  .scr-live-acts .scr-icon-btn { flex: 1; width: auto; height: 40px; border: 1px solid #eeedf5; border-radius: 10px; }
-  .scr-live-veh-n { top: 6px; right: auto; left: calc(50% + 10px); }
+  .scr-live-veh-btn { width: 100%; justify-content: center; height: 40px; }
+  .scr-live-veh-t { display: inline; }
   .scr-live-group, .scr-live-veh-row, .scr-live-empty-row { display: block; }
   .scr-live-group td, .scr-live-veh-row td, .scr-live-empty-row td { display: block; position: static; }
   .scr-live-veh-row[hidden] { display: none; }
