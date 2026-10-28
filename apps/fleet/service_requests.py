@@ -32,6 +32,7 @@ from apps.notifications.models import Action
 from apps.photos import services as photo_services
 from apps.photos.models import PhotoPurpose
 from core.enums import ApprovalStatus, Channel
+from core.timezones import zone_for
 
 TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 PAGE_SIZE = 50
@@ -110,8 +111,24 @@ def _open_refusal(vehicle, asset):
     return ServiceRefused("already_reported", f"Already reported as {open_request.request_no}.")
 
 
+def _issue_type(values, company):
+    """The picked issue type -- this company's, active, and for this kind of
+    target (`applies_to`); None when none was picked."""
+    from apps.fleet.models import IssueType
+
+    if not values.get("issue_type_id"):
+        return None
+    issue_type = IssueType.objects.filter(pk=values["issue_type_id"], company=company, is_active=True).first()
+    if issue_type is None:
+        raise ServiceRefused("unknown_issue_type", "No issue type with that id.", 404)
+    if not issue_type.fits(values["target"]):
+        raise ServiceRefused("issue_type_not_for_target", f"{issue_type.name} is not for a {values['target']}.", 400)
+    return issue_type
+
+
 def _report(session, values, branch, company, sync_id):
     vehicle, asset = _target(values, branch, company)
+    issue_type = _issue_type(values, company)
     refused = _open_refusal(vehicle, asset)
     if refused:
         raise refused
@@ -129,7 +146,8 @@ def _report(session, values, branch, company, sync_id):
     req = ServiceRequest(
         id=sync_id, company=company, branch=branch, number=counter.last_number,
         request_no=request_no(branch, counter.last_number), vehicle=vehicle, asset=asset,
-        issue=values["issue"].strip(), photo=photo, device=session.device, requested_by=session.user,
+        issue_type=issue_type, issue=(values.get("issue") or "").strip(), photo=photo, device=session.device,
+        requested_by=session.user,
         requested_at=values["requested_at"], status=ServiceRequestStatus.PENDING,
         created_by=session.user, modified_by=session.user,
     )
@@ -234,7 +252,7 @@ def request_json(req, zone):
     """One request as the tablet sees it."""
     return {
         "request_sync_id": str(req.pk), "request_no": req.request_no, "status": req.status,
-        **target_json(req), "issue": req.issue,
+        **target_json(req), **issue_type_json(req), "issue": req.issue,
         "requested_by": _name(req.requested_by), "requested_at": _local(req.requested_at, zone),
         "decided_by": _name(req.decided_by), "decided_channel": req.decided_channel or None,
         "decided_at": _local(req.decided_at, zone), "decision_note": req.decision_note,
@@ -250,7 +268,7 @@ def manager_json(req, zone):
     request itself in `details`."""
     return {
         "request_sync_id": str(req.pk), "order_id": None, "order_no": None, "kind": "service",
-        "status": req.status, "reason": req.issue, "requested_at": _local(req.requested_at, zone),
+        "status": req.status, "reason": summary(req), "requested_at": _local(req.requested_at, zone),
         "discount_type": None, "discount_value": None,
         "decided_by": _name(req.decided_by), "decided_channel": req.decided_channel or None,
         "decided_at": _local(req.decided_at, zone), "decision_note": req.decision_note,
@@ -259,7 +277,7 @@ def manager_json(req, zone):
         "branch_id": req.branch_id, "station": req.branch.name, "requested_by": _name(req.requested_by),
         "order": None,
         "details": {
-            "request_no": req.request_no, **target_json(req), "issue": req.issue,
+            "request_no": req.request_no, **target_json(req), **issue_type_json(req), "issue": req.issue,
             **photo_fields(req, Channel.MANAGER),
             "completed_by": _name(req.completed_by), "completed_at": _local(req.completed_at, zone),
             "completion_note": req.completion_note,
@@ -267,8 +285,18 @@ def manager_json(req, zone):
     }
 
 
+def issue_type_json(req):
+    return {"issue_type_id": req.issue_type_id, "issue_type": req.issue_type.name if req.issue_type_id else None}
+
+
+def summary(req):
+    """"Brake failure -- squeals at speed": the type, then the words."""
+    parts = [req.issue_type.name if req.issue_type_id else "", req.issue]
+    return " -- ".join(part for part in parts if part)
+
+
 def with_rows(rows):
-    return rows.select_related("branch", "company", "vehicle", "asset__asset_type", "requested_by",
+    return rows.select_related("branch", "company", "vehicle", "asset__asset_type", "issue_type", "requested_by",
                                "decided_by", "completed_by")
 
 
@@ -296,8 +324,18 @@ def station_assets(branch):
                                        approval_status=ApprovalStatus.APPROVED)
                   .select_related("asset_type", "brand").order_by("asset_code"))
     reported = open_for_assets(a.pk for a in assets)
+    from apps.fleet.asset_checks import last_checks
+
+    checked = last_checks(a.pk for a in assets)
+    zone = zone_for(branch.company)
+
+    def last(asset):
+        check = checked.get(asset.pk)
+        return {"last_check_status": check.status if check else None,
+                "last_checked_at": _local(check.checked_at, zone) if check else None}
+
     return [{
         "asset_id": a.pk, "asset_code": a.asset_code, "asset_type": a.asset_type.asset_type_name,
         "brand": a.brand.brand_name if a.brand_id else None, "serial_no": a.serial_no,
-        "description": a.description, "open_request_no": reported.get(a.pk),
+        "description": a.description, "open_request_no": reported.get(a.pk), **last(a),
     } for a in assets]

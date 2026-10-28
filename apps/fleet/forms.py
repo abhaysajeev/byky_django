@@ -1,5 +1,14 @@
 from apps.company.forms import ScopedModelForm
-from apps.fleet.models import UOM, Asset, AssetType, Brand, Category, Vehicle, VehicleType
+from apps.fleet.models import (
+    UOM,
+    Asset,
+    AssetType,
+    Brand,
+    Category,
+    IssueType,
+    Vehicle,
+    VehicleType,
+)
 
 
 class BrandForm(ScopedModelForm):
@@ -55,6 +64,13 @@ class AssetTypeForm(ScopedModelForm):
         model = AssetType
         fields = ["company", "asset_type_code", "asset_type_name", "description", "is_active"]
         labels = {"asset_type_code": "Asset Type Code", "asset_type_name": "Asset Type"}
+
+
+class IssueTypeForm(ScopedModelForm):
+    class Meta:
+        model = IssueType
+        fields = ["company", "name", "code", "applies_to", "description", "is_active"]
+        labels = {"name": "Issue Type", "applies_to": "Applies To"}
 
 
 class AssetForm(ScopedModelForm):

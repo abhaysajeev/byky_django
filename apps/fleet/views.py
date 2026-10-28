@@ -25,6 +25,8 @@ from apps.fleet.models import (
     AssetType,
     Brand,
     Category,
+    IssueTarget,
+    IssueType,
     ServiceRequest,
     Vehicle,
     VehicleType,
@@ -75,6 +77,7 @@ class FleetScreenView(PagePermissionMixin, ThemedTemplateView):
                 for e in employees_for(user).filter(is_active=True)
             ],
             "branches_list": list(branches_for(user).filter(is_active=True).values("id", "name")),
+            "issue_targets_list": [{"id": value, "name": label} for value, label in IssueTarget.choices],
             "vehicle_types_list": list(
                 scoping.vehicle_types_for(user).filter(is_active=True)
                 .values("id", "vehicle_type_name")
@@ -317,6 +320,54 @@ class AssetTypeListView(FleetScreenView):
         return context
 
 
+class IssueTypeListView(FleetScreenView):
+    """What can be wrong with a vehicle or an asset -- the list the tablet
+    offers when reporting (owner, 27 Oct 2026)."""
+
+    template_name = "fleet/issue_type_list.html"
+    page_code = "fleet.issue_type"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        rows = []
+        for i, issue_type in enumerate(recent_first(scoping.issue_types_for(self.request.user))):
+            rows.append({
+                "name": issue_type.name,
+                "code": issue_type.code,
+                "applies_to": issue_type.get_applies_to_display(),
+                "active": issue_type.is_active,
+                "pk": issue_type.pk,
+                "json_id": f"scr-record-issue-type-{i}",
+                "fields_json": {
+                    "pk": issue_type.pk,
+                    "company": issue_type.company_id,
+                    "name": issue_type.name,
+                    "code": issue_type.code,
+                    "applies_to": issue_type.applies_to,
+                    "description": issue_type.description,
+                    "is_active": issue_type.is_active,
+                },
+            })
+        context["issue_types"] = rows
+        context["save_url_issue_type"] = reverse("fleet-issue-type-save")
+        context["delete_url_issue_type"] = reverse("fleet-issue-type-delete", args=[0])
+        context["noun_issue_type"] = "Issue Type"
+        return context
+
+
+class IssueTypeSave(company_writes.EntitySaveView):
+    model = IssueType
+    form_class = forms.IssueTypeForm
+    page_code = "fleet.issue_type"
+    noun = "Issue Type"
+
+
+class IssueTypeDelete(company_writes.EntityDeleteView):
+    model = IssueType
+    page_code = "fleet.issue_type"
+    noun = "Issue Type"
+
+
 class AssetTypeSave(company_writes.EntitySaveView):
     model = AssetType
     form_class = forms.AssetTypeForm
@@ -342,6 +393,9 @@ class AssetListView(FleetScreenView):
             .select_related("asset_type", "brand", "custodian", "branch")
         )
         reported = _open_service(asset_id__in=[a.pk for a in assets])
+        from apps.fleet.asset_checks import last_checks
+
+        checked = last_checks(a.pk for a in assets)
         for i, asset in enumerate(assets):
             rows.append({
                 "code": asset.asset_code,
@@ -351,6 +405,7 @@ class AssetListView(FleetScreenView):
                 "branch": asset.branch.name if asset.branch_id else "",
                 "active": asset.is_active,
                 "reported": reported.get(asset.pk),
+                "last_check": checked.get(asset.pk),
                 "pk": asset.pk,
                 "json_id": f"scr-record-asset-{i}",
                 "fields_json": {

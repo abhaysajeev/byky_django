@@ -21,11 +21,17 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
 from apps.company.scoping import companies_for
-from apps.fleet import image_shares, service_requests
+from apps.fleet import asset_checks, image_shares, service_requests
+from apps.fleet.models import AssetCheck, IssueTarget, IssueType
 from apps.fleet.serializers import (
+    AssetCheckCreateRequest,
+    AssetCheckDetailRequest,
+    AssetCheckListRequest,
     AssetsRequest,
     ImageShareCreateRequest,
     ImageShareListRequest,
+    IssueTypesRequest,
+    ManagerAssetCheckListRequest,
     ManagerImageShareListRequest,
     ServiceRequestCreateRequest,
     ServiceRequestDecisionRequest,
@@ -81,9 +87,10 @@ class _AppView(APIView):
 
 _ASSETS_SAMPLE = {"assets": [
     {"asset_id": 7, "asset_code": "CCTV-ADC1-01", "asset_type": "CCTV", "brand": "Hikvision",
-     "serial_no": "HK2231-778", "description": "Entrance camera", "open_request_no": None},
+     "serial_no": "HK2231-778", "description": "Entrance camera", "open_request_no": None,
+     "last_check_status": "active", "last_checked_at": "2026-10-27 09:15:00"},
     {"asset_id": 9, "asset_code": "PRN-ADC1-01", "asset_type": "Printer", "brand": None, "serial_no": "",
-     "description": "", "open_request_no": "SRV-ADC1-00012"},
+     "description": "", "open_request_no": "SRV-ADC1-00012", "last_check_status": None, "last_checked_at": None},
 ]}
 
 
@@ -97,7 +104,9 @@ class AssetsView(_AppView):
 Every active, approved asset whose station is this one (Inventory -> Asset,
 "Branch"), in asset-code order. `open_request_no` is the service request still
 open on it (pending or under maintenance), else `null` -- a second report of it
-is refused (`already_reported`). `request_data` may be empty.
+is refused (`already_reported`). `last_check_status` (`active` /
+`needs_inspection`) and `last_checked_at` are its latest check (`asset-checks`),
+else `null`. `request_data` may be empty.
 """,
         request=envelope_request("AssetsEnvelope", AssetsRequest, request_data_required=False),
         responses=envelope_responses((200, "ok", "Assets.", _ASSETS_SAMPLE), *_OPERATOR_COMMON, SERVER_ERROR),
@@ -115,6 +124,7 @@ _SERVICE_ROW = {
     "request_sync_id": "01a1a2b3-4c5d-7e6f-8a9b-0c1d2e3f4a5b", "request_no": "SRV-ADC1-00012",
     "status": "pending", "target": "vehicle", "vehicle_id": 1042, "vehicle_identifier": "VB1242",
     "vehicle_name": "MO 42", "asset_id": None, "asset_code": None, "asset_type": None,
+    "issue_type_id": 3, "issue_type": "Brake failure",
     "issue": "Front brake not holding", "requested_by": "Rashed", "requested_at": "2026-10-26 10:15:00",
     "decided_by": None, "decided_channel": None, "decided_at": None, "decision_note": "",
     "completed_by": None, "completed_at": None, "completion_note": "", "has_photo": True,
@@ -123,8 +133,9 @@ _SERVICE_ROW = {
 _REPORT_DESCRIPTION = """
 Report a **vehicle** or a **station asset** for service. `target` is
 `vehicle` (with `vehicle_id`) or `asset` (with `asset_id`, from `assets`);
-`issue` is free text (required, at most 500 characters); `photo_id` is
-optional -- upload it first with purpose `service_request`. `sync_id` is
+`issue_type_id` is from `issue-types` (it must apply to this target) and
+`issue` is free text (at most 500 characters) -- send one or both; `photo_id`
+is optional -- upload it first with purpose `service_request`. `sync_id` is
 this call's id (UUIDv7) and becomes the request's id: a resend is answered
 `duplicate` with the request as it stands.
 
@@ -165,6 +176,8 @@ class ServiceRequestCreateView(_AppView):
             (404, "unknown_vehicle", "No vehicle with that id.", {}),
             (404, "unknown_asset", "No asset with that id.", {}),
             (409, "already_reported", "Already reported as SRV-ADC1-00011.", {}),
+            (404, "unknown_issue_type", "No issue type with that id.", {}),
+            (400, "issue_type_not_for_target", "Camera offline is not for a vehicle.", {}),
             (409, "sync_id_conflict", "That sync_id is already used.", {}),
             *_PHOTO_ROWS, *_OPERATOR_COMMON, *parking.SCHEMA_ROWS, SERVER_ERROR,
         ),
@@ -406,3 +419,191 @@ company -- `state_id`, `branch_id` -- with `photo_url` / `photo_thumb_url`
             to_date=values.get("to_date"), zone=zone, page=values["page"])
         return envelope("ok", "Shared images.", _page(page, {
             "shares": [image_shares.share_json(r, zone, Channel.OPERATOR) for r in rows]}))
+
+
+# -- Issue types -------------------------------------------------------------------------
+
+
+class IssueTypesView(_AppView):
+    """POST /api/v1/{app}/issue-types -- operator app only."""
+
+    @extend_schema(
+        tags=["Operator Service & Maintenance"],
+        summary="The issue types to pick from when reporting",
+        description="""
+The company's active issue types (Inventory -> Issue Type), by name.
+`applies_to` is `vehicle`, `asset` or `both`; send `target` (`vehicle` /
+`asset`) for only the ones that fit -- each includes `both`. Send the picked
+`issue_type_id` with `service-requests`.
+""",
+        request=envelope_request("IssueTypesEnvelope", IssueTypesRequest, request_data_required=False),
+        responses=envelope_responses(
+            (200, "ok", "Issue types.", {"issue_types": [
+                {"issue_type_id": 3, "name": "Brake failure", "code": "BRK", "applies_to": "vehicle"},
+                {"issue_type_id": 7, "name": "Damaged", "code": "", "applies_to": "both"}]}),
+            *_OPERATOR_COMMON, SERVER_ERROR,
+        ),
+    )
+    def post(self, request, app):
+        branch, refused = self.operator_station(request, app)
+        if refused:
+            return refused
+        _, request_data = request_parts(request)
+        form = IssueTypesRequest(data=request_data)
+        form.is_valid(raise_exception=True)
+        rows = IssueType.objects.filter(company=branch.company, is_active=True)
+        target = form.validated_data.get("target")
+        if target:
+            rows = rows.filter(applies_to__in=[target, IssueTarget.BOTH])
+        return envelope("ok", "Issue types.", {"issue_types": [
+            {"issue_type_id": t.pk, "name": t.name, "code": t.code, "applies_to": t.applies_to}
+            for t in rows.order_by("name")]})
+
+
+# -- Asset checks ------------------------------------------------------------------------
+
+_CHECK_ROW = {
+    "asset_check_id": "01a1b5c6-0000-7000-8000-000000000009", "asset_id": 7, "asset_code": "CCTV-ADC1-01",
+    "asset_type": "CCTV", "status": "needs_inspection", "status_label": "Needs inspection",
+    "remarks": "Lens cracked", "branch_id": 12, "station": "Abu Dhabi Corniche 1", "emirate": "Abu Dhabi",
+    "checked_by": "Rashed", "checked_at": "2026-10-27 09:15:00",
+    "photo_id": "01a1b5c5-1111-7222-8333-444455556666",
+}
+_MANAGER_CHECK_ROW = {
+    **_CHECK_ROW,
+    "photo_url": "/api/v1/manager/photos/01a1b5c5-1111-7222-8333-444455556666?size=display",
+    "photo_thumb_url": "/api/v1/manager/photos/01a1b5c5-1111-7222-8333-444455556666?size=thumb",
+}
+
+
+class AssetCheckCreateView(_AppView):
+    """POST /api/v1/{app}/asset-checks -- operator app only."""
+
+    park_kind = IssueKind.ASSET_CHECK
+
+    @extend_schema(
+        tags=["Operator Asset Checks"],
+        summary="Check an asset: photo, condition, remarks",
+        description="""
+Record a check of an asset of this station (from `assets`): upload the photo
+first (`photos`, purpose `asset_check`) -- **required** -- then send its
+`photo_id`, the `status` (`active` / `needs_inspection`), optional `remarks`
+(at most 500 characters) and `checked_at`. `sync_id` is this call's id (UUIDv7)
+and becomes the check's id: a resend is answered `duplicate`.
+
+Recorded only -- nothing to approve, nobody is notified. The asset's condition
+is its latest check (`assets`: `last_check_status`). Managers see checks with
+their photos in the manager app; the back office on the web.
+""",
+        request=envelope_request("AssetCheckCreateEnvelope", AssetCheckCreateRequest),
+        responses=envelope_responses(
+            (200, "ok", "Checked.", _CHECK_ROW), (200, "duplicate", "Already checked.", _CHECK_ROW),
+            (400, "invalid_request", "photo_id is required.", {"errors": {"photo_id": "is required"}}),
+            (404, "unknown_asset", "No asset with that id.", {}),
+            (400, "asset_not_at_station", "That asset is not at this station.", {}),
+            (409, "sync_id_conflict", "That sync_id is already used.", {}),
+            *_PHOTO_ROWS, *_OPERATOR_COMMON, *parking.SCHEMA_ROWS, SERVER_ERROR,
+        ),
+    )
+    def post(self, request, app):
+        if app != Channel.OPERATOR or request.auth.channel != Channel.OPERATOR:
+            return envelope("wrong_channel", "Not allowed on this app.", http_status=403)
+        return parking.handle(request, app, self.park_kind, self.perform)
+
+    def perform(self, session, app, request_data, *, replay=False):
+        branch, refused = station_of(session, replay=replay)
+        if refused:
+            return refused
+        form = AssetCheckCreateRequest(data=request_data)
+        form.is_valid(raise_exception=True)
+        values = dict(form.validated_data)
+        zone = zone_for(branch.company)
+        values["checked_at"] = timezone.make_aware(values["checked_at"], zone)
+        try:
+            check, created = asset_checks.record(session, values)
+        except asset_checks.CheckRefused as refusal:
+            return envelope(refusal.code, refusal.message, http_status=refusal.status)
+        check = asset_checks.with_rows(type(check).objects.filter(pk=check.pk)).get()
+        data = asset_checks.check_json(check, zone, Channel.OPERATOR)
+        return envelope("ok", "Checked.", data) if created else envelope("duplicate", "Already checked.", data)
+
+
+class AssetCheckListView(_AppView):
+    """POST /api/v1/{app}/asset-checks/list -- operator app (this station) or
+    manager app (every station, with photos, view only)."""
+
+    @extend_schema(
+        tags=["Operator Asset Checks", "Manager Asset Checks"],
+        summary="Asset checks, newest first",
+        description="""
+Asset checks, newest first, 50 a page (`page` from 1). **Operator app**: this
+station's -- `mine` for only this tablet's, `status`; no photo URLs.
+**Manager app**: every station of the company -- `state_id`, `branch_id`,
+`asset_id`, `status` -- with `photo_url` / `photo_thumb_url` (server-relative,
+need the access token). Both: `from_date` / `to_date` (`YYYY-MM-DD`, company
+time, both days included). View only.
+""",
+        request=envelope_request("AssetCheckListEnvelope", ManagerAssetCheckListRequest,
+                                 request_data_required=False),
+        responses=envelope_responses(
+            (200, "ok", "Asset checks.", {"checks": [_MANAGER_CHECK_ROW], "page": 1, "pages": 1, "total": 1}),
+            *_OPERATOR_COMMON, SERVER_ERROR,
+        ),
+    )
+    def post(self, request, app):
+        _, request_data = request_parts(request)
+        if app == Channel.MANAGER:
+            refused = manager_only(request, app)
+            if refused:
+                return refused
+            form = ManagerAssetCheckListRequest(data=request_data)
+            form.is_valid(raise_exception=True)
+            values = form.validated_data
+            zone = zone_for(getattr(request.user, "company", None))
+            rows, page = asset_checks.company_list(
+                self.company_ids(request), state_id=values.get("state_id"), branch_id=values.get("branch_id"),
+                asset_id=values.get("asset_id"), status=values.get("status") or None,
+                from_date=values.get("from_date"), to_date=values.get("to_date"), zone=zone, page=values["page"])
+            return envelope("ok", "Asset checks.", _page(page, {
+                "checks": [asset_checks.check_json(r, zone, Channel.MANAGER) for r in rows]}))
+        branch, refused = self.operator_station(request, app)
+        if refused:
+            return refused
+        form = AssetCheckListRequest(data=request_data)
+        form.is_valid(raise_exception=True)
+        values = form.validated_data
+        zone = zone_for(branch.company)
+        rows, page = asset_checks.station_list(
+            branch, device=request.auth.device if values["mine"] else None, status=values.get("status") or None,
+            from_date=values.get("from_date"), to_date=values.get("to_date"), zone=zone, page=values["page"])
+        return envelope("ok", "Asset checks.", _page(page, {
+            "checks": [asset_checks.check_json(r, zone, Channel.OPERATOR) for r in rows]}))
+
+
+class AssetCheckDetailView(_AppView):
+    """POST /api/v1/{app}/asset-checks/detail -- manager app only."""
+
+    @extend_schema(
+        tags=["Manager Asset Checks"],
+        summary="One asset check, with its photo",
+        description="One check of the company by `asset_check_id`, with `photo_url` / `photo_thumb_url`.",
+        request=envelope_request("AssetCheckDetailEnvelope", AssetCheckDetailRequest),
+        responses=envelope_responses(
+            (200, "ok", "Asset check.", _MANAGER_CHECK_ROW),
+            (404, "unknown_asset_check", "No asset check with that id.", {}),
+            *_MANAGER_COMMON, SERVER_ERROR,
+        ),
+    )
+    def post(self, request, app):
+        refused = manager_only(request, app)
+        if refused:
+            return refused
+        _, request_data = request_parts(request)
+        form = AssetCheckDetailRequest(data=request_data)
+        form.is_valid(raise_exception=True)
+        check = asset_checks.with_rows(AssetCheck.objects.filter(
+            pk=form.validated_data["asset_check_id"], company_id__in=self.company_ids(request))).first()
+        if check is None:
+            return envelope("unknown_asset_check", "No asset check with that id.", http_status=404)
+        zone = zone_for(check.company)
+        return envelope("ok", "Asset check.", asset_checks.check_json(check, zone, Channel.MANAGER))
