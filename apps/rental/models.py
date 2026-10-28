@@ -855,7 +855,8 @@ class TestRide(TimeStampedModel):
     Dismiss_Test_Vehicles, Save_Order_Booking:437-482).
 
     Owner, 28 Oct 2026: one vehicle per test; a customer test records the
-    customer's name and mobile, a staff test nothing; it lasts the station's
+    customer's name and mobile, a staff test the staff member (an employee,
+    picked on the tablet -- never defaulted to the operator); it lasts the station's
     test minutes for its mode (copied at start, so a later settings change
     does not rewrite it); it ends (vehicle back), is cancelled (a mistake) or
     is rented -- the booking names it and the two are linked. Test minutes
@@ -869,6 +870,9 @@ class TestRide(TimeStampedModel):
     mode = models.CharField(max_length=10, choices=TestRideMode.choices)
     customer_name = models.CharField(max_length=100, blank=True)
     customer_mobile = models.CharField(max_length=20, blank=True)
+    # The staff member riding, on a staff test.
+    employee = models.ForeignKey("crew.Employee", null=True, blank=True, on_delete=models.PROTECT,
+                                 related_name="test_rides")
     allowed_minutes = models.PositiveSmallIntegerField()
     started_at = models.DateTimeField()                      # tablet time
     expected_end_at = models.DateTimeField()                 # started_at + allowed_minutes
@@ -891,6 +895,12 @@ class TestRide(TimeStampedModel):
                 condition=~models.Q(mode=TestRideMode.CUSTOMER) | (~models.Q(customer_name="")
                                                                   & ~models.Q(customer_mobile="")),
                 name="test_ride_customer_named",
+            ),
+            # A staff test names its employee; a customer test has none.
+            models.CheckConstraint(
+                condition=(models.Q(mode=TestRideMode.STAFF, employee__isnull=False)
+                           | models.Q(mode=TestRideMode.CUSTOMER, employee__isnull=True)),
+                name="test_ride_staff_employee",
             ),
             models.CheckConstraint(
                 condition=(models.Q(status=TestRideStatus.ON_TEST, ended_at__isnull=True, order__isnull=True)

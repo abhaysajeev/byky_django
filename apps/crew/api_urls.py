@@ -4,7 +4,7 @@ apps it serves."""
 
 from django.urls import path
 
-from apps.crew import api, duty_api, leave_api
+from apps.crew import api, duty_api, employee_api, leave_api
 
 urlpatterns = [
     path("attendance/mark", api.AttendanceMarkView.as_view(), name="api-app-attendance-mark"),
@@ -19,4 +19,5 @@ urlpatterns = [
     path("attendance/team", api.TeamAttendanceView.as_view(), name="api-app-attendance-team"),
     path("duty/my", duty_api.MyRosterView.as_view(), name="api-app-duty-my"),
     path("duty/team", duty_api.TeamRosterView.as_view(), name="api-app-duty-team"),
+    path("employees", employee_api.EmployeesView.as_view(), name="api-app-employees"),
 ]

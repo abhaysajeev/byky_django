@@ -277,12 +277,17 @@ def test_ride_changed(ride, action, *, device=None):
     transaction.on_commit(queue)
 
 
+def _rider(ride):
+    """Who rides: the customer, or the staff member."""
+    return ride.customer_name or (ride.employee.full_name if ride.employee_id else "")
+
+
 def test_ride_message(ride, action, at):
     from core.timezones import zone_for
 
     return Push(
         title=f"Test ride {ride.test_no} {TEST_RIDE_VERBS[action]}",
-        body=" · ".join(part for part in (ride.vehicle.vehicle_name, ride.branch.name) if part),
+        body=" · ".join(part for part in (ride.vehicle.vehicle_name, _rider(ride), ride.branch.name) if part),
         data={"type": "test_ride_changed", "test_ride_id": str(ride.pk), "test_no": ride.test_no,
               "vehicle_id": str(ride.vehicle_id), "action": action, "status": ride.status,
               "branch_id": str(ride.branch_id),
@@ -295,7 +300,7 @@ def test_ride_push(ride_id, action, device_id, at):
     """The worker's side of test_ride_changed. Returns how many were sent."""
     from apps.rental.models import TestRide
 
-    ride = TestRide.objects.select_related("vehicle", "branch", "company").filter(pk=ride_id).first()
+    ride = TestRide.objects.select_related("vehicle", "branch", "company", "employee").filter(pk=ride_id).first()
     if ride is None:
         return 0
     return _send(ride, test_ride_message(ride, action, at), device_id)

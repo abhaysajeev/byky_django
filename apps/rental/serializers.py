@@ -660,7 +660,8 @@ class TestRideStartRequest(serializers.Serializer):
     """One vehicle out on a free test ride. `sync_id` is this call's id and
     becomes the test ride's id; `test_no` is the printed test number from the
     tablet's test counter (`T...`, next_test_number at login). A customer
-    test names the customer (name and mobile); a staff test does not."""
+    test names the customer (name and mobile); a staff test names the staff
+    member (`employee_id`, from `employees`) -- never defaulted."""
 
     sync_id = uuid7_field()
     test_no = text_field(max_length=30)
@@ -669,14 +670,19 @@ class TestRideStartRequest(serializers.Serializer):
         choices=TestRideMode.values, error_messages={**REQUIRED, "invalid_choice": "must be customer or staff"})
     customer_name = text_field(max_length=100, required=False, allow_blank=True)
     customer_mobile = text_field(max_length=20, required=False, allow_blank=True)
+    employee_id = whole_number_field(min_value=1, required=False, allow_null=True)
     started_at = datetime_field()
 
     def validate(self, values):
         if values["mode"] == TestRideMode.CUSTOMER:
             missing = {name: "is required for a customer test ride"
                        for name in ("customer_name", "customer_mobile") if not (values.get(name) or "").strip()}
+            if values.get("employee_id"):
+                missing["employee_id"] = "is only for a staff test ride"
             if missing:
                 raise serializers.ValidationError(missing)
+        elif not values.get("employee_id"):
+            raise serializers.ValidationError({"employee_id": "is required for a staff test ride"})
         return values
 
 

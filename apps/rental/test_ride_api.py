@@ -27,6 +27,7 @@ _RIDE_SAMPLE = {
     "test_ride_id": "01a1b5c6-0000-7000-8000-00000000000a", "test_no": "TADC160182000006", "mode": "customer",
     "vehicle_id": 412, "vehicle_name": "MO 41", "vehicle_code": "MO41",
     "customer_name": "Ahmed Al Mansoori", "customer_mobile": "971501234567",
+    "employee_id": None, "employee_code": None, "employee_name": None,
     "allowed_minutes": 5, "started_at": "2026-10-28 11:10:00", "expected_end_at": "2026-10-28 11:15:00",
     "status": "on_test", "overdue": False, "ended_at": None, "order_id": None, "order_no": None,
     "started_by": "Ravi", "ended_by": None, "branch_id": 27, "station": "Abu Dhabi Corniche 1",
@@ -36,8 +37,9 @@ _ENDED_SAMPLE = {**_RIDE_SAMPLE, "status": "ended", "ended_at": "2026-10-28 11:1
 
 _START_DESCRIPTION = """
 One vehicle out on a **free test ride** -- a customer (`mode: customer`, with
-`customer_name` and `customer_mobile`) or a staff member (`mode: staff`, no
-customer). Only at a station that allows test rides.
+`customer_name` and `customer_mobile`) or a staff member (`mode: staff`, with
+`employee_id` -- picked from `employees`, required even when the operator
+rides). Only at a station that allows test rides.
 
 * `sync_id` (UUIDv7) is this call's id and becomes the test ride's id; resent
   unchanged it answers `duplicate`.
@@ -56,7 +58,8 @@ are refused `vehicle_on_test_ride`. To rent it after the test, **book with
 order. Otherwise close it with `test-rides/end` (vehicle back) or
 `test-rides/cancel` (started by mistake). Test minutes are never charged.
 
-Refusals: `test_rides_not_allowed`, `unknown_vehicle`, `vehicle_not_at_station`,
+Refusals: `test_rides_not_allowed`, `unknown_employee` (not an active employee
+of the company), `employee_blocked`, `unknown_vehicle`, `vehicle_not_at_station`,
 `vehicle_already_rented` (out on rent), `vehicle_on_test_ride`, `test_no_used`,
 `device_settings_not_done`, `sync_id_conflict`.
 
@@ -96,6 +99,8 @@ _MESSAGES = {
     "device_settings_not_done": "This station's device settings are not set up yet.",
     "sync_id_conflict": "That sync_id is already used.",
     "unknown_test_ride": "No test ride with that id at this station.",
+    "unknown_employee": "No active employee with that id.",
+    "employee_blocked": "That employee is blocked.",
     "test_ride_closed": "This test ride is already ended.",
 }
 
@@ -121,7 +126,8 @@ class TestRideStartView(_OperatorView):
             (200, "duplicate", "Already started.", _STARTED_SAMPLE),
             (400, "invalid_request", "customer_name is required for a customer test ride.",
              {"errors": {"customer_name": "is required for a customer test ride"}}),
-            *_rows("unknown_vehicle", status=404), *_rows("vehicle_not_at_station", status=400),
+            *_rows("unknown_vehicle", "unknown_employee", status=404),
+            *_rows("vehicle_not_at_station", status=400), *_rows("employee_blocked"),
             *_rows("test_rides_not_allowed", "vehicle_already_rented", "vehicle_on_test_ride", "test_no_used",
                    "device_settings_not_done", "sync_id_conflict"),
             *parking.SCHEMA_ROWS, *_COMMON,

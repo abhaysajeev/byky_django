@@ -8,6 +8,7 @@ import datetime
 import pytest
 from django.utils import timezone
 
+from apps.crew.models import Employee
 from apps.devices import services as devices_services
 from apps.devices.models import BillKind, DeviceSettings
 from apps.fleet.tests.test_image_shares import web_client
@@ -18,6 +19,7 @@ from apps.rental.tests import test_order_api as orders
 from apps.rental.tests import test_order_change as changes
 from apps.rental.tests import test_order_requests as requests_tests
 from apps.rental.tests import test_station_sync as sync_tests
+from core.enums import ApprovalStatus
 from core.ids import uuid7
 
 call, booking = orders.call, orders.booking
@@ -37,6 +39,7 @@ def allowed(world):
     world["adc1"].allows_test_ride = True
     world["adc1"].save()
     DeviceSettings.objects.filter(branch=world["adc1"]).update(customer_test_minutes=5, staff_test_minutes=10)
+    Employee.objects.filter(employee_code="OPR001").update(approval_status=ApprovalStatus.APPROVED)
     return world["adc1"]
 
 
@@ -75,10 +78,37 @@ def test_a_customer_test_ride_and_a_resend(client, world, token, shop, allowed):
     assert TestRide.objects.count() == 1
 
 
-def test_a_staff_test_ride_takes_the_staff_minutes_and_no_customer(client, world, token, shop, allowed):
-    row = started(client, token, ride(world, shop, mode="staff", customer_name="", customer_mobile=""))
+def staff(world, shop, employee, **extra):
+    return ride(world, shop, mode="staff", customer_name="", customer_mobile="",
+                **{"employee_id": employee.pk, **extra})
+
+
+def test_a_staff_test_ride_names_the_staff_member_and_takes_the_staff_minutes(client, world, token, shop,
+                                                                              allowed):
+    rashed = Employee.objects.get(employee_code="OPR001")
+    row = started(client, token, staff(world, shop, rashed))
     assert (row["mode"], row["allowed_minutes"], row["expected_end_at"], row["customer_name"]) == (
         "staff", 10, "2026-10-28 11:20:00", "")
+    assert (row["employee_id"], row["employee_code"], row["employee_name"]) == (rashed.pk, "OPR001", "Rashed")
+
+
+def test_a_staff_test_ride_needs_its_employee_and_a_customer_one_none(client, world, token, shop, allowed):
+    rashed = Employee.objects.get(employee_code="OPR001")
+    body = call(client, START, ride(world, shop, mode="staff"), token=token).json()
+    assert body["code"] == "invalid_request" and "employee_id" in body["data"]["errors"]
+    body = call(client, START, ride(world, shop, employee_id=rashed.pk), token=token).json()
+    assert body["code"] == "invalid_request" and "employee_id" in body["data"]["errors"]
+
+
+def test_an_unknown_inactive_or_blocked_employee_is_refused(client, world, token, shop, allowed):
+    rashed = Employee.objects.get(employee_code="OPR001")
+    assert call(client, START, staff(world, shop, rashed, employee_id=999999), token=token).json()[
+        "code"] == "unknown_employee"
+    Employee.objects.filter(pk=rashed.pk).update(is_blocked=True)
+    assert call(client, START, staff(world, shop, rashed), token=token).json()["code"] == "employee_blocked"
+    Employee.objects.filter(pk=rashed.pk).update(is_blocked=False, is_active=False)
+    assert call(client, START, staff(world, shop, rashed), token=token).json()["code"] == "unknown_employee"
+    assert TestRide.objects.count() == 0
 
 
 def test_a_customer_test_ride_names_the_customer(client, world, token, shop, allowed):

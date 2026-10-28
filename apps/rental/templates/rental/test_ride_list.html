@@ -37,7 +37,7 @@ rented one links to its order.
     <form method="get" class="scr-toolbar scr-mon-toolbar" data-scr-autosubmit>
       <div class="scr-search">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
-        <input type="text" name="q" value="{{ params.q }}" placeholder="Test no, customer, phone, vehicle or staff" aria-label="Search" />
+        <input type="text" name="q" value="{{ params.q }}" placeholder="Test no, rider, phone, vehicle or staff" aria-label="Search" />
       </div>
       <div class="scr-mon-dates">
         <input type="date" name="from" class="scr-input" value="{{ params.from }}" aria-label="Started from" title="Started from" />
@@ -82,7 +82,7 @@ rented one links to its order.
           <tr>
             <td><div class="scr-co-name">{{ r.test_no }}</div><div class="scr-contact-sub">By {{ r.started_by|default:"—" }}</div></td>
             <td><div class="scr-co-name">{{ r.vehicle }}</div><div class="scr-contact-sub">{{ r.vehicle_code }}</div></td>
-            <td><div class="scr-co-name">{% if r.customer %}{{ r.customer }}{% else %}{{ r.mode }}{% endif %}</div><div class="scr-contact-sub">{% if r.customer %}{{ r.mobile }} · {{ r.mode }}{% else %}Staff test{% endif %}</div></td>
+            <td><div class="scr-co-name">{% if r.customer %}{{ r.customer }}{% else %}{{ r.employee|default:"—" }}{% endif %}</div><div class="scr-contact-sub">{% if r.customer %}{{ r.mobile }} · Customer{% else %}{{ r.employee_code }} · Staff{% endif %}</div></td>
             <td><div class="scr-contact">{{ r.station }}</div><div class="scr-contact-sub">{{ r.emirate }}</div></td>
             <td>
               <div class="scr-co-name">{{ r.started_at|date:"d M Y, H:i" }}</div>

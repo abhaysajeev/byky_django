@@ -21,6 +21,7 @@ import datetime
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
+from apps.crew.models import Employee
 from apps.devices import services as devices_services
 from apps.devices.models import BillKind, DeviceSettings
 from apps.fleet.models import Vehicle
@@ -71,6 +72,14 @@ def start(session, values):
     if not branch.allows_test_ride:
         raise TestRideRefused("test_rides_not_allowed", "Test rides are not allowed at this station.")
     minutes = _minutes(branch, values["mode"])
+    employee = None
+    if values["mode"] == TestRideMode.STAFF:
+        employee = Employee.objects.filter(pk=values["employee_id"], company=company, is_active=True,
+                                           approval_status=ApprovalStatus.APPROVED).first()
+        if employee is None:
+            raise TestRideRefused("unknown_employee", "No active employee with that id.", 404)
+        if employee.is_blocked:
+            raise TestRideRefused("employee_blocked", "That employee is blocked.")
     with transaction.atomic():
         # Locked, so a booking of this vehicle and this test take turns.
         vehicle = Vehicle.objects.select_for_update().filter(pk=values["vehicle_id"], company=company).first()
@@ -89,7 +98,7 @@ def start(session, values):
             id=sync_id, company=company, branch=branch, vehicle=vehicle, test_no=values["test_no"],
             mode=values["mode"], customer_name=(values.get("customer_name") or "").strip() if customer else "",
             customer_mobile=(values.get("customer_mobile") or "").strip() if customer else "",
-            allowed_minutes=minutes, started_at=values["started_at"],
+            employee=employee, allowed_minutes=minutes, started_at=values["started_at"],
             expected_end_at=values["started_at"] + datetime.timedelta(minutes=minutes),
             device=session.device, started_by=session.user, created_by=session.user, modified_by=session.user,
         )
@@ -177,6 +186,9 @@ def ride_json(ride, zone, now=None):
         "test_ride_id": str(ride.pk), "test_no": ride.test_no, "mode": ride.mode,
         "vehicle_id": vehicle.pk, "vehicle_name": vehicle.vehicle_name, "vehicle_code": vehicle.vehicle_code,
         "customer_name": ride.customer_name, "customer_mobile": ride.customer_mobile,
+        "employee_id": ride.employee_id,
+        "employee_code": ride.employee.employee_code if ride.employee_id else None,
+        "employee_name": ride.employee.full_name if ride.employee_id else None,
         "allowed_minutes": ride.allowed_minutes, "started_at": _local(ride.started_at, zone),
         "expected_end_at": _local(ride.expected_end_at, zone), "status": ride.status,
         "overdue": is_overdue(ride, now), "ended_at": _local(ride.ended_at, zone),
@@ -194,7 +206,8 @@ def _name(user):
 
 
 def with_rows(rows):
-    return rows.select_related("vehicle", "branch__location__state", "order", "started_by", "ended_by")
+    return rows.select_related("vehicle", "branch__location__state", "order", "employee", "started_by",
+                               "ended_by")
 
 
 def station_list(branch, *, open_only=True, status=None, mode=None, from_date=None, to_date=None, zone=None,

@@ -1059,6 +1059,8 @@ class TestRideListView(RentalScreenView):
             rides = rides.filter(Q(test_no__icontains=text) | Q(customer_name__icontains=text)
                                  | Q(customer_mobile__icontains=text) | Q(vehicle__vehicle_name__icontains=text)
                                  | Q(vehicle__vehicle_code__icontains=text)
+                                 | Q(employee__employee_code__icontains=text)
+                                 | Q(employee__first_name__icontains=text) | Q(employee__last_name__icontains=text)
                                  | Q(started_by__display_name__icontains=text))
         rides = test_rides.between(rides, zone, _date_param(params.get("from")), _date_param(params.get("to")))
         page = Paginator(test_rides.with_rows(rides).order_by("-started_at", "-pk"), TEST_RIDES_PER_PAGE).get_page(
@@ -1071,6 +1073,8 @@ class TestRideListView(RentalScreenView):
             "rows": [{
                 "test_no": r.test_no, "vehicle": r.vehicle.vehicle_name, "vehicle_code": r.vehicle.vehicle_code,
                 "mode": r.get_mode_display(), "customer": r.customer_name, "mobile": r.customer_mobile,
+                "employee": r.employee.full_name if r.employee_id else "",
+                "employee_code": r.employee.employee_code if r.employee_id else "",
                 "station": r.branch.name, "emirate": r.branch.location.state.name,
                 "started_by": test_rides._name(r.started_by) or "", "started_at": r.started_at.astimezone(zone),
                 "expected_end_at": r.expected_end_at.astimezone(zone), "minutes": r.allowed_minutes,
