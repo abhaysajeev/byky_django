@@ -1019,3 +1019,77 @@ class LiveRowsView(_LiveJson):
     def get(self, request):
         ids = _uuids(request.GET.get("ids")) if "ids" in request.GET else None
         return JsonResponse(_live_payload(request, ids))
+
+
+# -- Test rides (apps/rental/test_rides.py) ---------------------------------------------
+
+TEST_RIDES_PER_PAGE = 50
+
+
+class TestRideListView(RentalScreenView):
+    """Every test ride, newest first -- read only (owner, 28 Oct 2026). Replaces
+    legacy Live Monitoring's Test Vehicle Details tab
+    (Rms_Search_Test_Vehicle_Details): emirate, station, status, mode, dates,
+    and a search on test no, customer, mobile, vehicle or staff. A ride still
+    on test past its expected end shows as Overdue."""
+
+    template_name = "rental/test_ride_list.html"
+    page_code = "rental.test_ride"
+
+    def get_context_data(self, **kwargs):
+        from apps.rental import test_rides
+        from apps.rental.models import TestRideMode, TestRideStatus
+
+        context = super().get_context_data(**kwargs)
+        user, params = self.request.user, self.request.GET
+        zone = zone_for(getattr(user, "company", None))
+        rides = scoping.test_rides_for(user)
+        if params.get("state", "").isdigit():
+            rides = rides.filter(branch__location__state_id=int(params["state"]))
+        if params.get("branch", "").isdigit():
+            rides = rides.filter(branch_id=int(params["branch"]))
+        if params.get("status") == "overdue":
+            rides = rides.filter(status=TestRideStatus.ON_TEST, expected_end_at__lt=timezone.now())
+        elif params.get("status") in TestRideStatus.values:
+            rides = rides.filter(status=params["status"])
+        if params.get("mode") in TestRideMode.values:
+            rides = rides.filter(mode=params["mode"])
+        text = params.get("q", "").strip()
+        if text:
+            rides = rides.filter(Q(test_no__icontains=text) | Q(customer_name__icontains=text)
+                                 | Q(customer_mobile__icontains=text) | Q(vehicle__vehicle_name__icontains=text)
+                                 | Q(vehicle__vehicle_code__icontains=text)
+                                 | Q(employee__employee_code__icontains=text)
+                                 | Q(employee__first_name__icontains=text) | Q(employee__last_name__icontains=text)
+                                 | Q(started_by__display_name__icontains=text))
+        rides = test_rides.between(rides, zone, _date_param(params.get("from")), _date_param(params.get("to")))
+        page = Paginator(test_rides.with_rows(rides).order_by("-started_at", "-pk"), TEST_RIDES_PER_PAGE).get_page(
+            params.get("page"))
+        query = params.copy()
+        query.pop("page", None)
+        now = timezone.now()
+        branches = branches_for(user).filter(is_active=True)
+        context.update({
+            "rows": [{
+                "test_no": r.test_no, "vehicle": r.vehicle.vehicle_name, "vehicle_code": r.vehicle.vehicle_code,
+                "mode": r.get_mode_display(), "customer": r.customer_name, "mobile": r.customer_mobile,
+                "employee": r.employee.full_name if r.employee_id else "",
+                "employee_code": r.employee.employee_code if r.employee_id else "",
+                "station": r.branch.name, "emirate": r.branch.location.state.name,
+                "started_by": test_rides._name(r.started_by) or "", "started_at": r.started_at.astimezone(zone),
+                "expected_end_at": r.expected_end_at.astimezone(zone), "minutes": r.allowed_minutes,
+                "ended_at": r.ended_at.astimezone(zone) if r.ended_at else None,
+                "status": "overdue" if test_rides.is_overdue(r, now) else r.status,
+                "status_label": "Overdue" if test_rides.is_overdue(r, now) else r.get_status_display(),
+                "order_no": r.order.order_no if r.order_id else "",
+                "order_url": reverse("rental-order-detail", args=[r.order_id]) if r.order_id else "",
+            } for r in page.object_list],
+            "statuses": [*TestRideStatus.choices, ("overdue", "Overdue")],
+            "modes": TestRideMode.choices,
+            "states": list(State.objects.filter(locations__branches__in=branches).distinct().order_by("name")
+                          .values("id", "name")),
+            "branches": list(branches.order_by("name").values("id", "name")),
+            "page": page, "query": query.urlencode(), "params": params,
+            "filtered": any(params.get(k) for k in ("q", "state", "branch", "status", "mode", "from", "to")),
+        })
+        return context

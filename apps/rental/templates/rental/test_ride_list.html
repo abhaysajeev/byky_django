@@ -1,0 +1,109 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Test Rides - Rental{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+{% comment %}
+Free test rides from the stations' tablets (apps/rental/test_rides.py), newest
+first. Read only. A ride still on test past its expected end shows Overdue; a
+rented one links to its order.
+{% endcomment %}
+<div class="scr">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Rental</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Test Rides</b>
+      </div>
+      <h1 class="scr-title">Test Rides</h1>
+      <p class="scr-sub">Free test rides from the stations' tablets: who, which vehicle, how long.</p>
+    </div>
+  </div>
+
+  <div class="scr-card" data-scr-server-paged>
+    <form method="get" class="scr-toolbar scr-mon-toolbar" data-scr-autosubmit>
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="text" name="q" value="{{ params.q }}" placeholder="Test no, rider, phone, vehicle or staff" aria-label="Search" />
+      </div>
+      <div class="scr-mon-dates">
+        <input type="date" name="from" class="scr-input" value="{{ params.from }}" aria-label="Started from" title="Started from" />
+        <span>to</span>
+        <input type="date" name="to" class="scr-input" value="{{ params.to }}" aria-label="Started to" title="Started to" />
+      </div>
+      <select name="status" class="scr-input scr-list-select" aria-label="Status">
+        <option value="">All statuses</option>
+        {% for value, label in statuses %}<option value="{{ value }}"{% if params.status == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+      <select name="mode" class="scr-input scr-list-select" aria-label="Mode">
+        <option value="">Customer and staff</option>
+        {% for value, label in modes %}<option value="{{ value }}"{% if params.mode == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+      <select name="state" class="scr-input scr-list-select" aria-label="Emirate">
+        <option value="">All emirates</option>
+        {% for s in states %}<option value="{{ s.id }}"{% if params.state == s.id|stringformat:"s" %} selected{% endif %}>{{ s.name }}</option>{% endfor %}
+      </select>
+      <select name="branch" class="scr-input scr-list-select" aria-label="Station">
+        <option value="">All stations</option>
+        {% for b in branches %}<option value="{{ b.id }}"{% if params.branch == b.id|stringformat:"s" %} selected{% endif %}>{{ b.name }}</option>{% endfor %}
+      </select>
+      <button type="submit" class="scr-btn">Filter</button>
+      {% if filtered %}<a href="{% url 'rental-test-ride-list' %}" class="scr-btn-secondary">Clear</a>{% endif %}
+      <span class="scr-toolbar-count">{{ page.paginator.count }} test ride{{ page.paginator.count|pluralize }}</span>
+    </form>
+
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Test No.</th>
+            <th>Vehicle</th>
+            <th>Rider</th>
+            <th>Station</th>
+            <th>Time</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr>
+            <td><div class="scr-co-name">{{ r.test_no }}</div><div class="scr-contact-sub">By {{ r.started_by|default:"—" }}</div></td>
+            <td><div class="scr-co-name">{{ r.vehicle }}</div><div class="scr-contact-sub">{{ r.vehicle_code }}</div></td>
+            <td><div class="scr-co-name">{% if r.customer %}{{ r.customer }}{% else %}{{ r.employee|default:"—" }}{% endif %}</div><div class="scr-contact-sub">{% if r.customer %}{{ r.mobile }} · Customer{% else %}{{ r.employee_code }} · Staff{% endif %}</div></td>
+            <td><div class="scr-contact">{{ r.station }}</div><div class="scr-contact-sub">{{ r.emirate }}</div></td>
+            <td>
+              <div class="scr-co-name">{{ r.started_at|date:"d M Y, H:i" }}</div>
+              <div class="scr-contact-sub">{{ r.minutes }} min · due {{ r.expected_end_at|date:"H:i" }}{% if r.ended_at %} · back {{ r.ended_at|date:"H:i" }}{% endif %}</div>
+            </td>
+            <td>
+              {% if r.status == "overdue" %}<span class="scr-badge scr-badge-inactive"><i></i>Overdue</span>
+              {% elif r.status == "on_test" %}<span class="scr-badge scr-badge-pending"><i></i>{{ r.status_label }}</span>
+              {% elif r.status == "rented" %}<span class="scr-badge scr-badge-active"><i></i>Rented</span>
+              {% else %}<span class="scr-badge scr-badge-inactive"><i></i>{{ r.status_label }}</span>{% endif %}
+              {% if r.order_no %}<div class="scr-contact-sub"><a href="{{ r.order_url }}">{{ r.order_no }}</a></div>{% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="6" style="padding:0"><div class="scr-empty"><div><div class="scr-empty-title">{% if filtered %}No test rides match{% else %}No test rides yet{% endif %}</div><p class="scr-empty-sub">Stations that allow test rides start them from the tablet.</p></div></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% include "byky/partials/server_pager.html" %}
+  </div>
+</div>
+{% endblock %}

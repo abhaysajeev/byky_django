@@ -65,7 +65,7 @@ def test_the_prefix_is_stored_upper_case(branch, other_branch):
     ("receipt_copies", 0),
     ("receipt_copies", 11),
     ("customer_test_minutes", 0),
-    ("cashier_test_minutes", 0),
+    ("staff_test_minutes", 0),
 ])
 def test_values_stay_in_their_legacy_ranges(branch, field, value):
     with pytest.raises(IntegrityError):
@@ -83,7 +83,7 @@ def test_defaults_are_what_the_live_rows_hold(branch):
     assert row.round_off_mode == RoundOffMode.UPWARD
     assert row.round_off_step == Decimal("0.25")
     assert row.receipt_copies == 1
-    assert (row.customer_test_minutes, row.cashier_test_minutes) == (5, 5)
+    assert (row.customer_test_minutes, row.staff_test_minutes) == (5, 5)
     assert row.share_on_whatsapp is False
 
 

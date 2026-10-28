@@ -1060,7 +1060,7 @@ def _settings_json(row, *, copyable=False):
         "round_off_mode": row.round_off_mode,
         "round_off_step": str(row.round_off_step),
         "customer_test_minutes": str(row.customer_test_minutes),
-        "cashier_test_minutes": str(row.cashier_test_minutes),
+        "staff_test_minutes": str(row.staff_test_minutes),
         "header_1": row.header_1,
         "header_2": row.header_2,
     }

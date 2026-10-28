@@ -110,7 +110,7 @@ def settings(branch_ids=None):
                 "share_on_whatsapp": False,
                 "order_no_prefix": text(row["OrderNoStartCharacter"]).upper(),
                 "customer_test_minutes": minutes(row["TestTimeSlot"]),
-                "cashier_test_minutes": minutes(row["CashierTestTimeSlot"]),
+                "staff_test_minutes": minutes(row["CashierTestTimeSlot"]),
                 "round_off_mode": ROUND_OFF_MODES.get(row["RoundOff"], RoundOffMode.UPWARD),
                 "round_off_step": ROUND_OFF_STEPS.get(row["RoundOffLimit"], Decimal("0.25")),
                 **approval(row),

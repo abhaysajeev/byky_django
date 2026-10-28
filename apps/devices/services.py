@@ -1279,7 +1279,7 @@ SETTINGS_SHAREABLE = {
     "round_off_mode": "Round Off Type",
     "round_off_step": "Round Off Limit",
     "customer_test_minutes": "Customer Test Time Slot",
-    "cashier_test_minutes": "Cashier Test Time Slot",
+    "staff_test_minutes": "Staff Test Time Slot",
 }
 
 SETTINGS_CODE_MAX = 15
@@ -1382,7 +1382,7 @@ def _check_settings(data, *, branch, instance, settings_qs, branches_qs):
     fields["receipt_copies"] = copies
 
     for name, label in (("customer_test_minutes", "Customer Test Time Slot"),
-                        ("cashier_test_minutes", "Cashier Test Time Slot")):
+                        ("staff_test_minutes", "Staff Test Time Slot")):
         minutes = _whole(data.get(name))
         if minutes is None or not 0 < minutes <= 240:
             errors.append({"field": label, "message": "Minutes, between 1 and 240."})
@@ -1600,7 +1600,10 @@ def settings_payload(branch, *, since=None):
         # order_no_prefix), a snapshot that a later change to this one does
         # not move. Two prefixes in one reply invite using the wrong one.
         "customer_test_minutes": row.customer_test_minutes,
-        "cashier_test_minutes": row.cashier_test_minutes,
+        "staff_test_minutes": row.staff_test_minutes,
+        # The same value under its old name, for app builds that still read it
+        # (renamed Cashier -> Staff, 28 Oct 2026).
+        "cashier_test_minutes": row.staff_test_minutes,
         "round_off_mode": row.round_off_mode,
         "round_off_step": str(row.round_off_step),
         "tax_type": company.tax_type,
