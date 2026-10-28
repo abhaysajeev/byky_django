@@ -36,7 +36,7 @@ from apps.crew.models import (
 )
 from core.enums import Channel
 from core.scoping import scoped_to
-from core.timezones import business_day_range, zone_for
+from core.timezones import business_date_for, business_day_range, zone_for
 
 # A document inside this many days counts as needing attention.
 EXPIRY_WARNING_DAYS = 30
@@ -907,6 +907,50 @@ def today_assignment(employee, at=None):
         ),
         "role": employee.designation.title,
     }
+
+
+def _shift_text(row, zone):
+    """'08:00-16:00', or both shifts: '08:00-12:00 and 16:00-20:00'."""
+    shifts = [(row.shift1_start, row.shift1_end)]
+    if row.shift2_start:
+        shifts.append((row.shift2_start, row.shift2_end))
+    return " and ".join(f"{_hhmm(start, zone)}-{_hhmm(end, zone)}" for start, end in shifts)
+
+
+def _in_shift(row, now):
+    return (row.shift1_start <= now <= row.shift1_end
+            or (row.shift2_start is not None and row.shift2_start <= now <= row.shift2_end))
+
+
+def operator_roster_refusal(employee, branch, now=None):
+    """Why this employee may not sign in on a tablet at `branch` now, or None
+    (owner, 28 Oct 2026). Only a rostered designation (Cashier / Labour) is
+    checked: today's duty roster -- the company's business day -- must have
+    them Working at this station, and now must fall inside shift 1 or shift 2,
+    exact times. Yesterday's Working row counts too when its shift runs past
+    midnight and covers now. Returns (code, message).
+
+    New: legacy had no duty roster (Service_Operator_Login took the station
+    from the device mapping alone)."""
+    if employee is None or employee.designation.roster_category not in RosterCategory.values:
+        return None
+    now = now or timezone.now()
+    company = employee.company
+    zone = zone_for(company)
+    today = business_date_for(company, now)
+    rows = {row.date: row for row in DutyRoster.objects.filter(
+        employee=employee, date__in=[today, today - datetime.timedelta(days=1)]).select_related("branch")}
+    for row in rows.values():
+        if row.day_type == DutyRosterDayType.WORKING and row.branch_id == branch.pk and _in_shift(row, now):
+            return None
+    row = rows.get(today)
+    if row is None:
+        return "duty_roster_not_found", "Duty Roster not found today."
+    if row.day_type != DutyRosterDayType.WORKING:
+        return "not_working_today", f"Not working today ({row.get_day_type_display()})."
+    if row.branch_id != branch.pk:
+        return "rostered_at_another_branch", f"Rostered at {row.branch.name} today."
+    return "outside_shift_hours", f"Your shift today is {_shift_text(row, zone)}."
 
 
 def absent_today(employee):
