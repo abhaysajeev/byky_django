@@ -51,46 +51,81 @@ no separate route.
     </div>
   </div>
 
-  <div class="scr-tiles scr-live-tiles">
-    <div class="scr-tile" data-kpi="vehicles"><div><div class="scr-tile-val" data-kpi-val>{{ initial.kpis.vehicles }}</div><div class="scr-tile-lab">Vehicles out now</div></div></div>
-    <div class="scr-tile" data-kpi="running"><div><div class="scr-tile-val" data-kpi-val>{{ initial.kpis.running }}</div><div class="scr-tile-lab">Running orders</div></div></div>
-    <div class="scr-tile" data-kpi="today"><div><div class="scr-tile-val" data-kpi-val>{{ initial.kpis.today }}</div><div class="scr-tile-lab">Orders {% if is_today %}today{% else %}that day{% endif %}</div></div></div>
-    <div class="scr-tile" data-kpi="cancelled"><div><div class="scr-tile-val" data-kpi-val>{{ initial.kpis.cancelled }}</div><div class="scr-tile-lab">Cancelled</div></div></div>
-    <div class="scr-tile" data-kpi="collected"><div><div class="scr-tile-val"><small class="scr-live-cur">AED</small><span data-kpi-val>{{ initial.kpis.collected }}</span></div><div class="scr-tile-lab">Collected</div></div></div>
-  </div>
-
   <div class="scr-card scr-live-card">
+    {% comment %}
+    The legacy screen's layout (owner, 28 Oct 2026): Rent Bill / Direct Bill
+    tabs, the day's totals, then one row per order with every amount in its
+    own column. Below 768px the table reads as one card per order (CSS only).
+    {% endcomment %}
+    <div class="scr-live-tabs" role="tablist" aria-label="Bill type">
+      <button type="button" class="is-on" data-tab="rent" role="tab">Rent Bill<span data-count="rent">{{ initial.counts.rent }}</span></button>
+      <button type="button" data-tab="direct" role="tab">Direct Bill<span data-count="direct">{{ initial.counts.direct }}</span></button>
+    </div>
+
+    <dl class="scr-live-totals">
+      <div data-kpi="vehicles"><dt>Running vehicles</dt><dd data-kpi-val>{{ initial.kpis.vehicles }}</dd></div>
+      <div data-kpi="running"><dt>Running orders</dt><dd data-kpi-val>{{ initial.kpis.running }}</dd></div>
+      <div data-kpi="today"><dt>Orders {% if is_today %}today{% else %}that day{% endif %}</dt><dd data-kpi-val>{{ initial.kpis.today }}</dd></div>
+      <div data-kpi="cancelled"><dt>Cancelled orders</dt><dd data-kpi-val>{{ initial.kpis.cancelled }}</dd></div>
+      <div data-kpi="collected" class="is-money"><dt>Bill amount collected</dt><dd><small>AED</small><span data-kpi-val>{{ initial.kpis.collected }}</span></dd></div>
+    </dl>
+
     <form class="scr-toolbar scr-live-toolbar" data-live-filters>
-      <div class="scr-live-seg" role="tablist" aria-label="Bill type">
-        <button type="button" class="is-on" data-tab="rent" role="tab">Rent bill<span data-count="rent">{{ initial.counts.rent }}</span></button>
-        <button type="button" data-tab="direct" role="tab">Direct bill<span data-count="direct">{{ initial.counts.direct }}</span></button>
-      </div>
-      <select name="state" class="scr-input scr-list-select scr-live-filter" aria-label="Emirate">
-        <option value="">All emirates</option>
-        {% for s in states %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
-      </select>
-      <select name="branch" class="scr-input scr-list-select scr-live-filter" aria-label="Station">
-        <option value="">All stations</option>
-        {% for b in branches %}<option value="{{ b.id }}" data-state="{{ b.location__state_id }}">{{ b.name }}</option>{% endfor %}
-      </select>
-      <select name="status" class="scr-input scr-list-select scr-live-filter" aria-label="Show">
-        <option value="">Running + closed</option>
-        <option value="active">Running only</option>
-      </select>
-      <input type="date" name="day" class="scr-input scr-live-filter" value="{{ day|date:'Y-m-d' }}" aria-label="Day" title="Day" />
-      <div class="scr-search scr-live-filter">
+      <div class="scr-search scr-live-search">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
         <input type="text" name="q" placeholder="Order no, customer, mobile or vehicle" aria-label="Search" autocomplete="off" />
+      </div>
+      <button type="button" class="scr-btn-secondary scr-live-filter-toggle" data-live-filter-toggle aria-expanded="false">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 5h18M6 12h12M10 19h4"></path></svg>
+        Filters
+      </button>
+      <div class="scr-live-filters" data-live-filter-box>
+        <select name="state" class="scr-input scr-list-select" aria-label="Emirate">
+          <option value="">All emirates</option>
+          {% for s in states %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
+        </select>
+        <select name="branch" class="scr-input scr-list-select" aria-label="Station">
+          <option value="">All stations</option>
+          {% for b in branches %}<option value="{{ b.id }}" data-state="{{ b.location__state_id }}">{{ b.name }}</option>{% endfor %}
+        </select>
+        <select name="status" class="scr-input scr-list-select" aria-label="Show">
+          <option value="">Running + closed</option>
+          <option value="active">Running only</option>
+        </select>
+        <input type="date" name="day" class="scr-input" value="{{ day|date:'Y-m-d' }}" aria-label="Day" title="Day" />
       </div>
     </form>
 
     <div class="scr-live-list">
-      <div class="scr-live-cols" aria-hidden="true">
-        <div>Order</div><div>Station</div><div>Customer</div><div>Vehicles</div>
-        <div>Started</div><div>Staff</div><div class="is-r">Amount</div><div>Status</div>
-      </div>
       <button type="button" class="scr-live-pill" data-live-pill hidden></button>
-      <div class="scr-live-rows" data-live-rows></div>
+      <div class="scr-table-scroll scr-sb scr-live-scroll">
+        <table class="scr-live-table">
+          <thead>
+            <tr class="scr-live-th-group">
+              <th colspan="5" class="scr-live-th-blank"></th>
+              <th colspan="7" class="scr-live-th-amounts">Amounts (AED)</th>
+              <th colspan="2" class="scr-live-th-blank"></th>
+            </tr>
+            <tr>
+              <th class="c-no">Order</th>
+              <th class="c-station">Station</th>
+              <th class="c-staff">Open / Close By</th>
+              <th class="c-cust">Customer</th>
+              <th class="c-start">Start</th>
+              <th class="c-amt c-collected">Collected</th>
+              <th class="c-amt c-fare">Fare</th>
+              <th class="c-amt c-deposit">Deposit</th>
+              <th class="c-amt c-bill">Bill</th>
+              <th class="c-amt c-tax">Tax</th>
+              <th class="c-amt c-disc">Discount</th>
+              <th class="c-amt c-net">Net</th>
+              <th class="c-status">Status</th>
+              <th class="c-act"><span class="visually-hidden">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody data-live-rows></tbody>
+        </table>
+      </div>
     </div>
   </div>
 </div>

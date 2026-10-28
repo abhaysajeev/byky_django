@@ -59,19 +59,15 @@
   }
 
   // ---- rows ---------------------------------------------------------------------
-  function vehicles(r) {
-    var chips = r.vehicles.slice(0, 3).map(function (v) {
-      return '<span class="scr-live-chip is-' + esc(v.state) + '"><i></i>' + esc(v.no) + '</span>';
-    }).join('');
-    if (r.vehicles.length > 3) chips += '<span class="scr-live-chip is-more">+' + (r.vehicles.length - 3) + '</span>';
-    var line = r.status === 'cancelled' ? 'Cancelled'
-      : r.out ? r.out + ' out' + (r.back ? ' · ' + r.back + ' back' : '')
-      : r.back + ' returned';
-    return '<div class="scr-live-veh">' + chips + '</div><div class="scr-live-q">' + line + '</div>';
-  }
+  // One table row per order -- the legacy grid's columns (owner, 28 Oct 2026);
+  // below 768px the CSS reads each row as a card, using the data-label cells.
+  var COLS = 14;
+  var open = {};                                   // id -> true: its vehicles are shown
+
+  function money(v) { return v == null ? '<span class="scr-live-nil">—</span>' : esc(v); }
 
   function timing(r) {
-    var second;
+    var second = '';
     if (r.status === 'active') {
       var now = Date.now(), due = r.due ? new Date(r.due).getTime() : null;
       second = due && now > due
@@ -79,33 +75,61 @@
         : 'Running ' + dur(now - new Date(r.start).getTime());
     } else if (r.status === 'completed' && r.closed_at) {
       second = 'Ran ' + dur(new Date(r.closed_at).getTime() - new Date(r.start).getTime());
-    } else {
-      second = '—';
     }
-    return '<div class="scr-live-p scr-live-num">' + esc(r.start_label) + '</div><div class="scr-live-q scr-live-num">' + second + '</div>';
+    return '<div class="scr-live-p scr-live-num">' + esc(r.start_label) + '</div>' +
+      (second ? '<div class="scr-live-q scr-live-num">' + second + '</div>' : '');
   }
 
-  function amount(r) {
-    if (r.status === 'completed') {
-      return '<div class="scr-live-p scr-live-num">' + esc(r.net) + '</div><div class="scr-live-q">Tax ' + esc(r.tax || '0.00') +
-        (r.discount ? ' · Disc ' + esc(r.discount) : '') + '</div>';
-    }
-    if (r.status === 'cancelled') return '<div class="scr-live-p">—</div><div class="scr-live-q">Cancelled</div>';
-    return '<div class="scr-live-p scr-live-num">' + esc(r.collected) + '</div><div class="scr-live-q">collected so far</div>';
+  function cell(cls, label, inner) {
+    return '<td class="' + cls + '" data-label="' + label + '">' + inner + '</td>';
+  }
+
+  function vehicleRow(r) {
+    var chips = r.vehicles.map(function (v) {
+      var when = v.state === 'out' ? (v.due ? 'due ' + v.due : 'out') : v.end ? v.start + '–' + v.end : v.start;
+      return '<span class="scr-live-chip is-' + esc(v.state) + '"><i></i>' + esc(v.no) +
+        '<em>' + esc(v.state) + ' · ' + esc(when) + '</em></span>';
+    }).join('');
+    return '<tr class="scr-live-veh-row" data-veh-for="' + esc(r.id) + '"' + (open[r.id] ? '' : ' hidden') + '>' +
+      '<td colspan="' + COLS + '"><div class="scr-live-veh">' + (chips || '<span class="scr-live-nil">No vehicles</span>') +
+      '</div></td></tr>';
   }
 
   function rowHtml(r) {
-    return '<div class="scr-live-row is-' + esc(r.status) + '" data-id="' + esc(r.id) + '">' +
-      '<div><div class="scr-live-p"><a class="scr-live-no" href="' + esc(r.url) + '">' + esc(r.order_no) + '</a></div><div class="scr-live-q">' + (r.transaction_no ? esc(r.transaction_no) + ' · ' : '') + esc(r.booked) + '</div></div>' +
-      '<div><div class="scr-live-p">' + esc(r.station) + '</div><div class="scr-live-q">' + esc(r.emirate) + '</div></div>' +
-      '<div><div class="scr-live-p">' + esc(r.customer) + '</div><div class="scr-live-q scr-live-num">' + esc(r.mobile) + '</div></div>' +
-      '<div class="scr-live-c-veh">' + vehicles(r) + '</div>' +
-      '<div>' + timing(r) + '</div>' +
-      '<div><div class="scr-live-q"><b>In</b> ' + esc(r.opened_by) + '</div><div class="scr-live-q"><b>Out</b> ' + esc(r.closed_by) + '</div></div>' +
-      '<div class="is-r">' + amount(r) + '</div>' +
-      '<div class="scr-live-c-act"><span class="scr-live-badge is-' + esc(r.status) + '"><i></i>' + esc(r.status_label) + '</span>' +
-      '<div class="scr-live-q">' + esc(r.last) + (r.last_at ? ' · ' + ago(r.last_at) : '') + '</div></div>' +
-      '</div>';
+    var n = r.vehicles.length;
+    var bike = '<button type="button" class="scr-icon-btn scr-live-veh-btn' + (open[r.id] ? ' is-on' : '') +
+      '" data-live-veh="' + esc(r.id) + '" title="View vehicles" aria-label="View vehicles of ' + esc(r.order_no) +
+      '" aria-expanded="' + (open[r.id] ? 'true' : 'false') + '">' +
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="17" r="3.5"></circle><circle cx="18.5" cy="17" r="3.5"></circle><path d="M5.5 17 9 9h6l3.5 8"></path><path d="M9 9 7.5 6H5M15 9l1.5-3H19"></path></svg>' +
+      '<span class="scr-live-veh-n">' + n + '</span></button>';
+    var eye = '<a class="scr-icon-btn" href="' + esc(r.url) + '" title="View order" aria-label="View order ' + esc(r.order_no) + '">' +
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12"></path><circle cx="12" cy="12" r="3"></circle></svg></a>';
+    return '<tr class="scr-live-row is-' + esc(r.status) + '" data-id="' + esc(r.id) + '">' +
+      cell('c-no', 'Order', '<a class="scr-live-no" href="' + esc(r.url) + '">' + esc(r.order_no) + '</a>' +
+        '<div class="scr-live-q scr-live-num">' + (r.transaction_no ? esc(r.transaction_no) + ' · ' : '') +
+        esc(r.booked_time) + ' · ' + esc(r.booked_date) + '</div>') +
+      cell('c-station', 'Station', '<div class="scr-live-p">' + esc(r.station) + '</div><div class="scr-live-q">' + esc(r.emirate) + '</div>') +
+      cell('c-staff', 'Open / Close by', '<div class="scr-live-q scr-live-staff"><b>In</b> ' + esc(r.opened_by) + '</div>' +
+        '<div class="scr-live-q scr-live-staff"><b>Out</b> ' + esc(r.closed_by) + '</div>') +
+      cell('c-cust', 'Customer', '<div class="scr-live-p">' + esc(r.customer) + '</div><div class="scr-live-q scr-live-num">' + esc(r.mobile) + '</div>') +
+      cell('c-start', 'Start', timing(r)) +
+      cell('c-amt c-collected', 'Collected', money(r.collected) +
+        '<div class="scr-live-q scr-live-fold">Dep ' + money(r.deposit) + '</div>') +
+      cell('c-amt c-fare', 'Fare', money(r.fare)) +
+      cell('c-amt c-deposit', 'Deposit', money(r.deposit)) +
+      cell('c-amt c-bill', 'Bill', money(r.bill)) +
+      cell('c-amt c-tax', 'Tax', money(r.tax)) +
+      cell('c-amt c-disc', 'Discount', money(r.discount)) +
+      cell('c-amt c-net', 'Net', money(r.net) +
+        (r.discount != null ? '<div class="scr-live-q scr-live-fold">Disc ' + money(r.discount) + '</div>' : '')) +
+      cell('c-status', 'Status', '<span class="scr-live-badge is-' + esc(r.status) + '"><i></i>' + esc(r.status_label) + '</span>' +
+        '<div class="scr-live-q">' + esc(r.last) + (r.last_at ? ' · ' + ago(r.last_at) : '') + '</div>') +
+      '<td class="c-act"><div class="scr-live-acts">' + bike + eye + '</div></td>' +
+      '</tr>' + vehicleRow(r);
+  }
+
+  function band(label, n) {
+    return '<tr class="scr-live-group"><td colspan="' + COLS + '"><b>' + label + '</b>' + n + '</td></tr>';
   }
 
   function render(marks) {
@@ -115,9 +139,10 @@
     var closed = all.filter(function (r) { return r.status !== 'active'; })
       .sort(function (a, b) { return (b.last_at || '') < (a.last_at || '') ? -1 : 1; });
     var html = '';
-    if (running.length) html += '<div class="scr-live-group"><b>Running</b>' + running.length + '</div>' + running.map(rowHtml).join('');
-    if (closed.length) html += '<div class="scr-live-group"><b>Closed</b>' + closed.length + '</div>' + closed.map(rowHtml).join('');
-    host.innerHTML = html || '<div class="scr-live-empty">' + (isToday ? 'No orders yet today.' : 'No orders that day.') + '</div>';
+    if (running.length) html += band('Running', running.length) + running.map(rowHtml).join('');
+    if (closed.length) html += band('Closed', closed.length) + closed.map(rowHtml).join('');
+    host.innerHTML = html || '<tr class="scr-live-empty-row"><td colspan="' + COLS + '"><div class="scr-live-empty">' +
+      (isToday ? 'No orders yet today.' : 'No orders that day.') + '</div></td></tr>';
     Object.keys(marks || {}).forEach(function (id) {
       var el = host.querySelector('[data-id="' + id + '"]');
       if (el) el.classList.add(marks[id] === 'new' ? 'is-new' : 'is-changed');
@@ -271,8 +296,18 @@
 
   // ---- a row opens its order ----------------------------------------------------
   host.addEventListener('click', function (e) {
+    var veh = e.target.closest('[data-live-veh]');
+    if (veh) {                                               // View vehicles: open the row below
+      var id = veh.dataset.liveVeh, on = !open[id];
+      if (on) open[id] = true; else delete open[id];
+      var line = host.querySelector('[data-veh-for="' + id + '"]');
+      if (line) line.hidden = !on;
+      veh.classList.toggle('is-on', on);
+      veh.setAttribute('aria-expanded', on ? 'true' : 'false');
+      return;
+    }
     if (walled()) { e.preventDefault(); return; }
-    if (e.target.closest('a')) return;                       // the order no is a real link already
+    if (e.target.closest('a')) return;                       // the order no and View order are real links
     var row = e.target.closest('.scr-live-row');
     var r = row && rows[row.dataset.id];
     if (!r) return;
@@ -285,6 +320,12 @@
 
   // ---- filters ------------------------------------------------------------------
   form.addEventListener('submit', function (e) { e.preventDefault(); });
+  // Phones: the filters fold behind a button (CSS shows them from 768px).
+  var filterToggle = form.querySelector('[data-live-filter-toggle]');
+  if (filterToggle) filterToggle.addEventListener('click', function () {
+    var on = form.classList.toggle('is-filters-open');
+    filterToggle.setAttribute('aria-expanded', on ? 'true' : 'false');
+  });
   root.querySelectorAll('[data-tab]').forEach(function (btn) {
     btn.addEventListener('click', function () {
       tab = btn.dataset.tab;

@@ -597,20 +597,15 @@ def _billing(order, zone):
     legacy GetOrderWithID_ForRequestApproval: FareAmount, DepositAmount,
     AmountReceived, TaxPercentage, TransNo). Before settle there is no bill:
     tax_amount, bill_amount, closed_by and closed_at are null."""
-    from apps.rental.models import PaymentKind
+    from apps.rental import money
 
     invoice = getattr(order, "invoice", None) if order.status == OrderStatus.COMPLETED else None
-    billable = [item for item in order.items.all()
-                if item.status in (OrderItemStatus.ACTIVE, OrderItemStatus.RETURNED)]
     if invoice is not None:
-        fare, tax_percentage = order.subtotal, invoice.tax_percentage
+        tax_percentage = invoice.tax_percentage
     else:
-        fare = sum((item.total_amount if item.total_amount is not None else item.base_fare
-                    for item in billable), Decimal("0"))
-        tax_percentage = next((item.vehicle.vehicle_type.tax_percentage for item in billable), None)
-    deposit = sum((p.amount for p in order.payments.all() if p.kind == PaymentKind.ADVANCE), Decimal("0"))
+        tax_percentage = next((item.vehicle.vehicle_type.tax_percentage for item in money.billable(order)), None)
     return {
-        "fare_amount": _money(fare), "deposit_amount": _money(deposit),
+        "fare_amount": _money(money.fare(order)), "deposit_amount": _money(money.deposit(order)),
         "amount_received": _money(order.amount_received), "amount_refunded": _money(order.amount_refunded),
         "tax_percentage": _money(tax_percentage),
         "tax_amount": _money(invoice.tax_amount) if invoice else None,
