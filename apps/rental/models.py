@@ -213,6 +213,10 @@ class Order(TimeStampedModel):
     customer_mobile = models.CharField(max_length=20, blank=True)
 
     order_no = models.CharField(max_length=30)
+    # The tablet's count of the day's bookings, as it printed it: DUP-1, or
+    # DUP-A-1 at a multi-device station (owner, 28 Oct 2026; legacy
+    # DMSOrder.TransNo). Stored as sent -- the tablet restarts it each day.
+    transaction_no = models.CharField(max_length=30, blank=True)
 
     status = models.CharField(max_length=20, choices=OrderStatus.choices, default=OrderStatus.ACTIVE)
     is_direct_bill = models.BooleanField(default=False)

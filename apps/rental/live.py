@@ -131,6 +131,7 @@ def row(order, zone):
     return {
         "id": str(order.pk),
         "order_no": order.order_no,
+        "transaction_no": order.transaction_no,
         "booked": f"{booked:%H:%M} · {booked:%d %b}",
         "station": order.branch.name,
         "emirate": order.branch.location.state.name,

@@ -18,7 +18,6 @@ from django.views import View
 from apps.company import writes as company_writes
 from apps.company.models import PaymentMode, State
 from apps.company.scoping import branches_for, companies_for, payment_modes_for
-from apps.devices import services as devices_services
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
@@ -278,7 +277,7 @@ def _order_kpis(user, branch_id, zone, company):
 def _order_row(order):
     status = _status_key(order, order.items_out)
     return {
-        "order_no": order.order_no, "booked_at": order.booked_at,
+        "order_no": order.order_no, "transaction_no": order.transaction_no, "booked_at": order.booked_at,
         "customer": order.customer_name, "mobile": order.customer_mobile,
         "station": order.branch.name, "tablet": order.device.device_registration_id,
         "status": status, "status_label": _STATUS_LABEL[status], "is_direct": order.is_direct_bill,
@@ -510,11 +509,11 @@ def _receipt(invoice, zone):
     returned = max((item.end_time for item in items if item.end_time), default=None)
     run = sum(item.run_minutes or 0 for item in items) if items else None
     customer = order.customer
-    number = devices_services.running_number(order.device, order.branch, invoice.invoice_no)
     issued = local(invoice.issued_at)
     return {
         "invoice_no": invoice.invoice_no, "issued_at": issued, "date": issued.strftime("%d-%m-%Y"),
-        "trans_no": number if number is not None else "—",
+        # The tablet's transaction number, as sent at booking (owner, 28 Oct 2026).
+        "trans_no": order.transaction_no or "—",
         "station": invoice.branch_name, "emirate": invoice.branch.location.state.name,
         "company": invoice.company_name, "trn": invoice.company_trn or "—",
         "open_by": order.created_by.display_name if order.created_by_id else "—",

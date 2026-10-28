@@ -15,7 +15,7 @@
 {% endblock page_js %}
 
 {% block content %}
-<div class="scr" data-device-mapping data-url-remap="{{ mapping_urls.remap }}" data-url-close="{{ mapping_urls.close }}">
+<div class="scr" data-device-mapping data-url-remap="{{ mapping_urls.remap }}" data-url-close="{{ mapping_urls.close }}" data-url-letter="{{ mapping_urls.letter }}">
 
   <div class="scr-head">
     <div>
@@ -102,6 +102,7 @@
             <th>Device Name</th>
             <th>Model</th>
             <th>Station</th>
+            <th>Transaction Prefix</th>
             <th>App Version</th>
             <th>Mapped Since</th>
             <th>Last Login</th>
@@ -117,6 +118,7 @@
             <td style="font-weight:600">{{ d.name|default:"—" }}</td>
             <td class="scr-contact">{{ d.model|default:"—" }}</td>
             <td class="scr-contact">{{ d.station|default:"—" }}</td>
+            <td><span class="scr-code">{{ d.transaction_prefix|default:"—" }}</span></td>
             <td class="scr-contact">{{ d.app_version|default:"—" }}</td>
             <td class="scr-contact">{{ d.from_date|date:"d M Y, H:i"|default:"—" }}</td>
             <td class="scr-contact">{{ d.last_login|date:"d M Y H:i"|default:"—" }}</td>
@@ -146,6 +148,12 @@
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10a2.1 2.1 0 0 0-3-3L5 17z"></path><path d="M14.5 6.5 17.5 9.5"></path></svg>
                       Re-map to another station
                     </button>
+                    {% if d.mapped and d.multi_device %}
+                    <button type="button" class="scr-menu-item" data-mapping-action="letter" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-name="{{ d.name }}" data-station="{{ d.station }}" data-station-id="{{ d.station_id }}" data-prefix="{{ d.order_prefix }}" data-letter="{{ d.transaction_letter }}">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V5h16v2"></path><path d="M12 5v14"></path><path d="M9 19h6"></path></svg>
+                      Set transaction letter
+                    </button>
+                    {% endif %}
                     {% endif %}
                     {% if perm.delete %}
                     <button type="button" class="scr-menu-item scr-menu-item-danger" data-mapping-action="close" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-name="{{ d.name }}" data-station="{{ d.station }}" data-station-id="{{ d.station_id }}" data-from="{{ d.from_date|date:'d M Y, H:i' }}" data-online="{% if d.online %}yes{% endif %}"{% if not d.mapped %} disabled title="No station to close"{% endif %}>
@@ -160,7 +168,7 @@
           </tr>
           {% empty %}
           <tr>
-            <td colspan="10" style="padding:0">
+            <td colspan="11" style="padding:0">
               <div class="scr-empty">
                 <span class="scr-empty-ico">
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"></rect><path d="M11 18h2"></path></svg>

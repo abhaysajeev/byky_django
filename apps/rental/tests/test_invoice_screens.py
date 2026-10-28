@@ -9,7 +9,7 @@ import pytest
 from apps.devices import services as devices_services
 from apps.devices.models import BillKind
 from apps.fare.tests.conftest import make_fare
-from apps.rental.models import Invoice, InvoiceItem, OrderItemStatus, Payment, PaymentKind
+from apps.rental.models import Invoice, InvoiceItem, Order, OrderItemStatus, Payment, PaymentKind
 from apps.rental.tests import test_order_screens as screens
 from apps.rental.tests.conftest import make_customer
 from apps.rental.tests.test_views import revoke
@@ -113,6 +113,7 @@ def test_the_list_needs_read(client_in):
 def test_the_receipt_reads_like_the_printed_tax_invoice(client_in, world, shop, invoice):
     shop["ahmed"].id_type, shop["ahmed"].id_no = "emirates_id", "784-1990-1234567-1"
     shop["ahmed"].save()
+    Order.objects.filter(pk=invoice.order_id).update(transaction_no="ADC1-7")
 
     response = client_in.get(f"/rental/invoice/{invoice.pk}/receipt/")
 
@@ -120,7 +121,7 @@ def test_the_receipt_reads_like_the_printed_tax_invoice(client_in, world, shop, 
     html = response.content.decode()
     assert "<html" not in html                                      # a fragment, for the modal
     bill = response.context["bill"]
-    assert (bill["trans_no"], bill["trn"], bill["invoice_no"]) == (231, "100297867200003", invoice.invoice_no)
+    assert (bill["trans_no"], bill["trn"], bill["invoice_no"]) == ("ADC1-7", "100297867200003", invoice.invoice_no)
     [line] = bill["lines"]
     assert (line["sno"], line["vehicle"], line["base_rate"], line["extra_rate"], line["duration"], line["amount"]) == (
         "01", "MO 41", "50.000/60 MINS", "10.000/15 MINS", "01:12", Decimal("60.000"))
@@ -139,9 +140,7 @@ def test_a_line_without_a_fare_has_no_extra_rate(client_in, world, shop):
     assert line["extra_rate"] == "—"
 
 
-def test_an_invoice_number_not_in_the_tablets_shape_has_no_trans_no(client_in, world, shop, invoice):
-    Invoice.objects.filter(pk=invoice.pk).update(invoice_no="HANDWRITTEN-7")
-
+def test_a_booking_without_a_transaction_no_prints_a_dash(client_in, world, shop, invoice):
     assert client_in.get(f"/rental/invoice/{invoice.pk}/receipt/").context["bill"]["trans_no"] == "—"
 
 

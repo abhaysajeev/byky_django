@@ -46,7 +46,20 @@ DEVICE_MAPPING = {
                     ),
                 },
             ],
-        }
+        },
+        {
+            # Filled and shown by byky-device-mapping.js from the chosen
+            # station: its order prefix (read only), and -- at a multi-device
+            # station only -- the tablet's letter: DUP - [A] -> DUP-A-1.
+            "title": "Transaction No Prefix",
+            "fields": [
+                {"id": "transaction_prefix", "label": "Order Prefix", "kind": "text", "readonly": True,
+                 "placeholder": "Choose a station", "width": 3},
+                {"id": "transaction_letter", "label": "Letter", "kind": "text", "required": False, "width": 3,
+                 "placeholder": "A",
+                 "help": "One letter, A to Z, for this tablet at a multi-device station: DUP-A-1."},
+            ],
+        },
     ],
 }
 

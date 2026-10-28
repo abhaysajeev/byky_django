@@ -42,6 +42,7 @@ urlpatterns = [
     path("mapping/save/", views.DeviceMapSaveView.as_view(), name="devices-mapping-save"),
     path("mapping/<int:pk>/remap/", views.DeviceRemapView.as_view(), name="devices-mapping-remap"),
     path("mapping/<int:pk>/close/", views.DeviceCloseMappingView.as_view(), name="devices-mapping-close"),
+    path("mapping/<int:pk>/letter/", views.DeviceLetterView.as_view(), name="devices-mapping-letter"),
 
     # App Releases: the drawer (create / edit), Withdraw and Restore.
     path("releases/save/", views.ReleaseSaveView.as_view(), name="devices-release-save"),

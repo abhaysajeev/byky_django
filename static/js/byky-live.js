@@ -96,7 +96,7 @@
 
   function rowHtml(r) {
     return '<div class="scr-live-row is-' + esc(r.status) + '" data-id="' + esc(r.id) + '">' +
-      '<div><div class="scr-live-p"><a class="scr-live-no" href="' + esc(r.url) + '">' + esc(r.order_no) + '</a></div><div class="scr-live-q">' + esc(r.booked) + '</div></div>' +
+      '<div><div class="scr-live-p"><a class="scr-live-no" href="' + esc(r.url) + '">' + esc(r.order_no) + '</a></div><div class="scr-live-q">' + (r.transaction_no ? esc(r.transaction_no) + ' · ' : '') + esc(r.booked) + '</div></div>' +
       '<div><div class="scr-live-p">' + esc(r.station) + '</div><div class="scr-live-q">' + esc(r.emirate) + '</div></div>' +
       '<div><div class="scr-live-p">' + esc(r.customer) + '</div><div class="scr-live-q scr-live-num">' + esc(r.mobile) + '</div></div>' +
       '<div class="scr-live-c-veh">' + vehicles(r) + '</div>' +

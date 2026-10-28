@@ -146,6 +146,8 @@ class OrderCreateRequest(serializers.Serializer):
 
     sync_id = uuid7_field()
     order_no = text_field(max_length=30)                # the receipt number, unique per company
+    # The tablet's daily transaction count with its prefix (DUP-A-12); stored as sent.
+    transaction_no = text_field(max_length=30, required=False, allow_blank=True)
     customer_id = whole_number_field()
 
     # booked_at is when the booking happened on the tablet, possibly offline,

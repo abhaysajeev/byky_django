@@ -866,6 +866,13 @@ textarea.scr-drawer-input { height: auto; min-height: 72px; padding: 10px 13px; 
 .scr-dev-fields { display: flex; flex-direction: column; gap: 16px; }
 .scr-dev-fields .scr-field[hidden] { display: none; }
 .scr-dev-hint { font-size: 11.5px; color: #9490bb; margin: 6px 0 0 !important; line-height: 1.45; }
+/* Transaction No Prefix: the station's order prefix (read only) - [letter]. */
+.scr-dev-txprefix { display: flex; align-items: center; gap: 8px; }
+.scr-dev-txprefix span { color: #9490bb; font-weight: 600; }
+.scr-dev-txprefix [readonly] { flex: 1; background: #f6f5fb; }
+.scr-dev-txprefix [data-remap-letter], .scr-dev-txprefix [data-letter-box],
+.byky-input[data-field="transaction_letter"] { width: 52px; flex: none; text-align: center; text-transform: uppercase; font-weight: 600; }
+.byky-input[data-field="transaction_prefix"] { background: #f6f5fb; }
 .scr-dev-foot { justify-content: flex-end; }
 .scr-dev-optional { font-weight: 400; color: #a9a6c4; font-size: 11px; }
 .scr-dev-foot [hidden] { display: none; }

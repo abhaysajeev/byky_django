@@ -373,7 +373,7 @@ def order_json(order, *, zone, next_order_number):
     payments = list(order.payments.select_related("mode").order_by("paid_at", "created_on"))
     invoice = Invoice.objects.filter(order_id=order.pk).first()
     return {
-        "sync_id": str(order.pk), "order_no": order.order_no,
+        "sync_id": str(order.pk), "order_no": order.order_no, "transaction_no": order.transaction_no,
         "status": order.status, "payment_status": order.payment_status,
         "booked_at": _local(order.booked_at, zone), "start_time": _local(order.start_time, zone),
         "completed_at": _local(order.completed_at, zone), "cancelled_at": _local(order.cancelled_at, zone),
@@ -457,6 +457,7 @@ def _counter_number(session):
 
 _ORDER_SAMPLE = {
     "sync_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9", "order_no": "DUBPP60182000231",
+    "transaction_no": "DUBPP-A-12",
     "status": "active", "payment_status": "pending",
     "booked_at": "2026-10-02 16:00:05", "start_time": "2026-10-02 16:00:00",
     "completed_at": None, "cancelled_at": None,
@@ -551,6 +552,11 @@ The server reads the running number back out of it (this tablet's prefix and
 registration id, then the digits) and raises the tablet's receipt counter to
 it -- **even when the booking is refused**, because the receipt was already
 printed. `next_order_number` in the reply is the counter after that.
+
+**`transaction_no`** (optional) -- the tablet's count of the day's bookings
+with its prefix, as printed: `<transaction_no_prefix>-<n>` from login, e.g.
+`DUBPP-12` or `DUBPP-A-12` at a multi-device station. Restarting at 1 each day
+is the tablet's job; the server stores it as sent, with no check.
 
 **`payments`** (may be empty or left out) -- the money taken at booking,
 one entry per payment mode (cash and card are two entries). Only `advance`
