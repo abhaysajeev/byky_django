@@ -828,3 +828,82 @@ class OrderRequest(TimeStampedModel):
 
     def __str__(self):
         return f"{self.get_kind_display()} request on {self.order_id}"
+
+
+# -- Test rides ---------------------------------------------------------------------------
+
+
+class TestRideMode(models.TextChoices):
+    """Legacy RmsTestVehicleMode (Customer / Cashier, SRS "Test Vehicle
+    Details"); the owner calls the second Staff (28 Oct 2026)."""
+
+    CUSTOMER = "customer", "Customer"
+    STAFF = "staff", "Staff"
+
+
+class TestRideStatus(models.TextChoices):
+    ON_TEST = "on_test", "On test ride"
+    ENDED = "ended", "Ended"              # the vehicle came back -- legacy IsDismissed
+    RENTED = "rented", "Rented"           # the booking named it -- legacy IsRented / OrderID
+    CANCELLED = "cancelled", "Cancelled"  # started by mistake
+
+
+class TestRide(TimeStampedModel):
+    """A free, short test ride of one vehicle from a station's tablet
+    (apps/rental/test_rides.py). Replaces legacy RmsTestVehicle,
+    RmsTestVehicleItems and RmsDismissTestVehicle (Save_Test_Vehicles,
+    Dismiss_Test_Vehicles, Save_Order_Booking:437-482).
+
+    Owner, 28 Oct 2026: one vehicle per test; a customer test records the
+    customer's name and mobile, a staff test nothing; it lasts the station's
+    test minutes for its mode (copied at start, so a later settings change
+    does not rewrite it); it ends (vehicle back), is cancelled (a mistake) or
+    is rented -- the booking names it and the two are linked. Test minutes
+    are never charged. While on test the vehicle cannot be rented."""
+
+    id = models.UUIDField(primary_key=True, editable=False)    # the tablet's sync_id
+    company = models.ForeignKey("company.Company", on_delete=models.PROTECT, related_name="test_rides")
+    branch = models.ForeignKey("company.Branch", on_delete=models.PROTECT, related_name="test_rides")
+    vehicle = models.ForeignKey("fleet.Vehicle", on_delete=models.PROTECT, related_name="test_rides")
+    test_no = models.CharField(max_length=30)               # "T..." from the tablet's test counter
+    mode = models.CharField(max_length=10, choices=TestRideMode.choices)
+    customer_name = models.CharField(max_length=100, blank=True)
+    customer_mobile = models.CharField(max_length=20, blank=True)
+    allowed_minutes = models.PositiveSmallIntegerField()
+    started_at = models.DateTimeField()                      # tablet time
+    expected_end_at = models.DateTimeField()                 # started_at + allowed_minutes
+    status = models.CharField(max_length=10, choices=TestRideStatus.choices, default=TestRideStatus.ON_TEST)
+    ended_at = models.DateTimeField(null=True, blank=True)   # ended, rented or cancelled
+    order = models.ForeignKey(Order, null=True, blank=True, on_delete=models.PROTECT, related_name="test_rides")
+    device = models.ForeignKey("devices.Device", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    started_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    ended_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+
+    class Meta:
+        db_table = "test_ride"
+        ordering = ["-started_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["company", "test_no"], name="uniq_test_no_per_company"),
+            # A vehicle is on one test at a time.
+            models.UniqueConstraint(fields=["vehicle"], condition=models.Q(status=TestRideStatus.ON_TEST),
+                                    name="uniq_open_test_ride_per_vehicle"),
+            models.CheckConstraint(
+                condition=~models.Q(mode=TestRideMode.CUSTOMER) | (~models.Q(customer_name="")
+                                                                  & ~models.Q(customer_mobile="")),
+                name="test_ride_customer_named",
+            ),
+            models.CheckConstraint(
+                condition=(models.Q(status=TestRideStatus.ON_TEST, ended_at__isnull=True, order__isnull=True)
+                           | models.Q(status=TestRideStatus.RENTED, ended_at__isnull=False, order__isnull=False)
+                           | models.Q(status__in=[TestRideStatus.ENDED, TestRideStatus.CANCELLED],
+                                      ended_at__isnull=False, order__isnull=True)),
+                name="test_ride_status_consistent",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["branch", "started_at"], name="test_ride_branch_started"),
+            models.Index(fields=["company", "started_at"], name="test_ride_company_started"),
+        ]
+
+    def __str__(self):
+        return self.test_no

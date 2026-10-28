@@ -359,6 +359,11 @@ def _discount_json(order):
     }
 
 
+def _test_ride_json(order):
+    ride = next(iter(order.test_rides.all()), None)
+    return None if ride is None else {"test_ride_id": str(ride.pk), "test_no": ride.test_no}
+
+
 def order_json(order, *, zone, next_order_number):
     """The one shape every order call answers with (order_lifecycle_design.md
     3): the order, its customer, its totals, every item and every payment.
@@ -375,6 +380,8 @@ def order_json(order, *, zone, next_order_number):
         "is_direct_bill": order.is_direct_bill, "is_hotel_order": order.is_hotel_order,
         "hotel_commission": _money(order.hotel_commission),
         "customer": {"id": order.customer_id, "name": order.customer_name, "mobile": order.customer_mobile},
+        # The test ride this rental came from, if the booking named one.
+        "test_ride": _test_ride_json(order),
         # The bill: null until settle.
         "subtotal": _money(order.subtotal),
         "discount": _discount_json(order),
@@ -455,6 +462,7 @@ _ORDER_SAMPLE = {
     "completed_at": None, "cancelled_at": None,
     "is_direct_bill": False, "is_hotel_order": False, "hotel_commission": "0.00",
     "customer": {"id": 5512, "name": "Ahmed Al Mansoori", "mobile": "971501234567"},
+    "test_ride": None,
     "subtotal": None, "discount": None, "tax_percentage": None, "tax_amount": None,
     "rounding_adjustment": None, "net_amount": None,
     "amount_received": "100.00", "amount_refunded": "0.00", "paid_amount": "100.00", "balance_due": None,
@@ -516,6 +524,7 @@ _BOOK_ERRORS = (
     "sync_id_conflict", "order_no_used", "vehicle_already_rented", "vehicle_repeated", "item_id_used",
     "payment_id_used", "unknown_customer", "unknown_payment_mode", "unknown_vehicle",
     "vehicle_not_at_station", "unknown_fare", "unknown_offer", "package_not_available",
+    "vehicle_on_test_ride", "unknown_test_ride", "test_ride_closed",
 )
 
 _ORDER_DESCRIPTION = """
@@ -564,6 +573,14 @@ active and `paid` once it is settled (blank for a cancelled order).
 **Times** are `YYYY-MM-DD HH:MM:SS` in company time, no offset: `booked_at`
 is when the booking happened on the tablet (earlier if it was offline),
 `start_time` the rental's own start.
+
+**After a test ride** (optional `test_ride_id`, from `test-rides`): the ride
+must be this station's and still on test (`unknown_test_ride`,
+`test_ride_closed`). The booking closes it as `rented` and links it to the
+order (`test_ride` in the reply); its vehicle may then be booked -- or another
+one, if the customer chose differently. Test minutes are not charged: the
+fare runs from `start_time`. A vehicle on someone else's test ride is
+refused `vehicle_on_test_ride`.
 
 **Errors** carry `data.retry`: `true` -- keep the call queued and send it
 again; `false` -- stop and show the operator.
@@ -1161,7 +1178,7 @@ _REMOVED_SAMPLE = {
 _CHANGE_ERRORS = ("order_not_synced", "sync_id_conflict", "order_closed")
 _NEW_LINE_ERRORS = (
     "vehicle_already_rented", "vehicle_not_at_station", "unknown_vehicle", "unknown_fare", "unknown_offer",
-    "package_not_available", "item_id_used",
+    "package_not_available", "item_id_used", "vehicle_on_test_ride",
 )
 _ADD_ERRORS = (*_CHANGE_ERRORS, *_NEW_LINE_ERRORS, "unknown_payment_mode", "payment_id_used")
 _REPLACE_ERRORS = (*_CHANGE_ERRORS, "unknown_item", "item_not_active", "invalid_time", "vehicle_repeated",

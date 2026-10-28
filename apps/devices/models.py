@@ -591,12 +591,12 @@ class DeviceSettings(ApprovalMixin, TimeStampedModel):
         "Order No Starting Characters", max_length=5, validators=[ORDER_NO_PREFIX]
     )
 
-    # Test rides: how long a customer or a cashier may ride before returning.
+    # Test rides: how long a customer or a staff member may ride before returning.
     customer_test_minutes = models.PositiveSmallIntegerField(
         "Customer Test Time Slot (Min)", default=5
     )
-    cashier_test_minutes = models.PositiveSmallIntegerField(
-        "Cashier Test Time Slot (Min)", default=5
+    staff_test_minutes = models.PositiveSmallIntegerField(
+        "Staff Test Time Slot (Min)", default=5
     )
 
     round_off_mode = models.CharField(
@@ -645,7 +645,7 @@ class DeviceSettings(ApprovalMixin, TimeStampedModel):
                 name="device_settings_receipt_copies_1_to_10",
             ),
             models.CheckConstraint(
-                condition=Q(customer_test_minutes__gt=0, cashier_test_minutes__gt=0),
+                condition=Q(customer_test_minutes__gt=0, staff_test_minutes__gt=0),
                 name="device_settings_test_minutes_positive",
             ),
         ]

@@ -14,6 +14,8 @@ from apps.rental.models import (
     IdType,
     OrderRequestKind,
     PaymentKind,
+    TestRideMode,
+    TestRideStatus,
     full_number,
 )
 from core.api import (
@@ -157,6 +159,11 @@ class OrderCreateRequest(serializers.Serializer):
 
     items = OrderItemRequest(many=True)
     payments = OrderPaymentRequest(many=True, required=False)
+
+    # A rental after a test ride: the test ride's id (apps/rental/test_rides.py).
+    # The ride is closed as rented and linked to this order.
+    test_ride_id = serializers.UUIDField(required=False, allow_null=True,
+                                         error_messages={"invalid": "must be a test ride's id"})
 
     def validate_items(self, items):
         if not items:
@@ -643,4 +650,58 @@ class BranchOrdersRequest(DateRangeRequest):
         error_messages={"invalid_choice": "must be one of: all, running, partially_received, "
                                           "awaiting_settlement, fully_received, cancelled"},
     )
+    page = whole_number_field(min_value=1, required=False, default=1)
+
+
+# -- Test rides (apps/rental/test_rides.py) ---------------------------------------------
+
+
+class TestRideStartRequest(serializers.Serializer):
+    """One vehicle out on a free test ride. `sync_id` is this call's id and
+    becomes the test ride's id; `test_no` is the printed test number from the
+    tablet's test counter (`T...`, next_test_number at login). A customer
+    test names the customer (name and mobile); a staff test does not."""
+
+    sync_id = uuid7_field()
+    test_no = text_field(max_length=30)
+    vehicle_id = whole_number_field(min_value=1)
+    mode = serializers.ChoiceField(
+        choices=TestRideMode.values, error_messages={**REQUIRED, "invalid_choice": "must be customer or staff"})
+    customer_name = text_field(max_length=100, required=False, allow_blank=True)
+    customer_mobile = text_field(max_length=20, required=False, allow_blank=True)
+    started_at = datetime_field()
+
+    def validate(self, values):
+        if values["mode"] == TestRideMode.CUSTOMER:
+            missing = {name: "is required for a customer test ride"
+                       for name in ("customer_name", "customer_mobile") if not (values.get(name) or "").strip()}
+            if missing:
+                raise serializers.ValidationError(missing)
+        return values
+
+
+class TestRideEndRequest(serializers.Serializer):
+    sync_id = uuid7_field()
+    test_ride_id = serializers.UUIDField(error_messages={**REQUIRED, "invalid": "must be a test ride's id"})
+    ended_at = datetime_field()
+
+
+class TestRideCancelRequest(serializers.Serializer):
+    sync_id = uuid7_field()
+    test_ride_id = serializers.UUIDField(error_messages={**REQUIRED, "invalid": "must be a test ride's id"})
+    cancelled_at = datetime_field()
+
+
+class TestRideListRequest(_RequestDatesMixin):
+    """`open` (default): only the rides on test now -- the catch-up. Off:
+    every ride, optionally one status, newest first."""
+
+    open = serializers.BooleanField(required=False, default=True,
+                                    error_messages={"invalid": "must be true or false"})
+    status = serializers.ChoiceField(
+        choices=TestRideStatus.values, required=False, allow_blank=True,
+        error_messages={"invalid_choice": "must be one of: on_test, ended, rented, cancelled"})
+    mode = serializers.ChoiceField(
+        choices=TestRideMode.values, required=False, allow_blank=True,
+        error_messages={"invalid_choice": "must be customer or staff"})
     page = whole_number_field(min_value=1, required=False, default=1)
