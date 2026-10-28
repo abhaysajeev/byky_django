@@ -37,7 +37,7 @@ from apps.discount.models import CardDiscountClaim, ClaimStatus
 from apps.notifications import services as notifications
 from apps.notifications.models import Action
 from apps.photos import services as photo_services
-from apps.rental import live
+from apps.rental import live, station_sync
 from apps.rental.models import (
     REQUEST_LIVE,
     DecisionChannel,
@@ -185,6 +185,7 @@ def create_request(session, values, request_data):
             created_by=session.user, modified_by=session.user,
         )
         notifications.notify(req, Action.RAISED)
+        station_sync.request_changed(req, Action.RAISED, device=session.device)
         event = {
             "action": OrderAction.REQUEST, "happened_at": values["requested_at"],
             "device": session.device, "user": session.user,
@@ -217,6 +218,7 @@ def withdraw(session, values, request_data):
             req.modified_by = session.user
             req.save()
             notifications.notify(req, Action.WITHDRAWN)
+            station_sync.request_changed(req, Action.WITHDRAWN, device=session.device)
         elif req.status != OrderRequestStatus.WITHDRAWN:
             raise OrderRefused("request_closed")
         event = {
@@ -245,6 +247,7 @@ def mark_used(session, values, request_data):
             raise OrderRefused("request_not_approved")
         req.status, req.used_at, req.modified_by = OrderRequestStatus.USED, values["used_at"], session.user
         req.save()
+        station_sync.request_changed(req, "used", device=session.device)
         event = {
             "action": OrderAction.REQUEST_USED, "happened_at": values["used_at"],
             "device": session.device, "user": session.user,
@@ -272,6 +275,10 @@ def _requested_between(rows, zone, from_date=None, to_date=None):
 # (orders/requests/status, orders/credit-notes/status,
 # card-discounts/approval/status) stays the way to follow one.
 CREDIT_NOTE, CARD_DISCOUNT = "credit_note", "card_discount"
+# A vehicle or station asset reported for service (apps/fleet/service_requests.py):
+# in the manager's list only -- the tablet follows its reports with
+# service-requests/list.
+SERVICE = "service"
 LIST_KINDS = (*OrderRequestKind.values, CREDIT_NOTE, CARD_DISCOUNT)
 
 
@@ -300,7 +307,8 @@ def _station_sources(branch, kind, device=None):
     return sources
 
 
-_PENDING = {"request": OrderRequestStatus.PENDING, CREDIT_NOTE: "pending", CARD_DISCOUNT: ClaimStatus.PENDING}
+_PENDING = {"request": OrderRequestStatus.PENDING, CREDIT_NOTE: "pending", CARD_DISCOUNT: ClaimStatus.PENDING,
+            SERVICE: "pending"}
 
 
 def station_list(branch, *, pending_only=False, kind=None, from_date=None, to_date=None, page=1, device=None):
@@ -465,6 +473,7 @@ def approve(user, request_id, company_ids, channel, discount_type=None, value=No
         req.decision_note, req.modified_by = (note or "").strip(), user
         req.save()
         notifications.notify(req, Action.APPROVED)
+        station_sync.request_changed(req, Action.APPROVED)
         if req.kind == OrderRequestKind.CANCEL:
             cancel_order(order, req, user, now)
     return req
@@ -490,8 +499,9 @@ def cancel_order(order, cancel, user, now):
     notifications.notify_all(closing, Action.CLOSED)
     cancel_unused_for_order(order, now=now)
     # A web or manager cancel writes no OrderEvent, so it is not seen by
-    # services.run_once: tell Live Monitoring here.
+    # services.run_once: tell Live Monitoring, and the station's tablets, here.
     live.order_changed(order)
+    station_sync.order_changed(order, station_sync.CANCEL)
 
 
 def cancel_directly(user, order_id, company_ids, reason):
@@ -533,6 +543,7 @@ def reject(user, request_id, company_ids, channel, note=""):
         req.decision_note, req.modified_by = (note or "").strip(), user
         req.save()
         notifications.notify(req, Action.REJECTED)
+        station_sync.request_changed(req, Action.REJECTED)
     return req
 
 
@@ -553,6 +564,7 @@ def revoke(user, request_id, company_ids, channel, note=""):
         req.revoke_note, req.modified_by = (note or "").strip(), user
         req.save()
         notifications.notify(req, Action.REVOKED)
+        station_sync.request_changed(req, Action.REVOKED)
     return req
 
 
@@ -642,6 +654,10 @@ def _company_sources(company_ids, kind, state_id, branch_id):
         sources.append((CREDIT_NOTE, where(CreditNote.objects.filter(source=CreditNoteSource.DEVICE))))
     if kind in (None, CARD_DISCOUNT):
         sources.append((CARD_DISCOUNT, where(CardDiscountClaim.objects.filter(requires_approval=True))))
+    if kind in (None, SERVICE):
+        from apps.fleet.models import ServiceRequest
+
+        sources.append((SERVICE, where(ServiceRequest.objects.all())))
     return sources
 
 
@@ -704,6 +720,12 @@ def _manager_rows_of(keys):
                 **row["details"], "card_photo": claim.card_photo or None,
                 **card_photo_fields(claim), "fare_basis": claim.fare_basis,
             })
+    if SERVICE in wanted:
+        from apps.fleet import service_requests
+        from apps.fleet.models import ServiceRequest
+
+        for req in service_requests.with_rows(ServiceRequest.objects.filter(pk__in=wanted[SERVICE])):
+            loaded[(SERVICE, req.pk)] = service_requests.manager_json(req, zone_of(req))
     return [loaded[(source, pk)] for pk, _, source in keys]
 
 

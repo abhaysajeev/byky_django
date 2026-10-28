@@ -11,6 +11,7 @@ from django.db import models
 from django.db.models import Case, Func, Value, When
 from django.db.models.functions import Cast, Concat, LPad
 
+from apps.rental.models import DecisionChannel
 from core.models import ApprovalMixin, TimeStampedModel
 
 # Vehicle.identifier: "VB" and a four-digit running number from this
@@ -343,3 +344,226 @@ class Vehicle(ApprovalMixin, TimeStampedModel):
 
     def __str__(self):
         return self.vehicle_code
+
+
+# --- Service & Maintenance ----------------------------------------------------------
+#
+# New in the rebuild: legacy had no maintenance tables (the AMS/EMS areas were
+# switched off). Built from the 2026 manager-app spec §5 and the owner's
+# decisions of 23-26 Oct 2026 (design/inventory/service-and-image-sharing.md):
+# the operator reports a vehicle or a station asset; a manager approves or
+# rejects; the web puts it back in service. Renting a reported vehicle is not
+# refused -- the report is information (26 Oct 2026).
+
+class IssueTarget(models.TextChoices):
+    VEHICLE = "vehicle", "Vehicle"
+    ASSET = "asset", "Asset"
+    BOTH = "both", "Both"
+
+
+class IssueType(ApprovalMixin, TimeStampedModel):
+    """What can be wrong ("Brake failure", "Camera offline") -- the list the
+    tablet offers when reporting. `applies_to` keeps vehicle faults off the
+    asset list and the other way round (owner, 27 Oct 2026)."""
+
+    company = models.ForeignKey("company.Company", on_delete=models.PROTECT, related_name="issue_types")
+    name = models.CharField("Issue Type", max_length=100)
+    code = models.CharField("Code", max_length=20, blank=True)
+    applies_to = models.CharField("Applies To", max_length=10, choices=IssueTarget.choices, default=IssueTarget.BOTH)
+    description = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "issue_type"
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                models.functions.Lower("name"), "company",
+                name="uniq_issue_type_name_per_company",
+                violation_error_message="An issue type with this name already exists.",
+            ),
+        ]
+        indexes = [models.Index(fields=["company"])]
+
+    def __str__(self):
+        return self.name
+
+    def fits(self, target):
+        return self.applies_to in (IssueTarget.BOTH, target)
+
+
+class ServiceRequestStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    APPROVED = "approved", "Under maintenance"
+    REJECTED = "rejected", "Rejected"
+    COMPLETED = "completed", "Completed"
+
+
+# A request still open on its vehicle or asset ("under maintenance").
+SERVICE_OPEN = (ServiceRequestStatus.PENDING, ServiceRequestStatus.APPROVED)
+
+
+class ServiceRequest(TimeStampedModel):
+    # The tablet's sync_id: a resent report finds its own row.
+    id = models.UUIDField(primary_key=True, editable=False)
+    company = models.ForeignKey("company.Company", on_delete=models.PROTECT, related_name="service_requests")
+    branch = models.ForeignKey("company.Branch", on_delete=models.PROTECT, related_name="service_requests")
+    # Counted per station (ServiceRequestCounter); request_no is written once --
+    # the station's short code may change later, the number already given may not.
+    number = models.PositiveIntegerField()
+    request_no = models.CharField(max_length=30)
+
+    vehicle = models.ForeignKey(
+        "fleet.Vehicle", null=True, blank=True, on_delete=models.PROTECT, related_name="service_requests",
+    )
+    asset = models.ForeignKey(
+        "fleet.Asset", null=True, blank=True, on_delete=models.PROTECT, related_name="service_requests",
+    )
+    # The type picked from the list, and/or the operator's own words -- at least
+    # one (service_request_says_what); both optional since 27 Oct 2026.
+    issue_type = models.ForeignKey(
+        "fleet.IssueType", null=True, blank=True, on_delete=models.PROTECT, related_name="service_requests",
+    )
+    issue = models.TextField(blank=True)
+    photo = models.ForeignKey("photos.Photo", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+
+    device = models.ForeignKey("devices.Device", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    requested_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    requested_at = models.DateTimeField()           # tablet time
+
+    status = models.CharField(max_length=10, choices=ServiceRequestStatus.choices,
+                              default=ServiceRequestStatus.PENDING)
+    decided_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    decided_channel = models.CharField(max_length=10, choices=DecisionChannel.choices, blank=True)
+    decided_at = models.DateTimeField(null=True, blank=True)
+    decision_note = models.TextField(blank=True)
+    # Back in service -- on the web only (owner, 26 Oct 2026).
+    completed_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    completed_at = models.DateTimeField(null=True, blank=True)
+    completion_note = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "service_request"
+        ordering = ["-requested_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=(models.Q(vehicle__isnull=False, asset__isnull=True)
+                           | models.Q(vehicle__isnull=True, asset__isnull=False)),
+                name="service_request_one_target",
+            ),
+            models.UniqueConstraint(
+                fields=["vehicle"], condition=models.Q(status__in=SERVICE_OPEN, vehicle__isnull=False),
+                name="uniq_open_service_request_per_vehicle",
+            ),
+            models.UniqueConstraint(
+                fields=["asset"], condition=models.Q(status__in=SERVICE_OPEN, asset__isnull=False),
+                name="uniq_open_service_request_per_asset",
+            ),
+            models.UniqueConstraint(fields=["branch", "number"], name="uniq_service_request_number_per_branch"),
+            models.CheckConstraint(
+                condition=models.Q(issue_type__isnull=False) | ~models.Q(issue=""),
+                name="service_request_says_what",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(status=ServiceRequestStatus.PENDING, decided_at__isnull=True, completed_at__isnull=True)
+                    | models.Q(status__in=(ServiceRequestStatus.APPROVED, ServiceRequestStatus.REJECTED),
+                               decided_at__isnull=False, completed_at__isnull=True)
+                    | models.Q(status=ServiceRequestStatus.COMPLETED, decided_at__isnull=False,
+                               completed_at__isnull=False)
+                ),
+                name="service_request_status_times",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["company", "status", "requested_at"]),
+            models.Index(fields=["branch", "requested_at"]),
+        ]
+
+    def __str__(self):
+        return self.request_no
+
+    @property
+    def is_open(self):
+        return self.status in SERVICE_OPEN
+
+
+class ServiceRequestCounter(models.Model):
+    """The last service-request number given at a station. Taken under a row
+    lock inside the report's transaction, so two reports never share a number
+    (a Max()+1 would race; a global sequence would not count per station)."""
+
+    branch = models.OneToOneField("company.Branch", primary_key=True, on_delete=models.CASCADE,
+                                  related_name="+")
+    last_number = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        db_table = "service_request_counter"
+
+    def __str__(self):
+        return f"{self.branch_id}: {self.last_number}"
+
+
+# --- Image Sharing ------------------------------------------------------------------
+#
+# Legacy "MarketingIntelligence" (SfaMarketingIntelligence: a base64 photo and
+# remarks from the tablet, approved on the web). Rebuilt simpler (owner, 26 Oct
+# 2026): photo + remarks, viewed and deleted on the web, viewed in the manager
+# app -- no approval, nothing depends on one.
+
+class ImageShare(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, editable=False)    # the tablet's sync_id
+    company = models.ForeignKey("company.Company", on_delete=models.PROTECT, related_name="image_shares")
+    branch = models.ForeignKey("company.Branch", on_delete=models.PROTECT, related_name="image_shares")
+    device = models.ForeignKey("devices.Device", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    shared_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    shared_at = models.DateTimeField()              # tablet time
+    remarks = models.TextField()
+    photo = models.ForeignKey("photos.Photo", on_delete=models.PROTECT, related_name="+")
+    # Deleted on the web: kept, out of every list, its photo no longer served.
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+
+    class Meta:
+        db_table = "image_share"
+        ordering = ["-shared_at"]
+        indexes = [models.Index(fields=["company", "shared_at"]), models.Index(fields=["branch", "shared_at"])]
+
+    def __str__(self):
+        return f"Image shared at {self.branch_id} on {self.shared_at:%Y-%m-%d %H:%M}"
+
+
+# --- Asset checks -------------------------------------------------------------------
+#
+# Owner, 27 Oct 2026: the operator app inspects an asset of its station -- a
+# photo (required), its condition, optional remarks. Recorded only: no
+# approval, no notification, no service request. The asset's condition is its
+# latest check. Managers view them, with photos, in the manager app.
+
+class AssetCheckStatus(models.TextChoices):
+    ACTIVE = "active", "Active"
+    NEEDS_INSPECTION = "needs_inspection", "Needs inspection"
+
+
+class AssetCheck(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, editable=False)    # the tablet's sync_id
+    company = models.ForeignKey("company.Company", on_delete=models.PROTECT, related_name="asset_checks")
+    branch = models.ForeignKey("company.Branch", on_delete=models.PROTECT, related_name="asset_checks")
+    asset = models.ForeignKey("fleet.Asset", on_delete=models.PROTECT, related_name="checks")
+    status = models.CharField(max_length=20, choices=AssetCheckStatus.choices)
+    remarks = models.TextField(blank=True)
+    photo = models.ForeignKey("photos.Photo", on_delete=models.PROTECT, related_name="+")
+    device = models.ForeignKey("devices.Device", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    checked_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    checked_at = models.DateTimeField()              # tablet time
+
+    class Meta:
+        db_table = "asset_check"
+        ordering = ["-checked_at"]
+        indexes = [
+            models.Index(fields=["asset", "checked_at"]),
+            models.Index(fields=["company", "checked_at"]),
+            models.Index(fields=["branch", "checked_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.asset_id} {self.status} on {self.checked_at:%Y-%m-%d %H:%M}"

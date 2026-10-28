@@ -91,7 +91,7 @@ the server's check endpoint, never from the browser.
           <label class="scr-label" for="fare-vehicle-type">Vehicle type<span class="scr-required">*</span></label>
           <select id="fare-vehicle-type" class="scr-input" data-fare-field="vehicle_type" {% if is_edit %}disabled{% endif %}>
             <option value="">Select vehicle type</option>
-            {% for v in vehicle_types %}<option value="{{ v.id }}" data-company="{{ v.company }}" data-category="{{ v.category }}" data-tax="{{ v.tax }}">{{ v.name }}</option>{% endfor %}
+            {% for v in vehicle_types %}<option value="{{ v.id }}" data-company="{{ v.company }}" data-category="{{ v.category }}" data-tax="{{ v.tax }}" data-direct-rent="{{ v.direct_rent|yesno:"1,0" }}">{{ v.name }}</option>{% endfor %}
           </select>
           {% if is_edit %}<div class="scr-help">Fixed once saved. For another vehicle type, add a new fare.</div>{% endif %}
         </div>

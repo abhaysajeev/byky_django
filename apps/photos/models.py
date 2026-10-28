@@ -21,6 +21,9 @@ class PhotoPurpose(models.TextChoices):
     and who may see it (apps/photos/services.py)."""
 
     CARD_DISCOUNT = "card_discount", "Card discount"
+    SERVICE_REQUEST = "service_request", "Service request"
+    IMAGE_SHARE = "image_share", "Image share"
+    ASSET_CHECK = "asset_check", "Asset check"
 
 
 class PhotoStatus(models.TextChoices):

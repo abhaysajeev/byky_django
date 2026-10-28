@@ -43,6 +43,7 @@ from apps.rental.serializers import (
     ManagerRequestListRequest,
     OperatorRequestListRequest,
     OrderAddRequest,
+    OrderChangesRequest,
     OrderCreateRequest,
     OrderDetailRequest,
     OrderPaymentsRequest,
@@ -627,7 +628,8 @@ class OrderCreateView(_OperatorView):
 
 _DETAIL_DESCRIPTION = """
 One order, whole -- in the same shape every order call answers with. Look it
-up by `sync_id` **or** `order_no`, not both.
+up by `sync_id` **or** `order_no`, not both. A station-sync push
+(`type: order_changed`) carries the `order_id` to send as `sync_id`.
 
 Any tablet at the order's station can read it, so a rental is never stuck on
 a dead tablet. An order at another station is `unknown_order`, the same as
@@ -668,6 +670,85 @@ class OrderDetailView(_OperatorView):
             return _refused(refusal)
         data = order_json(order, zone=zone_for(branch.company), next_order_number=_counter_number(request.auth))
         return envelope("ok", "Order.", data)
+
+
+_CHANGES_DESCRIPTION = """
+**Catch up** with what the station's other tablets did -- for the pushes this
+tablet missed (offline, app closed, notification swiped away). Call it at
+**login**, on **resume** and on **reconnect**.
+
+* **No `since`** (login, or nothing saved): every order **still running** at
+  this station, whatever day it was booked, **and** every order booked or
+  changed **today** (company day).
+* **`since`** = the `synced_at` of the last answer, sent back unchanged: the
+  orders changed after it -- never further back than **24 hours**; older
+  than that, call again without `since`.
+
+Save each answer's `synced_at` (the **server's** time -- never use the
+tablet's clock) for the next call. Orders come whole, in the shape of
+`orders/detail`, most recently changed first; one may come twice across two
+calls (a short overlap so none is missed) -- just replace it. At most 500;
+`truncated: true` means more changed than that: call again without `since`.
+
+**Station-sync pushes** (sent to the station's *other* operator tablets on
+each order change -- not to the tablet that made it): a visible notification
+on the Android channel **`station_activity`** (create it, low importance),
+`tag` = `order:<order_id>` (one tray entry per order), with data
+`type: order_changed`, `order_id`, `order_no`, `action` (book, add, replace,
+remove, return, payment, settle, cancel), `branch_id`, `at`. On it, call
+`orders/detail` with that `order_id`.
+
+**Requests on an order** are pushed the same way (same channel, same `tag`):
+`type: request_changed`, `order_id`, `order_no`, `request_type`
+(`order_request`, `credit_note`, `card_discount`), `request_id`, `kind` (an
+order request's kind, else empty), `status`, `action` (raised, withdrawn,
+cancelled, approved, rejected, revoked, used), `branch_id`, `at`. Never to the
+tablet that acted; a decision never to the asking tablet either (it has its own
+alert). On it, refresh the request: `orders/requests/status` or
+`orders/credit-notes/status` with `order_ids: [order_id]`, or
+`card-discounts/approval/status` with `order_id` and `sync_id` = `request_id`.
+
+An order whose requests changed also comes back here (a manager's decision
+included): refresh the order requests and credit notes of the orders you
+receive (`order_ids`, as above); card discounts from `orders/requests/list`
+with `kind: card_discount` (its rows carry `order_id` and `request_sync_id`).
+"""
+
+
+class OrderChangesView(_OperatorView):
+    """POST /api/v1/{app}/orders/changes -- operator app only."""
+
+    @extend_schema(
+        tags=["Operator Orders"],
+        summary="Orders changed at this station since the last call (catch-up)",
+        description=_CHANGES_DESCRIPTION,
+        request=envelope_request("OrderChangesEnvelope", OrderChangesRequest, request_data_required=False),
+        responses=envelope_responses(
+            (200, "ok", "Changes.", {"synced_at": "2026-10-26 15:47:12", "orders": [_ORDER_SAMPLE], "total": 1,
+                                     "truncated": False}),
+            (400, "invalid_request", "since must be YYYY-MM-DD HH:MM:SS.",
+             {"errors": {"since": "must be YYYY-MM-DD HH:MM:SS"}}),
+            *_COMMON,
+        ),
+    )
+    def post(self, request, app):
+        branch, refused = self.station(request, app)
+        if refused:
+            return refused
+        _, request_data = request_parts(request)
+        form = OrderChangesRequest(data=request_data)
+        form.is_valid(raise_exception=True)
+        zone = zone_for(branch.company)
+        since = form.validated_data.get("since")
+        since = timezone.make_aware(since, zone) if since else None
+        now = timezone.now()
+        orders, truncated = services.station_changes(branch, since, now=now)
+        counter = _counter_number(request.auth)
+        return envelope("ok", "Changes.", {
+            "synced_at": now.astimezone(zone).strftime("%Y-%m-%d %H:%M:%S"),
+            "orders": [order_json(order, zone=zone, next_order_number=counter) for order in orders],
+            "total": len(orders), "truncated": truncated,
+        })
 
 
 _RECENT_DESCRIPTION = f"""
@@ -873,7 +954,8 @@ _SETTLE_ERRORS = (
     "balance_not_settled", "unknown_card_claim", "card_claim_not_approved", "unknown_card_discount",
     "unknown_discount_request", "discount_request_not_approved", "discount_mismatch",
     "approved_discount_not_applied", "unknown_complimentary_request", "complimentary_request_not_approved",
-    "approved_complimentary_not_applied", "unknown_payment_mode", "payment_id_used", "cancel_requested",
+    "approved_complimentary_not_applied", "approved_card_discount_not_applied", "unknown_payment_mode",
+    "payment_id_used", "cancel_requested",
 )
 
 _SETTLE_DESCRIPTION = """
@@ -907,6 +989,12 @@ are stored as sent and printed on the tax invoice, never part of the sum.
 
 Every other card-discount request on the order still pending, or approved but
 not applied, is cancelled.
+
+An order **with an approved card-discount request must apply a card
+discount**: settling without `card_discount` is
+`approved_card_discount_not_applied`, with `request_sync_id`,
+`card_discount_id` and `discount_percentage` in `data` -- e.g. another tablet
+at the station settling an order whose card discount was approved for the first.
 
 **`manager_discount`** -- a manager's approved discount
 (`orders/requests`, kind `discount`):
@@ -1966,9 +2054,19 @@ newest first, 50 a page (`page`, from 1), sorted and paged together:
 | `discount`, `complimentary`, `reprint`, `order_reprint`, `cancel` | order requests | `requests/approve` / `reject` (`revoke` for discount, complimentary) |
 | `credit_note` | a tablet's credit-note request | `credit-notes/approve` (with `net_amount`) / `reject` |
 | `card_discount` | a card discount that needs approval | `card-discounts/claims/approve` / `reject` |
+| `service` | a vehicle or station asset reported for service | `service-requests/approve` / `reject` |
 
 `request_sync_id` is the id that kind's call takes (`credit_note_id`,
-`claim_id` for the last two). Listing only -- nothing is decided here.
+`claim_id` for credit notes and card discounts). Listing only -- nothing is
+decided here.
+
+A **`service`** row has no order (`order`, `order_id`, `order_no` are `null`);
+`reason` is the reported issue and `details` carries the request:
+`request_no` (SRV-<station code>-00001), `target` (`vehicle` / `asset`) with the
+vehicle's or asset's id and name, `issue`, `photo_url` / `photo_thumb_url`
+(`null` when no photo was sent), and once back in service `completed_by` /
+`completed_at` / `completion_note`. Its `status`: `pending`, `approved` (under
+maintenance), `rejected`, `completed` (back in service, on the web).
 
 Filters, all optional, for every kind together: `"pending": true` for only
 those waiting, `kind` for one kind, `state_id` for one state's stations,

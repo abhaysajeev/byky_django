@@ -31,6 +31,7 @@ from apps.notifications import services as notifications
 from apps.notifications.models import Action
 from apps.photos import services as photo_services
 from apps.photos.models import PhotoPurpose
+from apps.rental import station_sync
 from apps.rental.models import (
     REQUEST_LIVE,
     Customer,
@@ -228,6 +229,7 @@ def decide_claim(user, claim, approve, remarks="", channel=DecisionChannel.WEB):
         claim.save(update_fields=["status", "decided_at", "decided_by", "remarks", "decided_channel",
                                   "modified_by", "modified_on"])
         notifications.notify(claim, Action.APPROVED if approve else Action.REJECTED)
+        station_sync.request_changed(claim, Action.APPROVED if approve else Action.REJECTED)
     return claim
 
 
@@ -377,6 +379,7 @@ def _request_approval(session, values, company, sync_id):
     if photo is not None:
         photo_services.mark_attached(photo)
     notifications.notify(claim, Action.RAISED)
+    station_sync.request_changed(claim, Action.RAISED, device=session.device)
     return claim, True
 
 
@@ -447,6 +450,16 @@ def redeem_for_order(session, order, discount, *, at, bill_amount, net_amount):
         )
     cancel_unused_for_order(order, keep=claim, now=at)
     return claim
+
+
+def approved_claim_unapplied(order):
+    """The order's approved card-discount claim, or None -- for a settle that
+    carries no card discount. The order's live claims are locked, so a claim
+    approved while this settle runs waits for it (then finds it billed)."""
+    live = list(CardDiscountClaim.objects.select_for_update()
+                .filter(order=order, status__in=[ClaimStatus.PENDING, ClaimStatus.APPROVED])
+                .order_by("-decided_at", "-created_on"))
+    return next((claim for claim in live if claim.status == ClaimStatus.APPROVED), None)
 
 
 def cancel_unused_for_order(order, *, keep=None, now=None):

@@ -176,6 +176,13 @@ def _repeated(values):
     return len(set(values)) != len(values)
 
 
+class OrderChangesRequest(serializers.Serializer):
+    """What changed at this station since the tablet's last answer. `since`
+    is that answer's `synced_at`, sent back as it came; left out at login."""
+
+    since = datetime_field(required=False, allow_null=True)
+
+
 class OrderDetailRequest(serializers.Serializer):
     """One order, by its sync_id or its order number -- exactly one."""
 
@@ -500,15 +507,16 @@ class OperatorRequestListRequest(_RequestDatesMixin):
 
 class ManagerRequestListRequest(_RequestDatesMixin):
     """Every kind sent for a decision: order requests, credit-note requests,
-    card discounts that need approval."""
+    card discounts that need approval, service requests."""
 
     pending = serializers.BooleanField(required=False, default=False,
                                        error_messages={"invalid": "must be true or false"})
     state_id = whole_number_field(min_value=1, required=False, allow_null=True)
     kind = serializers.ChoiceField(
-        choices=[*OrderRequestKind.values, "credit_note", "card_discount"], required=False, allow_blank=True,
+        choices=[*OrderRequestKind.values, "credit_note", "card_discount", "service"], required=False,
+        allow_blank=True,
         error_messages={"invalid_choice": "must be one of: discount, complimentary, reprint, order_reprint, "
-                                          "cancel, credit_note, card_discount"},
+                                          "cancel, credit_note, card_discount, service"},
     )
     branch_id = whole_number_field(min_value=1, required=False, allow_null=True)
     page = whole_number_field(min_value=1, required=False, default=1)

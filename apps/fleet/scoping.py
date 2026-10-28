@@ -24,6 +24,12 @@ def asset_types_for(user):
     return scoped_to(AssetType.objects.all(), user)
 
 
+def issue_types_for(user):
+    from apps.fleet.models import IssueType
+
+    return scoped_to(IssueType.objects.all(), user)
+
+
 def assets_for(user):
     return scoped_to(Asset.objects.all(), user)
 

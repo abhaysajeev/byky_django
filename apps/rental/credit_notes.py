@@ -22,6 +22,7 @@ from django.utils import timezone
 
 from apps.notifications import services as notifications
 from apps.notifications.models import Action
+from apps.rental import station_sync
 from apps.rental.models import (
     CREDIT_NOTE_LIVE,
     CreditNote,
@@ -117,6 +118,7 @@ def request_credit_note(session, values, request_data):
             requested_at=values["requested_at"], created_by=session.user, modified_by=session.user,
         )
         notifications.notify(note, Action.RAISED)
+        station_sync.request_changed(note, Action.RAISED, device=session.device)
         event = {
             "action": OrderAction.CREDIT_NOTE_REQUEST, "happened_at": values["requested_at"],
             "device": session.device, "user": session.user, "detail": {"credit_note_id": str(note.pk)},
@@ -143,6 +145,7 @@ def cancel_credit_note(session, values, request_data):
             note.modified_by = session.user
             note.save()
             notifications.notify(note, Action.CANCELLED)
+            station_sync.request_changed(note, Action.CANCELLED, device=session.device)
         event = {
             "action": OrderAction.CREDIT_NOTE_CANCEL, "happened_at": values["cancelled_at"],
             "device": session.device, "user": session.user, "detail": {"credit_note_id": str(note.pk)},
@@ -202,6 +205,7 @@ def approve(user, note_id, company_ids, net_amount, remark="", channel=DecisionC
         _issue(note, _amount(note.order, net_amount), user, remark.strip(), timezone.now(), channel)
         note.save()
         notifications.notify(note, Action.APPROVED)
+        station_sync.request_changed(note, Action.APPROVED)
     return note
 
 
@@ -217,6 +221,7 @@ def reject(user, note_id, company_ids, remark="", channel=DecisionChannel.WEB):
         note.decision_remark, note.decided_channel, note.modified_by = remark.strip(), channel, user
         note.save()
         notifications.notify(note, Action.REJECTED)
+        station_sync.request_changed(note, Action.REJECTED)
     return note
 
 

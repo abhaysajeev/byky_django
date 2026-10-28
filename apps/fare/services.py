@@ -245,10 +245,15 @@ def _own_ids(meta, fare):
 # -- The screen's live check and the Test fare dialog ------------------------------------
 
 
+def _money_or_none(value):
+    """A concurrent fare as text, or None when it is not set."""
+    return None if value is None else str(value)
+
+
 def _price_json(price):
     return {"base_fare": str(price.base_fare), "grace_minutes": price.grace_minutes,
             "concurrent_interval_minutes": price.concurrent_interval_minutes,
-            "concurrent_fare": str(price.concurrent_fare),
+            "concurrent_fare": _money_or_none(price.concurrent_fare),
             "concurrent_grace_minutes": price.concurrent_grace_minutes}
 
 
@@ -315,8 +320,13 @@ def _set_constraints(mode):
         cursor.execute(f"SET CONSTRAINTS {', '.join(DEFERRED)} {mode}")
 
 
-def _apply_price(row, price):
+def _apply_price(row, price, *, direct_rent=False):
+    """A direct-rent vehicle type has no concurrent pricing (owner, 23 Oct
+    2026): the three are stored empty whatever was posted."""
     row.base_fare, row.grace_minutes = price.base_fare, price.grace_minutes
+    if direct_rent:
+        row.concurrent_interval_minutes = row.concurrent_fare = row.concurrent_grace_minutes = None
+        return
     row.concurrent_interval_minutes = price.concurrent_interval_minutes
     row.concurrent_fare, row.concurrent_grace_minutes = price.concurrent_fare, price.concurrent_grace_minutes
 
@@ -395,7 +405,8 @@ def _write(user, fare, context, spec, meta):
     fare.valid_from, fare.valid_to = spec.valid_from, spec.valid_to
     fare.package_minutes = spec.package_minutes
     fare.is_active = context["is_active"]
-    _apply_price(fare, spec.base)
+    direct_rent = bool(fare.vehicle_type and fare.vehicle_type.is_direct_rent)
+    _apply_price(fare, spec.base, direct_rent=direct_rent)
     fare.modified_by = user
     fare.lock_version = (fare.lock_version or 0) + (1 if fare.pk else 0)
     fare.save()
@@ -405,7 +416,7 @@ def _write(user, fare, context, spec, meta):
     for season in spec.seasons:
         row = existing_seasons.get(meta["season_ids"].get(season.key)) or FareSeason(fare=fare)
         row.name, row.start_date, row.end_date = season.name.strip(), season.start, season.end
-        _apply_price(row, season.base)
+        _apply_price(row, season.base, direct_rent=direct_rent)
         row.save()
         season_rows[season.key] = row
 
@@ -418,7 +429,7 @@ def _write(user, fare, context, spec, meta):
         row.weekdays = sorted(rule.weekdays)
         row.on_date = rule.on_date
         row.start_minute, row.end_minute = rule.start, rule.end
-        _apply_price(row, rule.price)
+        _apply_price(row, rule.price, direct_rent=direct_rent)
         row.save()
 
     linked = set(fare.branch_links.values_list("branch_id", flat=True))
@@ -475,7 +486,7 @@ def _device_price(row):
     return {
         "base_fare": str(row.base_fare), "grace_minutes": row.grace_minutes,
         "concurrent_interval_minutes": row.concurrent_interval_minutes,
-        "concurrent_fare": str(row.concurrent_fare),
+        "concurrent_fare": _money_or_none(row.concurrent_fare),
         "concurrent_grace_minutes": row.concurrent_grace_minutes,
     }
 

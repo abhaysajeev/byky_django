@@ -257,6 +257,37 @@ ASSET_TYPE = {
     ],
 }
 
+ISSUE_TYPE = {
+    "drawer_id": "drawerIssueType",
+    "scr_name": "issue_type",
+    "model": "fleet.IssueType",
+    "add_label": "Add Issue Type",
+    "title_field": "name",
+    "sections": [
+        {
+            "title": "",
+            "fields": [
+                {
+                    "id": "company",
+                    "label": "Company",
+                    "kind": "select",
+                    "required": True,
+                    "options_from": "companies_list",
+                    "option_key": "name",
+                    "system_only": True,
+                },
+                {"id": "name", "label": "Issue Type", "kind": "text", "required": True},
+                {"id": "code", "label": "Code", "kind": "text", "required": False},
+                {
+                    "id": "applies_to", "label": "Applies To", "kind": "select", "required": True,
+                    "options_from": "issue_targets_list", "option_key": "name",
+                },
+                {"id": "description", "label": "Description", "kind": "textarea", "required": False},
+            ],
+        }
+    ],
+}
+
 ASSET = {
     "drawer_id": "drawerAsset",
     "scr_name": "asset",
@@ -449,6 +480,7 @@ SPECS = {
     "drawer_vehicle_type": VEHICLE_TYPE,
     "drawer_uom": UOM,
     "drawer_asset_type": ASSET_TYPE,
+    "drawer_issue_type": ISSUE_TYPE,
     "drawer_asset": ASSET,
     "drawer_vehicle": VEHICLE,
 }

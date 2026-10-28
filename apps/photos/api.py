@@ -24,7 +24,7 @@ class PhotoUploadRequest(serializers.Serializer):
     photo_id = uuid7_field()
     purpose = serializers.ChoiceField(
         choices=PhotoPurpose.choices,
-        error_messages={**REQUIRED, "invalid_choice": "must be card_discount"},
+        error_messages={**REQUIRED, "invalid_choice": "must be card_discount, service_request, image_share or asset_check"},
     )
     file = serializers.FileField(error_messages={**REQUIRED, "invalid": "must be a file",
                                                  "empty": "must not be empty"})
@@ -37,7 +37,9 @@ _UPLOAD_SAMPLE = {
 
 _UPLOAD_DESCRIPTION = """
 Upload one photo, then send its `photo_id` with the request it belongs to --
-for a card discount, `card_photo_id` in `card-discounts/approval`.
+for a card discount, `card_photo_id` in `card-discounts/approval`; for a
+service request or an image share, `photo_id` in `service-requests` /
+`image-shares`. A photo serves only the purpose it was uploaded for.
 
 **multipart/form-data**, with the access token in the `Authorization:
 Bearer` header as on every call. Fields:
@@ -46,7 +48,7 @@ Bearer` header as on every call. Fields:
   **unchanged** on retry: a second upload with the same id is answered
   `duplicate` and stores nothing. Make it before uploading, so the request
   can be queued offline with it.
-* `purpose` -- `card_discount` (operator app).
+* `purpose` -- `card_discount`, `service_request`, `image_share` or `asset_check` (operator app).
 * `file` -- the image.
 
 **Compress on the device before uploading:** JPEG, long side **1280-1600

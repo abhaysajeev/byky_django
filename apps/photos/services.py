@@ -30,7 +30,12 @@ log = logging.getLogger(__name__)
 FORMATS = {"JPEG": ("image/jpeg", "jpg"), "PNG": ("image/png", "png"), "WEBP": ("image/webp", "webp")}
 
 # Which app may upload a photo for which purpose.
-UPLOADERS = {PhotoPurpose.CARD_DISCOUNT: {Channel.OPERATOR}}
+UPLOADERS = {
+    PhotoPurpose.CARD_DISCOUNT: {Channel.OPERATOR},
+    PhotoPurpose.SERVICE_REQUEST: {Channel.OPERATOR},
+    PhotoPurpose.IMAGE_SHARE: {Channel.OPERATOR},
+    PhotoPurpose.ASSET_CHECK: {Channel.OPERATOR},
+}
 
 # The previews: (field, long side px, WebP quality).
 PREVIEWS = (("display", 1280, 80), ("thumb", 320, 70))
@@ -190,7 +195,22 @@ def missing_previews():
 # -- Viewing ----------------------------------------------------------------------------
 
 # Web: which screen's read right lets a user see each purpose's photos.
-WEB_PAGES = {PhotoPurpose.CARD_DISCOUNT: "discount.approval"}
+WEB_PAGES = {
+    PhotoPurpose.CARD_DISCOUNT: "discount.approval",
+    PhotoPurpose.SERVICE_REQUEST: "fleet.service_request",
+    PhotoPurpose.IMAGE_SHARE: "fleet.image_share",
+    PhotoPurpose.ASSET_CHECK: "fleet.asset_check",
+}
+
+
+def _withdrawn(photo):
+    """A photo whose owner was deleted is no longer shown anywhere: today only
+    an image share deleted on the web (it is kept, its photo is not served)."""
+    if photo.purpose != PhotoPurpose.IMAGE_SHARE:
+        return False
+    from apps.fleet.models import ImageShare
+
+    return ImageShare.objects.filter(photo=photo, deleted_at__isnull=False).exists()
 
 
 def can_view_web(user, photo):
@@ -200,14 +220,15 @@ def can_view_web(user, photo):
     page = WEB_PAGES.get(photo.purpose)
     return (photo.status == PhotoStatus.ATTACHED and page is not None
             and has_permission(user, page, "read")
-            and companies_for(user).filter(pk=photo.company_id).exists())
+            and companies_for(user).filter(pk=photo.company_id).exists()
+            and not _withdrawn(photo))
 
 
 def can_view_app(user, photo, channel):
     """The manager app sees its company's attached photos."""
     employee = getattr(user, "employee", None)
     return (channel == Channel.MANAGER and employee is not None and photo.status == PhotoStatus.ATTACHED
-            and photo.company_id == employee.company_id)
+            and photo.company_id == employee.company_id and not _withdrawn(photo))
 
 
 def key_for(photo, size):

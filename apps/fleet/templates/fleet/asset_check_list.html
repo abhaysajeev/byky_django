@@ -1,0 +1,132 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Asset Checks - Inventory{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+<script src="{% static 'js/byky-image-share.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+{% comment %}
+Asset checks from the tablet: a photo, the asset's condition (active /
+needs inspection), optional remarks. Read only -- just recorded
+(apps/fleet/asset_checks.py). A photo opens full size with its details
+(js/byky-image-share.js, without Delete).
+{% endcomment %}
+<div class="scr" data-image-shares>
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Inventory</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Asset Checks</b>
+      </div>
+      <h1 class="scr-title">Asset Checks</h1>
+      <p class="scr-sub">Inspections from the stations' tablets: photo, condition, remarks.</p>
+    </div>
+  </div>
+
+  <div class="scr-card" data-scr-server-paged>
+    <form method="get" class="scr-toolbar scr-mon-toolbar" data-scr-autosubmit>
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="text" name="q" value="{{ params.q }}" placeholder="Asset code, remarks or checked by" aria-label="Search" />
+      </div>
+      <div class="scr-mon-dates">
+        <input type="date" name="from" class="scr-input" value="{{ params.from }}" aria-label="Checked from" title="Checked from" />
+        <span>to</span>
+        <input type="date" name="to" class="scr-input" value="{{ params.to }}" aria-label="Checked to" title="Checked to" />
+      </div>
+      <select name="state" class="scr-input scr-list-select" aria-label="Emirate">
+        <option value="">All emirates</option>
+        {% for s in states %}<option value="{{ s.id }}"{% if params.state == s.id|stringformat:"s" %} selected{% endif %}>{{ s.name }}</option>{% endfor %}
+      </select>
+      <select name="branch" class="scr-input scr-list-select" aria-label="Station">
+        <option value="">All stations</option>
+        {% for b in branches %}<option value="{{ b.id }}"{% if params.branch == b.id|stringformat:"s" %} selected{% endif %}>{{ b.name }}</option>{% endfor %}
+      </select>
+      <select name="status" class="scr-input scr-list-select" aria-label="Condition">
+        <option value="">All conditions</option>
+        {% for value, label in statuses %}<option value="{{ value }}"{% if params.status == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+      <button type="submit" class="scr-btn">Filter</button>
+      {% if filtered %}<a href="{% url 'fleet-asset-check-list' %}" class="scr-btn-secondary">Clear</a>{% endif %}
+      <span class="scr-toolbar-count">{{ page.paginator.count }} check{{ page.paginator.count|pluralize }}</span>
+    </form>
+
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Photo</th>
+            <th>Asset</th>
+            <th>Condition</th>
+            <th>Remarks</th>
+            <th>Station</th>
+            <th>Checked</th>
+            <th class="scr-th-actions"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in rows %}
+          <tr>
+            <td>
+              <button type="button" class="scr-photo-thumb scr-share-thumb" data-share-open
+                      data-full="{{ s.full }}" data-remarks="{{ s.asset }} · {{ s.status_label }}{% if s.remarks %} — {{ s.remarks }}{% endif %}" data-station="{{ s.station }} · {{ s.emirate }}"
+                      data-shared="{{ s.checked_at|date:'d M Y, H:i' }}{% if s.checked_by %} · {{ s.checked_by }}{% endif %}{% if s.tablet %} · Tablet {{ s.tablet }}{% endif %}"
+                      data-received="{{ s.received_at|date:'d M Y, H:i' }}"
+                      aria-label="View photo">
+                <img src="{{ s.thumb }}" alt="Asset photo" loading="lazy" />
+              </button>
+            </td>
+            <td><div class="scr-co-name">{{ s.asset }}</div><div class="scr-contact-sub">{{ s.asset_type }}</div></td>
+            <td>{% if s.status == "needs_inspection" %}<span class="scr-badge scr-badge-pending"><i></i>Needs inspection</span>{% else %}<span class="scr-badge scr-badge-active"><i></i>Active</span>{% endif %}</td>
+            <td class="scr-state scr-mon-wrap">{{ s.remarks|default:"—"|truncatechars:100 }}</td>
+            <td><div class="scr-co-name">{{ s.station }}</div><div class="scr-contact-sub">{{ s.emirate }}</div></td>
+            <td><div class="scr-co-name">{{ s.checked_at|date:"d M Y, H:i" }}</div><div class="scr-contact-sub">{{ s.checked_by|default:"—" }}{% if s.tablet %} · Tablet {{ s.tablet }}{% endif %}</div></td>
+            <td>
+              <div class="scr-row-actions">
+                <button type="button" class="scr-icon-btn" data-share-open-row title="View" aria-label="View photo">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                </button>
+              </div>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7" style="padding:0"><div class="scr-empty"><div><div class="scr-empty-title">{% if filtered %}No checks match{% else %}No asset checks yet{% endif %}</div><p class="scr-empty-sub">Operators check a station asset from the tablet: photo, condition, remarks.</p></div></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% include "byky/partials/server_pager.html" %}
+  </div>
+
+  <button type="button" hidden data-scr-modal-open="share-photo" data-share-modal-trigger></button>
+  <div class="scr-modal-veil" data-scr-modal-veil="share-photo" hidden></div>
+  <div class="scr-modal scr-photo-modal scr-share-modal" data-scr-modal="share-photo" hidden>
+    <div class="scr-modal-head">
+      <div><div class="scr-modal-title" data-share-station></div><p class="scr-modal-sub" data-share-shared></p></div>
+      <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+      </button>
+    </div>
+    <div class="scr-modal-body">
+      <img data-share-img alt="Asset photo" />
+      <p class="scr-mon-wrap" data-share-remarks></p>
+      <p class="scr-help" data-share-received></p>
+    </div>
+  </div>
+</div>
+
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}
