@@ -295,6 +295,10 @@ class DeviceMappingView(DeviceScreenView):
             row.update({
                 "station": mapping.branch.name if mapping else "",
                 "station_id": mapping.branch_id if mapping else "",
+                "multi_device": mapping.branch.is_multi_device if mapping else False,
+                "transaction_letter": mapping.transaction_letter if mapping else "",
+                "order_prefix": services.bill_prefix_for(mapping.branch) if mapping else "",
+                "transaction_prefix": services.transaction_no_prefix(mapping.branch, mapping) if mapping else "",
                 "from_date": mapping.from_date if mapping else None,
                 "app_version": session.app_version if session else "",
                 "last_login": session.logged_in_at if session else None,
@@ -341,6 +345,7 @@ class DeviceMappingView(DeviceScreenView):
                 "save": reverse("devices-mapping-save"),
                 "remap": reverse("devices-mapping-remap", args=[0]),
                 "close": reverse("devices-mapping-close", args=[0]),
+                "letter": reverse("devices-mapping-letter", args=[0]),
             },
             "counts": {
                 "total": len(rows),
@@ -356,6 +361,8 @@ class DeviceMappingView(DeviceScreenView):
                     "id": b.pk,
                     "name": b.name,
                     "multi_device": b.is_multi_device,
+                    # Read-only in the drawer: the transaction prefix's first part.
+                    "prefix": services.bill_prefix_for(b),
                     "open_count": DeviceMapping.objects.filter(
                         branch=b, to_date__isnull=True
                     ).count(),
@@ -501,7 +508,8 @@ class DeviceMapSaveView(MappingActionView):
         return super().post(request, _int(data.get("device")) or 0)
 
     def act(self, devices, pk, data):
-        return services.map_device(devices, pk, user=self.request.user, branch=self.branch(data))
+        return services.map_device(devices, pk, user=self.request.user, branch=self.branch(data),
+                                   letter=data.get("transaction_letter") or "")
 
 
 class DeviceRemapView(MappingActionView):
@@ -509,7 +517,19 @@ class DeviceRemapView(MappingActionView):
     done = "Device moved to its new station from now."
 
     def act(self, devices, pk, data):
-        return services.remap_device(devices, pk, user=self.request.user, branch=self.branch(data))
+        return services.remap_device(devices, pk, user=self.request.user, branch=self.branch(data),
+                                     letter=data.get("transaction_letter") or "")
+
+
+class DeviceLetterView(MappingActionView):
+    """The open mapping's transaction letter, changed in place."""
+
+    permission = "update"
+    done = "Transaction letter saved. The tablet uses it from its next login."
+
+    def act(self, devices, pk, data):
+        return services.set_transaction_letter(devices, pk, user=self.request.user,
+                                               letter=data.get("transaction_letter") or "")
 
 
 class DeviceCloseMappingView(MappingActionView):

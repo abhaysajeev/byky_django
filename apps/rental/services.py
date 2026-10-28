@@ -480,7 +480,8 @@ def _book(session, values, reply_for):
     order = Order.objects.create(
         id=values["sync_id"], company=company, branch=branch, device=device,
         customer=customer, customer_name=customer.full_name, customer_mobile=customer.mobile_full,
-        order_no=values["order_no"], booked_at=values["booked_at"], start_time=values["start_time"],
+        order_no=values["order_no"], transaction_no=(values.get("transaction_no") or "").strip(),
+        booked_at=values["booked_at"], start_time=values["start_time"],
         is_direct_bill=values.get("is_direct_bill", False),
         is_hotel_order=values.get("is_hotel_order", False), hotel_commission=values.get("hotel_commission") or 0,
         created_by=user, modified_by=user,

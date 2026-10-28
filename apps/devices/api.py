@@ -267,6 +267,8 @@ _SETTINGS_SAMPLE = {
     "last_order_no": "DUBPP60182000334",
     "next_order_number": 335,
     "next_test_number": 6,
+    "transaction_no_prefix": "DUBPP-A",
+    "last_transaction_no": "DUBPP-A-12",
 }
 
 _SETTINGS_DESCRIPTION = """
@@ -274,6 +276,14 @@ This tablet's station settings and receipt numbering -- the same block the
 operator login returns, on its own, so the app can refresh it without signing
 in again (on opening, after its offline queue has uploaded, or from a refresh
 button).
+
+**Transaction numbers** (owner, 28 Oct 2026): the tablet counts the day's
+bookings itself -- 1, 2, 3... restarting at 1 each day -- and sends
+`<transaction_no_prefix>-<n>` as `transaction_no` with each booking:
+`DUBPP-12`, or `DUBPP-A-12` at a multi-device station (the letter is set on
+the device's mapping). `transaction_no_prefix` is the station's current order
+prefix with that letter; `last_transaction_no` is the latest one this tablet
+sent today (`null` if none) -- carry on from it after a reinstall.
 
 **Receipt numbering:** build every receipt number from the top-level
 `order_no_prefix` -- this tablet's own, kept even if the station's prefix is

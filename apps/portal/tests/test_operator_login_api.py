@@ -111,6 +111,7 @@ def test_login_returns_the_full_response_shape(client, app_user, device, world):
     assert set(data) == {
         "tokens", "first_name", "employee_code", "full_name", "branch", "device_settings",
         "order_no_prefix", "last_order_no", "next_order_number", "next_test_number",
+        "transaction_no_prefix", "last_transaction_no",
     }
     assert data["tokens"]["access"] and data["tokens"]["refresh"]
     assert (data["first_name"], data["employee_code"], data["full_name"]) == ("Rashed", "OPR001", "Rashed K")
