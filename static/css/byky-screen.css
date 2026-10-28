@@ -1239,15 +1239,16 @@ textarea.scr-mon-json { display: block; width: 100%; min-height: 420px; resize: 
 .scr-live-table th.c-no { z-index: 3; background: #fbfaff; }
 /* Fixed proportions of the card: the table is never wider than its card, and
    long text ends in an ellipsis inside its own column (.scr-live-p / -q). */
-.scr-live-table th.c-no { width: 13%; }
+.scr-live-table th.c-no { width: 12.5%; }
 .scr-live-table th.c-station { width: 10.5%; }
 .scr-live-table th.c-staff { width: 11%; }
 .scr-live-table th.c-cust { width: 10.5%; }
 .scr-live-table th.c-start { width: 10%; }
 .scr-live-table th.c-amt { width: 6%; }
-.scr-live-table th.c-collected, .scr-live-table th.c-net { width: 7%; }
+.scr-live-table th.c-collected { width: 8.5%; }
+.scr-live-table th.c-net { width: 7%; }
 .scr-live-table th.c-bill, .scr-live-table th.c-tax { width: 5%; }
-.scr-live-table th.c-status { width: 11%; }
+.scr-live-table th.c-status { width: 10%; }
 .scr-live-table th.c-act { width: 64px; }
 .scr-live-table th { overflow: hidden; text-overflow: ellipsis; }
 .scr-live .scr-live-row a.scr-live-no { display: block; overflow: hidden; text-overflow: ellipsis; }
@@ -1260,7 +1261,7 @@ textarea.scr-mon-json { display: block; width: 100%; min-height: 420px; resize: 
 /* Show vehicles: a bicycle and the count; the row itself opens the order. */
 .scr-live-veh-btn { display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 9px 0 7px; border: 1px solid #eeedf5; border-radius: 9px; background: #fff; color: #4b4770; font: inherit; font-size: calc(12px * var(--live-s)); font-weight: 700; cursor: pointer; white-space: nowrap; }
 .scr-live-veh-btn:hover { border-color: #e1dfee; background: #fbfaff; }
-.scr-live-veh-btn.is-on { background: #fdeced; border-color: #f8d3d5; color: #c2141a; }
+.scr-live-veh-btn.is-on { background: #f1f0f7; border-color: #1a1640; color: #1a1640; }
 .scr-live-veh-n { font-variant-numeric: tabular-nums; }
 .scr-live-veh-t { display: none; font-weight: 600; }
 .scr-live-row { cursor: pointer; }

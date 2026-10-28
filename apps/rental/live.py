@@ -98,7 +98,8 @@ def with_rows(orders):
 
 
 def _money(value):
-    return f"{value:.2f}" if value is not None else None
+    """AED to the 3rd decimal, as stored and billed (rental.models.MONEY)."""
+    return f"{value:.3f}" if value is not None else None
 
 
 def _local(moment, zone):
@@ -191,7 +192,7 @@ def kpis(user, params, day, zone):
         "running": orders.filter(status=OrderStatus.ACTIVE).count(),
         "today": booked.count(),
         "cancelled": orders.filter(status=OrderStatus.CANCELLED, cancelled_at__gte=start, cancelled_at__lt=end).count(),
-        "collected": f"{taken - refunded:,.2f}",
+        "collected": f"{taken - refunded:,.3f}",
     }
 
 

@@ -96,10 +96,10 @@ def test_a_row_carries_the_legacy_fields(client_in, world, shop, user):
     assert row["station"] == "Abu Dhabi Corniche 1" and row["emirate"] == "Abu Dhabi"
     assert row["opened_by"] == "Sara K" and row["closed_by"] == "—"
     assert [(v["no"], v["state"]) for v in row["vehicles"]] == [("MO 41", "out"), ("DC 02", "replaced")]
-    assert (row["out"], row["status"], row["status_label"], row["collected"]) == (1, "active", "Running", "30.00")
+    assert (row["out"], row["status"], row["status_label"], row["collected"]) == (1, "active", "Running", "30.000")
     # The legacy grid's amounts: running -- collected, fare so far, deposit; no bill yet.
     line = order.items.get(status="active")
-    assert (row["deposit"], row["fare"]) == ("30.00", f"{line.base_fare:.2f}")
+    assert (row["deposit"], row["fare"]) == ("30.000", f"{line.base_fare:.3f}")
     assert (row["bill"], row["tax"], row["net"]) == (None, None, None)
     assert row["url"] == f"/rental/order/{order.pk}/"         # a row opens the order's own page
 
@@ -111,8 +111,8 @@ def test_a_settled_row_names_who_closed_it_and_the_bill(client_in, world, shop, 
                               happened_at=timezone.now(), user=user)
     [row] = rows(client_in)["rows"]
     assert (row["status"], row["closed_by"], row["net"], row["tax"], row["last"]) == (
-        "completed", "Sara K", "63.00", "3.00", "Settled")
-    assert row["bill"] == "60.00"                         # net less VAT, as the legacy grid
+        "completed", "Sara K", "63.000", "3.000", "Settled")
+    assert row["bill"] == "60.000"                         # net less VAT, as the legacy grid
 
 
 def test_ids_returns_just_those_and_drops_what_no_longer_matches(client_in, world, shop):
@@ -137,7 +137,7 @@ def test_kpis_count_the_day(client_in, world, shop):
                            amount=Decimal("40"), paid_at=timezone.now())
     cancelled = make_order(world, shop, "K-2", lines=())
     Order.objects.filter(pk=cancelled.pk).update(status=OrderStatus.CANCELLED, cancelled_at=timezone.now())
-    assert rows(client_in)["kpis"] == {"vehicles": 2, "running": 1, "today": 2, "cancelled": 1, "collected": "40.00"}
+    assert rows(client_in)["kpis"] == {"vehicles": 2, "running": 1, "today": 2, "cancelled": 1, "collected": "40.000"}
 
 
 # -- The push -----------------------------------------------------------------------------

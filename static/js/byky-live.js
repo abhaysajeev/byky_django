@@ -97,15 +97,19 @@
 
   function rowHtml(r) {
     var n = r.vehicles.length;
-    // A diamond-frame bicycle: wheels, rear triangle, top / down tubes, fork,
-    // saddle and bars. The whole row opens the order; this opens its vehicles.
+    // The whole row opens the order; this opens its vehicles.
     var bike = '<button type="button" class="scr-live-veh-btn' + (open[r.id] ? ' is-on' : '') +
       '" data-live-veh="' + esc(r.id) + '" title="Show vehicles" aria-label="Show vehicles of ' + esc(r.order_no) +
       '" aria-expanded="' + (open[r.id] ? 'true' : 'false') + '">' +
-      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-      '<circle cx="5.5" cy="16.5" r="3.5"></circle><circle cx="18.5" cy="16.5" r="3.5"></circle>' +
-      '<path d="M5.5 16.5 9 9.5h6.5"></path><path d="M9 9.5l2.5 7h-6"></path><path d="M11.5 16.5l4-7 3 7"></path>' +
-      '<path d="M9 9.5 8.3 7.2M6.8 7.2h3.2"></path><path d="M15.5 9.5 14.6 6.8h2.4"></path></svg>' +
+      // The owner's bicycle (28 Oct 2026), traced exactly, in black: open wheels,
+      // seat post and fork as light-filled tubes, frame, saddle, stem, two bars.
+      '<svg width="24" height="20" viewBox="98 128 350 290" fill="none" stroke="#111" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<path d="M180 276A62 62 0 1 0 232 325"></path><path d="M325 282A70 70 0 1 0 405 277"></path>' +
+      '<path d="M197 234l20 63M222 233l15 47" stroke-width="12"></path>' +
+      '<path d="M203 238l15 48 10-12-9-36z" fill="#111" fill-opacity="0.16" stroke="none"></path>' +
+      '<path d="M172 336 343 214"></path><path d="M165 229h68"></path>' +
+      '<path d="M331 209l25-8 38 129-26 8z" stroke-width="12" fill="#111" fill-opacity="0.16"></path>' +
+      '<path d="M340 207 318 148h-66"></path><path d="M276 179h50"></path></svg>' +
       '<span class="scr-live-veh-n">' + n + '</span><span class="scr-live-veh-t">' + (n === 1 ? 'vehicle' : 'vehicles') +
       '</span></button>';
     return '<tr class="scr-live-row is-' + esc(r.status) + '" data-id="' + esc(r.id) + '">' +
