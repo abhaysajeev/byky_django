@@ -125,7 +125,7 @@
       cell('c-amt c-tax', 'Tax', money(r.tax)) +
       cell('c-amt c-disc', 'Discount', money(r.discount)) +
       cell('c-amt c-net', 'Net', money(r.net) +
-        (r.discount != null ? '<div class="scr-live-q scr-live-fold">Disc ' + money(r.discount) + '</div>' : '')) +
+        (Number(r.discount) > 0 ? '<div class="scr-live-q scr-live-fold">Disc ' + money(r.discount) + '</div>' : '')) +
       cell('c-status', 'Status', '<span class="scr-live-badge is-' + esc(r.status) + '"><i></i>' + esc(r.status_label) + '</span>' +
         '<div class="scr-live-q">' + esc(r.last) + (r.last_at ? ' · ' + ago(r.last_at) : '') + '</div>') +
       '<td class="c-act">' + bike + '</td>' +

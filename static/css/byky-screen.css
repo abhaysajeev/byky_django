@@ -1225,29 +1225,38 @@ textarea.scr-mon-json { display: block; width: 100%; min-height: 420px; resize: 
 /* Table */
 .scr-live-list { position: relative; }
 .scr-live-scroll { overflow-x: auto; }
-.scr-live-table { width: 100%; min-width: 1240px; table-layout: auto; border-collapse: separate; border-spacing: 0; font-size: calc(12.5px * var(--live-s)); }
+.scr-live-table { width: 100%; min-width: 0; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: calc(12.5px * var(--live-s)); }
 .scr-live-table th { position: sticky; top: 0; z-index: 2; background: #fbfaff; color: #8f8bb0; font-size: calc(10.5px * var(--live-s)); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; text-align: left; white-space: nowrap; padding: 10px 8px; border-bottom: 1px solid #f0eff7; }
 .scr-live-th-group th { padding-top: 8px; padding-bottom: 0; border-bottom: 0; }
 .scr-live-th-amounts { text-align: center !important; color: #6b6790 !important; letter-spacing: 0.08em; }
 .scr-live-th-amounts::after { content: ""; display: block; height: 1px; margin: 6px 6px 0; background: #e6e4f0; }
-.scr-live-table td { padding: 11px 8px; vertical-align: top; border-bottom: 1px solid #f4f3f9; background: #fff; }
+.scr-live-table td { overflow: hidden; padding: 11px 8px; vertical-align: top; border-bottom: 1px solid #f4f3f9; background: #fff; }
 .scr-live-table .c-amt { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .scr-live-table td.c-amt { padding-top: 13px; }
 .scr-live-table td.c-net { font-weight: 700; color: #1a1640; }
 .scr-live-table td.c-collected { font-weight: 600; }
-.scr-live-table .c-no { position: sticky; left: 0; z-index: 1; min-width: 132px; box-shadow: 1px 0 0 #f0eff7; }
+.scr-live-table .c-no { position: sticky; left: 0; z-index: 1; box-shadow: 1px 0 0 #f0eff7; }
 .scr-live-table th.c-no { z-index: 3; background: #fbfaff; }
-/* Cells keep to their width; long text ellipses (the .scr-live-p / -q). */
-.scr-live-table .c-station > div, .scr-live-table .c-cust > div { max-width: 128px; }
-.scr-live-table .c-staff > div { max-width: 124px; }
-.scr-live-table .c-no > .scr-live-q { max-width: 130px; }
-.scr-live-table .c-status > .scr-live-q { max-width: 150px; }
+/* Fixed proportions of the card: the table is never wider than its card, and
+   long text ends in an ellipsis inside its own column (.scr-live-p / -q). */
+.scr-live-table th.c-no { width: 13%; }
+.scr-live-table th.c-station { width: 10.5%; }
+.scr-live-table th.c-staff { width: 11%; }
+.scr-live-table th.c-cust { width: 10.5%; }
+.scr-live-table th.c-start { width: 10%; }
+.scr-live-table th.c-amt { width: 6%; }
+.scr-live-table th.c-collected, .scr-live-table th.c-net { width: 7%; }
+.scr-live-table th.c-bill, .scr-live-table th.c-tax { width: 5%; }
+.scr-live-table th.c-status { width: 11%; }
+.scr-live-table th.c-act { width: 64px; }
+.scr-live-table th { overflow: hidden; text-overflow: ellipsis; }
+.scr-live .scr-live-row a.scr-live-no { display: block; overflow: hidden; text-overflow: ellipsis; }
 /* One-cell rows read from the left (.scr's last-cell rule right-aligns). */
 .scr-live .scr-live-table tr.scr-live-group td, .scr-live .scr-live-table tr.scr-live-veh-row td,
 .scr-live .scr-live-table tr.scr-live-empty-row td { text-align: left; }
 .scr-live-staff b { color: #6b6790; font-weight: 600; margin-right: 3px; }
 .scr-live-fold { display: none; text-align: right; }
-.scr-live-table .c-act { width: 1%; }
+
 /* Show vehicles: a bicycle and the count; the row itself opens the order. */
 .scr-live-veh-btn { display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 9px 0 7px; border: 1px solid #eeedf5; border-radius: 9px; background: #fff; color: #4b4770; font: inherit; font-size: calc(12px * var(--live-s)); font-weight: 700; cursor: pointer; white-space: nowrap; }
 .scr-live-veh-btn:hover { border-color: #e1dfee; background: #fbfaff; }
@@ -1307,29 +1316,23 @@ body.scr-live-wall .scr-live-title { font-size: 28px; }
 body.scr-live-wall .scr-live-exit-btn { display: inline-flex; }
 body.scr-live-wall .scr-live-row { cursor: default; }
 body.scr-live-wall .scr-live-row:hover td { background: #fff; }
-body.scr-live-wall .scr-live-table { min-width: 0; }
 body.scr-live-wall .scr-live-table .c-deposit, body.scr-live-wall .scr-live-table .c-disc { display: none; }
 body.scr-live-wall .scr-live-table .scr-live-fold { display: block; }
 body.scr-live-wall .scr-live-th-group { display: none; }
-body.scr-live-wall .scr-live-table td > div, body.scr-live-wall .scr-live-table .c-no > .scr-live-q { max-width: none; }
 
 /* Narrower cards: Deposit and Discount fold under Collected and Net; then
    Fare and the staff column step away (both on the order's page). */
 @container live (max-width: 1279.98px) {
   .scr-live-table .c-deposit, .scr-live-table .c-disc { display: none; }
   .scr-live-table .scr-live-fold { display: block; }
-  .scr-live-table { min-width: 0; }
   .scr-live-th-group { display: none; }        /* its spans would count the folded columns */
 }
 @container live (max-width: 1019.98px) {
   .scr-live-table .c-fare, .scr-live-table .c-staff { display: none; }
-  .scr-live-table { min-width: 0; }
   .scr-live-th-group { display: none; }
 }
 @container live (max-width: 859.98px) {
   .scr-live-table .c-station, .scr-live-table .c-bill, .scr-live-table .c-tax { display: none; }
-  .scr-live-table .c-no > .scr-live-q { max-width: 116px; }
-  .scr-live-table .c-cust > div { max-width: 104px; }
 }
 @media (max-width: 1023.98px) {
   .scr-live-totals { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -1353,7 +1356,8 @@ body.scr-live-wall .scr-live-table td > div, body.scr-live-wall .scr-live-table 
 
   /* Each order as a card: the same cells, labelled. */
   .scr-live-scroll { overflow: visible; }
-  .scr-live-table, .scr-live-table tbody { display: block; min-width: 0; }
+  .scr-live-table, .scr-live-table tbody { display: block; min-width: 0; table-layout: auto; }
+  .scr-live .scr-live-row td { overflow: visible; }
   .scr-live-table thead { display: none; }
   .scr-live-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; padding: 14px 16px; border-bottom: 1px solid #f0eff7; position: relative; }
   .scr-live-row.is-active { box-shadow: inset 3px 0 0 #14764a; }
