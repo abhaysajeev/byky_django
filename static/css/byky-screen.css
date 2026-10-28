@@ -1259,7 +1259,7 @@ textarea.scr-mon-json { display: block; width: 100%; min-height: 420px; resize: 
 .scr-live-fold { display: none; text-align: right; }
 
 /* Show vehicles: a bicycle and the count; the row itself opens the order. */
-.scr-live-veh-btn { display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 9px 0 7px; border: 1px solid #eeedf5; border-radius: 9px; background: #fff; color: #4b4770; font: inherit; font-size: calc(12px * var(--live-s)); font-weight: 700; cursor: pointer; white-space: nowrap; }
+.scr-live-veh-btn { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 7px 0 6px; border: 1px solid #eeedf5; border-radius: 7px; background: #fff; color: #4b4770; font: inherit; font-size: calc(11px * var(--live-s)); font-weight: 700; cursor: pointer; white-space: nowrap; }
 .scr-live-veh-btn:hover { border-color: #e1dfee; background: #fbfaff; }
 .scr-live-veh-btn.is-on { background: #f1f0f7; border-color: #1a1640; color: #1a1640; }
 .scr-live-veh-n { font-variant-numeric: tabular-nums; }
@@ -1287,7 +1287,7 @@ textarea.scr-mon-json { display: block; width: 100%; min-height: 420px; resize: 
 .scr-live-chip.is-out { background: #e9f8f0; color: #14764a; }
 .scr-live-chip.is-out i { background: #14764a; }
 .scr-live-chip.is-replaced, .scr-live-chip.is-removed, .scr-live-chip.is-cancelled { color: #a9a6c4; }
-.scr-live-badge { display: inline-flex; align-items: center; gap: 6px; font-size: calc(11px * var(--live-s)); font-weight: 600; padding: 4px 10px; border-radius: 99px; white-space: nowrap; }
+.scr-live-badge { display: inline-flex; align-items: center; font-size: calc(11px * var(--live-s)); font-weight: 600; padding: 3px 9px; border-radius: 99px; white-space: nowrap; }
 .scr-live-badge i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .scr-live-badge.is-active { background: #e9f8f0; color: #14764a; }
 .scr-live-badge.is-completed { background: #f4f3f9; color: #6b6790; }

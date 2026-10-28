@@ -103,12 +103,12 @@
       '" aria-expanded="' + (open[r.id] ? 'true' : 'false') + '">' +
       // The owner's bicycle (28 Oct 2026), traced exactly, in black: open wheels,
       // seat post and fork as light-filled tubes, frame, saddle, stem, two bars.
-      '<svg width="24" height="20" viewBox="98 128 350 290" fill="none" stroke="#111" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<svg width="19" height="16" viewBox="98 128 350 290" fill="none" stroke="#111" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
       '<path d="M180 276A62 62 0 1 0 232 325"></path><path d="M325 282A70 70 0 1 0 405 277"></path>' +
-      '<path d="M197 234l20 63M222 233l15 47" stroke-width="12"></path>' +
+      '<path d="M197 234l20 63M222 233l15 47" stroke-width="9"></path>' +
       '<path d="M203 238l15 48 10-12-9-36z" fill="#111" fill-opacity="0.16" stroke="none"></path>' +
       '<path d="M172 336 343 214"></path><path d="M165 229h68"></path>' +
-      '<path d="M331 209l25-8 38 129-26 8z" stroke-width="12" fill="#111" fill-opacity="0.16"></path>' +
+      '<path d="M331 209l25-8 38 129-26 8z" stroke-width="9" fill="#111" fill-opacity="0.16"></path>' +
       '<path d="M340 207 318 148h-66"></path><path d="M276 179h50"></path></svg>' +
       '<span class="scr-live-veh-n">' + n + '</span><span class="scr-live-veh-t">' + (n === 1 ? 'vehicle' : 'vehicles') +
       '</span></button>';
@@ -130,7 +130,7 @@
       cell('c-amt c-disc', 'Discount', money(r.discount)) +
       cell('c-amt c-net', 'Net', money(r.net) +
         (Number(r.discount) > 0 ? '<div class="scr-live-q scr-live-fold">Disc ' + money(r.discount) + '</div>' : '')) +
-      cell('c-status', 'Status', '<span class="scr-live-badge is-' + esc(r.status) + '"><i></i>' + esc(r.status_label) + '</span>' +
+      cell('c-status', 'Status', '<span class="scr-live-badge is-' + esc(r.status) + '">' + esc(r.status_label) + '</span>' +
         '<div class="scr-live-q">' + esc(r.last) + (r.last_at ? ' · ' + ago(r.last_at) : '') + '</div>') +
       '<td class="c-act">' + bike + '</td>' +
       '</tr>' + vehicleRow(r);
