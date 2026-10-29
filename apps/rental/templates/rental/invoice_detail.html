@@ -68,6 +68,7 @@
           <div class="scr-detail-row"><span class="scr-detail-label">Mobile</span><span class="scr-detail-value">{{ bill.mobile }}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">ID</span><span class="scr-detail-value">{{ bill.id_type }}{% if bill.id_no != "—" %} · {{ bill.id_no }}{% endif %}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Star Rating</span><span class="scr-detail-value">{% if bill.star_rating %}★ {{ bill.star_rating }} / 5{% else %}—{% endif %}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Rating Remarks</span><span class="scr-detail-value scr-mon-wrap">{{ bill.rating_remarks|default:"—" }}</span></div>
         </div>
       </div>
       <div class="scr-form-head" style="border-top:1px solid #f0eff7"><div class="scr-form-title-row"><h2 class="scr-form-title">Totals</h2></div></div>

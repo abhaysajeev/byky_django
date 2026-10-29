@@ -320,6 +320,11 @@ class OrderItem(TimeStampedModel):
     end_time = models.DateTimeField(null=True, blank=True)   # returned / replaced / removed (tablet time)
 
     base_fare = models.DecimalField(**MONEY)        # the package price agreed at booking
+    # The fare terms the tablet priced this line on, exactly as it sent them
+    # (owner, 29 Oct 2026): the fare can be edited later, this never is. No
+    # links to the fare's seasons or special prices -- those can be deleted;
+    # their ids live in here. Empty for lines booked without it.
+    fare_details = models.JSONField(null=True, blank=True)
     # Blank until the vehicle is returned. No discount here (it is on the
     # order's bill); VAT is inside the fare, shown once on the bill.
     run_minutes = models.PositiveIntegerField(null=True, blank=True)     # how long it actually ran
@@ -531,6 +536,8 @@ class Invoice(TimeStampedModel):
     payments = models.JSONField(default=list)      # [{mode, kind, amount, reference_no}] at issue
     # The rating the operator entered at settle, 1.0-5.0; empty when none was given.
     star_rating = models.DecimalField(max_digits=2, decimal_places=1, null=True, blank=True)
+    # What the customer said with it -- the order's, not the customer's (owner, 29 Oct 2026).
+    rating_remarks = models.TextField(blank=True)
 
     class Meta:
         db_table = "invoice"

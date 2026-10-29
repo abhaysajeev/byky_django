@@ -551,6 +551,7 @@ def _new_lines(order, items_input, refs, user, replaced_item=None):
         OrderItem(
             id=item["sync_id"], order=order, vehicle=vehicles[item["vehicle_id"]],
             fare=fares.get(item.get("fare_id")), offer=offers.get(item.get("offer_id")),
+            fare_details=item.get("fare_details"),
             package_minutes=item["package_minutes"], start_time=item["start_time"],
             expected_end_time=item["expected_end_time"], base_fare=item["base_fare"],
             replaced_item=replaced_item, created_by=user, modified_by=user,
@@ -857,7 +858,7 @@ def settle_order(session, values, request_data, reply_for):
         source = (DiscountSource.CARD if card else DiscountSource.MANAGER if manager
                   else DiscountSource.COMPLIMENTARY if free else "")
         issue_invoice(order, billed, session, at=values["settled_at"], discount_source=source,
-                      star_rating=values.get("star_rating"))
+                      star_rating=values.get("star_rating"), rating_remarks=values.get("rating_remarks", ""))
         rate_customer(order.customer_id, values.get("star_rating"), values["settled_at"])
         event = {
             "action": OrderAction.SETTLE, "happened_at": values["settled_at"],
@@ -910,7 +911,7 @@ def rate_customer(customer_id, star_rating, rated_at):
     ).update(star_rating=star_rating, star_rating_at=rated_at)
 
 
-def issue_invoice(order, billed_items, session, *, at, discount_source="", star_rating=None):
+def issue_invoice(order, billed_items, session, *, at, discount_source="", star_rating=None, rating_remarks=""):
     """The invoice for a settled order: a frozen copy of the bill, numbered by
     the order, issued by the settling tablet and operator. Only returned lines
     are billed -- replaced and removed ones are not copied."""
@@ -924,6 +925,7 @@ def issue_invoice(order, billed_items, session, *, at, discount_source="", star_
         discount_amount=order.discount_amount, discount_source=discount_source,
         tax_percentage=order.tax_percentage, tax_amount=order.tax_amount,
         rounding_adjustment=order.rounding_adjustment, net_amount=order.net_amount, star_rating=star_rating,
+        rating_remarks=rating_remarks or "",
         payments=[
             {"mode": payment.mode.name, "kind": payment.kind, "amount": str(payment.amount),
              "reference_no": payment.reference_no}

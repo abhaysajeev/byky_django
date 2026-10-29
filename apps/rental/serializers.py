@@ -112,6 +112,13 @@ class OrderItemRequest(serializers.Serializer):
     # The package price agreed now. Everything else on the bill comes later:
     # the line's final amount at return, the order's bill at settle.
     base_fare = _money_field()
+    # The fare terms the tablet priced this line on (owner, 29 Oct 2026) --
+    # fare_id, applied (base / season / special_price), season_id,
+    # special_price_id, package_minutes, base_fare, grace_minutes and the
+    # concurrent terms. Stored exactly as sent, never edited: an order keeps
+    # the terms it was booked on whatever the fare becomes. Optional for now.
+    fare_details = serializers.DictField(required=False, allow_null=True,
+                                         error_messages={"not_a_dict": "must be an object"})
 
     def validate(self, values):
         if values["expected_end_time"] < values["start_time"]:
@@ -391,6 +398,9 @@ class OrderSettleRequest(serializers.Serializer):
                         "max_decimal_places": "must have at most 1 decimal place",
                         "max_whole_digits": "must be from 1 to 5"},
     )
+    # What the customer said with the rating (owner, 29 Oct 2026) -- kept on
+    # the order's invoice, not on the customer.
+    rating_remarks = text_field(max_length=500, required=False, allow_blank=True)
 
     def validate_payments(self, payments):
         if _repeated(payment["sync_id"] for payment in payments):

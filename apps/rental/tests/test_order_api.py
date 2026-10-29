@@ -67,6 +67,15 @@ def receipt(device, branch, number):
     return devices_services.format_bill_number(counter, number)
 
 
+def fare_details(shop, **overrides):
+    """The fare terms a tablet sends with a line (owner, 29 Oct 2026): a special
+    price of the fare here, as in the Swagger example."""
+    return {"fare_id": shop["fare"].pk, "applied": "special_price", "season_id": None, "special_price_id": 31,
+            "package_minutes": 60, "base_fare": "50.00", "grace_minutes": 5,
+            "concurrent_interval_minutes": 15, "concurrent_fare": "15.00", "concurrent_grace_minutes": 3,
+            **overrides}
+
+
 def booking(world, shop, number=231, **overrides):
     """The design's 3.1 booking: MO 41 and DC 02 for an hour, AED 100 down --
     60 cash, 40 by card."""
@@ -78,7 +87,7 @@ def booking(world, shop, number=231, **overrides):
             {"sync_id": str(uuid7()), "vehicle_id": shop[code].pk, "fare_id": shop["fare"].pk,
              "package_minutes": 60,
              "start_time": "2026-10-02 16:00:00", "expected_end_time": "2026-10-02 17:00:00",
-             "base_fare": "50.00"}
+             "base_fare": "50.00", "fare_details": fare_details(shop)}
             for code in ("mo41", "dc02")
         ],
         "payments": [
