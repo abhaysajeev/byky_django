@@ -151,8 +151,13 @@ def test_customer_wise_rent_has_a_row_per_bill_day_and_credit_note_day(web, cred
         "Ahmed Al Mansoori", "Active", 1, 2, "104.760", "5.240")
     assert note["count"] == 1 and note["vehicles"] == 2
     assert [r["kind"] for r in d["rows"]] == ["data", "data"]          # no TOTAL: bills and credit notes don't add
-    only_notes = data(web, "customer-wise-rent", credit_note_no="CN", **wide)
-    assert [r["type"] for r in cells(only_notes)] == ["Credit Note"]
+
+    # No credit note, order or vehicle number filter here (owner): not in the bar, ignored in the URL.
+    ignored = data(web, "customer-wise-rent", credit_note_no="nope", order_no="nope", vehicle_no="nope", **wide)
+    assert [r["type"] for r in cells(ignored)] == ["Invoice", "Credit Note"]
+    page = web.get("/reports/customer-wise-rent/", wide).content.decode()
+    assert 'name="customer"' in page
+    assert not any(f'name="{key}"' in page for key in ("credit_note_no", "order_no", "vehicle_no"))
 
 
 # -- Customer Wise Discount Card ---------------------------------------------------------
