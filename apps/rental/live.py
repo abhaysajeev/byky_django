@@ -16,7 +16,7 @@ from decimal import Decimal
 from django.db.models import Prefetch, Q, Sum
 from django.urls import reverse
 
-from apps.rental import scoping
+from apps.rental import money, scoping
 from apps.rental.models import (
     OrderAction,
     OrderEvent,
@@ -89,6 +89,7 @@ def with_rows(orders):
     """Everything a row needs, in a fixed number of queries."""
     return orders.select_related("branch__location__state", "created_by").prefetch_related(
         Prefetch("items", queryset=OrderItem.objects.select_related("vehicle").order_by("start_time", "created_on")),
+        "payments",
         Prefetch("events", queryset=OrderEvent.objects.select_related("user").order_by("happened_at", "received_at")),
     )
 
@@ -97,7 +98,8 @@ def with_rows(orders):
 
 
 def _money(value):
-    return f"{value:.2f}" if value is not None else None
+    """AED to the 3rd decimal, as stored and billed (rental.models.MONEY)."""
+    return f"{value:.3f}" if value is not None else None
 
 
 def _local(moment, zone):
@@ -133,11 +135,18 @@ def row(order, zone):
         "order_no": order.order_no,
         "transaction_no": order.transaction_no,
         "booked": f"{booked:%H:%M} · {booked:%d %b}",
+        "booked_date": f"{booked:%d %b %Y}",
+        "booked_time": f"{booked:%H:%M}",
         "station": order.branch.name,
         "emirate": order.branch.location.state.name,
         "customer": order.customer_name or "—",
         "mobile": order.customer_mobile,
-        "vehicles": [{"no": i.vehicle.vehicle_name, "state": ITEM_STATE[i.status]} for i in items],
+        "vehicles": [{
+            "no": i.vehicle.vehicle_name, "state": ITEM_STATE[i.status],
+            "start": f"{_local(i.start_time, zone):%H:%M}",
+            "end": f"{_local(i.end_time, zone):%H:%M}" if i.end_time else None,
+            "due": f"{_local(i.expected_end_time, zone):%H:%M}" if i.expected_end_time else None,
+        } for i in items],
         "out": len(active),
         "back": sum(1 for i in items if i.status == OrderItemStatus.RETURNED),
         "start": order.start_time.isoformat(),
@@ -148,10 +157,17 @@ def row(order, zone):
         "closed_by": _closed_by(events) or "—",
         "status": order.status,
         "status_label": STATUS_LABEL[order.status],
+        # The legacy grid's amounts (DMSGetAllStatusTrackingDetailsForPartialView_New):
+        # collected, fare, deposit; once settled the bill (net less VAT), VAT,
+        # discount and net. Owner, 28 Oct 2026.
         "collected": _money(order.paid_amount),
+        "fare": _money(money.fare(order)) if order.status != OrderStatus.CANCELLED else None,
+        "deposit": _money(money.deposit(order)),
+        "bill": (_money(order.net_amount - (order.tax_amount or ZERO))
+                 if order.net_amount is not None else None),
         "net": _money(order.net_amount),
         "tax": _money(order.tax_amount),
-        "discount": _money(order.discount_amount) if order.discount_amount else None,
+        "discount": _money(order.discount_amount) if order.discount_amount is not None else None,
         "last": last_label,
         "last_at": last_at.isoformat() if last_at else None,
         "direct": order.is_direct_bill,
@@ -176,7 +192,7 @@ def kpis(user, params, day, zone):
         "running": orders.filter(status=OrderStatus.ACTIVE).count(),
         "today": booked.count(),
         "cancelled": orders.filter(status=OrderStatus.CANCELLED, cancelled_at__gte=start, cancelled_at__lt=end).count(),
-        "collected": f"{taken - refunded:,.2f}",
+        "collected": f"{taken - refunded:,.3f}",
     }
 
 
