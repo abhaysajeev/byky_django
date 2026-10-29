@@ -69,10 +69,11 @@ class CardDiscountDetails(Report):
             Column("phone", "Phone No", width=16),
             Column("start", "Start Date And Time", DATETIME, width=21),
             Column("exit", "Exit Date Time", DATETIME, width=21),
+            # Owner, 29 Oct 2026: the card discount first, left of the bill.
+            Column("discount", "Card Discount (AED)", MONEY),
             Column("bill", "Bill Amount (AED)", MONEY),
             Column("tax_pct", "Tax Percentage", PERCENT, width=10),
             Column("tax", "Tax Amount (AED)", MONEY),
-            Column("discount", "Card Discount (AED)", MONEY),
             Column("rounding", "Rounded Diff", MONEY),
             Column("received", "Amount Received (AED)", MONEY),
         ]

@@ -62,7 +62,7 @@ class Consolidated(Report):
     filters = ("state", "branch", "cashier", "device")
     unit = ("tablet-day", "tablet-days")
     empty = "No orders were booked in this range."
-    description = "Orders booked per day, station and tablet: counts, receipts and the money of the settled ones."
+    description = "Orders booked per day, branch and tablet: counts, receipts and the money of the settled ones."
 
     def build(self, ctx, page=None, per_page=None):
         f = ctx.f

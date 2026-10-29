@@ -31,9 +31,9 @@ PER_PAGE = 100
 EXPORT_LIMIT = 50_000      # rows; past this the export asks for narrower filters instead of a huge file
 STAMP = "%d/%m/%Y %I:%M %p"
 
-# The filter bar's own words -- the stations' screens say emirate and station.
+# The filter bar's own words -- State and Branch, as the client's report sheets name them.
 SCREEN_LABELS = {
-    "state": "Emirate", "branch": "Station", "cashier": "Cashier", "category": "Category",
+    "state": "State", "branch": "Branch", "cashier": "Cashier", "category": "Category",
     "vehicle_type": "Vehicle type", "card_type": "Card type", "card_grade": "Card grade",
     "asset_type": "Asset type", "customer": "Customer name", "phone": "Phone no", "order_no": "Order no",
     "vehicle_no": "Vehicle no", "credit_note_no": "Credit note no", "device": "Device name",

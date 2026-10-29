@@ -64,4 +64,4 @@ class ReplacementDetails(Report):
         orders = len({r.cells["order_no"] for r in rows})
         return paged(rows, page, per_page, columns=columns, total=None, count=len(rows),
                      kpis=[Kpi("Replacements", len(rows), COUNT), Kpi("Orders", orders, COUNT),
-                           Kpi("Stations", len({r.cells["branch"] for r in rows}), COUNT)])
+                           Kpi("Branches", len({r.cells["branch"] for r in rows}), COUNT)])
