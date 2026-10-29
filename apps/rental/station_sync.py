@@ -253,3 +253,54 @@ def request_push(request_type, subject_id, action, status, left_out, at):
     if subject is None:
         return 0
     return _send(subject.order, request_message(subject, request_type, action, status, at), list(left_out))
+
+
+# -- Test rides (apps/rental/test_rides.py) ----------------------------------------------
+
+TEST_RIDE_VERBS = {"start": "started", "end": "ended", "cancel": "cancelled", "rented": "rented"}
+
+
+def test_ride_changed(ride, action, *, device=None):
+    """After this transaction commits, tell the station's other tablets that a
+    test ride started, ended, was cancelled or was rented -- so none of them
+    offers its vehicle meanwhile. `device` acted (not told)."""
+    ride_id, device_id, at = str(ride.pk), getattr(device, "pk", device), timezone.now()
+
+    def queue():
+        try:
+            from apps.rental.tasks import station_test_ride_push
+
+            station_test_ride_push.delay(ride_id, action, device_id, at.isoformat())
+        except Exception:
+            log.warning("station sync for test ride %s not queued", ride_id, exc_info=True)
+
+    transaction.on_commit(queue)
+
+
+def _rider(ride):
+    """Who rides: the customer, or the staff member."""
+    return ride.customer_name or (ride.employee.full_name if ride.employee_id else "")
+
+
+def test_ride_message(ride, action, at):
+    from core.timezones import zone_for
+
+    return Push(
+        title=f"Test ride {ride.test_no} {TEST_RIDE_VERBS[action]}",
+        body=" · ".join(part for part in (ride.vehicle.vehicle_name, _rider(ride), ride.branch.name) if part),
+        data={"type": "test_ride_changed", "test_ride_id": str(ride.pk), "test_no": ride.test_no,
+              "vehicle_id": str(ride.vehicle_id), "action": action, "status": ride.status,
+              "branch_id": str(ride.branch_id),
+              "at": at.astimezone(zone_for(ride.company)).strftime(TIME_FORMAT)},
+        tag=f"test_ride:{ride.pk}", collapse_key=f"test_ride:{ride.pk}",
+    )
+
+
+def test_ride_push(ride_id, action, device_id, at):
+    """The worker's side of test_ride_changed. Returns how many were sent."""
+    from apps.rental.models import TestRide
+
+    ride = TestRide.objects.select_related("vehicle", "branch", "company", "employee").filter(pk=ride_id).first()
+    if ride is None:
+        return 0
+    return _send(ride, test_ride_message(ride, action, at), device_id)

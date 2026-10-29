@@ -36,6 +36,9 @@ class IssueKind(models.TextChoices):
     SERVICE_REQUEST = "service_request", "Service request"
     IMAGE_SHARE = "image_share", "Image share"
     ASSET_CHECK = "asset_check", "Asset check"
+    TEST_RIDE_START = "test_ride_start", "Test ride start"
+    TEST_RIDE_END = "test_ride_end", "Test ride end"
+    TEST_RIDE_CANCEL = "test_ride_cancel", "Test ride cancel"
 
 
 class IssueReason(models.TextChoices):

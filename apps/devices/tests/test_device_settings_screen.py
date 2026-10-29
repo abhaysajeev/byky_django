@@ -56,7 +56,7 @@ def form(branch=None, **extra):
         "round_off_mode": RoundOffMode.UPWARD,
         "round_off_step": "0.25",
         "customer_test_minutes": "5",
-        "cashier_test_minutes": "5",
+        "staff_test_minutes": "5",
     }
     if branch is not None:
         fields["branch"] = branch.pk
@@ -105,7 +105,7 @@ def test_every_problem_is_reported_at_once(rows, stations, admin):
     assert fields == {
         "Station", "Settings Code", "Order No Starting Characters", "Header 1", "Header 2",
         "Footer 1", "Paper Feed", "No of Receipt Copy", "Customer Test Time Slot",
-        "Cashier Test Time Slot", "Round Off Limit",
+        "Staff Test Time Slot", "Round Off Limit",
     }
 
 

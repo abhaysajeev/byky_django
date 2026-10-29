@@ -47,6 +47,7 @@
           <div class="scr-detail-row"><span class="scr-detail-label">Customer</span><span class="scr-detail-value">{{ order.customer_name|default:"—" }}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Mobile</span><span class="scr-detail-value">{{ order.customer_mobile|default:"—" }}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Station</span><span class="scr-detail-value">{{ order.branch.name }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Transaction No</span><span class="scr-detail-value">{{ order.transaction_no|default:"—" }}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Tablet</span><span class="scr-detail-value">{{ tablet }}{% if operator %} · {{ operator }}{% endif %}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Rental Type</span><span class="scr-detail-value">{% if order.is_direct_bill %}Direct rental{% else %}Rental{% endif %}{% if order.is_hotel_order %} · Hotel order{% endif %}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Booked</span><span class="scr-detail-value">{{ booked_at|date:"d M Y, H:i" }}</span></div>

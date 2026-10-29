@@ -86,7 +86,8 @@ def order_key(kind, company_id, request_data):
     server cannot place). A withdraw / used / cancel names its parent, not the
     order: the parent's order if the parent is on the server, else the order
     of the parked parent call."""
-    if kind in (IssueKind.ATTENDANCE, IssueKind.SERVICE_REQUEST, IssueKind.IMAGE_SHARE, IssueKind.ASSET_CHECK):
+    if kind in (IssueKind.ATTENDANCE, IssueKind.SERVICE_REQUEST, IssueKind.IMAGE_SHARE, IssueKind.ASSET_CHECK,
+                IssueKind.TEST_RIDE_START, IssueKind.TEST_RIDE_END, IssueKind.TEST_RIDE_CANCEL):
         return None                    # not about an order: nothing to queue behind
     if kind == IssueKind.BOOKING:
         return uuid_or_none(request_data.get("sync_id"))
@@ -271,6 +272,7 @@ def views():
         ServiceRequestCreateView,
     )
     from apps.rental import api as rental
+    from apps.rental import test_ride_api
 
     classes = (
         rental.OrderCreateView, rental.OrderAddView, rental.OrderReplaceView, rental.OrderRemoveView,
@@ -278,6 +280,7 @@ def views():
         rental.CreditNoteRequestView, rental.CreditNoteCancelView, rental.OrderRequestView,
         rental.OrderRequestWithdrawView, rental.OrderRequestUsedView, ApprovalRequestView,
         AttendanceMarkView, ServiceRequestCreateView, ImageShareCreateView, AssetCheckCreateView,
+        test_ride_api.TestRideStartView, test_ride_api.TestRideEndView, test_ride_api.TestRideCancelView,
     )
     return {cls.park_kind: cls for cls in classes}
 

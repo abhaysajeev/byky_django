@@ -57,7 +57,7 @@ def test_the_legacy_codes_become_the_words_they_meant():
 def test_a_missing_test_slot_falls_back_to_five_minutes():
     """The tablet proc's own ISNULL(TestTimeSlot, 5)."""
     rows = [d for _, d, *_ in legacy.settings()]
-    assert all(d["customer_test_minutes"] > 0 and d["cashier_test_minutes"] > 0 for d in rows)
+    assert all(d["customer_test_minutes"] > 0 and d["staff_test_minutes"] > 0 for d in rows)
 
 
 def test_whatsapp_starts_off_because_the_legacy_had_no_such_column():

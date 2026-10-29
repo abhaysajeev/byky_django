@@ -236,6 +236,7 @@ _OPERATOR_LOGIN_SUCCESS_DATA = {
         "settings_code": "S01", "station": "Creek Park 1", "logo": "iVBORw0KGgoAAAANSUhEUgAA...",
     },
     "order_no_prefix": "AUH01", "last_order_no": "AUH0160182000334", "next_order_number": 335, "next_test_number": 6,
+    "transaction_no_prefix": "AUH01-A", "last_transaction_no": "AUH01-A-12",
 }
 
 _MANAGER_LOGIN_SUCCESS_DATA = {

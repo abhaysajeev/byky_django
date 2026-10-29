@@ -71,7 +71,7 @@
         <tbody>
           {% for r in rows %}
           <tr class="scr-mon-row" data-scr-href="{{ r.detail_url }}">
-            <td><a class="scr-mon-time" href="{{ r.detail_url }}">{{ r.order_no }}<span>{{ r.booked_at|date:"d M Y, H:i" }}</span></a></td>
+            <td><a class="scr-mon-time" href="{{ r.detail_url }}">{{ r.order_no }}<span>{% if r.transaction_no %}{{ r.transaction_no }} · {% endif %}{{ r.booked_at|date:"d M Y, H:i" }}</span></a></td>
             <td><div class="scr-co-name">{{ r.customer|default:"—" }}</div><div class="scr-contact-sub">{{ r.mobile }}</div></td>
             <td><div class="scr-contact">{{ r.station }}</div><div class="scr-contact-sub">Tablet {{ r.tablet }}</div></td>
             <td>

@@ -46,7 +46,20 @@ DEVICE_MAPPING = {
                     ),
                 },
             ],
-        }
+        },
+        {
+            # Filled and shown by byky-device-mapping.js from the chosen
+            # station: its order prefix (read only), and -- at a multi-device
+            # station only -- the tablet's letter: DUP - [A] -> DUP-A-1.
+            "title": "Transaction No Prefix",
+            "fields": [
+                {"id": "transaction_prefix", "label": "Order Prefix", "kind": "text", "readonly": True,
+                 "placeholder": "Choose a station", "width": 3},
+                {"id": "transaction_letter", "label": "Letter", "kind": "text", "required": False, "width": 3,
+                 "placeholder": "A",
+                 "help": "One letter, A to Z, for this tablet at a multi-device station: DUP-A-1."},
+            ],
+        },
     ],
 }
 
@@ -257,8 +270,8 @@ DEVICE_SETTINGS = {
                  "default": "0.25", "options_from": "round_off_steps"},
                 {"id": "customer_test_minutes", "label": "Customer Test Time Slot (Min)", "kind": "number",
                  "required": True, "help": "How long a customer may try a vehicle before it counts as a rental."},
-                {"id": "cashier_test_minutes", "label": "Cashier Test Time Slot (Min)", "kind": "number",
-                 "required": True, "help": "The same, for a cashier checking a vehicle."},
+                {"id": "staff_test_minutes", "label": "Staff Test Time Slot (Min)", "kind": "number",
+                 "required": True, "help": "The same, for a staff member checking a vehicle."},
             ],
         },
     ],

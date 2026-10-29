@@ -211,6 +211,9 @@ class DeviceTrust(TimeStampedModel):
         return f"{self.user} on {self.device}"
 
 
+TRANSACTION_LETTER = RegexValidator(r"^[A-Z]$", "One capital letter, A to Z.")
+
+
 class DeviceMapping(TimeStampedModel):
     """Which station a device was at, and since when.
 
@@ -235,6 +238,12 @@ class DeviceMapping(TimeStampedModel):
     approved. The legacy's mapping-level Reject is also where its worst bug
     lived -- it cleared IsActive but left ToDate null, so the device stayed
     un-mappable for ever (DeviceMappingModels.cs:321).
+
+    `transaction_letter` (owner, 28 Oct 2026): at a multi-device station, the
+    tablet's letter in its transaction numbers -- DUP-A-1, DUP-B-1. Only the
+    letter is stored; the prefix is always the station's current order prefix
+    (services.transaction_no_prefix). Unlike the station, it may be changed on
+    the open row: it is a label, not history.
     """
 
     device = models.ForeignKey(Device, on_delete=models.PROTECT, related_name="mappings")
@@ -243,6 +252,8 @@ class DeviceMapping(TimeStampedModel):
     )
     from_date = models.DateTimeField()
     to_date = models.DateTimeField(null=True, blank=True)
+    transaction_letter = models.CharField(
+        "Transaction letter", max_length=1, blank=True, validators=[TRANSACTION_LETTER])
 
     class Meta:
         db_table = "device_mapping"
@@ -259,6 +270,16 @@ class DeviceMapping(TimeStampedModel):
             models.CheckConstraint(
                 condition=Q(to_date__isnull=True) | Q(to_date__gte=F("from_date")),
                 name="device_mapping_dates_in_order",
+            ),
+            # Two tablets at one station never share a letter.
+            models.UniqueConstraint(
+                fields=["branch", "transaction_letter"],
+                condition=Q(to_date__isnull=True) & ~Q(transaction_letter=""),
+                name="uniq_open_transaction_letter_per_branch",
+            ),
+            models.CheckConstraint(
+                condition=Q(transaction_letter="") | Q(transaction_letter__regex=r"^[A-Z]$"),
+                name="device_mapping_transaction_letter_a_to_z",
             ),
         ]
         indexes = [
@@ -591,12 +612,12 @@ class DeviceSettings(ApprovalMixin, TimeStampedModel):
         "Order No Starting Characters", max_length=5, validators=[ORDER_NO_PREFIX]
     )
 
-    # Test rides: how long a customer or a cashier may ride before returning.
+    # Test rides: how long a customer or a staff member may ride before returning.
     customer_test_minutes = models.PositiveSmallIntegerField(
         "Customer Test Time Slot (Min)", default=5
     )
-    cashier_test_minutes = models.PositiveSmallIntegerField(
-        "Cashier Test Time Slot (Min)", default=5
+    staff_test_minutes = models.PositiveSmallIntegerField(
+        "Staff Test Time Slot (Min)", default=5
     )
 
     round_off_mode = models.CharField(
@@ -645,7 +666,7 @@ class DeviceSettings(ApprovalMixin, TimeStampedModel):
                 name="device_settings_receipt_copies_1_to_10",
             ),
             models.CheckConstraint(
-                condition=Q(customer_test_minutes__gt=0, cashier_test_minutes__gt=0),
+                condition=Q(customer_test_minutes__gt=0, staff_test_minutes__gt=0),
                 name="device_settings_test_minutes_positive",
             ),
         ]

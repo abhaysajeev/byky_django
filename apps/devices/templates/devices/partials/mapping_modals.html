@@ -24,6 +24,10 @@ No date is typed: mapping is stamped when it is saved, as the legacy did. Needs 
         {% for b in remap_stations %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}
       </select>
     </div>
+    <div class="scr-field" data-remap-tx hidden>
+      <label class="scr-label" for="remap-letter">Transaction No Prefix</label>
+      <div class="scr-dev-txprefix"><input type="text" class="scr-input" data-remap-prefix readonly aria-label="Order prefix" /><span>-</span><input type="text" id="remap-letter" class="scr-input" data-remap-letter maxlength="1" placeholder="A" aria-label="Letter" /></div>
+    </div>
     <p class="scr-dev-hint" data-remap-hint>The move takes effect now: the current mapping ends and the new one starts at this moment.</p>
     <p class="scr-dev-hint text-danger" data-mapping-logout hidden>Someone is logged in on this device. They will be logged out, and must log in again to work at the new station.</p>
   </div>
@@ -51,5 +55,30 @@ No date is typed: mapping is stamped when it is saved, as the legacy did. Needs 
   <div class="scr-modal-foot scr-dev-foot">
     <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
     <button type="button" class="scr-btn-danger" data-unmap-go>Close mapping</button>
+  </div>
+</div>
+
+
+<div class="scr-modal-veil" data-scr-modal-veil="device-letter" hidden></div>
+<div class="scr-modal scr-dev-modal" data-scr-modal="device-letter" hidden>
+  <div class="scr-modal-head">
+    <div>
+      <div class="scr-modal-title" data-letter-title>Transaction letter</div>
+      <p class="scr-modal-sub" data-letter-sub></p>
+    </div>
+    <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+    </button>
+  </div>
+  <div class="scr-modal-body scr-dev-fields">
+    <div class="scr-field">
+      <label class="scr-label" for="letter-box">Transaction No Prefix</label>
+      <div class="scr-dev-txprefix"><input type="text" class="scr-input" data-letter-prefix readonly aria-label="Order prefix" /><span>-</span><input type="text" id="letter-box" class="scr-input" data-letter-box maxlength="1" placeholder="A" aria-label="Letter" /></div>
+    </div>
+    <p class="scr-dev-hint">One letter, A to Z, unique at this station. The tablet numbers its bookings DUP-A-1, DUP-A-2… from its next login. Leave it empty for no letter.</p>
+  </div>
+  <div class="scr-modal-foot scr-dev-foot">
+    <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+    <button type="button" class="scr-btn-primary" data-letter-go>Save</button>
   </div>
 </div>
