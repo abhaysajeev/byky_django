@@ -109,14 +109,6 @@ class RentDetails(Report):
     def size(self, ctx):
         return self.orders(ctx).count()
 
-    def screen_columns(self, columns):
-        """On screen the vehicles follow the order's status, where the eye reads
-        the order; in the sheet they stay where the client put them."""
-        lines = [c for c in columns if c.part == "line"]
-        rest = [c for c in columns if c.part != "line"]
-        at = next(i for i, c in enumerate(rest) if c.key == "status") + 1
-        return rest[:at] + lines + rest[at:]
-
     def columns(self, with_other):
         order = "order"
         return [

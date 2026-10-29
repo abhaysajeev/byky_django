@@ -54,6 +54,9 @@
 }
 .rpt-btn:hover { border-color: #bdb9d3; color: var(--ink); }
 .rpt-btn-primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+/* Runs the report with the filters set -- ink, so Export stays the one red action. */
+.rpt-btn-apply { background: var(--ink); border-color: var(--ink); color: #fff; }
+.rpt-btn-apply:hover { background: #2c2760; border-color: #2c2760; color: #fff; }
 .rpt-btn-primary:hover { background: var(--brand-hover); border-color: var(--brand-hover); color: #fff; }
 .rpt-btn:focus-visible, .rpt-text-btn:focus-visible, .rpt-input:focus-visible, .rpt-frame:focus-visible {
   outline: 2px solid rgba(204, 0, 0, .35); outline-offset: 1px;

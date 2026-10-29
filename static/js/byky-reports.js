@@ -153,8 +153,8 @@
     prev.type = next.type = 'button';
     prev.disabled = data.page <= 1;
     next.disabled = data.page >= data.pages;
-    prev.addEventListener('click', function () { load(data.page - 1); });
-    next.addEventListener('click', function () { load(data.page + 1); });
+    prev.addEventListener('click', function () { load(data.page - 1, appliedQuery(data.page - 1)); });
+    next.addEventListener('click', function () { load(data.page + 1, appliedQuery(data.page + 1)); });
     nav.appendChild(prev);
     nav.appendChild(next);
     pager.appendChild(nav);
@@ -213,8 +213,16 @@
     return params.toString();
   }
 
-  function load(pageNo) {
-    var qs = query(pageNo);
+  // The filters as last applied (the server's normalised query), plus a page --
+  // paging never picks up a filter that was edited but not applied.
+  function appliedQuery(pageNo) {
+    var params = new URLSearchParams(current.query || '');
+    if (pageNo > 1) params.set('page', pageNo);
+    return params.toString();
+  }
+
+  function load(pageNo, qs) {
+    if (qs === undefined) qs = query(pageNo);
     history.replaceState(null, '', qs ? '?' + qs : location.pathname);
     var mine = ++seq;
     frame.classList.add('is-loading');
@@ -266,20 +274,15 @@
     badge.textContent = n;
   }
 
-  var timer;
+  // The report runs on Apply (or Enter in any filter), never on each change: a
+  // date-time input fires a change per part edited, and a report is heavy.
+  // A change only re-narrows the dependent dropdowns and the More filters count.
   form.addEventListener('submit', function (e) { e.preventDefault(); load(1); });
   form.addEventListener('change', function (e) {
     if (e.target.matches('select')) cascadeAll();
-    if (e.target.matches('[data-rpt-text]')) return;      // typed: handled on input
     countMore();
-    load(1);
   });
-  form.addEventListener('input', function (e) {
-    if (!e.target.matches('[data-rpt-text]')) return;
-    countMore();
-    clearTimeout(timer);
-    timer = setTimeout(function () { load(1); }, 300);
-  });
+  form.addEventListener('input', countMore);
 
   var more = $('[data-rpt-more]');
   if (more) {
