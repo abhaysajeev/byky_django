@@ -624,6 +624,10 @@ class ManagerBranchesRequest(serializers.Serializer):
     state_id = whole_number_field(min_value=1, required=False, allow_null=True)
 
 
+class ManagerCategoriesRequest(serializers.Serializer):
+    """No fields -- the categories of the signed-in manager's company."""
+
+
 class ManagerVehicleTypesRequest(serializers.Serializer):
     category_id = whole_number_field(min_value=1, required=False, allow_null=True)
 
@@ -653,6 +657,10 @@ class CollectionsByStateRequest(DateRangeRequest):
 class CollectionsByBranchRequest(DateRangeRequest):
     # Optional: one state's stations; left out, every station (owner, 29 Oct 2026).
     state_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    # Optional (owner, 29 Oct 2026): one station; a category's / vehicle type's share.
+    branch_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    category_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    vehicle_type_id = whole_number_field(min_value=1, required=False, allow_null=True)
 
 
 class BranchOrdersRequest(DateRangeRequest):

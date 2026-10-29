@@ -248,7 +248,21 @@ call without `state_id` can build both pickers (group by `state_id`).
 **Store:** `state_id → name`, `branch_id → name, state_id`. Use the ids, never
 the names, in later calls.
 
-### 4.3 Vehicle types — `POST /api/v1/manager/vehicle-types`
+### 4.3 Categories — `POST /api/v1/manager/categories`
+
+Request: `{ "credentials": {}, "request_data": {} }` — no fields.
+
+```json
+{ "code": "ok", "message": "Categories.", "data": { "categories": [
+    { "category_id": 1, "code": "BYKY", "name": "BYKY" }
+] } }
+```
+
+The company's **active, approved** vehicle categories, sorted by name — the
+master. Not paged. `category_id` is what `vehicle-types` and the
+collections-per-station report (§6.2) take.
+
+### 4.4 Vehicle types — `POST /api/v1/manager/vehicle-types`
 
 | Field | Required | Notes |
 |---|---|---|
@@ -264,7 +278,7 @@ The company's **active, approved** vehicle types, sorted by name — the
 master, not tied to a station. Not paged. Feeds the vehicle type picker of
 the orders report (§6.3).
 
-### 4.4 Vehicles — `POST /api/v1/manager/vehicles/list`
+### 4.5 Vehicles — `POST /api/v1/manager/vehicles/list`
 
 | Field | Required | Notes |
 |---|---|---|
@@ -469,8 +483,13 @@ pull-to-refresh), and stop when the app is in the background.
 |---|---|---|
 | `from_date`, `to_date` | **yes** | As above |
 | `state_id` | no | From `states` (or the row tapped in 6.1). Leave out for **every** station, grouped by state |
+| `branch_id` | no | From `branches` — one station; not yours → `unknown_branch` (404) |
+| `category_id` | no | From `categories` — that category's **share** (below) |
+| `vehicle_type_id` | no | From `vehicle-types` — that type's **share** (below) |
 
-**With `state_id`:** `from_date`, `to_date`, `state_id`, `branches[]`
+The four filters are echoed back (`null` when not sent).
+
+**With `state_id`:** `from_date`, `to_date`, the filters, `branches[]`
 (`branch_id`, `code`, `name`, `orders`, `net_amount`, `credit_notes`,
 `card_payment`, `cash_payment`) and the `total` (`orders`, `net_amount`,
 `credit_notes`, `total_card_payment`, `total_cash_payment`).
@@ -481,6 +500,7 @@ pull-to-refresh), and stop when the app is in the background.
 ```json
 { "code": "ok", "message": "Collections.", "data": {
   "from_date": "2026-10-01", "to_date": "2026-10-08", "state_id": null,
+  "branch_id": null, "category_id": null, "vehicle_type_id": null,
   "states": [
     { "state_id": 2, "code": "DXB", "name": "Dubai",
       "branches": [
@@ -502,7 +522,28 @@ pull-to-refresh), and stop when the app is in the background.
 
 Either way, active stations are always listed (0 when nothing sold); a
 closed station only if it sold in the range; a state only if it has a listed
-station. Not paged.
+station. Not paged. `branch_id` without `state_id` gives the grouped shape
+with one state and one station; a station outside the sent state gives an
+empty list.
+
+**Category / vehicle type share.** With `category_id` or `vehicle_type_id`
+the shape is the same and the figures are that category's or type's share
+of the settled orders:
+
+- `net_amount` is the billed lines of its vehicles: base fare + overtime,
+  **before** the bill's discount, VAT and rounding.
+- `orders` is the settled orders with at least one such vehicle on the bill.
+- `credit_notes`, `card_payment`, `cash_payment` and their totals are
+  **`null`**, because they belong to the whole bill.
+- Only vehicles on the bill count; replaced and removed vehicles are not
+  billed.
+- A vehicle counts under its **current** type.
+- A type outside the chosen category gives 0.
+
+```json
+{ "branch_id": 7, "code": "CPG1", "name": "Creek Park Gate 1", "orders": 40,
+  "net_amount": "1800.000", "credit_notes": null, "card_payment": null, "cash_payment": null }
+```
 
 `card_payment` / `cash_payment` — what the station's settled orders in the
 range were paid by card and by cash: advance and settlement, less refunds. A
