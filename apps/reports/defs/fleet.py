@@ -14,16 +14,12 @@ from django.db.models import Q
 from apps.fleet.scoping import assets_for, vehicles_for
 from apps.reports.base import COUNT, DATE, Column, Kpi, Report, Row, paged
 from apps.reports.common import employee_name
-from core.enums import ApprovalStatus
 
 NOWHERE = "Not at a station"
 
 
 def _status(item):
-    if item.approval_status == ApprovalStatus.PENDING:
-        return "Pending approval"
-    if item.approval_status == ApprovalStatus.REJECTED:
-        return "Rejected"
+    """Active or Inactive -- as the Inventory screens show it (is_active)."""
     return "Active" if item.is_active else "Inactive"
 
 

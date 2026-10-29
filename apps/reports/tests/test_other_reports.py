@@ -198,12 +198,13 @@ def test_asset_details_with_custodian_and_status(web, world):
     camera = AssetType.objects.create(company=world["company"], asset_type_name="Camera")
     Asset.objects.create(company=world["company"], asset_code="CCTV001", asset_type=camera, branch=world["adc1"],
                          serial_no="SN-1", approval_status=ApprovalStatus.APPROVED)
-    Asset.objects.create(company=world["company"], asset_code="CCTV002", asset_type=camera)
+    Asset.objects.create(company=world["company"], asset_code="CCTV002", asset_type=camera, is_active=False)
 
     rows = cells(data(web, "asset-details"))
 
+    # Active or Inactive only, as the Inventory screens show it.
     assert [(r["branch"], r["code"], r["type_count"], r["status"]) for r in rows] == [
-        ("Abu Dhabi Corniche 1", "CCTV001", 1, "Active"), ("Not at a station", "CCTV002", 1, "Pending approval")]
+        ("Abu Dhabi Corniche 1", "CCTV001", 1, "Active"), ("Not at a station", "CCTV002", 1, "Inactive")]
     assert data(web, "asset-details", asset="SN-1")["count"] == 1
 
 
