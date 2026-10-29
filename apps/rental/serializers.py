@@ -641,7 +641,8 @@ class CollectionsByStateRequest(DateRangeRequest):
 
 
 class CollectionsByBranchRequest(DateRangeRequest):
-    state_id = whole_number_field(min_value=1)
+    # Optional: one state's stations; left out, every station (owner, 29 Oct 2026).
+    state_id = whole_number_field(min_value=1, required=False, allow_null=True)
 
 
 class BranchOrdersRequest(DateRangeRequest):

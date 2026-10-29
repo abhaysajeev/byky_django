@@ -130,7 +130,25 @@ def test_collections_per_station_of_one_state(client, world, manager, settled, d
         ("Creek Park Old", 1, "110.000"), ("Creek Park Gate 1", 0, "0.000")]
     assert data["total"]["net_amount"] == "110.000"
     assert get(client, manager, BY_BRANCH, state_id=world["adc1"].location.state_id, **DAY)["total"] == {
-        "orders": 0, "net_amount": "0.000", "credit_notes": "0.000"}
+        "orders": 0, "net_amount": "0.000", "credit_notes": "0.000",
+        "total_card_payment": "0.000", "total_cash_payment": "0.000"}
+
+
+def test_every_station_with_card_and_cash_when_no_state_is_sent(client, world, manager, settled, dubai):
+    """Owner, 29 Oct 2026: state_id optional; card and cash payments per station
+    and in the total. The settled order took 100.000 cash at booking and
+    10.000 by card at settle."""
+    data = get(client, manager, BY_BRANCH, **DAY)
+
+    assert data["state_id"] is None
+    names = [b["name"] for b in data["branches"]]
+    assert set(names) == {"Abu Dhabi Corniche 1", "Abu Dhabi Corniche 2", "Creek Park Gate 1"}
+    [sold] = [b for b in data["branches"] if b["orders"]]
+    assert (sold["net_amount"], sold["card_payment"], sold["cash_payment"]) == ("110.000", "10.000", "100.000")
+    assert data["total"] == {"orders": 1, "net_amount": "110.000", "credit_notes": "0.000",
+                             "total_card_payment": "10.000", "total_cash_payment": "100.000"}
+    sample = reports_sample("_BY_BRANCH_SAMPLE")
+    assert shape({**data, "state_id": 0}) == shape({**sample, "state_id": 0})
 
 
 @pytest.mark.parametrize(("dates", "field"), [

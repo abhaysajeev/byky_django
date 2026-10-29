@@ -155,9 +155,10 @@ _BY_BRANCH_SAMPLE = {
     "from_date": "2026-10-01", "to_date": "2026-10-08", "state_id": 2,
     "branches": [
         {"branch_id": 7, "code": "CPG1", "name": "Creek Park Gate 1", "orders": 128, "net_amount": "5320.000",
-         "credit_notes": "0.000"},
+         "credit_notes": "0.000", "card_payment": "2200.000", "cash_payment": "3120.000"},
     ],
-    "total": {"orders": 412, "net_amount": "18450.500", "credit_notes": "70.000"},
+    "total": {"orders": 412, "net_amount": "18450.500", "credit_notes": "70.000",
+              "total_card_payment": "7350.250", "total_cash_payment": "11100.250"},
 }
 
 
@@ -191,15 +192,21 @@ class CollectionsByBranchView(_ManagerView):
 
     @extend_schema(
         tags=["Manager Reports"],
-        summary="Collections per station of one state",
-        description="Settled sales per station of the state `state_id`, highest first, and the state's "
-                    "`total`. Every active station is listed (0 when it sold nothing); a closed station only "
-                    "when it sold in the range. A state with no stations of yours answers an empty list."
-                    + _COLLECTIONS,
+        summary="Collections per station (one state, or all)",
+        description="Settled sales per station, highest first, and the `total`. `state_id` is optional: "
+                    "send it for one state's stations, leave it out for **every** station of your company "
+                    "(`state_id` comes back `null`). Every active station is listed (0 when it sold nothing); "
+                    "a closed station only when it sold in the range. A state with no stations of yours "
+                    "answers an empty list.\n\n"
+                    "**`card_payment` / `cash_payment`** -- what the station's settled orders in the range "
+                    "were paid by card and by cash: advance and settlement, less refunds. A payment mode "
+                    "is matched by its name containing \"card\" / \"cash\"; other modes (e.g. cheque) are "
+                    "in neither. `total_card_payment` / `total_cash_payment` add them up." + _COLLECTIONS,
         request=envelope_request("CollectionsByBranchEnvelope", CollectionsByBranchRequest),
         responses=envelope_responses(
             (200, "ok", "Collections.", _BY_BRANCH_SAMPLE),
-            (400, "invalid_request", "state_id is required.", {"errors": {"state_id": "is required"}}),
+            (400, "invalid_request", "state_id must be a whole number.",
+             {"errors": {"state_id": "must be a whole number"}}),
             _DATES_INVALID, *_COMMON,
         ),
     )
@@ -207,11 +214,11 @@ class CollectionsByBranchView(_ManagerView):
         values, companies, zone, refused = self.values(request, app)
         if refused:
             return refused
-        rows, total = reports.collections_by_branch(companies, values["state_id"], values["from_date"],
+        rows, total = reports.collections_by_branch(companies, values.get("state_id"), values["from_date"],
                                                     values["to_date"], zone)
         return envelope("ok", "Collections.", {
             "from_date": values["from_date"].isoformat(), "to_date": values["to_date"].isoformat(),
-            "state_id": values["state_id"], "branches": rows, "total": total})
+            "state_id": values.get("state_id"), "branches": rows, "total": total})
 
 
 # -- Order details ------------------------------------------------------------------------
