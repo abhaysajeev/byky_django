@@ -41,6 +41,10 @@ urlpatterns = [
     path("requests/revoke", api.ManagerRequestRevokeView.as_view(), name="api-app-request-revoke"),
     path("states", manager_api.StatesView.as_view(), name="api-app-states"),
     path("branches", manager_api.BranchesView.as_view(), name="api-app-branches"),
+    path("categories", manager_api.CategoriesView.as_view(), name="api-app-categories"),
+    path("vehicle-types", manager_api.VehicleTypesView.as_view(), name="api-app-vehicle-types"),
+    # Not "vehicles": that is the operator app's vehicles at its station (apps/fleet).
+    path("vehicles/list", manager_api.VehicleListView.as_view(), name="api-app-vehicle-list"),
     path("reports/collections/states", manager_api.CollectionsByStateView.as_view(),
          name="api-app-collections-states"),
     path("reports/collections/branches", manager_api.CollectionsByBranchView.as_view(),

@@ -624,6 +624,20 @@ class ManagerBranchesRequest(serializers.Serializer):
     state_id = whole_number_field(min_value=1, required=False, allow_null=True)
 
 
+class ManagerCategoriesRequest(serializers.Serializer):
+    """No fields -- the categories of the signed-in manager's company."""
+
+
+class ManagerVehicleTypesRequest(serializers.Serializer):
+    category_id = whole_number_field(min_value=1, required=False, allow_null=True)
+
+
+class ManagerVehiclesRequest(serializers.Serializer):
+    vehicle_type_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    search = serializers.CharField(max_length=50, required=False, allow_blank=True, allow_null=True, default="")
+    page = whole_number_field(min_value=1, required=False, default=1)
+
+
 class DateRangeRequest(serializers.Serializer):
     """Both dates required, company time, both included."""
 
@@ -641,11 +655,20 @@ class CollectionsByStateRequest(DateRangeRequest):
 
 
 class CollectionsByBranchRequest(DateRangeRequest):
-    state_id = whole_number_field(min_value=1)
+    # Optional: one state's stations; left out, every station (owner, 29 Oct 2026).
+    state_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    # Optional (owner, 29 Oct 2026): one station; a category's / vehicle type's share.
+    branch_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    category_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    vehicle_type_id = whole_number_field(min_value=1, required=False, allow_null=True)
 
 
 class BranchOrdersRequest(DateRangeRequest):
-    branch_id = whole_number_field(min_value=1)
+    # All optional: none sent is the whole company (owner, 29 Oct 2026).
+    state_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    branch_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    vehicle_type_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    vehicle_id = whole_number_field(min_value=1, required=False, allow_null=True)
     order_status = serializers.ChoiceField(
         choices=["all", "running", "partially_received", "awaiting_settlement", "fully_received", "cancelled"],
         required=False, default="all",
