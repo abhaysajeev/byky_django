@@ -53,6 +53,7 @@ data-url with the same query string the Export link carries.
       {% endif %}
       {% for b in primary_bar %}{% include "reports/_field.html" %}{% endfor %}
       <div class="rpt-bar-tools">
+        <button type="submit" class="rpt-btn rpt-btn-apply" data-rpt-apply>Apply filters</button>
         {% if more_bar %}
         <button type="button" class="rpt-btn" data-rpt-more aria-expanded="false" aria-controls="rpt-more">
           More filters <span class="rpt-badge" data-rpt-applied hidden></span>
