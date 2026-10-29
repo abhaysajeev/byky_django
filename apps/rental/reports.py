@@ -31,6 +31,8 @@ from apps.rental.models import (
     OrderItem,
     OrderItemStatus,
     OrderStatus,
+    Payment,
+    PaymentKind,
 )
 
 TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
@@ -139,13 +141,47 @@ def collections_by_state(company_ids, start, end, zone):
     return rows, _total(rows)
 
 
+def _payments_by_branch(company_ids, start, end, zone):
+    """{branch_id: (card, cash)} -- what the orders settled in the range were
+    paid by card and by cash (advance and settlement, less refunds). A payment
+    mode is a name per company (company.PaymentMode), so card and cash are the
+    modes whose name contains "card" / "cash" (owner, 29 Oct 2026)."""
+    since, until = day_bounds(start, end, zone)
+    payments = (Payment.objects
+                .filter(order__invoice__company_id__in=company_ids, order__invoice__issued_at__gte=since,
+                        order__invoice__issued_at__lt=until)
+                .values("order__invoice__branch_id", "mode__name", "kind").annotate(total=Sum("amount")).order_by())
+    figures = {}
+    for row in payments:
+        name = row["mode__name"].lower()
+        slot = 0 if "card" in name else 1 if "cash" in name else None
+        if slot is None:
+            continue
+        sign = -1 if row["kind"] == PaymentKind.REFUND else 1
+        entry = figures.setdefault(row["order__invoice__branch_id"], [ZERO, ZERO])
+        entry[slot] += sign * (row["total"] or ZERO)
+    return {branch_id: tuple(entry) for branch_id, entry in figures.items()}
+
+
 def collections_by_branch(company_ids, state_id, start, end, zone):
+    """Per station -- of one state, or (no `state_id`) every station -- with
+    the card and cash payments of its settled orders, and the totals."""
     figures = _collections_by_branch(company_ids, start, end, zone)
-    rows = _sorted([
-        {"branch_id": b.pk, "code": b.short_code, "name": b.name, **_row(*figures.get(b.pk, (0, ZERO, ZERO)))}
-        for b in _listed_branches(company_ids, figures).filter(location__state_id=state_id)
-    ])
-    return rows, _total(rows)
+    paid = _payments_by_branch(company_ids, start, end, zone)
+    branches = _listed_branches(company_ids, figures)
+    if state_id:
+        branches = branches.filter(location__state_id=state_id)
+    rows = []
+    for b in branches:
+        card, cash = paid.get(b.pk, (ZERO, ZERO))
+        rows.append({"branch_id": b.pk, "code": b.short_code, "name": b.name,
+                     **_row(*figures.get(b.pk, (0, ZERO, ZERO))),
+                     "card_payment": _money(card), "cash_payment": _money(cash)})
+    rows = _sorted(rows)
+    total = {**_total(rows),
+             "total_card_payment": _money(sum((Decimal(r["card_payment"]) for r in rows), ZERO)),
+             "total_cash_payment": _money(sum((Decimal(r["cash_payment"]) for r in rows), ZERO))}
+    return rows, total
 
 
 # -- Order details ------------------------------------------------------------------------
