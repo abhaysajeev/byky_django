@@ -19,6 +19,7 @@ from drf_spectacular.utils import extend_schema
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
+from apps.company.models import Branch
 from apps.company.scoping import companies_for
 from apps.discount import services as discount_services
 from apps.discount.models import CardDiscountClaim
@@ -31,6 +32,7 @@ from apps.rental.serializers import (
     CollectionsByStateRequest,
     ManagerApprovalListRequest,
     ManagerBranchesRequest,
+    ManagerCategoriesRequest,
     ManagerClaimDecisionRequest,
     ManagerCreditNoteApproveRequest,
     ManagerCreditNoteRejectRequest,
@@ -88,6 +90,9 @@ class _ManagerView(APIView):
 _STATES_SAMPLE = {"states": [
     {"state_id": 2, "code": "DXB", "name": "Dubai", "branch_count": 6},
     {"state_id": 1, "code": "AUH", "name": "Abu Dhabi", "branch_count": 5},
+]}
+_CATEGORIES_SAMPLE = {"categories": [
+    {"category_id": 1, "code": "BYKY", "name": "BYKY"},
 ]}
 _VEHICLE_TYPES_SAMPLE = {"vehicle_types": [
     {"vehicle_type_id": 4, "name": "Monaco", "category_id": 1, "category": "BYKY"},
@@ -148,6 +153,28 @@ class BranchesView(_ManagerView):
         if refused:
             return refused
         return envelope("ok", "Branches.", {"branches": reports.branches(companies, values.get("state_id"))})
+
+
+class CategoriesView(_ManagerView):
+    """POST /api/v1/{app}/categories -- manager app only."""
+
+    form_class = ManagerCategoriesRequest
+
+    @extend_schema(
+        tags=["Manager Masters"],
+        summary="The company's vehicle categories",
+        description="Every **active, approved** vehicle category of your company, by name -- the master, "
+                    "not tied to a station. `category_id` is what `vehicle-types` and "
+                    "`reports/collections/branches` take. `request_data` may be empty.",
+        request=envelope_request("ManagerCategoriesEnvelope", ManagerCategoriesRequest,
+                                 request_data_required=False),
+        responses=envelope_responses((200, "ok", "Categories.", _CATEGORIES_SAMPLE), *_COMMON),
+    )
+    def post(self, request, app):
+        _, companies, _, refused = self.values(request, app)
+        if refused:
+            return refused
+        return envelope("ok", "Categories.", {"categories": reports.categories(companies)})
 
 
 class VehicleTypesView(_ManagerView):
@@ -225,8 +252,9 @@ _BY_STATE_SAMPLE = {
     ],
     "total": _TOTAL,
 }
+_NO_FILTER = {"branch_id": None, "category_id": None, "vehicle_type_id": None}
 _BY_BRANCH_SAMPLE = {
-    "from_date": "2026-10-01", "to_date": "2026-10-08", "state_id": 2,
+    "from_date": "2026-10-01", "to_date": "2026-10-08", "state_id": 2, **_NO_FILTER,
     "branches": [
         {"branch_id": 7, "code": "CPG1", "name": "Creek Park Gate 1", "orders": 128, "net_amount": "5320.000",
          "credit_notes": "0.000", "card_payment": "2200.000", "cash_payment": "3120.000"},
@@ -235,7 +263,7 @@ _BY_BRANCH_SAMPLE = {
               "total_card_payment": "7350.250", "total_cash_payment": "11100.250"},
 }
 _BY_STATE_AND_BRANCH_SAMPLE = {
-    "from_date": "2026-10-01", "to_date": "2026-10-08", "state_id": None,
+    "from_date": "2026-10-01", "to_date": "2026-10-08", "state_id": None, **_NO_FILTER,
     "states": [
         {"state_id": 2, "code": "DXB", "name": "Dubai",
          "branches": _BY_BRANCH_SAMPLE["branches"], "summary": _BY_BRANCH_SAMPLE["total"]},
@@ -250,6 +278,21 @@ _BY_STATE_AND_BRANCH_SAMPLE = {
     ],
     "total": {"orders": 508, "net_amount": "22550.500", "credit_notes": "120.000",
               "total_card_payment": "8850.250", "total_cash_payment": "13700.250"},
+}
+_SHARE_TOTAL = {"orders": 40, "net_amount": "1800.000", "credit_notes": None,
+                "total_card_payment": None, "total_cash_payment": None}
+_BY_SHARE_SAMPLE = {
+    "from_date": "2026-10-01", "to_date": "2026-10-08", "state_id": None, "branch_id": None,
+    "category_id": None, "vehicle_type_id": 4,
+    "states": [
+        {"state_id": 2, "code": "DXB", "name": "Dubai",
+         "branches": [
+             {"branch_id": 7, "code": "CPG1", "name": "Creek Park Gate 1", "orders": 40,
+              "net_amount": "1800.000", "credit_notes": None, "card_payment": None, "cash_payment": None},
+         ],
+         "summary": _SHARE_TOTAL},
+    ],
+    "total": _SHARE_TOTAL,
 }
 
 
@@ -295,6 +338,17 @@ class CollectionsByBranchView(_ManagerView):
                     "Every active station is listed (0 when it sold nothing); a closed station only when it "
                     "sold in the range; a state only when it has a listed station. A state with no stations "
                     "of yours answers an empty list.\n\n"
+                    "**More filters, all optional** -- the shape stays as above, the figures follow them:\n"
+                    "- `branch_id` -- one station (`branches`); not yours is `unknown_branch`;\n"
+                    "- `category_id` (`categories`) / `vehicle_type_id` (`vehicle-types`) -- that "
+                    "category's / type's **share** of the settled orders: `net_amount` is the billed lines "
+                    "of its vehicles (base fare + overtime -- **before** the bill's discount, VAT and "
+                    "rounding), `orders` the settled orders with at least one such vehicle. Credit notes and "
+                    "card / cash belong to the whole bill, so `credit_notes`, `card_payment`, "
+                    "`cash_payment` and their totals are **`null`**. Only vehicles on the bill count "
+                    "(replaced and removed ones are not billed); a vehicle counts under its current type.\n\n"
+                    "A pair that does not match (a station outside the state, a type outside the category) "
+                    "finds nothing. The four filters are echoed back, `null` when not sent.\n\n"
                     "**`card_payment` / `cash_payment`** -- what the station's settled orders in the range "
                     "were paid by card and by cash: advance and settlement, less refunds. A payment mode "
                     "is matched by its name containing \"card\" / \"cash\"; other modes (e.g. cheque) are "
@@ -303,25 +357,30 @@ class CollectionsByBranchView(_ManagerView):
         responses=envelope_responses(
             (200, "ok", "Collections.", _BY_BRANCH_SAMPLE, "ok (state_id sent)"),
             (200, "ok", "Collections.", _BY_STATE_AND_BRANCH_SAMPLE, "ok (no state_id: grouped by state)"),
+            (200, "ok", "Collections.", _BY_SHARE_SAMPLE, "ok (vehicle type filter: that type's share)"),
             (400, "invalid_request", "state_id must be a whole number.",
              {"errors": {"state_id": "must be a whole number"}}),
-            _DATES_INVALID, *_COMMON,
+            _DATES_INVALID,
+            (404, "unknown_branch", "No station with that id.", {}),
+            *_COMMON,
         ),
     )
     def post(self, request, app):
         values, companies, zone, refused = self.values(request, app)
         if refused:
             return refused
-        state_id = values.get("state_id")
-        dates = {"from_date": values["from_date"].isoformat(), "to_date": values["to_date"].isoformat(),
-                 "state_id": state_id}
-        if state_id:
-            rows, total = reports.collections_by_branch(companies, state_id, values["from_date"],
-                                                        values["to_date"], zone)
-            return envelope("ok", "Collections.", {**dates, "branches": rows, "total": total})
+        filters = {key: values.get(key) for key in ("state_id", "branch_id", "category_id", "vehicle_type_id")}
+        if filters["branch_id"] and not Branch.objects.filter(pk=filters["branch_id"],
+                                                              company_id__in=companies).exists():
+            return envelope("unknown_branch", "No station with that id.", http_status=404)
+        echo = {"from_date": values["from_date"].isoformat(), "to_date": values["to_date"].isoformat(), **filters}
+        if filters["state_id"]:
+            rows, total = reports.collections_by_branch(companies, values["from_date"], values["to_date"], zone,
+                                                        **filters)
+            return envelope("ok", "Collections.", {**echo, "branches": rows, "total": total})
         states, total = reports.collections_by_state_and_branch(companies, values["from_date"],
-                                                                values["to_date"], zone)
-        return envelope("ok", "Collections.", {**dates, "states": states, "total": total})
+                                                                values["to_date"], zone, **filters)
+        return envelope("ok", "Collections.", {**echo, "states": states, "total": total})
 
 
 # -- Order details ------------------------------------------------------------------------

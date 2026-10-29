@@ -11,7 +11,7 @@ from django.test.utils import CaptureQueriesContext
 from apps.company.models import Branch, BranchType, Location, State
 from apps.fleet.models import Category, Vehicle, VehicleType
 from apps.rental import credit_notes, reports
-from apps.rental.models import Invoice, Order, OrderItem, OrderItemStatus, OrderStatus
+from apps.rental.models import Invoice, InvoiceItem, Order, OrderItem, OrderItemStatus, OrderStatus
 from apps.rental.tests import test_order_requests as rq
 from apps.rental.tests.test_order_return import RETURN, back
 from core.enums import ApprovalStatus
@@ -27,6 +27,7 @@ BRANCHES = "/api/v1/manager/branches"
 BY_STATE = "/api/v1/manager/reports/collections/states"
 BY_BRANCH = "/api/v1/manager/reports/collections/branches"
 ORDERS = "/api/v1/manager/reports/orders"
+CATEGORIES = "/api/v1/manager/categories"
 TYPES = "/api/v1/manager/vehicle-types"
 VEHICLES = "/api/v1/manager/vehicles/list"
 APPROVED = ApprovalStatus.APPROVED
@@ -96,7 +97,7 @@ def test_another_companys_stations_are_not_listed(client, world, manager):
     assert "Elsewhere" not in names and len(names) == 2
 
 
-@pytest.mark.parametrize("url", [STATES, BRANCHES, TYPES, VEHICLES, BY_STATE, BY_BRANCH, ORDERS])
+@pytest.mark.parametrize("url", [STATES, BRANCHES, CATEGORIES, TYPES, VEHICLES, BY_STATE, BY_BRANCH, ORDERS])
 def test_an_operator_token_is_refused(client, token, url):
     assert call(client, url, {}, token=token).json()["code"] == "wrong_channel"
 
@@ -179,6 +180,120 @@ def test_grouped_states_order_by_net_and_add_up_to_the_total(client, world, mana
     assert [b["name"] for b in data["states"][0]["branches"]] == ["Creek Park Old", "Creek Park Gate 1"]
     assert data["total"]["net_amount"] == "110.000"
     assert sum(s["summary"]["orders"] for s in data["states"]) == data["total"]["orders"]
+
+
+# -- Collections filters: station, category, vehicle type (owner, 29 Oct 2026) --------------
+
+NULLS = {"credit_notes": None, "card_payment": None, "cash_payment": None}
+NULL_TOTALS = {"credit_notes": None, "total_card_payment": None, "total_cash_payment": None}
+
+
+@pytest.fixture
+def split(world, shop, settled):
+    """The settled bill: MO 41 a Monaco billed 50.000, DC 02 a Berg billed
+    60.000; both types in category Byky, and a Karts category with neither."""
+    Vehicle.objects.filter(pk=shop["dc02"].pk).update(vehicle_type=world["berg"])
+    InvoiceItem.objects.filter(order_item__vehicle=shop["mo41"]).update(total_amount="50.000")
+    InvoiceItem.objects.filter(order_item__vehicle=shop["dc02"]).update(total_amount="60.000")
+    karts = Category.objects.create(company=world["company"], category_code="KRT", category_name="Karts")
+    return {"byky": world["monaco"].category, "karts": karts}
+
+
+def adc1_row(data):
+    return next(b for b in data["branches"] if b["name"] == "Abu Dhabi Corniche 1")
+
+
+def test_no_filter_echoes_nulls_and_keeps_the_whole_order(client, world, manager, settled):
+    data = get(client, manager, BY_BRANCH, state_id=world["adc1"].location.state_id, **DAY)
+
+    assert (data["branch_id"], data["category_id"], data["vehicle_type_id"]) == (None, None, None)
+    assert (adc1_row(data)["net_amount"], adc1_row(data)["credit_notes"], adc1_row(data)["card_payment"]) == (
+        "110.000", "0.000", "10.000")
+
+
+def test_a_vehicle_type_is_its_share_with_nulls_for_the_bill(client, world, manager, split):
+    state = world["adc1"].location.state_id
+    monaco = get(client, manager, BY_BRANCH, state_id=state, vehicle_type_id=world["monaco"].pk, **DAY)
+    berg = get(client, manager, BY_BRANCH, state_id=state, vehicle_type_id=world["berg"].pk, **DAY)
+
+    assert adc1_row(monaco) == {"branch_id": world["adc1"].pk, "code": "ADC1", "name": "Abu Dhabi Corniche 1",
+                                "orders": 1, "net_amount": "50.000", **NULLS}
+    assert (adc1_row(berg)["orders"], adc1_row(berg)["net_amount"]) == (1, "60.000")
+    assert monaco["total"] == {"orders": 1, "net_amount": "50.000", **NULL_TOTALS}
+    assert monaco["vehicle_type_id"] == world["monaco"].pk
+    assert {b["name"]: b["net_amount"] for b in monaco["branches"]}["Abu Dhabi Corniche 2"] == "0.000"
+
+
+def test_a_category_is_the_share_of_its_types(client, world, manager, split):
+    state = world["adc1"].location.state_id
+    byky = get(client, manager, BY_BRANCH, state_id=state, category_id=split["byky"].pk, **DAY)
+    karts = get(client, manager, BY_BRANCH, state_id=state, category_id=split["karts"].pk, **DAY)
+    mismatched = get(client, manager, BY_BRANCH, state_id=state, category_id=split["karts"].pk,
+                     vehicle_type_id=world["monaco"].pk, **DAY)
+
+    assert byky["total"] == {"orders": 1, "net_amount": "110.000", **NULL_TOTALS}
+    assert karts["total"] == mismatched["total"] == {"orders": 0, "net_amount": "0.000", **NULL_TOTALS}
+
+
+def test_grouped_by_state_with_a_type_uses_the_share(client, world, manager, split, dubai):
+    data = get(client, manager, BY_BRANCH, vehicle_type_id=world["berg"].pk, **DAY)
+
+    abu_dhabi, in_dubai = data["states"]
+    assert abu_dhabi["summary"] == data["total"] == {"orders": 1, "net_amount": "60.000", **NULL_TOTALS}
+    assert in_dubai["summary"] == {"orders": 0, "net_amount": "0.000", **NULL_TOTALS}
+    assert in_dubai["branches"][0] == {"branch_id": dubai["open"].pk, "code": "CPG1", "name": "Creek Park Gate 1",
+                                       "orders": 0, "net_amount": "0.000", **NULLS}
+    assert shape(data) == shape(reports_sample("_BY_SHARE_SAMPLE"))
+
+
+def test_a_replaced_vehicle_is_not_billed_so_adds_nothing(client, world, manager, split):
+    InvoiceItem.objects.filter(order_item__vehicle__vehicle_type=world["berg"]).delete()   # not on the bill
+
+    data = get(client, manager, BY_BRANCH, vehicle_type_id=world["berg"].pk, **DAY)
+
+    assert data["total"] == {"orders": 0, "net_amount": "0.000", **NULL_TOTALS}
+
+
+def test_one_station(client, world, manager, settled, dubai):
+    grouped = get(client, manager, BY_BRANCH, branch_id=world["adc1"].pk, **DAY)
+    flat = get(client, manager, BY_BRANCH, state_id=world["adc1"].location.state_id, branch_id=world["adc1"].pk,
+               **DAY)
+    elsewhere = get(client, manager, BY_BRANCH, state_id=dubai["state"].pk, branch_id=world["adc1"].pk, **DAY)
+
+    assert [(s["name"], [b["name"] for b in s["branches"]]) for s in grouped["states"]] == [
+        ("Abu Dhabi", ["Abu Dhabi Corniche 1"])]
+    assert [b["name"] for b in flat["branches"]] == ["Abu Dhabi Corniche 1"]
+    assert flat["total"]["net_amount"] == "110.000" and flat["branch_id"] == world["adc1"].pk
+    assert (elsewhere["branches"], elsewhere["total"]["orders"]) == ([], 0)
+
+
+def test_a_station_of_another_company_is_unknown_to_collections(client, world, manager):
+    elsewhere = Branch.objects.create(company=world["other"], location=world["adc1"].location, short_code="OTH1",
+                                      name="Elsewhere", branch_type=BranchType.STATION)
+
+    body = call(client, BY_BRANCH, {"branch_id": elsewhere.pk, **DAY}, token=manager).json()
+
+    assert body["code"] == "unknown_branch"
+
+
+def test_states_collections_are_unchanged_by_the_new_filters(client, world, manager, split):
+    data = get(client, manager, BY_STATE, vehicle_type_id=world["berg"].pk, **DAY)
+
+    assert data["total"] == {"orders": 1, "net_amount": "110.000", "credit_notes": "0.000"}
+
+
+def test_categories_are_the_companys_active_approved_ones(client, world, manager, split):
+    Category.objects.filter(pk=split["byky"].pk).update(approval_status=APPROVED)
+    Category.objects.filter(pk=split["karts"].pk).update(approval_status=APPROVED, is_active=False)
+    Category.objects.create(company=world["company"], category_code="PND", category_name="Pending")
+    Category.objects.create(company=world["other"], category_code="OTH", category_name="Theirs",
+                            approval_status=APPROVED)
+
+    rows = get(client, manager, CATEGORIES)["categories"]
+
+    assert rows == [{"category_id": split["byky"].pk, "code": split["byky"].category_code,
+                     "name": split["byky"].category_name}]
+    assert shape(rows[0]) == shape(reports_sample("_CATEGORIES_SAMPLE")["categories"][0])
 
 
 @pytest.mark.parametrize(("dates", "field"), [
@@ -290,7 +405,7 @@ def test_the_list_is_paged_and_a_page_costs_the_same(client, world, token, manag
 
 def test_the_report_endpoints_are_in_the_api_docs(client, db):
     schema = client.get("/api/schema/").content.decode()
-    for path in ("states", "branches", "vehicle-types", "vehicles/list", "reports/collections/states",
+    for path in ("states", "branches", "categories", "vehicle-types", "vehicles/list", "reports/collections/states",
                  "reports/collections/branches", "reports/orders"):
         assert f"/api/v1/{{app}}/{path}" in schema, path
 

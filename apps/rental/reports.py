@@ -24,11 +24,12 @@ from django.db.models import Case, CharField, Count, Exists, Max, OuterRef, Q, S
 from django.utils import timezone
 
 from apps.company.models import Branch, State
-from apps.fleet.models import Vehicle, VehicleType
+from apps.fleet.models import Category, Vehicle, VehicleType
 from apps.rental.models import (
     CreditNote,
     CreditNoteStatus,
     Invoice,
+    InvoiceItem,
     Order,
     OrderItem,
     OrderItemStatus,
@@ -93,6 +94,12 @@ def branches(company_ids, state_id=None):
 def _live(rows):
     """Masters the apps may pick from: active and approved."""
     return rows.filter(is_active=True, approval_status=ApprovalStatus.APPROVED)
+
+
+def categories(company_ids):
+    """The company's vehicle categories -- the master."""
+    rows = _live(Category.objects.filter(company_id__in=company_ids)).order_by("category_name", "pk")
+    return [{"category_id": c.pk, "code": c.category_code, "name": c.category_name} for c in rows]
 
 
 def vehicle_types(company_ids, category_id=None):
@@ -196,54 +203,100 @@ def _payments_by_branch(company_ids, start, end, zone):
     return {branch_id: tuple(entry) for branch_id, entry in figures.items()}
 
 
-def _station_rows(company_ids, state_id, start, end, zone):
-    """[(branch, row)] -- each listed station with its figures and its card and
-    cash payments; one state's when `state_id` is given."""
-    figures = _collections_by_branch(company_ids, start, end, zone)
-    paid = _payments_by_branch(company_ids, start, end, zone)
+def _share_by_branch(company_ids, start, end, zone, category_id, vehicle_type_id):
+    """{branch_id: (orders, net)} -- one category's / vehicle type's share of
+    the orders settled in the range (owner, 29 Oct 2026): the billed lines on
+    its vehicles (InvoiceItem.total_amount -- base fare + overtime, before the
+    bill's discount, VAT and rounding), and how many bills had one. Only
+    billed lines: replaced and removed vehicles are not on the bill. The type
+    is the vehicle's current one -- the bill line keeps only its name."""
+    since, until = day_bounds(start, end, zone)
+    lines = InvoiceItem.objects.filter(invoice__company_id__in=company_ids, invoice__issued_at__gte=since,
+                                       invoice__issued_at__lt=until)
+    if category_id:
+        lines = lines.filter(order_item__vehicle__vehicle_type__category_id=category_id)
+    if vehicle_type_id:
+        lines = lines.filter(order_item__vehicle__vehicle_type_id=vehicle_type_id)
+    rows = (lines.values("invoice__branch_id")
+            .annotate(orders=Count("invoice", distinct=True), net=Sum("total_amount")).order_by())
+    return {row["invoice__branch_id"]: (row["orders"], row["net"] or ZERO) for row in rows}
+
+
+def _station_rows(company_ids, start, end, zone, *, state_id=None, branch_id=None, category_id=None,
+                  vehicle_type_id=None):
+    """[(branch, row)] -- each listed station with its figures, narrowed to
+    one state / one station when given. Without a category / type: the whole
+    orders, with credit notes and card and cash payments. With one: that
+    category's / type's share -- credit notes, card and cash belong to the
+    whole bill, so they are None."""
+    share = bool(category_id or vehicle_type_id)
+    if share:
+        figures = _share_by_branch(company_ids, start, end, zone, category_id, vehicle_type_id)
+    else:
+        figures = _collections_by_branch(company_ids, start, end, zone)
+        paid = _payments_by_branch(company_ids, start, end, zone)
     branches = _listed_branches(company_ids, figures)
     if state_id:
         branches = branches.filter(location__state_id=state_id)
+    if branch_id:
+        branches = branches.filter(pk=branch_id)
     rows = []
     for b in branches:
-        card, cash = paid.get(b.pk, (ZERO, ZERO))
-        rows.append((b, {"branch_id": b.pk, "code": b.short_code, "name": b.name,
-                         **_row(*figures.get(b.pk, (0, ZERO, ZERO))),
-                         "card_payment": _money(card), "cash_payment": _money(cash)}))
+        row = {"branch_id": b.pk, "code": b.short_code, "name": b.name}
+        if share:
+            orders, net = figures.get(b.pk, (0, ZERO))
+            row |= {"orders": orders, "net_amount": _money(net), "credit_notes": None,
+                    "card_payment": None, "cash_payment": None}
+        else:
+            card, cash = paid.get(b.pk, (ZERO, ZERO))
+            row |= {**_row(*figures.get(b.pk, (0, ZERO, ZERO))),
+                    "card_payment": _money(card), "cash_payment": _money(cash)}
+        rows.append((b, row))
     return rows
 
 
-def _station_total(rows):
+def _station_total(rows, share):
     """The stations' totals, card and cash included -- a state's `summary` and
-    the `total` have the same keys."""
+    the `total` have the same keys. A share has no credit notes, card or cash."""
+    orders, net = sum(r["orders"] for r in rows), sum((Decimal(r["net_amount"]) for r in rows), ZERO)
+    if share:
+        return {"orders": orders, "net_amount": _money(net), "credit_notes": None,
+                "total_card_payment": None, "total_cash_payment": None}
     return {**_total(rows),
             "total_card_payment": _money(sum((Decimal(r["card_payment"]) for r in rows), ZERO)),
             "total_cash_payment": _money(sum((Decimal(r["cash_payment"]) for r in rows), ZERO))}
 
 
-def collections_by_branch(company_ids, state_id, start, end, zone):
-    """Per station -- of one state, or (no `state_id`) every station -- with
-    the card and cash payments of its settled orders, and the totals."""
-    rows = _sorted([row for _, row in _station_rows(company_ids, state_id, start, end, zone)])
-    return rows, _station_total(rows)
+def collections_by_branch(company_ids, start, end, zone, **filters):
+    """Per station -- of one state, or (no `state_id`) every station; one
+    station with `branch_id` -- with the card and cash payments of its settled
+    orders, and the totals. `category_id` / `vehicle_type_id`: that share."""
+    rows = _sorted([row for _, row in _station_rows(company_ids, start, end, zone, **filters)])
+    return rows, _station_total(rows, _is_share(filters))
 
 
-def collections_by_state_and_branch(company_ids, start, end, zone):
+def collections_by_state_and_branch(company_ids, start, end, zone, **filters):
     """(states, total) -- every station, grouped under its state (owner, 29 Oct
     2026): each state with its stations (highest first) and its `summary`,
     states highest first, and the grand `total`. The same stations and figures
-    as collections_by_branch without a state."""
+    as collections_by_branch without a state; `branch_id`, `category_id` and
+    `vehicle_type_id` narrow it the same way."""
+    share = _is_share(filters)
     grouped = {}
-    for branch, row in _station_rows(company_ids, None, start, end, zone):
+    for branch, row in _station_rows(company_ids, start, end, zone, **filters):
         state = branch.location.state
         grouped.setdefault(state.pk, (state, []))[1].append(row)
     states = []
     for state, rows in grouped.values():
         rows = _sorted(rows)
         states.append({"state_id": state.pk, "code": state.short_code, "name": state.name,
-                       "branches": rows, "summary": _station_total(rows)})
+                       "branches": rows, "summary": _station_total(rows, share)})
     states.sort(key=lambda s: (-Decimal(s["summary"]["net_amount"]), s["name"]))
-    return states, _station_total([row for s in states for row in s["branches"]])
+    return states, _station_total([row for s in states for row in s["branches"]], share)
+
+
+def _is_share(filters):
+    return bool(filters.get("category_id") or filters.get("vehicle_type_id"))
 
 
 # -- Order details ------------------------------------------------------------------------
