@@ -39,9 +39,9 @@ class RentSummary(Report):
     sheet_title = "Rent Summary Report"
     page_code = "reports.rent_summary"
     filters = ("state", "branch")
-    unit = ("station-day", "station-days")
+    unit = ("branch-day", "branch-days")
     empty = "No orders were settled in this range."
-    description = "Settled orders per day and station, by state, with how they were paid."
+    description = "Settled orders per day and branch, by state, with how they were paid."
 
     def build(self, ctx, page=None, per_page=None):
         f = ctx.f

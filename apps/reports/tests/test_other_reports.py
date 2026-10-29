@@ -204,7 +204,7 @@ def test_asset_details_with_custodian_and_status(web, world):
 
     # Active or Inactive only, as the Inventory screens show it.
     assert [(r["branch"], r["code"], r["type_count"], r["status"]) for r in rows] == [
-        ("Abu Dhabi Corniche 1", "CCTV001", 1, "Active"), ("Not at a station", "CCTV002", 1, "Inactive")]
+        ("Abu Dhabi Corniche 1", "CCTV001", 1, "Active"), ("Not at a branch", "CCTV002", 1, "Inactive")]
     assert data(web, "asset-details", asset="SN-1")["count"] == 1
 
 
