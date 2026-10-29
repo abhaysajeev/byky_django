@@ -102,7 +102,7 @@ _INVOICE_SAMPLE = {
     "tax_percentage": "5.00", "tax_amount": "5.238", "rounding_adjustment": "0.000", "net_amount": "110.000",
     "payments": [{"mode": "Cash", "kind": "advance", "amount": "60.000", "reference_no": ""},
                  {"mode": "Card", "kind": "settlement", "amount": "50.000", "reference_no": "448812"}],
-    "star_rating": "4.5",
+    "star_rating": "4.5", "rating_remarks": "Bikes were clean, quick service",
 }
 
 
@@ -156,6 +156,11 @@ company, with no details.
 def _rating(value):
     """A star rating as text with its one decimal ("4.5", "5.0"), or None."""
     return None if value is None else str(value)
+
+
+def _person(user):
+    """A user by name, as the screens show them."""
+    return user.display_name or user.username
 
 
 def _customer_json(customer, zone=None):
@@ -337,6 +342,7 @@ def invoice_json(invoice, zone):
         "net_amount": _money(invoice.net_amount),
         "payments": invoice.payments,
         "star_rating": _rating(invoice.star_rating),
+        "rating_remarks": invoice.rating_remarks or None,
     }
 
 
@@ -371,10 +377,14 @@ def order_json(order, *, zone, next_order_number):
     `next_order_number` is the asking tablet's receipt counter after the call."""
     items = list(order.items.select_related("vehicle").order_by("start_time", "created_on"))
     payments = list(order.payments.select_related("mode").order_by("paid_at", "created_on"))
-    invoice = Invoice.objects.filter(order_id=order.pk).first()
+    invoice = Invoice.objects.select_related("issued_by").filter(order_id=order.pk).first()
     return {
         "sync_id": str(order.pk), "order_no": order.order_no, "transaction_no": order.transaction_no,
         "status": order.status, "payment_status": order.payment_status,
+        # Who booked it and who settled it (null until settled), by name -- as
+        # Live Monitoring shows them (owner, 29 Oct 2026).
+        "open_by": _person(order.created_by) if order.created_by_id else None,
+        "close_by": _person(invoice.issued_by) if invoice else None,
         "booked_at": _local(order.booked_at, zone), "start_time": _local(order.start_time, zone),
         "completed_at": _local(order.completed_at, zone), "cancelled_at": _local(order.cancelled_at, zone),
         "is_direct_bill": order.is_direct_bill, "is_hotel_order": order.is_hotel_order,
@@ -406,6 +416,8 @@ def order_json(order, *, zone, next_order_number):
                 "total_amount": _money(item.total_amount),             # null until returned
                 "replaced_item_id": str(item.replaced_item_id) if item.replaced_item_id else None,
                 "reason": item.reason,
+                # The fare terms the line was priced on, as the tablet sent them; null if none were.
+                "fare_details": item.fare_details,
             }
             for item in items
         ],
@@ -423,6 +435,9 @@ def order_json(order, *, zone, next_order_number):
             "invoice_no": invoice.invoice_no, "issued_at": _local(invoice.issued_at, zone),
             "net_amount": _money(invoice.net_amount),
         } if invoice else None,
+        # The customer's rating at settle and what they said; null while running.
+        "star_rating": _rating(invoice.star_rating) if invoice else None,
+        "rating_remarks": (invoice.rating_remarks or None) if invoice else None,
         "next_order_number": next_order_number,
     }
 
@@ -455,10 +470,21 @@ def _counter_number(session):
     return devices_services.counter_for(session.device, session.branch, BillKind.ORDER).next_number
 
 
+# The fare terms a line was priced on (owner, 29 Oct 2026): the tablet sends
+# them with the line on book / add / replace, and every reply returns them.
+# `applied` is base, season or special_price; special_price_id is the special
+# price (time window) that set the price, season_id its season if any.
+_FARE_DETAILS_SAMPLE = {
+    "fare_id": 88, "applied": "special_price", "season_id": None, "special_price_id": 31,
+    "package_minutes": 60, "base_fare": "50.00", "grace_minutes": 5,
+    "concurrent_interval_minutes": 15, "concurrent_fare": "15.00", "concurrent_grace_minutes": 3,
+}
+
 _ORDER_SAMPLE = {
     "sync_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9", "order_no": "DUBPP60182000231",
     "transaction_no": "DUBPP-A-12",
     "status": "active", "payment_status": "pending",
+    "open_by": "Rashed K", "close_by": None,
     "booked_at": "2026-10-02 16:00:05", "start_time": "2026-10-02 16:00:00",
     "completed_at": None, "cancelled_at": None,
     "is_direct_bill": False, "is_hotel_order": False, "hotel_commission": "0.00",
@@ -474,13 +500,13 @@ _ORDER_SAMPLE = {
          "fare_id": 88, "offer_id": None, "package_minutes": 60, "run_minutes": None,
          "start_time": "2026-10-02 16:00:00", "expected_end_time": "2026-10-02 17:00:00", "end_time": None,
          "base_fare": "50.00", "overtime_amount": None, "total_amount": None,
-         "replaced_item_id": None, "reason": ""},
+         "replaced_item_id": None, "reason": "", "fare_details": _FARE_DETAILS_SAMPLE},
         {"sync_id": "01923e1c-0a13-7b22-8c33-d4e5f6a7b8c9", "status": "active",
          "vehicle": {"id": 3102, "name": "DC 02", "identifier": "VB0874"},
          "fare_id": 88, "offer_id": None, "package_minutes": 60, "run_minutes": None,
          "start_time": "2026-10-02 16:00:00", "expected_end_time": "2026-10-02 17:00:00", "end_time": None,
          "base_fare": "50.00", "overtime_amount": None, "total_amount": None,
-         "replaced_item_id": None, "reason": ""},
+         "replaced_item_id": None, "reason": "", "fare_details": _FARE_DETAILS_SAMPLE},
     ],
     "payments": [
         {"sync_id": "01923e1c-0a14-7b22-8c33-d4e5f6a7b8c9", "kind": "advance",
@@ -491,6 +517,7 @@ _ORDER_SAMPLE = {
          "reference_date": "2026-10-02", "paid_at": "2026-10-02 16:00:05"},
     ],
     "invoice": None,
+    "star_rating": None, "rating_remarks": None,
     "next_order_number": 232,
 }
 
@@ -507,6 +534,7 @@ _RETURNED_ITEMS = [
 _RETURNED_SAMPLE = {**_ORDER_SAMPLE, "items_out": 0, "items": _RETURNED_ITEMS}
 _SETTLED_SAMPLE = {
     **_RETURNED_SAMPLE, "status": "completed", "payment_status": "paid", "completed_at": "2026-10-02 17:13:30",
+    "close_by": "Rashed K", "star_rating": "4.5", "rating_remarks": "Bikes were clean, quick service",
     "subtotal": "110.00",
     "discount": {"source": "card", "request_sync_id": "01923e2a-11aa-7b22-8c33-d4e5f6a7b8c9",
                  "discount_percentage": "5.00", "discount_amount": "5.50"},
@@ -575,6 +603,20 @@ card slip or cheque.
 
 Until then they are `null`. `payment_status` is `pending` while the order is
 active and `paid` once it is settled (blank for a cancelled order).
+
+**`fare_details`** (optional per item, for now) -- the fare terms the tablet
+priced that line on, sent as one object: `fare_id`, `applied` (`base`,
+`season` or `special_price`), `season_id`, `special_price_id` (the special
+price -- time window -- that set the price), `package_minutes`, `base_fare`,
+`grace_minutes`, `concurrent_interval_minutes`, `concurrent_fare`,
+`concurrent_grace_minutes`. Stored exactly as sent and never changed, so the
+order keeps the terms it was booked on even if the fare is edited later. The
+same on add-vehicle (`item`) and replace (`new_item`). Every order reply
+returns it per item (`null` when not sent).
+
+**In every order reply**: `open_by` -- who booked the order; `close_by` -- who
+settled it (`null` until then); `star_rating` and `rating_remarks` -- the
+customer's rating at settle (`null` while running).
 
 **Times** are `YYYY-MM-DD HH:MM:SS` in company time, no offset: `booked_at`
 is when the booking happened on the tablet (earlier if it was offline),
@@ -1057,6 +1099,10 @@ with at most one decimal (`4.5`, `5`, `2.5`); leave it out or send null when
 none was given. Stored on the invoice and returned as the customer's
 `star_rating` until a later settle rates them again. A settle that arrives late
 (parked offline) never replaces a rating from a later `settled_at`.
+
+**`rating_remarks`** (optional, up to 500 characters) -- what the customer said
+with the rating. Kept on this order's invoice only (not on the customer), and
+returned as the order's and the invoice's `rating_remarks`.
 """ + _FLOW + """
 """ + _error_table(*_SETTLE_ERRORS)
 
@@ -1070,7 +1116,7 @@ def _settle_example(name, discount, **bill):
         "payments": [{"sync_id": "01923e1c-0a16-7b22-8c33-d4e5f6a7b8c9", "kind": "settlement",
                       "payment_mode_id": 2, "amount": "4.500", "reference_no": "4421",
                       "reference_date": "2026-10-02", "paid_at": "2026-10-02 17:13:30"}],
-        "star_rating": "4.5",
+        "star_rating": "4.5", "rating_remarks": "Bikes were clean, quick service",
         **bill,
     }
     return OpenApiExample(name, request_only=True, value={"credentials": {}, "request_data": body})
