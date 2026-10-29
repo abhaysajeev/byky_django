@@ -173,7 +173,8 @@ PAGES = [
      ["read", "print"], 6, False),
     ("reports.customer_wise_rent", "reports", "Customer Wise Rent", "reports-customer-wise-rent",
      ["read", "print"], 7, False),
-    ("reports.customer_wise_card", "reports", "Customer Wise Discount Card", "reports-customer-wise-card",
+    # Sidebar name shortened to fit; the page and its export keep the client's full title.
+    ("reports.customer_wise_card", "reports", "Customer Discount Cards", "reports-customer-wise-card",
      ["read", "print"], 8, False),
     ("reports.vehicle_details", "reports", "Vehicle Details", "reports-vehicle-details", ["read", "print"], 9, False),
     ("reports.asset_details", "reports", "Asset Details", "reports-asset-details", ["read", "print"], 10, False),
