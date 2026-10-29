@@ -7,7 +7,14 @@ from dataclasses import dataclass
 
 from django.db.models import Q, Sum
 
-from apps.rental.models import CreditNote, CreditNoteStatus, OrderItemStatus, Payment, PaymentKind
+from apps.rental.models import (
+    CreditNote,
+    CreditNoteStatus,
+    OrderItemStatus,
+    OrderStatus,
+    Payment,
+    PaymentKind,
+)
 from apps.reports.base import MONEY, ZERO, Column
 
 # The lines that bill: out now, or back. Replaced, removed and cancelled lines do not.
@@ -123,6 +130,27 @@ def credit_notes_by_order(order_ids):
                 .values("order_id").annotate(total=Sum("net_amount")).order_by().values_list("order_id", "total"))
 
 
+def order_status(order):
+    """The order's status as the reports name it (Rent Details' rule): settled
+    Received, Cancelled, no vehicle back Running, else Partially Received --
+    which includes every vehicle back but not yet settled. Reads `order.items`
+    (prefetch it)."""
+    if order.status == OrderStatus.COMPLETED:
+        return "Received"
+    if order.status == OrderStatus.CANCELLED:
+        return "Cancelled"
+    statuses = {item.status for item in order.items.all()}
+    if OrderItemStatus.RETURNED not in statuses and OrderItemStatus.ACTIVE in statuses:
+        return "Running"
+    return "Partially Received"
+
+
+def vehicles_of(order):
+    """The billed vehicles' numbers, comma-joined. Reads `order.items`."""
+    return ", ".join(i.vehicle.vehicle_code for i in sorted(order.items.all(), key=lambda i: i.start_time)
+                     if i.status in BILLING) or None
+
+
 # -- People -------------------------------------------------------------------------
 
 
@@ -133,3 +161,7 @@ def person(user):
     name = user.display_name or user.username
     code = getattr(getattr(user, "employee", None), "employee_code", "") if user.employee_id else ""
     return f"{name} ( {code} )" if code else name
+
+
+def employee_name(employee):
+    return f"{employee.full_name} ( {employee.employee_code} )" if employee else None
