@@ -407,6 +407,10 @@ def test_no_token_is_refused(client, world):
 def test_the_mark_reply_matches_the_docs(client, world, operator):
     data = mark(client, operator, qr("punch_in", local(DAY, 9))).json()["data"]
     assert shape(data) == shape(api._MARK_IN_SAMPLE)
+    # Who was marked, by id and name too (device team, 29 Oct 2026).
+    row = Attendance.objects.get(pk=data["sync_id"])
+    assert (data["employee_id"], data["employee_code"], data["employee_name"]) == (
+        row.employee_id, row.employee_code, row.employee_name)
 
 
 # -- History ---------------------------------------------------------------------------
