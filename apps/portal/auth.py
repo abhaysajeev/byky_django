@@ -300,15 +300,6 @@ def sign_in_operator(username, password, installation_id, *, ip_address=None, us
             status=409,
         )
 
-    # The duty roster (owner, 28 Oct 2026): a Cashier / Labour employee signs
-    # in only when today's roster has them Working at this station, within
-    # their shift. Imported locally, as devices is above.
-    from apps.crew.services import operator_roster_refusal
-
-    refusal = operator_roster_refusal(user.employee, branch, now)
-    if refusal is not None:
-        raise LoginRefused(*refusal, status=403)
-
     # Step 10: an open session on a *different* device is refused; the same
     # device re-logging in is allowed through to open_session below, which
     # replaces its own prior row exactly as web/employee already do.

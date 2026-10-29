@@ -280,12 +280,6 @@ class LoginView(PublicAPIView):
             "branch, null when none). See the success examples below for "
             "the different response shapes. Operator's `branch.branch_id` is the "
             "station's id in the database -- use it when building the station QR code. "
-            "**Operator duty roster:** a Cashier or Labour employee signs in only when "
-            "today's duty roster has them Working at the device's station and now is inside "
-            "shift 1 or shift 2 (exact times; a shift started yesterday that runs past "
-            "midnight counts). Otherwise 403: `duty_roster_not_found`, `not_working_today`, "
-            "`rostered_at_another_branch` or `outside_shift_hours` -- show the `message`. "
-            "Other designations are not checked. "
             "`employee.can_approve_leave` says whether to offer Leave Requests to decide "
             "(always in the manager app; in the employee app for a station's Leave Request "
             "approver). The employee roster's days carry `leave_type` / `leave_reference` "
@@ -322,14 +316,6 @@ class LoginView(PublicAPIView):
             (409, "device_not_mapped", "This device has no station.", {}, "device_not_mapped (operator only)"),
             (409, "device_settings_not_done",
              "This station's receipt settings are not set up yet.", {}),
-            (403, "duty_roster_not_found", "Duty Roster not found today.", {},
-             "duty_roster_not_found (operator, Cashier / Labour)"),
-            (403, "not_working_today", "Not working today (Week Off).", {},
-             "not_working_today (operator, Cashier / Labour)"),
-            (403, "rostered_at_another_branch", "Rostered at Creek Park 1 today.", {},
-             "rostered_at_another_branch (operator, Cashier / Labour)"),
-            (403, "outside_shift_hours", "Your shift today is 08:00-16:00.", {},
-             "outside_shift_hours (operator, Cashier / Labour)"),
             (409, "session_active_elsewhere", "Logged in on another device.", {},
              "session_active_elsewhere (operator only)"),
             RATE_LIMITED, SERVER_ERROR,
