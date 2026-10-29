@@ -7,8 +7,9 @@ Rules agreed with the owner (9 Oct 2026):
   basis as the dashboard's Monthly Sales. Approved credit notes on those
   orders are returned beside the net, never subtracted. Every state / branch
   is listed, 0 when it sold nothing; an inactive branch only when it sold.
-- Order details are the orders **booked** in the range at one branch -- running,
-  settled and cancelled -- with a status summary.
+- Order details are the orders **booked** in the range -- running, settled and
+  cancelled -- with a status summary. Optionally narrowed by state, station,
+  vehicle type and vehicle (owner, 29 Oct 2026); the summary follows them.
 
 Totals are worked out in the database (one grouped query each), so a long
 range costs index reads, not rows in Python; the order list is paged and its
@@ -23,15 +24,20 @@ from django.db.models import Case, CharField, Count, Exists, Max, OuterRef, Q, S
 from django.utils import timezone
 
 from apps.company.models import Branch, State
+from apps.fleet.models import Category, Vehicle, VehicleType
 from apps.rental.models import (
     CreditNote,
     CreditNoteStatus,
     Invoice,
+    InvoiceItem,
     Order,
     OrderItem,
     OrderItemStatus,
     OrderStatus,
+    Payment,
+    PaymentKind,
 )
+from core.enums import ApprovalStatus
 
 TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 PAGE_SIZE = 50
@@ -83,6 +89,42 @@ def branches(company_ids, state_id=None):
         rows = rows.filter(location__state_id=state_id)
     return [{"branch_id": b.pk, "code": b.short_code, "name": b.name, "state_id": b.location.state_id,
              "state": b.location.state.name, "location": b.location.name} for b in rows]
+
+
+def _live(rows):
+    """Masters the apps may pick from: active and approved."""
+    return rows.filter(is_active=True, approval_status=ApprovalStatus.APPROVED)
+
+
+def categories(company_ids):
+    """The company's vehicle categories -- the master."""
+    rows = _live(Category.objects.filter(company_id__in=company_ids)).order_by("category_name", "pk")
+    return [{"category_id": c.pk, "code": c.category_code, "name": c.category_name} for c in rows]
+
+
+def vehicle_types(company_ids, category_id=None):
+    """The company's vehicle types -- the master, not tied to a station."""
+    rows = _live(VehicleType.objects.filter(company_id__in=company_ids)).select_related("category")
+    if category_id:
+        rows = rows.filter(category_id=category_id)
+    return [{"vehicle_type_id": t.pk, "name": t.vehicle_type_name, "category_id": t.category_id,
+             "category": t.category.category_name}
+            for t in rows.order_by("vehicle_type_name", "pk")]
+
+
+def vehicles(company_ids, vehicle_type_id=None, search="", page=1):
+    """(rows, page) -- the company's vehicles, the master: no station, no rental
+    state. `search` matches the name, code or identifier."""
+    rows = _live(Vehicle.objects.filter(company_id__in=company_ids)).select_related("vehicle_type")
+    if vehicle_type_id:
+        rows = rows.filter(vehicle_type_id=vehicle_type_id)
+    if search:
+        rows = rows.filter(Q(vehicle_name__icontains=search) | Q(vehicle_code__icontains=search)
+                           | Q(identifier__icontains=search))
+    paged = Paginator(rows.order_by("vehicle_name", "identifier_no"), PAGE_SIZE).get_page(page)
+    return [{"vehicle_id": v.pk, "vehicle_name": v.vehicle_name, "identifier": v.identifier,
+             "vehicle_type_id": v.vehicle_type_id, "vehicle_type": v.vehicle_type.vehicle_type_name}
+            for v in paged.object_list], paged
 
 
 # -- Collections ----------------------------------------------------------------------
@@ -139,13 +181,122 @@ def collections_by_state(company_ids, start, end, zone):
     return rows, _total(rows)
 
 
-def collections_by_branch(company_ids, state_id, start, end, zone):
-    figures = _collections_by_branch(company_ids, start, end, zone)
-    rows = _sorted([
-        {"branch_id": b.pk, "code": b.short_code, "name": b.name, **_row(*figures.get(b.pk, (0, ZERO, ZERO)))}
-        for b in _listed_branches(company_ids, figures).filter(location__state_id=state_id)
-    ])
-    return rows, _total(rows)
+def _payments_by_branch(company_ids, start, end, zone):
+    """{branch_id: (card, cash)} -- what the orders settled in the range were
+    paid by card and by cash (advance and settlement, less refunds). A payment
+    mode is a name per company (company.PaymentMode), so card and cash are the
+    modes whose name contains "card" / "cash" (owner, 29 Oct 2026)."""
+    since, until = day_bounds(start, end, zone)
+    payments = (Payment.objects
+                .filter(order__invoice__company_id__in=company_ids, order__invoice__issued_at__gte=since,
+                        order__invoice__issued_at__lt=until)
+                .values("order__invoice__branch_id", "mode__name", "kind").annotate(total=Sum("amount")).order_by())
+    figures = {}
+    for row in payments:
+        name = row["mode__name"].lower()
+        slot = 0 if "card" in name else 1 if "cash" in name else None
+        if slot is None:
+            continue
+        sign = -1 if row["kind"] == PaymentKind.REFUND else 1
+        entry = figures.setdefault(row["order__invoice__branch_id"], [ZERO, ZERO])
+        entry[slot] += sign * (row["total"] or ZERO)
+    return {branch_id: tuple(entry) for branch_id, entry in figures.items()}
+
+
+def _share_by_branch(company_ids, start, end, zone, category_id, vehicle_type_id):
+    """{branch_id: (orders, net)} -- one category's / vehicle type's share of
+    the orders settled in the range (owner, 29 Oct 2026): the billed lines on
+    its vehicles (InvoiceItem.total_amount -- base fare + overtime, before the
+    bill's discount, VAT and rounding), and how many bills had one. Only
+    billed lines: replaced and removed vehicles are not on the bill. The type
+    is the vehicle's current one -- the bill line keeps only its name."""
+    since, until = day_bounds(start, end, zone)
+    lines = InvoiceItem.objects.filter(invoice__company_id__in=company_ids, invoice__issued_at__gte=since,
+                                       invoice__issued_at__lt=until)
+    if category_id:
+        lines = lines.filter(order_item__vehicle__vehicle_type__category_id=category_id)
+    if vehicle_type_id:
+        lines = lines.filter(order_item__vehicle__vehicle_type_id=vehicle_type_id)
+    rows = (lines.values("invoice__branch_id")
+            .annotate(orders=Count("invoice", distinct=True), net=Sum("total_amount")).order_by())
+    return {row["invoice__branch_id"]: (row["orders"], row["net"] or ZERO) for row in rows}
+
+
+def _station_rows(company_ids, start, end, zone, *, state_id=None, branch_id=None, category_id=None,
+                  vehicle_type_id=None):
+    """[(branch, row)] -- each listed station with its figures, narrowed to
+    one state / one station when given. Without a category / type: the whole
+    orders, with credit notes and card and cash payments. With one: that
+    category's / type's share -- credit notes, card and cash belong to the
+    whole bill, so they are None."""
+    share = bool(category_id or vehicle_type_id)
+    if share:
+        figures = _share_by_branch(company_ids, start, end, zone, category_id, vehicle_type_id)
+    else:
+        figures = _collections_by_branch(company_ids, start, end, zone)
+        paid = _payments_by_branch(company_ids, start, end, zone)
+    branches = _listed_branches(company_ids, figures)
+    if state_id:
+        branches = branches.filter(location__state_id=state_id)
+    if branch_id:
+        branches = branches.filter(pk=branch_id)
+    rows = []
+    for b in branches:
+        row = {"branch_id": b.pk, "code": b.short_code, "name": b.name}
+        if share:
+            orders, net = figures.get(b.pk, (0, ZERO))
+            row |= {"orders": orders, "net_amount": _money(net), "credit_notes": None,
+                    "card_payment": None, "cash_payment": None}
+        else:
+            card, cash = paid.get(b.pk, (ZERO, ZERO))
+            row |= {**_row(*figures.get(b.pk, (0, ZERO, ZERO))),
+                    "card_payment": _money(card), "cash_payment": _money(cash)}
+        rows.append((b, row))
+    return rows
+
+
+def _station_total(rows, share):
+    """The stations' totals, card and cash included -- a state's `summary` and
+    the `total` have the same keys. A share has no credit notes, card or cash."""
+    orders, net = sum(r["orders"] for r in rows), sum((Decimal(r["net_amount"]) for r in rows), ZERO)
+    if share:
+        return {"orders": orders, "net_amount": _money(net), "credit_notes": None,
+                "total_card_payment": None, "total_cash_payment": None}
+    return {**_total(rows),
+            "total_card_payment": _money(sum((Decimal(r["card_payment"]) for r in rows), ZERO)),
+            "total_cash_payment": _money(sum((Decimal(r["cash_payment"]) for r in rows), ZERO))}
+
+
+def collections_by_branch(company_ids, start, end, zone, **filters):
+    """Per station -- of one state, or (no `state_id`) every station; one
+    station with `branch_id` -- with the card and cash payments of its settled
+    orders, and the totals. `category_id` / `vehicle_type_id`: that share."""
+    rows = _sorted([row for _, row in _station_rows(company_ids, start, end, zone, **filters)])
+    return rows, _station_total(rows, _is_share(filters))
+
+
+def collections_by_state_and_branch(company_ids, start, end, zone, **filters):
+    """(states, total) -- every station, grouped under its state (owner, 29 Oct
+    2026): each state with its stations (highest first) and its `summary`,
+    states highest first, and the grand `total`. The same stations and figures
+    as collections_by_branch without a state; `branch_id`, `category_id` and
+    `vehicle_type_id` narrow it the same way."""
+    share = _is_share(filters)
+    grouped = {}
+    for branch, row in _station_rows(company_ids, start, end, zone, **filters):
+        state = branch.location.state
+        grouped.setdefault(state.pk, (state, []))[1].append(row)
+    states = []
+    for state, rows in grouped.values():
+        rows = _sorted(rows)
+        states.append({"state_id": state.pk, "code": state.short_code, "name": state.name,
+                       "branches": rows, "summary": _station_total(rows, share)})
+    states.sort(key=lambda s: (-Decimal(s["summary"]["net_amount"]), s["name"]))
+    return states, _station_total([row for s in states for row in s["branches"]], share)
+
+
+def _is_share(filters):
+    return bool(filters.get("category_id") or filters.get("vehicle_type_id"))
 
 
 # -- Order details ------------------------------------------------------------------------
@@ -173,13 +324,33 @@ def _with_status(orders):
     )
 
 
-def branch_orders(company_ids, branch_id, start, end, zone, *, status="all", page=1):
-    """(branch, summary, rows, page) -- or None when the branch is not the user's."""
-    branch = Branch.objects.filter(pk=branch_id, company_id__in=company_ids).first()
-    if branch is None:
-        return None
+def orders_report(company_ids, start, end, zone, *, state_id=None, branch_id=None, vehicle_type_id=None,
+                  vehicle_id=None, status="all", page=1):
+    """(branch or None, summary, rows, page) -- the orders booked in the range,
+    narrowed by whichever of state, station, vehicle type and vehicle are sent.
+    None when `branch_id` is not a station of the user's company. A pair that
+    does not match (a station outside the state, a vehicle of another type)
+    simply finds nothing. A vehicle filter matches an order with any line on
+    it -- replaced, removed and cancelled lines too: it was on that order."""
+    branch = None
+    if branch_id:
+        branch = Branch.objects.filter(pk=branch_id, company_id__in=company_ids).first()
+        if branch is None:
+            return None
     since, until = day_bounds(start, end, zone)
-    orders = _with_status(Order.objects.filter(branch=branch, booked_at__gte=since, booked_at__lt=until))
+    orders = Order.objects.filter(company_id__in=company_ids, booked_at__gte=since, booked_at__lt=until)
+    if state_id:
+        orders = orders.filter(branch__location__state_id=state_id)
+    if branch:
+        orders = orders.filter(branch=branch)
+    # One EXISTS over one line, not a join: an order with two matching lines is
+    # still one order, and type and vehicle must hold for the *same* line -- a
+    # Monaco elsewhere on the order does not make DC 02 a Monaco.
+    line = {key: value for key, value in (("vehicle__vehicle_type_id", vehicle_type_id),
+                                          ("vehicle_id", vehicle_id)) if value}
+    if line:
+        orders = orders.filter(Exists(OrderItem.objects.filter(order=OuterRef("pk"), **line)))
+    orders = _with_status(orders)
 
     counts = dict(orders.values("app_status").annotate(n=Count("id")).order_by().values_list("app_status", "n"))
     summary = {"all": sum(counts.values()), **{s: counts.get(s, 0) for s in ORDER_STATUSES},
@@ -187,12 +358,12 @@ def branch_orders(company_ids, branch_id, start, end, zone, *, status="all", pag
 
     if status != "all":
         orders = orders.filter(app_status=status)
-    listed = (orders.select_related("invoice").annotate(last_expected=Max("items__expected_end_time"))
+    listed = (orders.select_related("invoice", "branch").annotate(last_expected=Max("items__expected_end_time"))
               .prefetch_related("items__vehicle__vehicle_type", "payments__mode", "credit_notes")
               .order_by("-booked_at", "-id"))
     paged = Paginator(listed, PAGE_SIZE).get_page(page)
     now = timezone.now()
-    return branch, summary, [_order_json(order, branch, zone, now) for order in paged.object_list], paged
+    return branch, summary, [_order_json(order, zone, now) for order in paged.object_list], paged
 
 
 def _minutes(item, now):
@@ -202,7 +373,7 @@ def _minutes(item, now):
     return max(int(((item.end_time or now) - item.start_time).total_seconds() // 60), 0)
 
 
-def _order_json(order, branch, zone, now):
+def _order_json(order, zone, now):
     lines = sorted((i for i in order.items.all() if i.status in _BILLING), key=lambda i: i.start_time)
     settled = order.status == OrderStatus.COMPLETED
     ends = [i.end_time for i in lines if i.end_time]
@@ -218,7 +389,7 @@ def _order_json(order, branch, zone, now):
     return {
         "order_id": str(order.pk),
         "order_no": order.order_no,
-        "station_name": branch.name,
+        "station_name": order.branch.name,
         "customer_name": order.customer_name,
         "customer_mobile": order.customer_mobile,
         "booked_at": _local(order.booked_at, zone),
@@ -233,7 +404,9 @@ def _order_json(order, branch, zone, now):
                         "net_amount": str(note.net_amount) if note.net_amount is not None else None}
         if note else None,
         "vehicles": [
-            {"vehicle_name": i.vehicle.vehicle_name, "vehicle_type": i.vehicle.vehicle_type.vehicle_type_name,
+            {"vehicle_id": i.vehicle_id, "vehicle_name": i.vehicle.vehicle_name,
+             "vehicle_type_id": i.vehicle.vehicle_type_id,
+             "vehicle_type": i.vehicle.vehicle_type.vehicle_type_name,
              "vehicle_status": "running" if i.status == OrderItemStatus.ACTIVE else i.status,
              "start_time": _local(i.start_time, zone), "end_time": _local(i.end_time, zone),
              "minutes": _minutes(i, now)}

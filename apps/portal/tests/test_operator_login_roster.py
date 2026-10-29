@@ -1,7 +1,8 @@
 """Operator login and the duty roster (apps/crew/services.py::
 operator_roster_refusal, owner 28 Oct 2026): a Cashier / Labour employee signs
 in on a station tablet only when today's roster has them Working at that
-station, inside their shift -- exact times."""
+station, inside their shift -- exact times. Every operator login also returns
+the employee's roster for the current week."""
 
 import datetime
 
@@ -9,8 +10,9 @@ import pytest
 from django.utils import timezone
 
 from apps.company.models import Branch, BranchType
+from apps.crew import duty
 from apps.crew.models import Designation, DutyRoster, DutyRosterDayType, RosterCategory
-from apps.crew.services import operator_roster_refusal
+from apps.crew.services import current_week_roster, operator_roster_refusal
 from apps.portal.tests import test_operator_login_api as login_api
 from core.timezones import business_date_for, zone_for
 
@@ -88,6 +90,38 @@ def test_outside_the_shift(client, world, rostered, app_user, device):
 def test_a_designation_not_on_the_roster_is_not_checked(client, world, employee, app_user, device):
     assert employee.designation.roster_category == ""
     assert _login(client, app_user, device).json()["code"] == "ok"
+
+
+# -- The week's roster in the login reply (owner, 29 Oct 2026) ----------------------------
+
+
+def test_the_login_returns_the_weeks_roster_like_the_employee_login(client, world, rostered, app_user, device):
+    now = timezone.now()
+    today = business_date_for(world["company"], now)
+    roster(rostered, world["branch"], now - HOUR, now + HOUR)
+    week = duty.current_week(world["company"])
+    off = next((day for day in week if day != today), None)
+    if off:
+        roster(rostered, None, now, now, day=off, day_type=DutyRosterDayType.WEEK_OFF)
+
+    sent = _login(client, app_user, device).json()["data"]["roster"]
+
+    assert sent == current_week_roster(rostered)
+    assert (sent["week_start"], sent["week_end"]) == (week[0].isoformat(), week[-1].isoformat())
+    days = {day["date"]: day for day in sent["days"]}
+    assert (days[today.isoformat()]["status"], days[today.isoformat()]["branch_id"]) == (
+        "Working", world["branch"].pk)
+    if off:
+        assert days[off.isoformat()]["status"] == "Week Off"
+
+
+def test_a_designation_not_on_the_roster_still_gets_the_week_all_unset(client, world, employee, app_user, device):
+    body = _login(client, app_user, device).json()
+
+    assert body["code"] == "ok"
+    sent = body["data"]["roster"]
+    assert [day["date"] for day in sent["days"]] == [day.isoformat() for day in duty.current_week(world["company"])]
+    assert {day["status"] for day in sent["days"]} == {None}
 
 
 # -- The rule itself, at fixed times -----------------------------------------------------

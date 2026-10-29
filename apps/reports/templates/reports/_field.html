@@ -1,0 +1,11 @@
+<label class="rpt-field rpt-field-{{ b.kind }}">
+  <span class="rpt-label">{{ b.label }}</span>
+  {% if b.kind == "text" %}
+  <input class="rpt-input" type="search" name="{{ b.key }}" value="{{ b.value }}" placeholder="Any" maxlength="60" data-rpt-text />
+  {% else %}
+  <select class="rpt-input" name="{{ b.key }}"{% if b.parent %} data-parent="{{ b.parent }}"{% endif %} data-selected="{{ b.value }}">
+    <option value="">All</option>
+    {% for o in b.options %}<option value="{{ o.id }}"{% if o.parent %} data-parent-id="{{ o.parent }}"{% endif %}{% if b.value == o.id|stringformat:"s" %} selected{% endif %}>{{ o.name }}</option>{% endfor %}
+  </select>
+  {% endif %}
+</label>
