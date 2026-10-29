@@ -16,6 +16,7 @@ from apps.devices.models import BillKind
 from apps.discount import services as discount_services
 from apps.fare import package_device
 from apps.fare.models import Fare, Package
+from apps.fleet import service_requests
 from apps.fleet.models import Vehicle
 from apps.rental import live, station_sync, test_rides
 from apps.rental.models import (
@@ -117,6 +118,8 @@ ORDER_ERRORS = {
     "vehicle_already_rented": (409, "A vehicle in this order is already on an active rental.", False),
     # Test rides (apps/rental/test_rides.py).
     "vehicle_on_test_ride": (409, "A vehicle in this order is out on a test ride -- end it first.", False),
+    # An approved service request whose issue type needs warehouse service (owner, 29 Oct 2026).
+    "vehicle_in_warehouse_service": (409, "A vehicle in this order is in warehouse service.", False),
     "unknown_test_ride": (404, "No test ride with that id at this station.", False),
     "test_ride_closed": (409, "That test ride is already ended, rented or cancelled.", False),
     "vehicle_repeated": (400, "The same vehicle is in this order twice.", False),
@@ -525,6 +528,11 @@ def _line_refs(company, branch, items_input, *, test_ride=None):
                if test_ride is None or ride.pk != test_ride.pk}
     if on_test:
         raise OrderRefused("vehicle_on_test_ride", f"Vehicle {min(on_test)} is out on a test ride -- end it first.")
+    in_warehouse = service_requests.in_warehouse_service(vehicle_list)
+    if in_warehouse:
+        held = min(in_warehouse)
+        raise OrderRefused("vehicle_in_warehouse_service",
+                           f"Vehicle {held} is in warehouse service ({in_warehouse[held]}).")
     fares = _by_id(Fare, company, {item["fare_id"] for item in items_input if item.get("fare_id")},
                    "unknown_fare", "fare")
     # A package (sent as offer_id: the tablet API kept the old name).

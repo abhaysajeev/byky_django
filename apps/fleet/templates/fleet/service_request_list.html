@@ -92,7 +92,7 @@ the top; the row opens its page (apps/fleet/maintenance_views.py).
             <td><a class="scr-mon-time" href="{{ r.detail_url }}">{{ r.request_no }}<span>{{ r.requested_at|date:"d M Y, H:i" }}{% if r.requested_by %} · {{ r.requested_by }}{% endif %}</span></a></td>
             <td><div class="scr-co-name">{{ r.target.name }}</div><div class="scr-contact-sub">{{ r.target.kind }} · {{ r.target.code }}</div></td>
             <td class="scr-state">{{ r.station }}</td>
-            <td class="scr-state">{{ r.issue|truncatechars:60 }}</td>
+            <td class="scr-state">{{ r.issue|truncatechars:60 }}{% if r.warehouse %}<div class="scr-contact-sub">Needs warehouse service{% if r.status == "approved" %} · not rentable{% endif %}</div>{% endif %}</td>
             <td class="scr-state">{{ r.out_for|default:"—" }}</td>
             <td>{% include "fleet/partials/service_status.html" with status=r.status %}</td>
             <td>

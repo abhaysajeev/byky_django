@@ -35,7 +35,7 @@ def test_the_tablet_lists_active_types_optionally_for_one_target(client, world, 
     vehicle = call(client, TYPES, {"target": "vehicle"}, token=token).json()["data"]["issue_types"]
     assert [t["name"] for t in vehicle] == ["Brake failure", "Damage"]
     assert vehicle[0] == {"issue_type_id": types["brake"].pk, "name": "Brake failure", "code": "",
-                          "applies_to": "vehicle"}
+                          "applies_to": "vehicle", "needs_warehouse_service": False}
     assert call(client, TYPES, {"target": "boat"}, token=token).json()["code"] == "invalid_request"
 
 

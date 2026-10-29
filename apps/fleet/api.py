@@ -36,7 +36,7 @@ _VEHICLES_SAMPLE = {
                     "vehicles": [
                         {"vehicle_id": 2007, "vehicle_identifier": "VB0321", "vehicle_code": "BRG07",
                          "vehicle_name": "BRG 07", "rfid_epc": "35440575", "uom": "Number", "is_available": True,
-                         "on_rent": False, "rental": None, "under_maintenance": False, "service_request_no": None,
+                         "on_rent": False, "rental": None, "under_maintenance": False, "service_request_no": None, "warehouse_service": False,
                          "on_test_ride": False, "test_ride": None, "can_rent": True},
                     ],
                 },
@@ -48,7 +48,7 @@ _VEHICLES_SAMPLE = {
                          "vehicle_name": "DC 02", "rfid_epc": "", "uom": "Number", "is_available": True,
                          "on_rent": True, "rental": {"order_no": "ADCOR60182000231",
                                                      "expected_end_time": "2026-09-24 07:00:00"},
-                         "under_maintenance": False, "service_request_no": None,
+                         "under_maintenance": False, "service_request_no": None, "warehouse_service": False,
                          "on_test_ride": False, "test_ride": None, "can_rent": False},
                     ],
                 },
@@ -58,11 +58,11 @@ _VEHICLES_SAMPLE = {
                     "vehicles": [
                         {"vehicle_id": 1041, "vehicle_identifier": "VB1241", "vehicle_code": "MO41",
                          "vehicle_name": "MO 41", "rfid_epc": "36543595", "uom": "Number", "is_available": True,
-                         "on_rent": False, "rental": None, "under_maintenance": False, "service_request_no": None,
+                         "on_rent": False, "rental": None, "under_maintenance": False, "service_request_no": None, "warehouse_service": False,
                          "on_test_ride": False, "test_ride": None, "can_rent": True},
                         {"vehicle_id": 1042, "vehicle_identifier": "VB1242", "vehicle_code": "MO42",
                          "vehicle_name": "MO 42", "rfid_epc": "", "uom": "Number", "is_available": False,
-                         "on_rent": False, "rental": None, "under_maintenance": False, "service_request_no": None,
+                         "on_rent": False, "rental": None, "under_maintenance": False, "service_request_no": None, "warehouse_service": False,
                          "on_test_ride": False, "test_ride": None, "can_rent": False},
                     ],
                 },
@@ -98,12 +98,15 @@ taken from the access token's session.
   `order_no` and the vehicle's `expected_end_time` (company time), else `null`.
 - `under_maintenance`: the vehicle was reported for service (`service-requests`) and is
   not back in service yet; `service_request_no` (`SRV-ADC1-00001`) is that request, else
-  `null`. Information only -- renting it is not refused.
+  `null`. Information only -- renting it is not refused...
+- `warehouse_service`: ...unless that request's issue type needs warehouse service and a
+  manager approved it: the vehicle is off rent until the request is rejected or back in
+  service. Booking, add / replace and test rides refuse it `vehicle_in_warehouse_service`.
 - `on_test_ride`: the vehicle is out on a free test ride (`test-rides`); `test_ride` then
   gives `test_ride_id`, `test_no` and `expected_end_time`, else `null`. It cannot be rented
   until the ride is ended -- or the booking names it (`test_ride_id`).
-- `can_rent` = `is_available` and not `on_rent` and not `on_test_ride` -- the one flag to
-  grey a vehicle out by.
+- `can_rent` = `is_available` and not `on_rent` and not `on_test_ride` and not
+  `warehouse_service` -- the one flag to grey a vehicle out by.
   `is_available` alone is the manual switch (maintenance, held back); a rental never
   changes it. A booking is still refused if the vehicle was rented from another tablet
   since this list was fetched (`vehicle_already_rented`).

@@ -553,7 +553,7 @@ _BOOK_ERRORS = (
     "sync_id_conflict", "order_no_used", "vehicle_already_rented", "vehicle_repeated", "item_id_used",
     "payment_id_used", "unknown_customer", "unknown_payment_mode", "unknown_vehicle",
     "vehicle_not_at_station", "unknown_fare", "unknown_offer", "package_not_available",
-    "vehicle_on_test_ride", "unknown_test_ride", "test_ride_closed",
+    "vehicle_on_test_ride", "vehicle_in_warehouse_service", "unknown_test_ride", "test_ride_closed",
 )
 
 _ORDER_DESCRIPTION = """
@@ -1230,7 +1230,7 @@ _REMOVED_SAMPLE = {
 _CHANGE_ERRORS = ("order_not_synced", "sync_id_conflict", "order_closed")
 _NEW_LINE_ERRORS = (
     "vehicle_already_rented", "vehicle_not_at_station", "unknown_vehicle", "unknown_fare", "unknown_offer",
-    "package_not_available", "item_id_used", "vehicle_on_test_ride",
+    "package_not_available", "item_id_used", "vehicle_on_test_ride", "vehicle_in_warehouse_service",
 )
 _ADD_ERRORS = (*_CHANGE_ERRORS, *_NEW_LINE_ERRORS, "unknown_payment_mode", "payment_id_used")
 _REPLACE_ERRORS = (*_CHANGE_ERRORS, "unknown_item", "item_not_active", "invalid_time", "vehicle_repeated",

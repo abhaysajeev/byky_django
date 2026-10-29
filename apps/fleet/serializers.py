@@ -131,6 +131,26 @@ class IssueTypesRequest(serializers.Serializer):
                                      error_messages={"invalid_choice": "must be vehicle or asset"})
 
 
+class IssueTypeCreateRequest(serializers.Serializer):
+    """A new issue type from the tablet, to pick at once (owner, 29 Oct 2026)."""
+
+    name = serializers.CharField(max_length=100, error_messages={
+        "required": "is required", "blank": "is required", "max_length": "must be at most 100 characters"})
+    applies_to = serializers.ChoiceField(choices=["vehicle", "asset", "both"], error_messages={
+        "required": "is required", "invalid_choice": "must be vehicle, asset or both"})
+    description = serializers.CharField(required=False, allow_blank=True, max_length=1000)
+    # Vehicle issue types only: a manager's approval of such a request takes
+    # the vehicle off rent until it is back in service.
+    needs_warehouse_service = serializers.BooleanField(required=False, default=False)
+
+    def validate(self, values):
+        values["name"] = " ".join(values["name"].split())
+        if values.get("needs_warehouse_service") and values["applies_to"] != "vehicle":
+            raise serializers.ValidationError(
+                {"needs_warehouse_service": "is for vehicle issue types only (applies_to vehicle)"})
+        return values
+
+
 class AssetCheckCreateRequest(serializers.Serializer):
     """The tablet checks an asset of its station: photo (uploaded first,
     purpose asset_check) and condition; remarks optional. `sync_id` is this

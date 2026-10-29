@@ -7,6 +7,12 @@ Owner decisions, 23-26 Oct 2026 (design/inventory/service-and-image-sharing.md):
 - "under maintenance" is simply an open request on a vehicle (pending or
   approved) -- information only: renting it is **not** refused (the client
   does not want that, 26 Oct 2026); the tablet's vehicle list shows it;
+- except warehouse service (owner, 29 Oct 2026): a request of an issue type
+  that needs warehouse service, once **approved**, keeps its vehicle off rent
+  until it is rejected or back in service -- booking, add / replace and test
+  rides refuse it, and the vehicle list says can_rent false. The flag is
+  copied onto the request when reported;
+- each change reaches the station's other tablets (station_sync);
 - a manager (manager app or web) approves or rejects;
 - back in service on the web only; numbers SRV-<station code>-00001, counted
   per station.
@@ -31,6 +37,7 @@ from apps.notifications import services as notifications
 from apps.notifications.models import Action
 from apps.photos import services as photo_services
 from apps.photos.models import PhotoPurpose
+from apps.rental import station_sync
 from core.enums import ApprovalStatus, Channel
 from core.timezones import zone_for
 
@@ -56,6 +63,14 @@ def under_maintenance(vehicle_ids):
     """{vehicle_id: request_no} of the given vehicles that are under
     maintenance -- an open service request holds them."""
     return dict(ServiceRequest.objects.filter(vehicle_id__in=list(vehicle_ids), status__in=SERVICE_OPEN)
+                .values_list("vehicle_id", "request_no"))
+
+
+def in_warehouse_service(vehicle_ids):
+    """{vehicle_id: request_no} of the given vehicles off rent for warehouse
+    service: an approved request whose issue type needs it (owner, 29 Oct 2026)."""
+    return dict(ServiceRequest.objects.filter(vehicle_id__in=list(vehicle_ids), status=ServiceRequestStatus.APPROVED,
+                                              needs_warehouse_service=True)
                 .values_list("vehicle_id", "request_no"))
 
 
@@ -147,6 +162,7 @@ def _report(session, values, branch, company, sync_id):
         id=sync_id, company=company, branch=branch, number=counter.last_number,
         request_no=request_no(branch, counter.last_number), vehicle=vehicle, asset=asset,
         issue_type=issue_type, issue=(values.get("issue") or "").strip(), photo=photo, device=session.device,
+        needs_warehouse_service=bool(vehicle and issue_type and issue_type.needs_warehouse_service),
         requested_by=session.user,
         requested_at=values["requested_at"], status=ServiceRequestStatus.PENDING,
         created_by=session.user, modified_by=session.user,
@@ -164,6 +180,7 @@ def _report(session, values, branch, company, sync_id):
     if photo is not None:
         photo_services.mark_attached(photo)
     notifications.notify(req, Action.RAISED)
+    station_sync.service_request_changed(req, "raised")
     return req, True
 
 
@@ -186,7 +203,9 @@ def _decide(user, request_id, company_ids, channel, note, status):
         req.status, req.decided_by, req.decided_channel = status, user, channel
         req.decided_at, req.decision_note, req.modified_by = timezone.now(), (note or "").strip(), user
         req.save()
-        notifications.notify(req, Action.APPROVED if status == ServiceRequestStatus.APPROVED else Action.REJECTED)
+        approved = status == ServiceRequestStatus.APPROVED
+        notifications.notify(req, Action.APPROVED if approved else Action.REJECTED)
+        station_sync.service_request_changed(req, "approved" if approved else "rejected")
     return req
 
 
@@ -214,6 +233,7 @@ def complete(user, request_id, company_ids, note):
         req.completion_note, req.modified_by = note, user
         req.save()
         notifications.notify(req, Action.COMPLETED)
+        station_sync.service_request_changed(req, "completed")
     return req
 
 
@@ -286,7 +306,8 @@ def manager_json(req, zone):
 
 
 def issue_type_json(req):
-    return {"issue_type_id": req.issue_type_id, "issue_type": req.issue_type.name if req.issue_type_id else None}
+    return {"issue_type_id": req.issue_type_id, "issue_type": req.issue_type.name if req.issue_type_id else None,
+            "needs_warehouse_service": req.needs_warehouse_service}
 
 
 def summary(req):

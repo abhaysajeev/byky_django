@@ -58,12 +58,12 @@ def test_vehicles_come_nested_by_category_and_type(client, world, token, uom):
     assert monaco["vehicles"] == [                       # in identifier order: MON-2 was created first
         {"vehicle_id": first.pk, "vehicle_identifier": first.identifier, "vehicle_code": "MON-2",
          "vehicle_name": "MON-2", "rfid_epc": "E2801", "uom": "Number", "is_available": False,
-         "on_rent": False, "rental": None, "under_maintenance": False, "service_request_no": None,
+         "on_rent": False, "rental": None, "under_maintenance": False, "service_request_no": None, "warehouse_service": False,
          "on_test_ride": False, "test_ride": None,
          "can_rent": False},
         {"vehicle_id": second.pk, "vehicle_identifier": second.identifier, "vehicle_code": "MON-1",
          "vehicle_name": "MON-1", "rfid_epc": "E2800", "uom": "Number", "is_available": True,
-         "on_rent": False, "rental": None, "under_maintenance": False, "service_request_no": None,
+         "on_rent": False, "rental": None, "under_maintenance": False, "service_request_no": None, "warehouse_service": False,
          "on_test_ride": False, "test_ride": None,
          "can_rent": True},
     ]
