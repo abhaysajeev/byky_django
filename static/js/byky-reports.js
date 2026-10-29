@@ -178,7 +178,6 @@
     var note = $('[data-rpt-note]');
     note.hidden = !data.note;
     note.textContent = data.note || '';
-    $('[data-rpt-stamp]').textContent = 'As of ' + data.stamp;
     if (!data.count) {
       table.textContent = '';
       frame.hidden = true;

@@ -87,7 +87,6 @@ def payload(report, result, ctx, labels):
         "first": result.first, "last": result.last, "size": result.size, "note": result.note,
         "blocks": result.blocks, "scope": scope(report, ctx, labels),
         "query": urlencode(ctx.f.query()), "limit": EXPORT_LIMIT,
-        "stamp": timezone.localtime(ctx.now, ctx.zone).strftime(STAMP),
     }
 
 

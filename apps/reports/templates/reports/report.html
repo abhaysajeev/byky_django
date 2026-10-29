@@ -29,7 +29,6 @@ data-url with the same query string the Export link carries.
       <p class="rpt-scope" data-rpt-scope>{{ report.description }}</p>
     </div>
     <div class="rpt-head-actions">
-      <span class="rpt-stamp" data-rpt-stamp></span>
       {% if can_export %}
       <a class="rpt-btn rpt-btn-primary" data-rpt-export href="{{ export_url }}?{{ initial.query }}">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"></path></svg>

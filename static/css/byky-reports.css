@@ -44,7 +44,6 @@
 .rpt-scope { margin-top: 4px; font-size: 13px; color: var(--ink-2); }
 .rpt-scope span + span::before { content: "·"; margin: 0 8px; color: var(--control); }
 .rpt-head-actions { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; margin-top: 24px; }
-.rpt-stamp { font-size: 12px; color: var(--ink-2); white-space: nowrap; }
 
 /* ── buttons ────────────────────────────────────────────────────────── */
 .rpt-btn {
