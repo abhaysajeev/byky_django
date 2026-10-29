@@ -36,6 +36,8 @@ from apps.rental.serializers import (
     ManagerCreditNoteRejectRequest,
     ManagerPendingCountsRequest,
     ManagerStatesRequest,
+    ManagerVehiclesRequest,
+    ManagerVehicleTypesRequest,
 )
 from core.api import envelope, manager_only, request_parts
 from core.schema import SERVER_ERROR, envelope_request, envelope_responses
@@ -87,6 +89,16 @@ _STATES_SAMPLE = {"states": [
     {"state_id": 2, "code": "DXB", "name": "Dubai", "branch_count": 6},
     {"state_id": 1, "code": "AUH", "name": "Abu Dhabi", "branch_count": 5},
 ]}
+_VEHICLE_TYPES_SAMPLE = {"vehicle_types": [
+    {"vehicle_type_id": 4, "name": "Monaco", "category_id": 1, "category": "BYKY"},
+]}
+_VEHICLES_SAMPLE = {
+    "vehicles": [
+        {"vehicle_id": 41, "vehicle_name": "MO 41", "identifier": "VB0041", "vehicle_type_id": 4,
+         "vehicle_type": "Monaco"},
+    ],
+    "page": 1, "pages": 1, "total_vehicles": 1,
+}
 _BRANCHES_SAMPLE = {"branches": [
     {"branch_id": 3, "code": "ADC1", "name": "Abu Dhabi Corniche 1", "state_id": 1, "state": "Abu Dhabi",
      "location": "Corniche"},
@@ -136,6 +148,68 @@ class BranchesView(_ManagerView):
         if refused:
             return refused
         return envelope("ok", "Branches.", {"branches": reports.branches(companies, values.get("state_id"))})
+
+
+class VehicleTypesView(_ManagerView):
+    """POST /api/v1/{app}/vehicle-types -- manager app only."""
+
+    form_class = ManagerVehicleTypesRequest
+
+    @extend_schema(
+        tags=["Manager Masters"],
+        summary="The company's vehicle types",
+        description="Every **active, approved** vehicle type of your company, by name -- the master, not "
+                    "tied to a station. Send `category_id` for one category's. `vehicle_type_id` is what "
+                    "`reports/orders` and `vehicles/list` take. An unknown `category_id` answers an empty "
+                    "list. `request_data` may be empty.",
+        request=envelope_request("ManagerVehicleTypesEnvelope", ManagerVehicleTypesRequest,
+                                 request_data_required=False),
+        responses=envelope_responses(
+            (200, "ok", "Vehicle types.", _VEHICLE_TYPES_SAMPLE),
+            (400, "invalid_request", "category_id must be a whole number.",
+             {"errors": {"category_id": "must be a whole number"}}),
+            *_COMMON,
+        ),
+    )
+    def post(self, request, app):
+        values, companies, _, refused = self.values(request, app)
+        if refused:
+            return refused
+        return envelope("ok", "Vehicle types.",
+                        {"vehicle_types": reports.vehicle_types(companies, values.get("category_id"))})
+
+
+class VehicleListView(_ManagerView):
+    """POST /api/v1/{app}/vehicles/list -- manager app only. (Not `vehicles`:
+    that is the operator app's vehicles at its station.)"""
+
+    form_class = ManagerVehiclesRequest
+
+    @extend_schema(
+        tags=["Manager Masters"],
+        summary="The company's vehicles",
+        description="Every **active, approved** vehicle of your company -- the master: no station, no "
+                    "rental state. By name, 50 a page (`page`, from 1). Send `vehicle_type_id` for one "
+                    "type's, `search` (up to 50 characters) to match the name, code or identifier "
+                    "(`VB0041`), ignoring case. `vehicle_id` is what `reports/orders` takes. An unknown "
+                    "`vehicle_type_id` answers an empty list. `request_data` may be empty.",
+        request=envelope_request("ManagerVehiclesEnvelope", ManagerVehiclesRequest, request_data_required=False),
+        responses=envelope_responses(
+            (200, "ok", "Vehicles.", _VEHICLES_SAMPLE),
+            (400, "invalid_request", "vehicle_type_id must be a whole number.",
+             {"errors": {"vehicle_type_id": "must be a whole number"}}),
+            *_COMMON,
+        ),
+    )
+    def post(self, request, app):
+        values, companies, _, refused = self.values(request, app)
+        if refused:
+            return refused
+        rows, page = reports.vehicles(companies, values.get("vehicle_type_id"),
+                                      (values.get("search") or "").strip(), values["page"])
+        return envelope("ok", "Vehicles.", {"vehicles": rows, "page": page.number,
+                                            "pages": page.paginator.num_pages,
+                                            "total_vehicles": page.paginator.count})
 
 
 # -- Collections ----------------------------------------------------------------------
@@ -231,9 +305,11 @@ _ORDER_SAMPLE = {
     "advance_paid": "100.000", "invoice_no": None,
     "credit_note": {"credit_note_no": "ABCO1105700000004CN", "status": "approved", "net_amount": "20.000"},
     "vehicles": [
-        {"vehicle_name": "QUAD-04", "vehicle_type": "Quad", "vehicle_status": "running",
+        {"vehicle_id": 104, "vehicle_name": "QUAD-04", "vehicle_type_id": 6, "vehicle_type": "Quad",
+         "vehicle_status": "running",
          "start_time": "2026-10-08 09:00:00", "end_time": None, "minutes": 95},
-        {"vehicle_name": "BUGGY-12", "vehicle_type": "Buggy", "vehicle_status": "returned",
+        {"vehicle_id": 112, "vehicle_name": "BUGGY-12", "vehicle_type_id": 7, "vehicle_type": "Buggy",
+         "vehicle_status": "returned",
          "start_time": "2026-10-08 09:00:00", "end_time": "2026-10-08 10:05:00", "minutes": 65},
     ],
     "payments": [
@@ -242,7 +318,8 @@ _ORDER_SAMPLE = {
     ],
 }
 _ORDERS_SAMPLE = {
-    "branch_id": 7, "branch_name": "Creek Park Gate 1", "from_date": "2026-10-01", "to_date": "2026-10-08",
+    "from_date": "2026-10-01", "to_date": "2026-10-08",
+    "state_id": None, "branch_id": 7, "branch_name": "Creek Park Gate 1", "vehicle_type_id": None, "vehicle_id": None,
     "order_status": "all",
     "summary": {"all": 15, "running": 4, "partially_received": 2, "awaiting_settlement": 1,
                 "fully_received": 8, "cancelled": 0, "replaced": 1},
@@ -250,9 +327,23 @@ _ORDERS_SAMPLE = {
 }
 
 _ORDERS_DESCRIPTION = """
-One station's orders **booked** in the date range -- running, settled and
-cancelled -- newest first, 50 a page (`page`, from 1), with a `summary` of the
-whole range (not just this page).
+The orders **booked** in the date range -- running, settled and cancelled --
+newest first, 50 a page (`page`, from 1), with a `summary` of the whole range
+(not just this page).
+
+**Filters, all optional** -- send none for every station of your company:
+- `state_id` -- one state's stations (`states`);
+- `branch_id` -- one station (`branches`); `branch_name` comes back with it,
+  both `null` when not sent;
+- `vehicle_type_id` -- orders with a vehicle of that type (`vehicle-types`);
+- `vehicle_id` -- orders with that vehicle (`vehicles/list`).
+
+A vehicle filter matches an order with any line on that vehicle -- replaced,
+removed and cancelled lines too. The `summary` follows **every filter and the
+dates**; `order_status` narrows the list only. A pair that does not match (a
+station outside the state, a vehicle of another type) answers an empty list
+and a zero summary. A station that is not yours is `unknown_branch`. The
+filters are echoed back as sent (`null` when not).
 
 **`order_status`** (each order; also the filter, default `all`):
 - `running` -- no vehicle back yet;
@@ -267,7 +358,9 @@ latest expected end; `amount` is the settled net, or what the lines come to so
 far (back at their total, out at their package price); `advance_paid` is the
 money held now; `credit_note` its waiting or issued credit note. `vehicles`
 lists every line, replaced and removed ones too (`vehicle_status` `running`,
-`returned`, `replaced`, `removed`, `cancelled`), with `minutes` run so far.
+`returned`, `replaced`, `removed`, `cancelled`), with `minutes` run so far,
+and its `vehicle_id` and `vehicle_type_id`. `station_name` is the order's own
+station.
 `payments` are as taken: `advance`, `settlement`, `refund`.
 """ + _DATES
 
@@ -279,12 +372,13 @@ class BranchOrdersView(_ManagerView):
 
     @extend_schema(
         tags=["Manager Reports"],
-        summary="One station's orders, with a status summary",
+        summary="Orders by state / station / vehicle type / vehicle, with a status summary",
         description=_ORDERS_DESCRIPTION,
         request=envelope_request("BranchOrdersEnvelope", BranchOrdersRequest),
         responses=envelope_responses(
             (200, "ok", "Orders.", _ORDERS_SAMPLE),
-            (400, "invalid_request", "branch_id is required.", {"errors": {"branch_id": "is required"}}),
+            (400, "invalid_request", "branch_id must be a whole number.",
+             {"errors": {"branch_id": "must be a whole number"}}),
             _DATES_INVALID,
             (404, "unknown_branch", "No station with that id.", {}),
             *_COMMON,
@@ -294,14 +388,17 @@ class BranchOrdersView(_ManagerView):
         values, companies, zone, refused = self.values(request, app)
         if refused:
             return refused
-        found = reports.branch_orders(companies, values["branch_id"], values["from_date"], values["to_date"],
-                                      zone, status=values["order_status"], page=values["page"])
+        filters = {key: values.get(key) for key in ("state_id", "branch_id", "vehicle_type_id", "vehicle_id")}
+        found = reports.orders_report(companies, values["from_date"], values["to_date"], zone, **filters,
+                                      status=values["order_status"], page=values["page"])
         if found is None:
             return envelope("unknown_branch", "No station with that id.", http_status=404)
         branch, summary, rows, page = found
         return envelope("ok", "Orders.", {
-            "branch_id": branch.pk, "branch_name": branch.name,
             "from_date": values["from_date"].isoformat(), "to_date": values["to_date"].isoformat(),
+            "state_id": filters["state_id"], "branch_id": branch.pk if branch else None,
+            "branch_name": branch.name if branch else None,
+            "vehicle_type_id": filters["vehicle_type_id"], "vehicle_id": filters["vehicle_id"],
             "order_status": values["order_status"], "summary": summary, "orders": rows,
             "page": page.number, "pages": page.paginator.num_pages, "total_orders": page.paginator.count,
         })

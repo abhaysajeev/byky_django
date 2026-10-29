@@ -7,8 +7,9 @@ Rules agreed with the owner (9 Oct 2026):
   basis as the dashboard's Monthly Sales. Approved credit notes on those
   orders are returned beside the net, never subtracted. Every state / branch
   is listed, 0 when it sold nothing; an inactive branch only when it sold.
-- Order details are the orders **booked** in the range at one branch -- running,
-  settled and cancelled -- with a status summary.
+- Order details are the orders **booked** in the range -- running, settled and
+  cancelled -- with a status summary. Optionally narrowed by state, station,
+  vehicle type and vehicle (owner, 29 Oct 2026); the summary follows them.
 
 Totals are worked out in the database (one grouped query each), so a long
 range costs index reads, not rows in Python; the order list is paged and its
@@ -23,6 +24,7 @@ from django.db.models import Case, CharField, Count, Exists, Max, OuterRef, Q, S
 from django.utils import timezone
 
 from apps.company.models import Branch, State
+from apps.fleet.models import Vehicle, VehicleType
 from apps.rental.models import (
     CreditNote,
     CreditNoteStatus,
@@ -34,6 +36,7 @@ from apps.rental.models import (
     Payment,
     PaymentKind,
 )
+from core.enums import ApprovalStatus
 
 TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 PAGE_SIZE = 50
@@ -85,6 +88,36 @@ def branches(company_ids, state_id=None):
         rows = rows.filter(location__state_id=state_id)
     return [{"branch_id": b.pk, "code": b.short_code, "name": b.name, "state_id": b.location.state_id,
              "state": b.location.state.name, "location": b.location.name} for b in rows]
+
+
+def _live(rows):
+    """Masters the apps may pick from: active and approved."""
+    return rows.filter(is_active=True, approval_status=ApprovalStatus.APPROVED)
+
+
+def vehicle_types(company_ids, category_id=None):
+    """The company's vehicle types -- the master, not tied to a station."""
+    rows = _live(VehicleType.objects.filter(company_id__in=company_ids)).select_related("category")
+    if category_id:
+        rows = rows.filter(category_id=category_id)
+    return [{"vehicle_type_id": t.pk, "name": t.vehicle_type_name, "category_id": t.category_id,
+             "category": t.category.category_name}
+            for t in rows.order_by("vehicle_type_name", "pk")]
+
+
+def vehicles(company_ids, vehicle_type_id=None, search="", page=1):
+    """(rows, page) -- the company's vehicles, the master: no station, no rental
+    state. `search` matches the name, code or identifier."""
+    rows = _live(Vehicle.objects.filter(company_id__in=company_ids)).select_related("vehicle_type")
+    if vehicle_type_id:
+        rows = rows.filter(vehicle_type_id=vehicle_type_id)
+    if search:
+        rows = rows.filter(Q(vehicle_name__icontains=search) | Q(vehicle_code__icontains=search)
+                           | Q(identifier__icontains=search))
+    paged = Paginator(rows.order_by("vehicle_name", "identifier_no"), PAGE_SIZE).get_page(page)
+    return [{"vehicle_id": v.pk, "vehicle_name": v.vehicle_name, "identifier": v.identifier,
+             "vehicle_type_id": v.vehicle_type_id, "vehicle_type": v.vehicle_type.vehicle_type_name}
+            for v in paged.object_list], paged
 
 
 # -- Collections ----------------------------------------------------------------------
@@ -209,13 +242,33 @@ def _with_status(orders):
     )
 
 
-def branch_orders(company_ids, branch_id, start, end, zone, *, status="all", page=1):
-    """(branch, summary, rows, page) -- or None when the branch is not the user's."""
-    branch = Branch.objects.filter(pk=branch_id, company_id__in=company_ids).first()
-    if branch is None:
-        return None
+def orders_report(company_ids, start, end, zone, *, state_id=None, branch_id=None, vehicle_type_id=None,
+                  vehicle_id=None, status="all", page=1):
+    """(branch or None, summary, rows, page) -- the orders booked in the range,
+    narrowed by whichever of state, station, vehicle type and vehicle are sent.
+    None when `branch_id` is not a station of the user's company. A pair that
+    does not match (a station outside the state, a vehicle of another type)
+    simply finds nothing. A vehicle filter matches an order with any line on
+    it -- replaced, removed and cancelled lines too: it was on that order."""
+    branch = None
+    if branch_id:
+        branch = Branch.objects.filter(pk=branch_id, company_id__in=company_ids).first()
+        if branch is None:
+            return None
     since, until = day_bounds(start, end, zone)
-    orders = _with_status(Order.objects.filter(branch=branch, booked_at__gte=since, booked_at__lt=until))
+    orders = Order.objects.filter(company_id__in=company_ids, booked_at__gte=since, booked_at__lt=until)
+    if state_id:
+        orders = orders.filter(branch__location__state_id=state_id)
+    if branch:
+        orders = orders.filter(branch=branch)
+    # One EXISTS over one line, not a join: an order with two matching lines is
+    # still one order, and type and vehicle must hold for the *same* line -- a
+    # Monaco elsewhere on the order does not make DC 02 a Monaco.
+    line = {key: value for key, value in (("vehicle__vehicle_type_id", vehicle_type_id),
+                                          ("vehicle_id", vehicle_id)) if value}
+    if line:
+        orders = orders.filter(Exists(OrderItem.objects.filter(order=OuterRef("pk"), **line)))
+    orders = _with_status(orders)
 
     counts = dict(orders.values("app_status").annotate(n=Count("id")).order_by().values_list("app_status", "n"))
     summary = {"all": sum(counts.values()), **{s: counts.get(s, 0) for s in ORDER_STATUSES},
@@ -223,12 +276,12 @@ def branch_orders(company_ids, branch_id, start, end, zone, *, status="all", pag
 
     if status != "all":
         orders = orders.filter(app_status=status)
-    listed = (orders.select_related("invoice").annotate(last_expected=Max("items__expected_end_time"))
+    listed = (orders.select_related("invoice", "branch").annotate(last_expected=Max("items__expected_end_time"))
               .prefetch_related("items__vehicle__vehicle_type", "payments__mode", "credit_notes")
               .order_by("-booked_at", "-id"))
     paged = Paginator(listed, PAGE_SIZE).get_page(page)
     now = timezone.now()
-    return branch, summary, [_order_json(order, branch, zone, now) for order in paged.object_list], paged
+    return branch, summary, [_order_json(order, zone, now) for order in paged.object_list], paged
 
 
 def _minutes(item, now):
@@ -238,7 +291,7 @@ def _minutes(item, now):
     return max(int(((item.end_time or now) - item.start_time).total_seconds() // 60), 0)
 
 
-def _order_json(order, branch, zone, now):
+def _order_json(order, zone, now):
     lines = sorted((i for i in order.items.all() if i.status in _BILLING), key=lambda i: i.start_time)
     settled = order.status == OrderStatus.COMPLETED
     ends = [i.end_time for i in lines if i.end_time]
@@ -254,7 +307,7 @@ def _order_json(order, branch, zone, now):
     return {
         "order_id": str(order.pk),
         "order_no": order.order_no,
-        "station_name": branch.name,
+        "station_name": order.branch.name,
         "customer_name": order.customer_name,
         "customer_mobile": order.customer_mobile,
         "booked_at": _local(order.booked_at, zone),
@@ -269,7 +322,9 @@ def _order_json(order, branch, zone, now):
                         "net_amount": str(note.net_amount) if note.net_amount is not None else None}
         if note else None,
         "vehicles": [
-            {"vehicle_name": i.vehicle.vehicle_name, "vehicle_type": i.vehicle.vehicle_type.vehicle_type_name,
+            {"vehicle_id": i.vehicle_id, "vehicle_name": i.vehicle.vehicle_name,
+             "vehicle_type_id": i.vehicle.vehicle_type_id,
+             "vehicle_type": i.vehicle.vehicle_type.vehicle_type_name,
              "vehicle_status": "running" if i.status == OrderItemStatus.ACTIVE else i.status,
              "start_time": _local(i.start_time, zone), "end_time": _local(i.end_time, zone),
              "minutes": _minutes(i, now)}

@@ -1,17 +1,20 @@
 """The manager app's masters and reports (apps/rental/manager_api.py,
 apps/rental/reports.py): states and stations, collections per state and per
-station (settled orders by settle day), and one station's orders booked in a
-range with a status summary."""
+station (settled orders by settle day), and the orders booked in a range with
+a status summary -- narrowed by state, station, vehicle type and vehicle --
+and the vehicle type and vehicle masters."""
 
 import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
 from apps.company.models import Branch, BranchType, Location, State
+from apps.fleet.models import Category, Vehicle, VehicleType
 from apps.rental import credit_notes, reports
-from apps.rental.models import Invoice, Order, OrderStatus
+from apps.rental.models import Invoice, Order, OrderItem, OrderItemStatus, OrderStatus
 from apps.rental.tests import test_order_requests as rq
 from apps.rental.tests.test_order_return import RETURN, back
+from core.enums import ApprovalStatus
 from core.ids import uuid7
 from core.models import User
 
@@ -24,6 +27,9 @@ BRANCHES = "/api/v1/manager/branches"
 BY_STATE = "/api/v1/manager/reports/collections/states"
 BY_BRANCH = "/api/v1/manager/reports/collections/branches"
 ORDERS = "/api/v1/manager/reports/orders"
+TYPES = "/api/v1/manager/vehicle-types"
+VEHICLES = "/api/v1/manager/vehicles/list"
+APPROVED = ApprovalStatus.APPROVED
 DAY = {"from_date": "2026-10-02", "to_date": "2026-10-02"}
 
 
@@ -90,7 +96,7 @@ def test_another_companys_stations_are_not_listed(client, world, manager):
     assert "Elsewhere" not in names and len(names) == 2
 
 
-@pytest.mark.parametrize("url", [STATES, BRANCHES, BY_STATE, BY_BRANCH, ORDERS])
+@pytest.mark.parametrize("url", [STATES, BRANCHES, TYPES, VEHICLES, BY_STATE, BY_BRANCH, ORDERS])
 def test_an_operator_token_is_refused(client, token, url):
     assert call(client, url, {}, token=token).json()["code"] == "wrong_channel"
 
@@ -260,9 +266,181 @@ def test_the_list_is_paged_and_a_page_costs_the_same(client, world, token, manag
 
 def test_the_report_endpoints_are_in_the_api_docs(client, db):
     schema = client.get("/api/schema/").content.decode()
-    for path in ("states", "branches", "reports/collections/states", "reports/collections/branches",
-                 "reports/orders"):
+    for path in ("states", "branches", "vehicle-types", "vehicles/list", "reports/collections/states",
+                 "reports/collections/branches", "reports/orders"):
         assert f"/api/v1/{{app}}/{path}" in schema, path
+
+
+# -- Order filters: state, station, vehicle type, vehicle ----------------------------------
+
+ECHOED = ("state_id", "branch_id", "branch_name", "vehicle_type_id", "vehicle_id")
+
+
+def report(client, manager, **filters):
+    return get(client, manager, ORDERS, **DAY, **filters)
+
+
+def numbers(data):
+    return sorted(o["order_no"] for o in data["orders"])
+
+
+@pytest.fixture
+def spread(client, world, token, shop, dubai):
+    """Three orders on 2 Oct: MO 41 + DC 02 (DC 02 back) and MO 42 at Corniche 1
+    (Abu Dhabi), and DC 02 again, moved to Creek Park Gate 1 (Dubai). DC 02 is
+    a Berg; the rest Monacos."""
+    Vehicle.objects.filter(pk=shop["dc02"].pk).update(vehicle_type=world["berg"])
+    both = book(client, world, shop, token, vehicles=("mo41", "dc02"), number=231)
+    alone = book(client, world, shop, token, vehicles=("mo42",), number=232)
+    call(client, RETURN, back(both, 1), token=token)
+    creek = book(client, world, shop, token, vehicles=("dc02",), number=233)
+    Order.objects.filter(order_no=creek["order_no"]).update(branch=dubai["open"])
+    return {"both": both["order_no"], "alone": alone["order_no"], "creek": creek["order_no"]}
+
+
+def every(spread):
+    return sorted([spread["both"], spread["alone"], spread["creek"]])
+
+
+def test_no_filter_is_every_station_each_row_with_its_own(client, manager, spread):
+    data = report(client, manager)
+
+    assert numbers(data) == every(spread)
+    assert (data["summary"]["all"], data["total_orders"]) == (3, 3)
+    assert {o["order_no"]: o["station_name"] for o in data["orders"]}[spread["creek"]] == "Creek Park Gate 1"
+    assert {key: data[key] for key in ECHOED} == dict.fromkeys(ECHOED)
+
+
+def test_a_state_is_its_stations_orders(client, world, manager, spread, dubai):
+    in_dubai = report(client, manager, state_id=dubai["state"].pk)
+    in_abu_dhabi = report(client, manager, state_id=world["adc1"].location.state_id)
+
+    assert (numbers(in_dubai), in_dubai["summary"]["all"], in_dubai["state_id"]) == (
+        [spread["creek"]], 1, dubai["state"].pk)
+    assert numbers(in_abu_dhabi) == sorted([spread["both"], spread["alone"]])
+
+
+def test_a_station_outside_the_state_finds_nothing(client, world, manager, spread, dubai):
+    data = report(client, manager, state_id=dubai["state"].pk, branch_id=world["adc1"].pk)
+
+    assert (data["orders"], data["summary"]["all"], data["total_orders"]) == ([], 0, 0)
+    assert (data["branch_id"], data["branch_name"]) == (world["adc1"].pk, "Abu Dhabi Corniche 1")
+
+
+def test_a_vehicle_type_counts_each_order_once(client, world, token, manager, shop, spread):
+    Vehicle.objects.filter(pk=shop["mo42"].pk).update(vehicle_type=world["berg"])
+    # MO 42 and DC 02 back, free to go out again (Creek's order is not the tablet's station to return).
+    OrderItem.objects.filter(order__order_no__in=[spread["alone"], spread["creek"]]).update(
+        status=OrderItemStatus.RETURNED)
+    two_bergs = book(client, world, shop, token, vehicles=("dc02", "mo42"), number=234)
+
+    bergs = report(client, manager, vehicle_type_id=world["berg"].pk)
+    monacos = report(client, manager, vehicle_type_id=world["monaco"].pk, branch_id=world["adc1"].pk)
+
+    assert numbers(bergs) == sorted([*every(spread), two_bergs["order_no"]])
+    assert (bergs["summary"]["all"], bergs["total_orders"]) == (4, 4)
+    assert numbers(monacos) == [spread["both"]]
+    lines = {v["vehicle_name"]: (v["vehicle_id"], v["vehicle_type_id"])
+             for o in bergs["orders"] for v in o["vehicles"]}
+    assert lines["DC 02"] == (shop["dc02"].pk, world["berg"].pk)
+
+
+def test_a_vehicle_finds_its_orders_and_a_vehicle_of_another_type_nothing(client, world, manager, shop, spread):
+    dc02 = report(client, manager, vehicle_id=shop["dc02"].pk)
+    mismatched = report(client, manager, vehicle_id=shop["dc02"].pk, vehicle_type_id=world["monaco"].pk)
+
+    assert numbers(dc02) == sorted([spread["both"], spread["creek"]])
+    assert (dc02["vehicle_id"], mismatched["orders"], mismatched["summary"]["all"]) == (shop["dc02"].pk, [], 0)
+
+
+def test_a_replaced_vehicle_still_finds_its_order(client, manager, shop, spread):
+    OrderItem.objects.filter(order__order_no=spread["alone"]).update(status=OrderItemStatus.REPLACED)
+
+    assert numbers(report(client, manager, vehicle_id=shop["mo42"].pk)) == [spread["alone"]]
+
+
+def test_the_summary_follows_the_filters_and_the_status_narrows_only_the_list(client, manager, shop, spread):
+    Order.objects.filter(order_no=spread["creek"]).update(status=OrderStatus.CANCELLED)
+
+    data = report(client, manager, vehicle_id=shop["dc02"].pk, order_status="cancelled")
+
+    assert (data["summary"]["all"], data["summary"]["partially_received"], data["summary"]["cancelled"]) == (
+        2, 1, 1)
+    assert (numbers(data), data["total_orders"]) == ([spread["creek"]], 1)
+
+
+def test_another_companys_vehicle_finds_nothing(client, world, manager, shop, spread):
+    theirs = Vehicle.objects.create(company=world["other"], vehicle_code="T1", vehicle_name="T1",
+                                    vehicle_type=world["their_type"], uom=shop["mo41"].uom, approval_status=APPROVED)
+
+    data = report(client, manager, vehicle_id=theirs.pk, vehicle_type_id=world["their_type"].pk)
+
+    assert (data["orders"], data["summary"]["all"]) == ([], 0)
+
+
+# -- Vehicle masters -------------------------------------------------------------------
+
+
+@pytest.fixture
+def fleet(world, shop):
+    """Every type approved; DC 02 a Berg, MO 42 still waiting for approval,
+    MO 99 retired, and another company's T1."""
+    VehicleType.objects.update(approval_status=APPROVED)
+    Vehicle.objects.filter(pk=shop["dc02"].pk).update(vehicle_type=world["berg"])
+    Vehicle.objects.filter(pk=shop["mo42"].pk).update(approval_status=ApprovalStatus.PENDING)
+    Vehicle.objects.filter(pk=shop["away"].pk).update(is_active=False)
+    Vehicle.objects.create(company=world["other"], vehicle_code="T1", vehicle_name="T1",
+                           vehicle_type=world["their_type"], uom=shop["mo41"].uom, approval_status=APPROVED)
+    return shop
+
+
+def test_vehicle_types_are_the_companys_active_approved_types(client, world, manager, fleet):
+    VehicleType.objects.filter(pk=world["berg"].pk).update(is_active=False)
+    karts = Category.objects.create(company=world["company"], category_code="KRT", category_name="Karts")
+    drift = VehicleType.objects.create(company=world["company"], category=karts, brand=world["monaco"].brand,
+                                       vehicle_type_name="Drift", approval_status=APPROVED)
+    VehicleType.objects.create(company=world["company"], category=karts, brand=world["monaco"].brand,
+                               vehicle_type_name="Pending Kart")
+
+    rows = get(client, manager, TYPES)["vehicle_types"]
+    in_karts = get(client, manager, TYPES, category_id=karts.pk)["vehicle_types"]
+
+    assert [r["name"] for r in rows] == ["Drift", "Monaco"]
+    assert in_karts == [{"vehicle_type_id": drift.pk, "name": "Drift", "category_id": karts.pk,
+                         "category": "Karts"}]
+    assert shape(rows[0]) == shape(reports_sample("_VEHICLE_TYPES_SAMPLE")["vehicle_types"][0])
+    assert get(client, manager, TYPES, category_id=999999)["vehicle_types"] == []
+
+
+def test_vehicles_are_the_companys_active_approved_vehicles(client, world, manager, fleet):
+    data = get(client, manager, VEHICLES)
+    bergs = get(client, manager, VEHICLES, vehicle_type_id=world["berg"].pk)["vehicles"]
+
+    assert [v["vehicle_name"] for v in data["vehicles"]] == ["DC 02", "MO 41"]
+    assert (data["page"], data["pages"], data["total_vehicles"]) == (1, 1, 2)
+    assert bergs == [{"vehicle_id": fleet["dc02"].pk, "vehicle_name": "DC 02",
+                      "identifier": Vehicle.objects.get(pk=fleet["dc02"].pk).identifier,
+                      "vehicle_type_id": world["berg"].pk, "vehicle_type": "Berg"}]
+    assert shape(data) == shape(reports_sample("_VEHICLES_SAMPLE")) | {"vehicles": shape(data)["vehicles"]}
+    assert get(client, manager, VEHICLES, vehicle_type_id=999999)["vehicles"] == []
+
+
+@pytest.mark.parametrize("term", ["mo 4", "MO 41", "{identifier}"])
+def test_vehicles_are_searched_by_name_code_and_identifier(client, manager, fleet, term):
+    identifier = Vehicle.objects.get(pk=fleet["mo41"].pk).identifier
+
+    rows = get(client, manager, VEHICLES, search=f" {term.format(identifier=identifier.lower())} ")["vehicles"]
+
+    assert [v["vehicle_name"] for v in rows] == ["MO 41"]
+
+
+def test_vehicles_are_paged(client, manager, fleet, monkeypatch):
+    monkeypatch.setattr(reports, "PAGE_SIZE", 1)
+
+    second = get(client, manager, VEHICLES, page=2)
+
+    assert ([v["vehicle_name"] for v in second["vehicles"]], second["pages"], second["total_vehicles"]) == (
+        ["MO 41"], 2, 2)
 
 
 def reports_sample(name):
