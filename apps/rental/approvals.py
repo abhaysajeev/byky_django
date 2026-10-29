@@ -121,6 +121,7 @@ def claim_json(claim, zone):
         "requested_by": _name(claim.requested_by), "requested_at": _local(claim.requested_at, zone),
         "decided_by": _name(claim.decided_by), "decided_channel": claim.decided_channel or None,
         "decided_at": _local(claim.decided_at, zone), "remarks": claim.remarks,
+        "request_remarks": claim.request_remarks,       # the operator's note when asking
     }
 
 

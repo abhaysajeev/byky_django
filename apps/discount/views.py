@@ -288,7 +288,7 @@ def _claim_row(claim, zone):
         "decided_at": claim.decided_at.astimezone(zone) if claim.decided_at else None,
         "decided_by": claim.decided_by.display_name if claim.decided_by_id else "",
         "decided_channel": claim.decided_channel, "decided_channel_label": claim.get_decided_channel_display(),
-        "remarks": claim.remarks,
+        "remarks": claim.remarks, "request_remarks": claim.request_remarks,
         "redeemed_at": claim.redeemed_at.astimezone(zone) if claim.redeemed_at else None,
         "detail_url": reverse("discount-approval-detail", args=[claim.pk]),
     }

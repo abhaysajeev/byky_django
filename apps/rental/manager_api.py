@@ -542,6 +542,7 @@ _CLAIM_ROW = {
     "branch_id": 3, "station": "Abu Dhabi Corniche 1",
     "requested_by": "Rashed", "requested_at": "2026-10-08 16:50:00",
     "decided_by": None, "decided_channel": None, "decided_at": None, "remarks": "",
+    "request_remarks": "Regular customer, card shown",
 }
 _CLAIM_DECIDED = {**_CLAIM_ROW, "status": "approved", "decided_by": "Sara K", "decided_channel": "manager",
                   "decided_at": "2026-10-08 16:52:00"}

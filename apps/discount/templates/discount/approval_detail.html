@@ -62,6 +62,9 @@
           <div class="scr-detail-row"><span class="scr-detail-label">Discount Amount</span><span class="scr-detail-value">{{ claim.discount_amount|default_if_none:"—" }}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Net Amount</span><span class="scr-detail-value">{{ claim.net_amount|default_if_none:"—" }}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Requested</span><span class="scr-detail-value">{{ claim.requested_at|date:"d M Y, H:i" }}{% if claim.requested_by %} · {{ claim.requested_by }}{% endif %}</span></div>
+          {% if claim.request_remarks %}
+          <div class="scr-detail-row"><span class="scr-detail-label">Operator's Note</span><span class="scr-detail-value scr-mon-wrap">{{ claim.request_remarks }}</span></div>
+          {% endif %}
           {% if claim.decided_at %}
           <div class="scr-detail-row"><span class="scr-detail-label">{% if claim.status == "cancelled" %}Cancelled{% else %}Decided{% endif %}</span><span class="scr-detail-value">{{ claim.decided_at|date:"d M Y, H:i" }}{% if claim.decided_by %} · {{ claim.decided_by }}{% endif %}{% if claim.decided_channel %} · {{ claim.decided_channel_label }}{% endif %}</span></div>
           {% endif %}
