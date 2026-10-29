@@ -69,9 +69,10 @@ class CustomerWiseRent(Report):
             Column("date", "Order Date", DATE, width=12),
             Column("count", "No Of Orders/Sales Return", COUNT, summed=False),
             Column("vehicles", "No Of Vehicles", COUNT, summed=False),
+            # Owner, 29 Oct 2026: the discount before the bill amount.
+            Column("discount", "Total Discount (AED)", MONEY, summed=False),
             Column("bill", "Total Bill Amount", MONEY, summed=False),
             Column("tax", "Total Tax", MONEY, summed=False),
-            Column("discount", "Total Discount", MONEY, summed=False),
         ]
         rows = []
         order = sorted(groups, key=lambda k: (customers[k[0]].full_name.lower(), k[1], k[2] != INVOICE))
