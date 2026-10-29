@@ -1,10 +1,12 @@
 from apps.company.forms import ScopedModelForm
 from apps.fleet.models import (
     UOM,
+    WAREHOUSE_FOR_VEHICLES,
     Asset,
     AssetType,
     Brand,
     Category,
+    IssueTarget,
     IssueType,
     Vehicle,
     VehicleType,
@@ -69,8 +71,16 @@ class AssetTypeForm(ScopedModelForm):
 class IssueTypeForm(ScopedModelForm):
     class Meta:
         model = IssueType
-        fields = ["company", "name", "code", "applies_to", "description", "is_active"]
-        labels = {"name": "Issue Type", "applies_to": "Applies To"}
+        fields = ["company", "name", "code", "applies_to", "needs_warehouse_service", "description", "is_active"]
+        labels = {"name": "Issue Type", "applies_to": "Applies To",
+                  "needs_warehouse_service": "Needs Warehouse Service"}
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("needs_warehouse_service") and cleaned.get("applies_to") != IssueTarget.VEHICLE:
+            self.add_error("needs_warehouse_service",
+                           f"{WAREHOUSE_FOR_VEHICLES} Untick it first, or set Applies To to Vehicle.")
+        return cleaned
 
 
 class AssetForm(ScopedModelForm):

@@ -25,6 +25,7 @@ from apps.crew.models import Employee
 from apps.devices import services as devices_services
 from apps.devices.models import BillKind, DeviceSettings
 from apps.fleet.models import Vehicle
+from apps.fleet.service_requests import in_warehouse_service
 from apps.rental import station_sync
 from apps.rental.models import TestRide, TestRideMode, TestRideStatus
 from core.enums import ApprovalStatus
@@ -91,6 +92,8 @@ def start(session, values):
             raise TestRideRefused("vehicle_already_rented", "That vehicle is out on rent.")
         if active_test_rides([vehicle.pk]):
             raise TestRideRefused("vehicle_on_test_ride", "That vehicle is already on a test ride.")
+        if in_warehouse_service([vehicle.pk]):
+            raise TestRideRefused("vehicle_in_warehouse_service", "That vehicle is in warehouse service.")
         if TestRide.objects.filter(company=company, test_no=values["test_no"]).exists():
             raise TestRideRefused("test_no_used", "That test number is already used.")
         customer = values["mode"] == TestRideMode.CUSTOMER
