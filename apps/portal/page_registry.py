@@ -43,6 +43,8 @@ RENTAL_SVG = (
 )
 # A credit card -- the wireframe's own Discount Card icon, path unchanged.
 DISCOUNT_SVG = "M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 10h18M7 15h4"
+# A column chart on its baseline -- the client's web reports.
+REPORTS_SVG = "M4 20h16M7 16v-5M12 16V6M17 16v-8"
 
 # code, name, menu header (blank = no divider), sort order, is_flat, svg, svg2
 MODULES = [
@@ -54,6 +56,7 @@ MODULES = [
     ("fare", "Fare & Packages", "Operations", 50, False, FARE_SVG, ""),
     ("rental", "Rental", "Operations", 60, False, RENTAL_SVG, ""),
     ("discount", "Discount Card", "Operations", 65, False, DISCOUNT_SVG, ""),
+    ("reports", "Reports", "Operations", 70, False, REPORTS_SVG, ""),
     ("system", "Users & Roles", "System", 90, False, SYSTEM_SVG, ""),
     ("monitoring", "Logs", "System", 95, False, LOGS_SVG, ""),
 ]
@@ -157,6 +160,11 @@ PAGES = [
      ["read", "approve", "print"], 4, False),
     ("discount.redemption", "discount", "Redemption History", "discount-redemption-list", ["read", "print"], 5, False),
     ("discount.privileges", "discount", "Privileges", "discount-privileges", ["read", "update"], 9, False),
+
+    # The client's web reports (apps/reports): read to see, print to export to Excel.
+    ("reports.rent_summary", "reports", "Rent Summary", "reports-rent-summary", ["read", "print"], 1, False),
+    ("reports.consolidated", "reports", "Consolidated", "reports-consolidated", ["read", "print"], 2, False),
+    ("reports.rent_details", "reports", "Rent Details", "reports-rent-details", ["read", "print"], 3, False),
 
     ("system.role", "system", "Roles", "portal-role-list", CRUD, 1, False),
     ("system.user", "system", "Users", "portal-user-list", CRUD, 2, False),
