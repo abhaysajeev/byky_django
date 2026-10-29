@@ -1,0 +1,88 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}{{ report.title }} - Reports{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-reports.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-reports.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+{% comment %}
+One template for every report (apps/reports): the filter bar comes from the
+report's filters, the table from its columns. The first page is in
+#rpt-initial; byky-reports.js draws it and fetches the next ones from
+data-url with the same query string the Export link carries.
+{% endcomment %}
+<div class="rpt" data-rpt data-url="{{ data_url }}" data-export="{{ export_url }}">
+
+  <header class="rpt-head">
+    <div class="rpt-head-text">
+      <nav class="rpt-crumb" aria-label="Breadcrumb">Reports <span aria-hidden="true">/</span> <b>{{ report.title }}</b></nav>
+      <h1 class="rpt-title">{{ report.title }}</h1>
+      <p class="rpt-scope" data-rpt-scope>{{ report.description }}</p>
+    </div>
+    <div class="rpt-head-actions">
+      {% if can_export %}
+      <a class="rpt-btn rpt-btn-primary" data-rpt-export href="{{ export_url }}?{{ initial.query }}">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"></path></svg>
+        Export
+      </a>
+      {% endif %}
+    </div>
+  </header>
+  <p class="rpt-message" data-rpt-message role="status" hidden></p>
+
+  <form class="rpt-bar" data-rpt-form autocomplete="off" novalidate>
+    <div class="rpt-bar-main">
+      {% if report.dated %}
+      <label class="rpt-field rpt-field-when">
+        <span class="rpt-label">From</span>
+        <input class="rpt-input" type="datetime-local" name="from" value="{{ inputs.from }}" data-default="{{ inputs.from }}" />
+      </label>
+      <label class="rpt-field rpt-field-when">
+        <span class="rpt-label">To</span>
+        <input class="rpt-input" type="datetime-local" name="to" value="{{ inputs.to }}" data-default="{{ inputs.to }}" />
+      </label>
+      {% endif %}
+      {% for b in primary_bar %}{% include "reports/_field.html" %}{% endfor %}
+      <div class="rpt-bar-tools">
+        {% if more_bar %}
+        <button type="button" class="rpt-btn" data-rpt-more aria-expanded="false" aria-controls="rpt-more">
+          More filters <span class="rpt-badge" data-rpt-applied hidden></span>
+        </button>
+        {% endif %}
+        <button type="button" class="rpt-text-btn" data-rpt-clear>Clear</button>
+      </div>
+    </div>
+    {% if more_bar %}
+    <div class="rpt-bar-more" id="rpt-more" data-rpt-more-panel hidden>
+      {% for b in more_bar %}{% include "reports/_field.html" %}{% endfor %}
+    </div>
+    {% endif %}
+  </form>
+
+  <section class="rpt-kpis" data-rpt-kpis aria-label="Totals"></section>
+
+  <section class="rpt-card" aria-label="{{ report.title }}">
+    <div class="rpt-card-head">
+      <p class="rpt-found" data-rpt-found></p>
+      <p class="rpt-note" data-rpt-note hidden></p>
+    </div>
+    <div class="rpt-frame" data-rpt-frame tabindex="0">
+      <table class="rpt-table" data-rpt-table></table>
+    </div>
+    <div class="rpt-state" data-rpt-state hidden></div>
+    <footer class="rpt-pager" data-rpt-pager></footer>
+  </section>
+
+  {{ initial|json_script:"rpt-initial" }}
+  <span hidden data-rpt-empty>{{ report.empty }}</span>
+</div>
+{% endblock %}
