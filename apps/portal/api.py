@@ -8,7 +8,8 @@ the device_settings check: those apps run on staff's own phones, not a
 station till -- the employee's "which branch" comes from the duty roster,
 and the manager names it in each attendance call. Operator runs the full
 set -- it's the station till, so "which branch" comes from the device's own
-mapping, not a roster. Manager's login returns the tokens only.
+mapping, not a roster. Manager's login returns the tokens only. Employee and
+Operator both return the employee's duty roster for the current week.
 
 Views only translate HTTP to apps/portal/auth.py + apps/portal/jwt.py +
 apps/crew/services.py/apps/devices/services.py and back, the same shape
@@ -137,6 +138,10 @@ def _operator_login(request, form, push_token=None):
         # sends as rms_employee_code when it scans an attendance QR code.
         "employee_code": user.employee.employee_code,
         "full_name": user.employee.full_name,
+        # The employee's duty roster for the current week -- the same block as
+        # the employee login (owner, 29 Oct 2026). Information only: every
+        # designation gets it; a day with no roster is `status: null`.
+        "roster": crew_services.current_week_roster(user.employee),
         "branch": {
             # The station's database id -- what the app puts in the station
             # QR code, so a scan names exactly one branch.
@@ -191,6 +196,21 @@ _LOGIN_BY_CHANNEL = {
 }
 
 
+# The employee's current week -- both the employee and the operator login send it.
+_ROSTER_SAMPLE = {
+    "week_start": "2026-09-20", "week_end": "2026-09-26",
+    "days": [
+        {"date": "2026-09-20", "status": "Working", "branch_id": 12, "branch": "Creek Park 1", "branch_code": "AUH01",
+         "state": "Abu Dhabi", "shift1_start": "07:00", "shift1_end": "23:00", "shift1_ends_next_day": False,
+         "shift2_start": None, "shift2_end": None, "shift2_ends_next_day": None,
+         "leave_type": None, "leave_reference": None},
+        {"date": "2026-09-21", "status": None, "branch_id": None, "branch": None, "branch_code": None,
+         "state": None, "shift1_start": None, "shift1_end": None, "shift1_ends_next_day": None,
+         "shift2_start": None, "shift2_end": None, "shift2_ends_next_day": None,
+         "leave_type": None, "leave_reference": None},
+    ],
+}
+
 _EMPLOYEE_LOGIN_SUCCESS_DATA = {
     "tokens": {
         "access": "eyJhbGciOiJIUzI1NiIs...", "refresh": "eyJhbGciOiJIUzI1NiIs...",
@@ -205,19 +225,7 @@ _EMPLOYEE_LOGIN_SUCCESS_DATA = {
         "can_approve_leave": False,
         "attendance_method": "qr_station", "team_scope": "own",
     },
-    "roster": {
-        "week_start": "2026-09-20", "week_end": "2026-09-26",
-        "days": [
-            {"date": "2026-09-20", "status": "Working", "branch_id": 12, "branch": "Creek Park 1", "branch_code": "AUH01",
-             "state": "Abu Dhabi", "shift1_start": "07:00", "shift1_end": "23:00", "shift1_ends_next_day": False,
-             "shift2_start": None, "shift2_end": None, "shift2_ends_next_day": None,
-             "leave_type": None, "leave_reference": None},
-            {"date": "2026-09-21", "status": None, "branch_id": None, "branch": None, "branch_code": None,
-             "state": None, "shift1_start": None, "shift1_end": None, "shift1_ends_next_day": None,
-             "shift2_start": None, "shift2_end": None, "shift2_ends_next_day": None,
-             "leave_type": None, "leave_reference": None},
-        ],
-    },
+    "roster": _ROSTER_SAMPLE,
 }
 
 _OPERATOR_LOGIN_SUCCESS_DATA = {
@@ -227,6 +235,7 @@ _OPERATOR_LOGIN_SUCCESS_DATA = {
         "refresh_expires_at": "2026-10-21T05:16:16.131807+00:00",
     },
     "first_name": "Rashed", "employee_code": "OPR001", "full_name": "Rashed K",
+    "roster": _ROSTER_SAMPLE,
     "branch": {
         "branch_id": 12, "name": "Creek Park 1", "branch_code": "AUH01", "is_hotel": False,
         "hotel_commission": "0.00", "accepts_app_payment": False,
@@ -286,6 +295,9 @@ class LoginView(PublicAPIView):
             "midnight counts). Otherwise 403: `duty_roster_not_found`, `not_working_today`, "
             "`rostered_at_another_branch` or `outside_shift_hours` -- show the `message`. "
             "Other designations are not checked. "
+            "Operator also gets `roster` -- the employee's duty roster for the current week, "
+            "the same block as the employee login (every designation; a day with no roster "
+            "has `status: null`). "
             "`employee.can_approve_leave` says whether to offer Leave Requests to decide "
             "(always in the manager app; in the employee app for a station's Leave Request "
             "approver). The employee roster's days carry `leave_type` / `leave_reference` "
