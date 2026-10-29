@@ -234,6 +234,23 @@ _BY_BRANCH_SAMPLE = {
     "total": {"orders": 412, "net_amount": "18450.500", "credit_notes": "70.000",
               "total_card_payment": "7350.250", "total_cash_payment": "11100.250"},
 }
+_BY_STATE_AND_BRANCH_SAMPLE = {
+    "from_date": "2026-10-01", "to_date": "2026-10-08", "state_id": None,
+    "states": [
+        {"state_id": 2, "code": "DXB", "name": "Dubai",
+         "branches": _BY_BRANCH_SAMPLE["branches"], "summary": _BY_BRANCH_SAMPLE["total"]},
+        {"state_id": 1, "code": "AUH", "name": "Abu Dhabi",
+         "branches": [
+             {"branch_id": 3, "code": "ADC1", "name": "Abu Dhabi Corniche 1", "orders": 96,
+              "net_amount": "4100.000", "credit_notes": "50.000", "card_payment": "1500.000",
+              "cash_payment": "2600.000"},
+         ],
+         "summary": {"orders": 96, "net_amount": "4100.000", "credit_notes": "50.000",
+                     "total_card_payment": "1500.000", "total_cash_payment": "2600.000"}},
+    ],
+    "total": {"orders": 508, "net_amount": "22550.500", "credit_notes": "120.000",
+              "total_card_payment": "8850.250", "total_cash_payment": "13700.250"},
+}
 
 
 class CollectionsByStateView(_ManagerView):
@@ -266,19 +283,26 @@ class CollectionsByBranchView(_ManagerView):
 
     @extend_schema(
         tags=["Manager Reports"],
-        summary="Collections per station (one state, or all)",
-        description="Settled sales per station, highest first, and the `total`. `state_id` is optional: "
-                    "send it for one state's stations, leave it out for **every** station of your company "
-                    "(`state_id` comes back `null`). Every active station is listed (0 when it sold nothing); "
-                    "a closed station only when it sold in the range. A state with no stations of yours "
-                    "answers an empty list.\n\n"
+        summary="Collections per station (one state, or all grouped by state)",
+        description="Settled sales per station, highest first. `state_id` is optional, and decides the "
+                    "shape:\n"
+                    "- **sent** -- that state's stations as a flat `branches` list, and their `total` "
+                    "(unchanged);\n"
+                    "- **left out** -- **every** station of your company, grouped under its state: "
+                    "`states[]`, each with `state_id`, `code`, `name`, its `branches` (highest first) and "
+                    "its `summary`; states highest first; then the grand `total`. `state_id` comes back "
+                    "`null`. A state's `summary` has the same keys as `total`.\n\n"
+                    "Every active station is listed (0 when it sold nothing); a closed station only when it "
+                    "sold in the range; a state only when it has a listed station. A state with no stations "
+                    "of yours answers an empty list.\n\n"
                     "**`card_payment` / `cash_payment`** -- what the station's settled orders in the range "
                     "were paid by card and by cash: advance and settlement, less refunds. A payment mode "
                     "is matched by its name containing \"card\" / \"cash\"; other modes (e.g. cheque) are "
                     "in neither. `total_card_payment` / `total_cash_payment` add them up." + _COLLECTIONS,
         request=envelope_request("CollectionsByBranchEnvelope", CollectionsByBranchRequest),
         responses=envelope_responses(
-            (200, "ok", "Collections.", _BY_BRANCH_SAMPLE),
+            (200, "ok", "Collections.", _BY_BRANCH_SAMPLE, "ok (state_id sent)"),
+            (200, "ok", "Collections.", _BY_STATE_AND_BRANCH_SAMPLE, "ok (no state_id: grouped by state)"),
             (400, "invalid_request", "state_id must be a whole number.",
              {"errors": {"state_id": "must be a whole number"}}),
             _DATES_INVALID, *_COMMON,
@@ -288,11 +312,16 @@ class CollectionsByBranchView(_ManagerView):
         values, companies, zone, refused = self.values(request, app)
         if refused:
             return refused
-        rows, total = reports.collections_by_branch(companies, values.get("state_id"), values["from_date"],
-                                                    values["to_date"], zone)
-        return envelope("ok", "Collections.", {
-            "from_date": values["from_date"].isoformat(), "to_date": values["to_date"].isoformat(),
-            "state_id": values.get("state_id"), "branches": rows, "total": total})
+        state_id = values.get("state_id")
+        dates = {"from_date": values["from_date"].isoformat(), "to_date": values["to_date"].isoformat(),
+                 "state_id": state_id}
+        if state_id:
+            rows, total = reports.collections_by_branch(companies, state_id, values["from_date"],
+                                                        values["to_date"], zone)
+            return envelope("ok", "Collections.", {**dates, "branches": rows, "total": total})
+        states, total = reports.collections_by_state_and_branch(companies, values["from_date"],
+                                                                values["to_date"], zone)
+        return envelope("ok", "Collections.", {**dates, "states": states, "total": total})
 
 
 # -- Order details ------------------------------------------------------------------------

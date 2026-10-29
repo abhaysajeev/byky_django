@@ -140,21 +140,45 @@ def test_collections_per_station_of_one_state(client, world, manager, settled, d
         "total_card_payment": "0.000", "total_cash_payment": "0.000"}
 
 
-def test_every_station_with_card_and_cash_when_no_state_is_sent(client, world, manager, settled, dubai):
-    """Owner, 29 Oct 2026: state_id optional; card and cash payments per station
-    and in the total. The settled order took 100.000 cash at booking and
-    10.000 by card at settle."""
-    data = get(client, manager, BY_BRANCH, **DAY)
+def test_one_state_carries_card_and_cash(client, world, manager, settled):
+    """Owner, 29 Oct 2026: card and cash payments per station and in the total.
+    The settled order took 100.000 cash at booking and 10.000 by card at settle."""
+    data = get(client, manager, BY_BRANCH, state_id=world["adc1"].location.state_id, **DAY)
 
-    assert data["state_id"] is None
-    names = [b["name"] for b in data["branches"]]
-    assert set(names) == {"Abu Dhabi Corniche 1", "Abu Dhabi Corniche 2", "Creek Park Gate 1"}
     [sold] = [b for b in data["branches"] if b["orders"]]
     assert (sold["net_amount"], sold["card_payment"], sold["cash_payment"]) == ("110.000", "10.000", "100.000")
-    assert data["total"] == {"orders": 1, "net_amount": "110.000", "credit_notes": "0.000",
-                             "total_card_payment": "10.000", "total_cash_payment": "100.000"}
-    sample = reports_sample("_BY_BRANCH_SAMPLE")
-    assert shape({**data, "state_id": 0}) == shape({**sample, "state_id": 0})
+    assert "states" not in data
+    assert shape(data) == shape(reports_sample("_BY_BRANCH_SAMPLE"))
+
+
+def test_no_state_groups_every_station_under_its_state(client, world, manager, settled, dubai):
+    """Owner, 29 Oct 2026: without state_id, every station under its state, a
+    summary per state (the total's keys), states highest first, then the total."""
+    data = get(client, manager, BY_BRANCH, **DAY)
+
+    assert (data["state_id"], "branches" in data) == (None, False)
+    assert [(s["name"], [b["name"] for b in s["branches"]]) for s in data["states"]] == [
+        ("Abu Dhabi", ["Abu Dhabi Corniche 1", "Abu Dhabi Corniche 2"]),
+        ("Dubai", ["Creek Park Gate 1"]),        # the closed station sold nothing: not listed
+    ]
+    abu_dhabi, in_dubai = data["states"]
+    assert abu_dhabi["summary"] == data["total"] == {
+        "orders": 1, "net_amount": "110.000", "credit_notes": "0.000",
+        "total_card_payment": "10.000", "total_cash_payment": "100.000"}
+    assert (in_dubai["state_id"], in_dubai["code"], in_dubai["summary"]["net_amount"]) == (
+        dubai["state"].pk, "DXB", "0.000")
+    assert shape(data) == shape(reports_sample("_BY_STATE_AND_BRANCH_SAMPLE"))
+
+
+def test_grouped_states_order_by_net_and_add_up_to_the_total(client, world, manager, settled, dubai):
+    Invoice.objects.update(branch=dubai["closed"])         # a closed station that sold: listed, under Dubai
+
+    data = get(client, manager, BY_BRANCH, **DAY)
+
+    assert [s["name"] for s in data["states"]] == ["Dubai", "Abu Dhabi"]
+    assert [b["name"] for b in data["states"][0]["branches"]] == ["Creek Park Old", "Creek Park Gate 1"]
+    assert data["total"]["net_amount"] == "110.000"
+    assert sum(s["summary"]["orders"] for s in data["states"]) == data["total"]["orders"]
 
 
 @pytest.mark.parametrize(("dates", "field"), [

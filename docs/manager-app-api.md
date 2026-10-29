@@ -468,13 +468,41 @@ pull-to-refresh), and stop when the app is in the background.
 | Field | Required | Notes |
 |---|---|---|
 | `from_date`, `to_date` | **yes** | As above |
-| `state_id` | no | From `states` (or the row tapped in 6.1). Leave out for **every** station; `state_id` comes back `null` |
+| `state_id` | no | From `states` (or the row tapped in 6.1). Leave out for **every** station, grouped by state |
 
-Reply: `from_date`, `to_date`, `state_id`, `branches[]` (`branch_id`, `code`,
-`name`, `orders`, `net_amount`, `credit_notes`, `card_payment`,
-`cash_payment`) and the `total` (`orders`, `net_amount`, `credit_notes`,
-`total_card_payment`, `total_cash_payment`). Active stations always listed (0
-when nothing sold); a closed station only if it sold in the range. Not paged.
+**With `state_id`:** `from_date`, `to_date`, `state_id`, `branches[]`
+(`branch_id`, `code`, `name`, `orders`, `net_amount`, `credit_notes`,
+`card_payment`, `cash_payment`) and the `total` (`orders`, `net_amount`,
+`credit_notes`, `total_card_payment`, `total_cash_payment`).
+
+**Without `state_id`:** every station, grouped under its state, with
+`state_id` `null`:
+
+```json
+{ "code": "ok", "message": "Collections.", "data": {
+  "from_date": "2026-10-01", "to_date": "2026-10-08", "state_id": null,
+  "states": [
+    { "state_id": 2, "code": "DXB", "name": "Dubai",
+      "branches": [
+        { "branch_id": 7, "code": "CPG1", "name": "Creek Park Gate 1", "orders": 128,
+          "net_amount": "5320.000", "credit_notes": "0.000",
+          "card_payment": "2200.000", "cash_payment": "3120.000" }
+      ],
+      "summary": { "orders": 412, "net_amount": "18450.500", "credit_notes": "70.000",
+                   "total_card_payment": "7350.250", "total_cash_payment": "11100.250" } }
+  ],
+  "total": { "orders": 1033, "net_amount": "45210.250", "credit_notes": "120.000",
+             "total_card_payment": "…", "total_cash_payment": "…" }
+} }
+```
+
+- Each state's `summary` has the same keys as `total`.
+- States are ordered highest net first, and stations within a state highest
+  net first.
+
+Either way, active stations are always listed (0 when nothing sold); a
+closed station only if it sold in the range; a state only if it has a listed
+station. Not paged.
 
 `card_payment` / `cash_payment` — what the station's settled orders in the
 range were paid by card and by cash: advance and settlement, less refunds. A

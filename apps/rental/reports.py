@@ -196,9 +196,9 @@ def _payments_by_branch(company_ids, start, end, zone):
     return {branch_id: tuple(entry) for branch_id, entry in figures.items()}
 
 
-def collections_by_branch(company_ids, state_id, start, end, zone):
-    """Per station -- of one state, or (no `state_id`) every station -- with
-    the card and cash payments of its settled orders, and the totals."""
+def _station_rows(company_ids, state_id, start, end, zone):
+    """[(branch, row)] -- each listed station with its figures and its card and
+    cash payments; one state's when `state_id` is given."""
     figures = _collections_by_branch(company_ids, start, end, zone)
     paid = _payments_by_branch(company_ids, start, end, zone)
     branches = _listed_branches(company_ids, figures)
@@ -207,14 +207,43 @@ def collections_by_branch(company_ids, state_id, start, end, zone):
     rows = []
     for b in branches:
         card, cash = paid.get(b.pk, (ZERO, ZERO))
-        rows.append({"branch_id": b.pk, "code": b.short_code, "name": b.name,
-                     **_row(*figures.get(b.pk, (0, ZERO, ZERO))),
-                     "card_payment": _money(card), "cash_payment": _money(cash)})
-    rows = _sorted(rows)
-    total = {**_total(rows),
-             "total_card_payment": _money(sum((Decimal(r["card_payment"]) for r in rows), ZERO)),
-             "total_cash_payment": _money(sum((Decimal(r["cash_payment"]) for r in rows), ZERO))}
-    return rows, total
+        rows.append((b, {"branch_id": b.pk, "code": b.short_code, "name": b.name,
+                         **_row(*figures.get(b.pk, (0, ZERO, ZERO))),
+                         "card_payment": _money(card), "cash_payment": _money(cash)}))
+    return rows
+
+
+def _station_total(rows):
+    """The stations' totals, card and cash included -- a state's `summary` and
+    the `total` have the same keys."""
+    return {**_total(rows),
+            "total_card_payment": _money(sum((Decimal(r["card_payment"]) for r in rows), ZERO)),
+            "total_cash_payment": _money(sum((Decimal(r["cash_payment"]) for r in rows), ZERO))}
+
+
+def collections_by_branch(company_ids, state_id, start, end, zone):
+    """Per station -- of one state, or (no `state_id`) every station -- with
+    the card and cash payments of its settled orders, and the totals."""
+    rows = _sorted([row for _, row in _station_rows(company_ids, state_id, start, end, zone)])
+    return rows, _station_total(rows)
+
+
+def collections_by_state_and_branch(company_ids, start, end, zone):
+    """(states, total) -- every station, grouped under its state (owner, 29 Oct
+    2026): each state with its stations (highest first) and its `summary`,
+    states highest first, and the grand `total`. The same stations and figures
+    as collections_by_branch without a state."""
+    grouped = {}
+    for branch, row in _station_rows(company_ids, None, start, end, zone):
+        state = branch.location.state
+        grouped.setdefault(state.pk, (state, []))[1].append(row)
+    states = []
+    for state, rows in grouped.values():
+        rows = _sorted(rows)
+        states.append({"state_id": state.pk, "code": state.short_code, "name": state.name,
+                       "branches": rows, "summary": _station_total(rows)})
+    states.sort(key=lambda s: (-Decimal(s["summary"]["net_amount"]), s["name"]))
+    return states, _station_total([row for s in states for row in s["branches"]])
 
 
 # -- Order details ------------------------------------------------------------------------
