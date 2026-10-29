@@ -15,7 +15,7 @@ from apps.fleet.scoping import assets_for, vehicles_for
 from apps.reports.base import COUNT, DATE, Column, Kpi, Report, Row, paged
 from apps.reports.common import employee_name
 
-NOWHERE = "Not at a station"
+NOWHERE = "Not at a branch"
 
 
 def _status(item):
@@ -40,7 +40,7 @@ class VehicleDetails(Report):
     unit = ("vehicle", "vehicles")
     dated = False
     empty = "No vehicle matches these filters."
-    description = "Every vehicle by station, category and type, with its RFID tag."
+    description = "Every vehicle by branch, category and type, with its RFID tag."
 
     def build(self, ctx, page=None, per_page=None):
         f = ctx.f
@@ -86,7 +86,7 @@ class VehicleDetails(Report):
         }) for v in vehicles]
         return paged(rows, page, per_page, columns=columns, total=None, count=len(rows),
                      kpis=[Kpi("Vehicles", len(rows), COUNT),
-                           Kpi("Stations", len({r.cells["branch"] for r in rows} - {NOWHERE}), COUNT),
+                           Kpi("Branches", len({r.cells["branch"] for r in rows} - {NOWHERE}), COUNT),
                            Kpi("Categories", len({v.vehicle_type.category_id for v in vehicles}), COUNT),
                            Kpi("Vehicle types", len({v.vehicle_type_id for v in vehicles}), COUNT)])
 
@@ -100,7 +100,7 @@ class AssetDetails(Report):
     unit = ("asset", "assets")
     dated = False
     empty = "No asset matches these filters."
-    description = "Every asset by station and type, with who holds it."
+    description = "Every asset by branch and type, with who holds it."
 
     def build(self, ctx, page=None, per_page=None):
         f = ctx.f
@@ -138,5 +138,5 @@ class AssetDetails(Report):
         }) for a in assets]
         return paged(rows, page, per_page, columns=columns, total=None, count=len(rows),
                      kpis=[Kpi("Assets", len(rows), COUNT),
-                           Kpi("Stations", len({r.cells["branch"] for r in rows} - {NOWHERE}), COUNT),
+                           Kpi("Branches", len({r.cells["branch"] for r in rows} - {NOWHERE}), COUNT),
                            Kpi("Asset types", len({a.asset_type_id for a in assets}), COUNT)])
