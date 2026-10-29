@@ -49,6 +49,7 @@ from apps.devices.models import (
 from apps.portal.auth import close_sessions_for_device
 from apps.portal.session_models import LogoutReason
 from core.enums import ApprovalStatus, Channel
+from core.timezones import business_date_for, business_day_range
 
 log = logging.getLogger(__name__)
 
@@ -817,7 +818,24 @@ def _mappable(devices_qs, pk):
     return device
 
 
-def map_device(devices_qs, pk, *, user, branch, now=None):
+def transaction_letter(branch, raw, *, device=None):
+    """The letter a mapping at `branch` may carry: one capital A-Z, not used by
+    another open mapping there -- or "" (none, or a station that is not
+    multi-device, where the tablet's prefix has no letter)."""
+    letter = (raw or "").strip().upper()
+    if not branch.is_multi_device or not letter:
+        return ""
+    if len(letter) != 1 or not "A" <= letter <= "Z":
+        raise DeviceActionError("The transaction letter is one letter, A to Z.", "Transaction letter")
+    taken = DeviceMapping.objects.filter(branch=branch, to_date__isnull=True, transaction_letter=letter)
+    if device is not None:
+        taken = taken.exclude(device=device)
+    if taken.exists():
+        raise DeviceActionError(f"Letter {letter} is already used at {branch.name}.", "Transaction letter")
+    return letter
+
+
+def map_device(devices_qs, pk, *, user, branch, letter="", now=None):
     """Give a device with no station one, from now."""
     now = now or timezone.now()
     with transaction.atomic():
@@ -825,13 +843,14 @@ def map_device(devices_qs, pk, *, user, branch, now=None):
         if _open_mapping(device) is not None:
             raise DeviceActionError("This device already has a station. Use Re-map.", "Device")
         _check_station(branch, device)
+        letter = transaction_letter(branch, letter, device=device)
         close_sessions_for_device(device, LogoutReason.FORCED, now=now)
         return DeviceMapping.objects.create(
-            device=device, branch=branch, from_date=now, created_by=user,
+            device=device, branch=branch, from_date=now, transaction_letter=letter, created_by=user,
         )
 
 
-def remap_device(devices_qs, pk, *, user, branch, now=None):
+def remap_device(devices_qs, pk, *, user, branch, letter="", now=None):
     """Move a device to another station now: the open row ends at the moment
     the new one begins."""
     now = now or timezone.now()
@@ -843,11 +862,29 @@ def remap_device(devices_qs, pk, *, user, branch, now=None):
         if current.branch_id == branch.pk:
             raise DeviceActionError("The device is already at this station.", "Station")
         _check_station(branch, device)
+        letter = transaction_letter(branch, letter, device=device)
         close_sessions_for_device(device, LogoutReason.FORCED, now=now)
         _close_mapping(device, now, user)
         return DeviceMapping.objects.create(
-            device=device, branch=branch, from_date=now, created_by=user,
+            device=device, branch=branch, from_date=now, transaction_letter=letter, created_by=user,
         )
+
+
+def set_transaction_letter(devices_qs, pk, *, user, letter):
+    """Change the letter on the device's open mapping, in place: a label, not
+    history (owner, 28 Oct 2026). The tablet reads it at its next login."""
+    with transaction.atomic():
+        device = _mappable(devices_qs, pk)
+        mapping = _open_mapping(device)
+        if mapping is None:
+            raise DeviceActionError("This device has no station yet. Use Add Device Mapping.", "Device")
+        if not mapping.branch.is_multi_device:
+            raise DeviceActionError(f"{mapping.branch.name} is not a multi-device station: no letter.",
+                                    "Transaction letter")
+        mapping.transaction_letter = transaction_letter(mapping.branch, letter, device=device)
+        mapping.modified_by = user
+        mapping.save(update_fields=["transaction_letter", "modified_by", "modified_on"])
+        return mapping
 
 
 def close_mapping(devices_qs, pk, *, user, now=None):
@@ -1279,7 +1316,7 @@ SETTINGS_SHAREABLE = {
     "round_off_mode": "Round Off Type",
     "round_off_step": "Round Off Limit",
     "customer_test_minutes": "Customer Test Time Slot",
-    "cashier_test_minutes": "Cashier Test Time Slot",
+    "staff_test_minutes": "Staff Test Time Slot",
 }
 
 SETTINGS_CODE_MAX = 15
@@ -1382,7 +1419,7 @@ def _check_settings(data, *, branch, instance, settings_qs, branches_qs):
     fields["receipt_copies"] = copies
 
     for name, label in (("customer_test_minutes", "Customer Test Time Slot"),
-                        ("cashier_test_minutes", "Cashier Test Time Slot")):
+                        ("staff_test_minutes", "Staff Test Time Slot")):
         minutes = _whole(data.get(name))
         if minutes is None or not 0 < minutes <= 240:
             errors.append({"field": label, "message": "Minutes, between 1 and 240."})
@@ -1600,7 +1637,10 @@ def settings_payload(branch, *, since=None):
         # order_no_prefix), a snapshot that a later change to this one does
         # not move. Two prefixes in one reply invite using the wrong one.
         "customer_test_minutes": row.customer_test_minutes,
-        "cashier_test_minutes": row.cashier_test_minutes,
+        "staff_test_minutes": row.staff_test_minutes,
+        # The same value under its old name, for app builds that still read it
+        # (renamed Cashier -> Staff, 28 Oct 2026).
+        "cashier_test_minutes": row.staff_test_minutes,
         "round_off_mode": row.round_off_mode,
         "round_off_step": str(row.round_off_step),
         "tax_type": company.tax_type,
@@ -1703,6 +1743,30 @@ def raise_counter_from(device, branch, kind, receipt_no):
     return counter
 
 
+def open_mapping(device):
+    return DeviceMapping.objects.filter(device=device, to_date__isnull=True).first()
+
+
+def transaction_no_prefix(branch, mapping=None):
+    """The prefix a tablet puts before its daily transaction count: the
+    station's current order prefix, then -<letter> at a multi-device station
+    whose mapping has one -- DUP, DUP-A (owner, 28 Oct 2026)."""
+    prefix = bill_prefix_for(branch)
+    letter = mapping.transaction_letter if mapping is not None else ""
+    return f"{prefix}-{letter}" if branch.is_multi_device and letter else prefix
+
+
+def last_transaction_no(device, branch, at=None):
+    """The latest transaction number this tablet sent today (company day), or
+    None -- so a tablet reinstalled mid-day carries on instead of starting at 1."""
+    from apps.rental.models import Order
+
+    start, end = business_day_range(branch.company, business_date_for(branch.company, at or timezone.now()))
+    return (Order.objects.filter(device=device, branch=branch, booked_at__gte=start, booked_at__lt=end)
+            .exclude(transaction_no="").order_by("-booked_at", "-created_on")
+            .values_list("transaction_no", flat=True).first())
+
+
 def operator_settings(device, branch, *, since=None):
     """What an operator tablet is told about its station and its receipt
     numbering -- at login, and again on POST /device/settings whenever it
@@ -1724,4 +1788,8 @@ def operator_settings(device, branch, *, since=None):
                           if order_counter.last_number else None),
         "next_order_number": order_counter.next_number,
         "next_test_number": test_counter.next_number,
+        # Transaction numbers: the tablet counts the day's bookings itself and
+        # sends <prefix>-<n> with each (owner, 28 Oct 2026).
+        "transaction_no_prefix": transaction_no_prefix(branch, open_mapping(device)),
+        "last_transaction_no": last_transaction_no(device, branch),
     }

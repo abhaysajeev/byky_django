@@ -17,7 +17,7 @@ from apps.discount import services as discount_services
 from apps.fare import package_device
 from apps.fare.models import Fare, Package
 from apps.fleet.models import Vehicle
-from apps.rental import live, station_sync
+from apps.rental import live, station_sync, test_rides
 from apps.rental.models import (
     MONEY_IN,
     Customer,
@@ -115,6 +115,10 @@ ORDER_ERRORS = {
     "sync_id_conflict": (409, "That sync_id is already used for something else.", False),
     "order_no_used": (409, "That order number is already used.", False),
     "vehicle_already_rented": (409, "A vehicle in this order is already on an active rental.", False),
+    # Test rides (apps/rental/test_rides.py).
+    "vehicle_on_test_ride": (409, "A vehicle in this order is out on a test ride -- end it first.", False),
+    "unknown_test_ride": (404, "No test ride with that id at this station.", False),
+    "test_ride_closed": (409, "That test ride is already ended, rented or cancelled.", False),
     "vehicle_repeated": (400, "The same vehicle is in this order twice.", False),
     "item_id_used": (409, "An item sync_id is already used.", False),
     "payment_id_used": (409, "A payment sync_id is already used.", False),
@@ -467,13 +471,17 @@ def _book(session, values, reply_for):
     if customer is None:
         raise OrderRefused("unknown_customer")
 
-    refs = _line_refs(company, branch, items_input)
+    # A rental after a test ride names it: the ride is closed as rented and
+    # linked to this order (legacy Save_Order_Booking:437-482, @TestNo).
+    test_ride = test_rides.for_booking(session, values["test_ride_id"]) if values.get("test_ride_id") else None
+    refs = _line_refs(company, branch, items_input, test_ride=test_ride)
     modes = _payment_modes(company, payments_input)
 
     order = Order.objects.create(
         id=values["sync_id"], company=company, branch=branch, device=device,
         customer=customer, customer_name=customer.full_name, customer_mobile=customer.mobile_full,
-        order_no=values["order_no"], booked_at=values["booked_at"], start_time=values["start_time"],
+        order_no=values["order_no"], transaction_no=(values.get("transaction_no") or "").strip(),
+        booked_at=values["booked_at"], start_time=values["start_time"],
         is_direct_bill=values.get("is_direct_bill", False),
         is_hotel_order=values.get("is_hotel_order", False), hotel_commission=values.get("hotel_commission") or 0,
         created_by=user, modified_by=user,
@@ -481,6 +489,8 @@ def _book(session, values, reply_for):
     _new_lines(order, items_input, refs, user)
     _record_payments(session, order, payments_input, modes)
     devices_services.raise_counter_from(device, branch, BillKind.ORDER, order.order_no)
+    if test_ride is not None:
+        test_rides.mark_rented(test_ride, order, session)
 
     order.refresh_from_db()        # paid_amount, balance_due, payment_status: computed by the database
     event = {
@@ -490,15 +500,18 @@ def _book(session, values, reply_for):
     return order, event, reply_for(order)
 
 
-def _line_refs(company, branch, items_input):
+def _line_refs(company, branch, items_input, *, test_ride=None):
     """(vehicles, fares, offers) by id for new vehicle lines -- or the refusal.
-    Each vehicle this company's, at this station, in the call once and not on
-    another active line; each fare and offer this company's; each line id new.
-    Shared by booking, add and replace."""
+    Each vehicle this company's, at this station, in the call once, not on
+    another active line and not out on a test ride (but `test_ride`, the one
+    a booking names and closes); each fare and offer this company's; each line
+    id new. Shared by booking, add and replace. The vehicles are locked, so a
+    test ride starting on one of them waits for this call."""
     vehicle_list = [item["vehicle_id"] for item in items_input]
     if len(set(vehicle_list)) != len(vehicle_list):
         raise OrderRefused("vehicle_repeated")
-    vehicles = {v.pk: v for v in Vehicle.objects.filter(pk__in=vehicle_list, company=company)}
+    vehicles = {v.pk: v for v in Vehicle.objects.select_for_update().filter(
+        pk__in=vehicle_list, company=company).order_by("pk")}
     missing = set(vehicle_list) - set(vehicles)
     if missing:
         raise OrderRefused("unknown_vehicle", f"No vehicle with id {sorted(missing)[0]}.")
@@ -508,6 +521,10 @@ def _line_refs(company, branch, items_input):
     rented = active_rentals(vehicle_list)
     if rented:
         raise OrderRefused("vehicle_already_rented", f"Vehicle {min(rented)} is already on an active rental.")
+    on_test = {vehicle_id for vehicle_id, ride in test_rides.active_test_rides(vehicle_list).items()
+               if test_ride is None or ride.pk != test_ride.pk}
+    if on_test:
+        raise OrderRefused("vehicle_on_test_ride", f"Vehicle {min(on_test)} is out on a test ride -- end it first.")
     fares = _by_id(Fare, company, {item["fare_id"] for item in items_input if item.get("fare_id")},
                    "unknown_fare", "fare")
     # A package (sent as offer_id: the tablet API kept the old name).

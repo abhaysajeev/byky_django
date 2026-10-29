@@ -581,6 +581,9 @@ def _lines(order, zone, now):
             "start_time": _local(item.start_time, zone), "expected_end_time": _local(item.expected_end_time, zone),
             "end_time": _local(item.end_time, zone),
             "minutes_run": max(int((end - item.start_time).total_seconds() // 60), 0),
+            # The money: the agreed base fare; overtime and the line's total once back.
+            "base_fare": _money(item.base_fare), "overtime_amount": _money(item.overtime_amount),
+            "total_amount": _money(item.total_amount),
         })
     return rows
 
@@ -589,14 +592,39 @@ def _money(value):
     return str(value) if value is not None else None
 
 
-def _order_block(order, zone, now):
-    """The order a manager decides about: customer, advance, every vehicle."""
+def _billing(order, zone):
+    """The order's money as the manager app shows it (owner, 28 Oct 2026;
+    legacy GetOrderWithID_ForRequestApproval: FareAmount, DepositAmount,
+    AmountReceived, TaxPercentage, TransNo). Before settle there is no bill:
+    tax_amount, bill_amount, closed_by and closed_at are null."""
+    from apps.rental import money
+
+    invoice = getattr(order, "invoice", None) if order.status == OrderStatus.COMPLETED else None
+    if invoice is not None:
+        tax_percentage = invoice.tax_percentage
+    else:
+        tax_percentage = next((item.vehicle.vehicle_type.tax_percentage for item in money.billable(order)), None)
     return {
-        "order_no": order.order_no, "status": order.status,
+        "fare_amount": _money(money.fare(order)), "deposit_amount": _money(money.deposit(order)),
+        "amount_received": _money(order.amount_received), "amount_refunded": _money(order.amount_refunded),
+        "tax_percentage": _money(tax_percentage),
+        "tax_amount": _money(invoice.tax_amount) if invoice else None,
+        "bill_amount": _money(invoice.net_amount) if invoice else None,
+        "closed_by": _name(invoice.issued_by) if invoice else None,
+        "closed_at": _local(invoice.issued_at, zone) if invoice else None,
+    }
+
+
+def _order_block(order, zone, now):
+    """The order a manager decides about: customer, advance, every vehicle,
+    and its money (_billing)."""
+    return {
+        "order_no": order.order_no, "transaction_no": order.transaction_no, "status": order.status,
         "customer_name": order.customer_name, "customer_mobile": order.customer_mobile,
         "booked_at": _local(order.booked_at, zone),
         "advance_paid": str(order.paid_amount),
         "net_amount": _money(order.net_amount),
+        **_billing(order, zone),
         "vehicles": _lines(order, zone, now),
     }
 
@@ -615,8 +643,9 @@ def manager_json(req, zone, now):
 
 def _manager_rows():
     return (OrderRequest.objects
-            .select_related("order", "branch", "company", "requested_by", "decided_by", "revoked_by")
-            .prefetch_related("order__items__vehicle__vehicle_type"))
+            .select_related("order", "order__invoice__issued_by", "branch", "company", "requested_by",
+                            "decided_by", "revoked_by")
+            .prefetch_related("order__items__vehicle__vehicle_type", "order__payments"))
 
 
 def manager_row(request_id):
@@ -700,8 +729,9 @@ def _manager_rows_of(keys):
             loaded[("request", req.pk)] = {**manager_json(req, zone_of(req), now), "details": request_details(req)}
     if CREDIT_NOTE in wanted:
         for note in (CreditNote.objects.filter(pk__in=wanted[CREDIT_NOTE])
-                     .select_related("order", "invoice", "branch", "company", "requested_by", "decided_by")
-                     .prefetch_related(orders)):
+                     .select_related("order", "order__invoice__issued_by", "invoice", "branch", "company",
+                                     "requested_by", "decided_by")
+                     .prefetch_related(orders, "order__payments")):
             zone = zone_of(note)
             loaded[(CREDIT_NOTE, note.pk)] = _manager_other(_credit_note_row(note, zone), note, zone, now, details={
                 "credit_note_no": note.credit_note_no or None,
@@ -711,9 +741,9 @@ def _manager_rows_of(keys):
             })
     if CARD_DISCOUNT in wanted:
         for claim in (CardDiscountClaim.objects.filter(pk__in=wanted[CARD_DISCOUNT])
-                      .select_related("order", "branch", "company", "requested_by", "decided_by", "card_type",
-                                      "card_grade")
-                      .prefetch_related(orders)):
+                      .select_related("order", "order__invoice__issued_by", "branch", "company", "requested_by",
+                                      "decided_by", "card_type", "card_grade")
+                      .prefetch_related(orders, "order__payments")):
             zone = zone_of(claim)
             row = _claim_row(claim, zone)
             loaded[(CARD_DISCOUNT, claim.pk)] = _manager_other(row, claim, zone, now, details={

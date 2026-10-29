@@ -217,8 +217,12 @@ def test_only_vehicles_past_their_booked_end_longest_first(user, world, shop):
     started = now - datetime.timedelta(hours=2)
 
     def due(order, vehicle, minutes):
+        # A returned line's end moves with its start: a fixed end earlier in the
+        # day would precede `started` when the test runs in the evening.
         OrderItem.objects.filter(order=order, vehicle=vehicle).update(
             start_time=started, expected_end_time=now + datetime.timedelta(minutes=minutes))
+        OrderItem.objects.filter(order=order, vehicle=vehicle, end_time__isnull=False).update(
+            end_time=started + datetime.timedelta(minutes=30))
 
     late = make_order(world, shop, "LATE", lines=("active", "active"))
     due(late, shop["mo41"], -12)

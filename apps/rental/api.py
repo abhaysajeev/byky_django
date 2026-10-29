@@ -359,6 +359,11 @@ def _discount_json(order):
     }
 
 
+def _test_ride_json(order):
+    ride = next(iter(order.test_rides.all()), None)
+    return None if ride is None else {"test_ride_id": str(ride.pk), "test_no": ride.test_no}
+
+
 def order_json(order, *, zone, next_order_number):
     """The one shape every order call answers with (order_lifecycle_design.md
     3): the order, its customer, its totals, every item and every payment.
@@ -368,13 +373,15 @@ def order_json(order, *, zone, next_order_number):
     payments = list(order.payments.select_related("mode").order_by("paid_at", "created_on"))
     invoice = Invoice.objects.filter(order_id=order.pk).first()
     return {
-        "sync_id": str(order.pk), "order_no": order.order_no,
+        "sync_id": str(order.pk), "order_no": order.order_no, "transaction_no": order.transaction_no,
         "status": order.status, "payment_status": order.payment_status,
         "booked_at": _local(order.booked_at, zone), "start_time": _local(order.start_time, zone),
         "completed_at": _local(order.completed_at, zone), "cancelled_at": _local(order.cancelled_at, zone),
         "is_direct_bill": order.is_direct_bill, "is_hotel_order": order.is_hotel_order,
         "hotel_commission": _money(order.hotel_commission),
         "customer": {"id": order.customer_id, "name": order.customer_name, "mobile": order.customer_mobile},
+        # The test ride this rental came from, if the booking named one.
+        "test_ride": _test_ride_json(order),
         # The bill: null until settle.
         "subtotal": _money(order.subtotal),
         "discount": _discount_json(order),
@@ -450,11 +457,13 @@ def _counter_number(session):
 
 _ORDER_SAMPLE = {
     "sync_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9", "order_no": "DUBPP60182000231",
+    "transaction_no": "DUBPP-A-12",
     "status": "active", "payment_status": "pending",
     "booked_at": "2026-10-02 16:00:05", "start_time": "2026-10-02 16:00:00",
     "completed_at": None, "cancelled_at": None,
     "is_direct_bill": False, "is_hotel_order": False, "hotel_commission": "0.00",
     "customer": {"id": 5512, "name": "Ahmed Al Mansoori", "mobile": "971501234567"},
+    "test_ride": None,
     "subtotal": None, "discount": None, "tax_percentage": None, "tax_amount": None,
     "rounding_adjustment": None, "net_amount": None,
     "amount_received": "100.00", "amount_refunded": "0.00", "paid_amount": "100.00", "balance_due": None,
@@ -516,6 +525,7 @@ _BOOK_ERRORS = (
     "sync_id_conflict", "order_no_used", "vehicle_already_rented", "vehicle_repeated", "item_id_used",
     "payment_id_used", "unknown_customer", "unknown_payment_mode", "unknown_vehicle",
     "vehicle_not_at_station", "unknown_fare", "unknown_offer", "package_not_available",
+    "vehicle_on_test_ride", "unknown_test_ride", "test_ride_closed",
 )
 
 _ORDER_DESCRIPTION = """
@@ -543,6 +553,11 @@ registration id, then the digits) and raises the tablet's receipt counter to
 it -- **even when the booking is refused**, because the receipt was already
 printed. `next_order_number` in the reply is the counter after that.
 
+**`transaction_no`** (optional) -- the tablet's count of the day's bookings
+with its prefix, as printed: `<transaction_no_prefix>-<n>` from login, e.g.
+`DUBPP-12` or `DUBPP-A-12` at a multi-device station. Restarting at 1 each day
+is the tablet's job; the server stores it as sent, with no check.
+
 **`payments`** (may be empty or left out) -- the money taken at booking,
 one entry per payment mode (cash and card are two entries). Only `advance`
 at booking. `amount` more than 0; `reference_no` / `reference_date` for a
@@ -564,6 +579,14 @@ active and `paid` once it is settled (blank for a cancelled order).
 **Times** are `YYYY-MM-DD HH:MM:SS` in company time, no offset: `booked_at`
 is when the booking happened on the tablet (earlier if it was offline),
 `start_time` the rental's own start.
+
+**After a test ride** (optional `test_ride_id`, from `test-rides`): the ride
+must be this station's and still on test (`unknown_test_ride`,
+`test_ride_closed`). The booking closes it as `rented` and links it to the
+order (`test_ride` in the reply); its vehicle may then be booked -- or another
+one, if the customer chose differently. Test minutes are not charged: the
+fare runs from `start_time`. A vehicle on someone else's test ride is
+refused `vehicle_on_test_ride`.
 
 **Errors** carry `data.retry`: `true` -- keep the call queued and send it
 again; `false` -- stop and show the operator.
@@ -1161,7 +1184,7 @@ _REMOVED_SAMPLE = {
 _CHANGE_ERRORS = ("order_not_synced", "sync_id_conflict", "order_closed")
 _NEW_LINE_ERRORS = (
     "vehicle_already_rented", "vehicle_not_at_station", "unknown_vehicle", "unknown_fare", "unknown_offer",
-    "package_not_available", "item_id_used",
+    "package_not_available", "item_id_used", "vehicle_on_test_ride",
 )
 _ADD_ERRORS = (*_CHANGE_ERRORS, *_NEW_LINE_ERRORS, "unknown_payment_mode", "payment_id_used")
 _REPLACE_ERRORS = (*_CHANGE_ERRORS, "unknown_item", "item_not_active", "invalid_time", "vehicle_repeated",
@@ -1985,16 +2008,24 @@ class OrderRequestStatusView(_OperatorView):
 _MANAGER_SAMPLE = {
     **_REQUEST_PENDING_SAMPLE, "branch_id": 3, "station": "Creek Park 1", "requested_by": "Rashed K",
     "order": {
-        "order_no": "DUBPP60182000231", "status": "active", "customer_name": "Ahmed Al Mansoori",
+        "order_no": "DUBPP60182000231", "transaction_no": "DUBPP-A-12", "status": "active",
+        "customer_name": "Ahmed Al Mansoori",
         "customer_mobile": "971501234567", "booked_at": "2026-10-08 16:00:00", "advance_paid": "100.000",
         "net_amount": None,
+        # The money (owner, 28 Oct 2026): before settle there is no bill --
+        # tax_amount, bill_amount, closed_by and closed_at are null.
+        "fare_amount": "80.000", "deposit_amount": "100.000", "amount_received": "100.000",
+        "amount_refunded": "0.000", "tax_percentage": "5.00", "tax_amount": None, "bill_amount": None,
+        "closed_by": None, "closed_at": None,
         "vehicles": [
             {"vehicle": "MO 41", "identifier": "VB1241", "vehicle_type": "Monaco", "status": "active",
              "start_time": "2026-10-08 16:00:00", "expected_end_time": "2026-10-08 17:00:00",
-             "end_time": None, "minutes_run": 40},
+             "end_time": None, "minutes_run": 40,
+             "base_fare": "50.000", "overtime_amount": None, "total_amount": None},
             {"vehicle": "MO 42", "identifier": "VB1242", "vehicle_type": "Monaco", "status": "returned",
              "start_time": "2026-10-08 16:00:00", "expected_end_time": "2026-10-08 16:30:00",
-             "end_time": "2026-10-08 16:31:00", "minutes_run": 31},
+             "end_time": "2026-10-08 16:31:00", "minutes_run": 31,
+             "base_fare": "30.000", "overtime_amount": "0.000", "total_amount": "30.000"},
         ],
     },
 }
@@ -2026,7 +2057,9 @@ _MANAGER_CREDIT_NOTE_ROW = {
     "order_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9", "order_no": "DUBPP60182000231", "kind": "credit_note",
     "status": "pending", "reason": "Chain broke after 10 minutes", "requested_at": "2026-10-08 17:05:00",
     "decided_by": None, "decided_channel": None, "decided_at": None, "decision_note": "",
-    "order": {**_MANAGER_SAMPLE["order"], "status": "completed", "net_amount": "110.000"},
+    "order": {**_MANAGER_SAMPLE["order"], "status": "completed", "net_amount": "110.000",
+              "fare_amount": "110.000", "tax_amount": "5.240", "bill_amount": "110.000", "closed_by": "Rashed K",
+              "closed_at": "2026-10-08 17:15:00"},
     "details": {"credit_note_no": None, "invoice_no": "DUBPP60182000231", "invoice_net_amount": "110.000",
                 "net_amount": None, "tax_amount": None},
 }
@@ -2086,6 +2119,17 @@ link), %, fare basis and the
 bill / discount / net amounts. Order-request-only fields (`discount_*`,
 `revoked_*`, `applied_*`, `used_at`) are empty for those two kinds. `status` is
 each kind's own (a credit note can be `cancelled`, a card discount `redeemed`).
+
+**The order's money** (every kind with an order): `transaction_no`,
+`fare_amount` (running total -- returned vehicles' totals plus the base fare of
+those still out; once settled, the bill's subtotal), `deposit_amount` (the
+advance taken at booking), `amount_received`, `amount_refunded`,
+`tax_percentage` (the vehicle type's VAT % until settle, then the bill's),
+and -- **only once settled** -- `tax_amount`, `bill_amount` (the bill's net),
+`closed_by` (who settled) and `closed_at`; before settle these four are `null`
+(a discount, complimentary or receipt-reprint request is on a running order).
+Each vehicle also has `base_fare`, and `overtime_amount` / `total_amount` once
+back.
 """
 
 _MANAGER_APPROVE_DESCRIPTION = _MANAGER_RULES + """
