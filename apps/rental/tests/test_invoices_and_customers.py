@@ -32,7 +32,8 @@ def rent_and_settle(client, world, shop, token, number, settled_at, customer=Non
                 total_amount="60.00")
     for request_data in (late, back(booked, 1)):
         assert call(client, RETURN, request_data, token=token).json()["code"] == "ok"
-    body = settling.settle(client, token, settling.bill(booked, shop, settled_at=settled_at, star_rating="4.5"))
+    body = settling.settle(client, token, settling.bill(booked, shop, settled_at=settled_at, star_rating="4.5",
+                                                        rating_remarks="Bikes were clean, quick service"))
     assert body["code"] == "ok", body
     return booked
 
