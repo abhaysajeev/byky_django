@@ -143,6 +143,7 @@ ORDER_ERRORS = {
     "amount_mismatch": (400, "The amounts do not add up.", False),
     "balance_not_settled": (409, "The bill is not paid in full.", False),
     "unknown_card_claim": (404, "That card-discount request is not on this order.", False),
+    "card_discount_revoked": (409, "That card-discount approval was revoked. Bill without it.", False),
     "card_claim_not_approved": (409, "That card-discount request is not approved.", False),
     "unknown_card_discount": (404, "No card discount with that id.", False),
     # Credit notes (apps/rental/credit_notes.py).

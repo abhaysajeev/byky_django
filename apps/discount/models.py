@@ -184,6 +184,10 @@ class ClaimStatus(models.TextChoices):
     # (services.cancel_pending_for_order), never by a person.
     CANCELLED = "cancelled", "Cancelled"
     REDEEMED = "redeemed", "Redeemed"
+    # Approved, then taken back before the bill used it (owner, 30 Oct 2026):
+    # on the web or in the manager app, with a reason. A settle naming it is
+    # refused (card_discount_revoked).
+    REVOKED = "revoked", "Revoked"
 
 
 class CardDiscountClaim(TimeStampedModel):
@@ -245,6 +249,13 @@ class CardDiscountClaim(TimeStampedModel):
     decided_channel = models.CharField(max_length=10, choices=DecisionChannel.choices, blank=True)
     redeemed_at = models.DateTimeField(null=True, blank=True)
 
+    # An approval taken back -- the same four fields as an order request's.
+    revoked_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT,
+                                   related_name="+")
+    revoked_channel = models.CharField(max_length=10, choices=DecisionChannel.choices, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    revoke_note = models.CharField(max_length=255, blank=True)
+
     class Meta:
         db_table = "card_discount_claim"
         ordering = ["-requested_at"]
@@ -254,14 +265,17 @@ class CardDiscountClaim(TimeStampedModel):
             CheckConstraint(
                 condition=(
                     Q(status=ClaimStatus.PENDING, decided_at__isnull=True, decided_by__isnull=True,
-                      redeemed_at__isnull=True, requires_approval=True)
+                      redeemed_at__isnull=True, requires_approval=True, revoked_at__isnull=True)
                     | Q(status__in=[ClaimStatus.APPROVED, ClaimStatus.REJECTED], decided_at__isnull=False,
-                        redeemed_at__isnull=True, requires_approval=True)
+                        redeemed_at__isnull=True, requires_approval=True, revoked_at__isnull=True)
                     | Q(status=ClaimStatus.CANCELLED, decided_at__isnull=False, redeemed_at__isnull=True,
-                        requires_approval=True)
-                    | Q(status=ClaimStatus.REDEEMED, redeemed_at__isnull=False, requires_approval=False)
+                        requires_approval=True, revoked_at__isnull=True)
+                    | Q(status=ClaimStatus.REDEEMED, redeemed_at__isnull=False, requires_approval=False,
+                        revoked_at__isnull=True)
                     | Q(status=ClaimStatus.REDEEMED, redeemed_at__isnull=False, requires_approval=True,
-                        decided_at__isnull=False)
+                        decided_at__isnull=False, revoked_at__isnull=True)
+                    | Q(status=ClaimStatus.REVOKED, decided_at__isnull=False, redeemed_at__isnull=True,
+                        requires_approval=True, revoked_at__isnull=False, revoked_by__isnull=False)
                 ),
                 name="card_claim_status_fields",
             ),

@@ -354,6 +354,7 @@ _STATUS_SAMPLE = {
     "bill_amount": "120.00", "discount_percent": "15.00", "discount_amount": "18.00", "net_amount": "102.00",
     "requested_at": "2026-09-30 17:05:00", "decided_at": "2026-09-30 17:09:42", "remarks": "Card checked",
     "request_remarks": "Regular customer, card shown",
+    "revoked_at": None, "revoke_note": "",
 }
 
 _STATUS_DESCRIPTION = """
@@ -365,6 +366,9 @@ and the `order_id` it was made for -- both required, and they must agree.
 * `rejected` -- bill without it; `remarks` may say why.
 * `cancelled` -- the order was billed while the request was still pending.
 * `redeemed` -- the discount was used on the closed bill.
+* `revoked` -- it was approved, then taken back (web or manager app) before the
+  bill used it: bill **without** it. `revoke_note` says why, `revoked_at` when.
+  A settle that still names it is refused (`card_discount_revoked`).
 
 `decided_at` is null while pending (for a cancelled request, when it was
 cancelled); `remarks` is the approver's note, `request_remarks` the operator's
@@ -435,4 +439,7 @@ class ApprovalStatusView(APIView):
             if claim.decided_at else None,
             "remarks": claim.remarks,
             "request_remarks": claim.request_remarks,
+            "revoked_at": claim.revoked_at.astimezone(zone).strftime("%Y-%m-%d %H:%M:%S")
+            if claim.revoked_at else None,
+            "revoke_note": claim.revoke_note,
         })
