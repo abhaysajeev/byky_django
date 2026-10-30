@@ -21,6 +21,10 @@ class SubjectType(models.TextChoices):
     CARD_DISCOUNT = "card_discount", "Card discount request"
     CREDIT_NOTE = "credit_note", "Credit note request"
     SERVICE_REQUEST = "service_request", "Service request"
+    # The employee app (owner, 30 Oct 2026).
+    LEAVE_REQUEST = "leave_request", "Leave request"
+    DUTY_ROSTER = "duty_roster", "Duty roster"          # subject_id: one per save, not a row
+    ATTENDANCE = "attendance", "Attendance"
 
 
 class Action(models.TextChoices):
@@ -32,11 +36,14 @@ class Action(models.TextChoices):
     REJECTED = "rejected", "Rejected"
     REVOKED = "revoked", "Revoked"
     COMPLETED = "completed", "Back in service"     # a service request, on the web
+    UPDATED = "updated", "Updated"                 # a duty roster saved
+    MARKED = "marked", "Marked"                    # attendance marked for them on a tablet
 
 
 class Audience(models.TextChoices):
     MANAGER = "manager", "Manager app"
     OPERATOR = "operator", "Operator app"
+    EMPLOYEE = "employee", "Employee app"
 
 
 class AndroidChannel(models.TextChoices):
@@ -44,6 +51,7 @@ class AndroidChannel(models.TextChoices):
 
     APPROVALS_NEW = "approvals_new", "Approvals"              # with sound
     APPROVALS_UPDATES = "approvals_updates", "Approval updates"   # quiet
+    EMPLOYEE_ALERTS = "employee_alerts", "Employee alerts"        # with sound (employee app)
 
 
 class NotificationStatus(models.TextChoices):

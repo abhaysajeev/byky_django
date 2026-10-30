@@ -34,6 +34,7 @@ from apps.crew.models import (
     RosterCategory,
     TeamScope,
 )
+from apps.notifications import employee as employee_push
 from core.enums import Channel
 from core.scoping import scoped_to
 from core.timezones import business_date_for, business_day_range, zone_for
@@ -331,6 +332,9 @@ def mark_attendance(user, source, values, device=None, channel=None):
             Employee.objects.select_for_update().filter(pk=employee.pk).first()
             _check_sequence(row)
             row.save(force_insert=True)
+            if source == AttendanceSource.QR_SCAN:
+                # A tablet marked someone else: they are told (owner, 30 Oct 2026).
+                employee_push.attendance_marked(row)
     except IntegrityError:
         # Lost a race to the same sync_id, or the same QR code scanned twice.
         existing = Attendance.objects.filter(pk=sync_id).first()
@@ -759,6 +763,8 @@ def save_week(employee, days, *, user, branches_qs):
                 defaults={**fields, "modified_by": user},
             )
             written.append(row)
+        # One push for the save, if any of its days is today or later (owner, 30 Oct 2026).
+        employee_push.roster_updated(employee, clear + [fields["date"] for fields in clean])
     return written
 
 
@@ -1109,6 +1115,7 @@ def assign_day(employee, entry, *, branches_qs, user, require_new=False):
     row, _ = DutyRoster.objects.update_or_create(
         employee=employee, date=fields["date"], defaults={**fields, "modified_by": user},
     )
+    employee_push.roster_updated(employee, [fields["date"]])
     return row
 
 
@@ -1120,6 +1127,8 @@ def remove_day(employee, on_date, *, user):
     for day, leave in _on_leave(employee, [on_date]).items():
         raise Invalid([_leave_error(day, leave)])
     deleted, _ = DutyRoster.objects.filter(employee=employee, date=on_date).delete()
+    if deleted:
+        employee_push.roster_updated(employee, [on_date])
     return deleted > 0
 
 
@@ -1141,6 +1150,7 @@ def import_rows(rows, *, user, employees_qs, branches_qs):
     }
     written = 0
     results = []
+    changed = {}                # employee -> dates: one push per employee for the import
     for i, entry in enumerate(rows, start=1):
         code = str(entry.get("employee_code") or "").strip()
         employee = by_code.get(code)
@@ -1159,7 +1169,9 @@ def import_rows(rows, *, user, employees_qs, branches_qs):
             employee=employee, date=fields["date"], defaults={**fields, "modified_by": user},
         )
         written += 1
+        changed.setdefault(employee, []).append(fields["date"])
         results.append({"row": i, "employee_code": code, "ok": True, "message": "Saved."})
+    employee_push.roster_saves(changed)
     return written, results
 
 
