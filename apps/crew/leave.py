@@ -39,6 +39,7 @@ from apps.crew.models import (
     LeaveStatusLog,
     LeaveType,
 )
+from apps.notifications import employee as employee_push
 from core.enums import Channel
 from core.timezones import business_date_for
 
@@ -151,6 +152,8 @@ def submit(user, values, now=None):
             row.refresh_from_db(fields=["number"])
             row.stations.set(stations_for(employee, from_date, to_date))
             _log(row, user, Channel.EMPLOYEE, now)
+            # The station's approvers and the managers are told (owner, 30 Oct 2026).
+            employee_push.leave_raised(row, now=now)
     except IntegrityError:
         existing = LeaveRequest.objects.filter(pk=sync_id, employee=employee).first()
         if existing is None:
@@ -255,6 +258,9 @@ def decide(user, channel, leave_id, approve, remarks="", company_ids=None, now=N
         if approve:
             replaced = _mark_roster(row, user)
         _log(row, user, channel, now, row.decision_remarks)
+        # The employee who asked is told; the roster days it changed are part
+        # of this push, not a roster push of their own.
+        employee_push.leave_decided(row, now=now)
     return row, replaced
 
 
