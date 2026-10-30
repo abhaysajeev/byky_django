@@ -236,7 +236,10 @@ class CardDiscountClaim(TimeStampedModel):
     decided_at = models.DateTimeField(null=True, blank=True)
     decided_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT,
                                    related_name="+")
-    remarks = models.CharField(max_length=255, blank=True)
+    remarks = models.CharField(max_length=255, blank=True)        # the decider's note
+    # The operator's note when asking (owner, 29 Oct 2026) -- its own field, so
+    # the decision's `remarks` never overwrites it.
+    request_remarks = models.CharField(max_length=255, blank=True)
     # Where it was decided: the web screen or the manager app (blank until then,
     # and for a claim cancelled by the system).
     decided_channel = models.CharField(max_length=10, choices=DecisionChannel.choices, blank=True)

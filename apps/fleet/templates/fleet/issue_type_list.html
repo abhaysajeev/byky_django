@@ -59,6 +59,7 @@
             <th>Issue Type</th>
             <th>Code</th>
             <th>Applies To</th>
+            <th>Warehouse Service</th>
             <th>Status</th>
             <th>Actions</th>
           </tr>
@@ -69,6 +70,7 @@
             <td style="font-weight:600">{{ a.name }}</td>
             <td><span class="scr-code">{{ a.code|default:"—" }}</span></td>
             <td>{{ a.applies_to }}</td>
+            <td>{% if a.warehouse %}<span class="scr-badge scr-badge-pending"><i></i>Needs warehouse service</span>{% else %}—{% endif %}</td>
             <td>{% if a.active %}<span class="scr-badge scr-badge-active"><i></i>Active</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Inactive</span>{% endif %}</td>
             <td>
               <div class="scr-row-actions">
@@ -79,7 +81,7 @@
           {{ a.fields_json|json_script:a.json_id }}
           {% empty %}
           <tr>
-            <td colspan="5" style="padding:0">
+            <td colspan="6" style="padding:0">
               <div class="scr-empty">
                 <span class="scr-empty-ico">
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"></path></svg>

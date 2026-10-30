@@ -132,6 +132,7 @@ def test_an_automatic_discount_is_recorded_and_an_overpayment_refunded(client, w
     automatic = make_discount(grade, percent="20")
     request_data = bill(
         returned, shop, tax_percentage="0.00", tax_amount="0.000", net_amount="88.000",
+        star_rating="4.5", rating_remarks="Bikes were clean, quick service",
         card_discount={"card_discount_id": automatic.pk, "card_number": "FAM-0091", "discount_percentage": "20.00",
                   "discount_amount": "22.000"},
         payments=[{"sync_id": str(uuid7()), "kind": "refund", "payment_mode_id": shop["cash"].pk,

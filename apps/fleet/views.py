@@ -28,6 +28,7 @@ from apps.fleet.models import (
     IssueTarget,
     IssueType,
     ServiceRequest,
+    ServiceRequestStatus,
     Vehicle,
     VehicleType,
 )
@@ -42,13 +43,15 @@ ACTIONS = ("create", "read", "update", "delete", "print")
 
 
 def _open_service(**target):
-    """{vehicle or asset id: {request_no, url}} of the open service requests
-    (pending or under maintenance) on the given vehicles or assets."""
+    """{vehicle or asset id: {request_no, url, warehouse}} of the open service
+    requests (pending or under maintenance) on the given vehicles or assets.
+    `warehouse`: approved and needs warehouse service -- the vehicle is off rent."""
     key = "vehicle_id" if "vehicle_id__in" in target else "asset_id"
     return {
-        row[key]: {"request_no": row["request_no"], "url": reverse("fleet-service-request-detail", args=[row["pk"]])}
+        row[key]: {"request_no": row["request_no"], "url": reverse("fleet-service-request-detail", args=[row["pk"]]),
+                   "warehouse": row["needs_warehouse_service"] and row["status"] == ServiceRequestStatus.APPROVED}
         for row in ServiceRequest.objects.filter(status__in=SERVICE_OPEN, **target)
-        .values("pk", "request_no", key)
+        .values("pk", "request_no", "needs_warehouse_service", "status", key)
     }
 
 
@@ -335,6 +338,7 @@ class IssueTypeListView(FleetScreenView):
                 "name": issue_type.name,
                 "code": issue_type.code,
                 "applies_to": issue_type.get_applies_to_display(),
+                "warehouse": issue_type.needs_warehouse_service,
                 "active": issue_type.is_active,
                 "pk": issue_type.pk,
                 "json_id": f"scr-record-issue-type-{i}",
@@ -344,6 +348,7 @@ class IssueTypeListView(FleetScreenView):
                     "name": issue_type.name,
                     "code": issue_type.code,
                     "applies_to": issue_type.applies_to,
+                    "needs_warehouse_service": issue_type.needs_warehouse_service,
                     "description": issue_type.description,
                     "is_active": issue_type.is_active,
                 },

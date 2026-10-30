@@ -358,6 +358,7 @@ def _request_approval(session, values, company, sync_id):
         fare_basis=discount.fare_basis, requires_approval=True,
         customer=customer, customer_name=customer.full_name, mobile_full=customer.mobile_full,
         card_number=values.get("card_number") or "", card_photo=values.get("card_photo") or "", photo=photo,
+        request_remarks=values.get("remarks") or "",
         order=order, bill_amount=values["bill_amount"], discount_percent=values["discount_percent"],
         discount_amount=values["discount_amount"], net_amount=values["net_amount"],
         branch=session.branch, requested_by=session.user,
