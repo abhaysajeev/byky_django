@@ -34,6 +34,8 @@ from apps.rental.serializers import (
     ManagerBranchesRequest,
     ManagerCategoriesRequest,
     ManagerClaimDecisionRequest,
+    ManagerClaimListRequest,
+    ManagerClaimRevokeRequest,
     ManagerCreditNoteApproveRequest,
     ManagerCreditNoteRejectRequest,
     ManagerPendingCountsRequest,
@@ -543,6 +545,7 @@ _CLAIM_ROW = {
     "requested_by": "Rashed", "requested_at": "2026-10-08 16:50:00",
     "decided_by": None, "decided_channel": None, "decided_at": None, "remarks": "",
     "request_remarks": "Regular customer, card shown",
+    "revoked_by": None, "revoked_channel": None, "revoked_at": None, "revoke_note": "",
 }
 _CLAIM_DECIDED = {**_CLAIM_ROW, "status": "approved", "decided_by": "Sara K", "decided_channel": "manager",
                   "decided_at": "2026-10-08 16:52:00"}
@@ -657,7 +660,7 @@ class CreditNoteRejectView(_CreditNoteDecisionView):
 class ClaimListView(_ManagerView):
     """POST /api/v1/{app}/card-discounts/claims/list -- manager app only."""
 
-    form_class = ManagerApprovalListRequest
+    form_class = ManagerClaimListRequest
 
     @extend_schema(
         tags=["Manager Card Discounts"],
@@ -667,8 +670,11 @@ class ClaimListView(_ManagerView):
                                      "for zooming), paths on this server that need the access token "
                                      "(`GET /api/v1/manager/photos/<id>`). Older requests may carry only "
                                      "`card_photo`, a plain link the tablet sent. A claim still pending when "
-                                     "its order was billed is `cancelled`.",
-        request=envelope_request("ManagerClaimListEnvelope", ManagerApprovalListRequest),
+                                     "its order was billed is `cancelled`; one approved and then taken back "
+                                     "is `revoked` (`revoked_by`, `revoked_channel`, `revoked_at`, "
+                                     "`revoke_note`).\n`status` (optional): only claims in that status -- "
+                                     "`pending`, `approved`, `rejected`, `cancelled`, `redeemed`, `revoked`.",
+        request=envelope_request("ManagerClaimListEnvelope", ManagerClaimListRequest),
         responses=envelope_responses(
             (200, "ok", "List.", {"claims": [_CLAIM_ROW], **_PAGED}),
             _LIST_INVALID, *_COMMON,
@@ -679,9 +685,9 @@ class ClaimListView(_ManagerView):
         if refused:
             return refused
         rows, page = approvals.claim_list(
-            companies, pending_only=values["pending"], state_id=values.get("state_id"),
-            branch_id=values.get("branch_id"), from_date=values.get("from_date"), to_date=values.get("to_date"),
-            zone=zone, page=values["page"],
+            companies, pending_only=values["pending"], status=values.get("status") or None,
+            state_id=values.get("state_id"), branch_id=values.get("branch_id"), from_date=values.get("from_date"),
+            to_date=values.get("to_date"), zone=zone, page=values["page"],
         )
         return _list_reply(rows, page, "claims")
 
@@ -745,6 +751,47 @@ class ClaimRejectView(_ClaimDecisionView):
     )
     def post(self, request, app):
         return self.decide(request, app)
+
+
+class ClaimRevokeView(_ManagerView):
+    """POST /api/v1/{app}/card-discounts/claims/revoke -- manager app only."""
+
+    form_class = ManagerClaimRevokeRequest
+
+    @extend_schema(
+        tags=["Manager Card Discounts"],
+        summary="Revoke an approved card-discount request",
+        description=_APPROVALS + "\n**This call** takes back an **approved** claim the bill has not used yet "
+                                 "(owner, 30 Oct 2026). `note`, the reason, is **required** (up to 255). The "
+                                 "asking tablet is told (`Card discount approval revoked`) and sees `revoked` "
+                                 "in `card-discounts/approval/status`; a settle that still names it is refused "
+                                 "with `card_discount_revoked`, so the bill is made again without it. Only an "
+                                 "approved claim (`claim_not_approved`), on an order still running "
+                                 "(`order_closed`).",
+        request=envelope_request("ManagerClaimRevokeEnvelope", ManagerClaimRevokeRequest),
+        responses=envelope_responses(
+            (200, "ok", "Approval revoked.", {
+                **_CLAIM_DECIDED, "status": "revoked", "revoked_by": "Sara K", "revoked_channel": "manager",
+                "revoked_at": "2026-10-08 17:05:00", "revoke_note": "Card was expired"}),
+            (400, "invalid_request", "note is required.", {"errors": {"note": "is required"}}),
+            (404, "unknown_claim", "No such card discount request.", {}),
+            (409, "claim_not_approved", "Only an approved request can be revoked.", {}),
+            (409, "order_closed", "This order is already completed or cancelled.", {}),
+            *_COMMON,
+        ),
+    )
+    def post(self, request, app):
+        values, companies, _, refused = self.values(request, app)
+        if refused:
+            return refused
+        claim = CardDiscountClaim.objects.filter(pk=values["claim_id"], company_id__in=companies).first()
+        if claim is None:
+            return envelope("unknown_claim", "No such card discount request.", http_status=404)
+        try:
+            discount_services.revoke_claim(request.user, claim, values["note"], channel=DecisionChannel.MANAGER)
+        except discount_services.DiscountRefused as refusal:
+            return envelope(refusal.code, refusal.message, http_status=refusal.status)
+        return envelope("ok", "Approval revoked.", approvals.claim_row(claim.pk))
 
 
 class PendingCountsView(_ManagerView):

@@ -13,6 +13,7 @@ from django.utils import timezone
 from apps.discount.models import ClaimStatus
 from apps.discount.tests.conftest import make_claim, make_discount, make_order, post
 from apps.portal.models import RolePermission
+from apps.rental.models import Order, OrderStatus
 
 
 @pytest.fixture
@@ -138,3 +139,47 @@ def test_cancelled_requests_have_their_tab(client_in, world, pending):
 def test_the_database_allows_one_pending_request_per_order(world, pending):
     with pytest.raises(IntegrityError), transaction.atomic():
         make_claim(pending.card_discount, pending.customer, order=pending.order)
+
+
+# -- Revoke (owner, 30 Oct 2026) ---------------------------------------------------------
+
+def test_an_approved_request_is_revoked_with_a_reason(client_in, world, pending):
+    post(client_in, f"/discount/approval/{pending.pk}/approve/", {})
+    url = f"/discount/approval/{pending.pk}/revoke/"
+
+    blank = post(client_in, url, {"note": "  "})
+    body = post(client_in, url, {"note": " Card was expired "}).json()
+
+    assert (blank.status_code, blank.json()["errors"][0]["field"]) == (400, "Reason")
+    assert body == {"ok": True, "message": "Approval revoked."}
+    pending.refresh_from_db()
+    assert (pending.status, pending.revoked_by.username, pending.revoked_channel, pending.revoke_note) == (
+        ClaimStatus.REVOKED, "sara.k", "web", "Card was expired")
+    detail = client_in.get(f"/discount/approval/{pending.pk}/").content.decode()
+    assert "Revoke Reason" in detail and "Card was expired" in detail and 'data-decision="revoke"' not in detail
+    assert "ORD-1001" in client_in.get("/discount/approval/list/?tab=revoked").content.decode()
+
+
+def test_only_an_approved_request_on_a_running_order_is_revoked(client_in, world, pending):
+    not_yet = post(client_in, f"/discount/approval/{pending.pk}/revoke/", {"note": "x"})
+    post(client_in, f"/discount/approval/{pending.pk}/approve/", {})
+    assert 'data-decision="revoke"' in client_in.get(f"/discount/approval/{pending.pk}/").content.decode()
+    Order.objects.filter(pk=pending.order_id).update(status=OrderStatus.COMPLETED)
+    billed = post(client_in, f"/discount/approval/{pending.pk}/revoke/", {"note": "x"})
+
+    assert not_yet.json()["errors"][0]["message"] == "Only an approved request can be revoked."
+    assert billed.json()["errors"][0]["message"] == "This order is already completed or cancelled."
+    assert 'data-decision="revoke"' not in client_in.get(f"/discount/approval/{pending.pk}/").content.decode()
+
+
+def test_revoking_needs_the_approve_permission(client_in, world, pending):
+    post(client_in, f"/discount/approval/{pending.pk}/approve/", {})
+    RolePermission.objects.filter(role=client_in.role, page__code="discount.approval").update(can_approve=False)
+
+    assert post(client_in, f"/discount/approval/{pending.pk}/revoke/", {"note": "x"}).status_code == 403
+
+
+def test_the_database_keeps_a_revoked_claim_consistent(world):
+    discount = make_discount(world["our"]["grade"], requires_approval=True)
+    with pytest.raises(IntegrityError), transaction.atomic():
+        make_claim(discount, world["our"]["customer"], status=ClaimStatus.REVOKED, decided_at=timezone.now())

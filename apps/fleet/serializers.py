@@ -43,6 +43,18 @@ class AssetsRequest(serializers.Serializer):
     """Nothing to send: the station is the session's."""
 
 
+class ManagerAssetsRequest(serializers.Serializer):
+    """The manager app's asset list: every filter optional (owner, 30 Oct 2026).
+    `serial_no` matches any part of the serial number, ignoring case."""
+
+    state_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    branch_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    asset_type_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    serial_no = serializers.CharField(max_length=50, required=False, allow_blank=True, allow_null=True,
+                                      error_messages={"max_length": "must be at most 50 characters"})
+    page = whole_number_field(min_value=1, required=False, default=1)
+
+
 class ServiceRequestCreateRequest(serializers.Serializer):
     """The tablet reports a vehicle or a station asset. `sync_id` is this
     call's id and becomes the request's id."""
@@ -179,6 +191,9 @@ class ManagerAssetCheckListRequest(_DatesMixin):
     state_id = whole_number_field(min_value=1, required=False, allow_null=True)
     branch_id = whole_number_field(min_value=1, required=False, allow_null=True)
     asset_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    asset_type_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    serial_no = serializers.CharField(max_length=50, required=False, allow_blank=True, allow_null=True,
+                                      error_messages={"max_length": "must be at most 50 characters"})
     status = serializers.ChoiceField(choices=AssetCheckStatus.values, required=False, allow_blank=True,
                                      error_messages={"invalid_choice": "must be active or needs_inspection"})
     page = whole_number_field(min_value=1, required=False, default=1)

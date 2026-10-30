@@ -24,6 +24,7 @@ CN_REJECT = "/api/v1/manager/credit-notes/reject"
 CLAIM_LIST = "/api/v1/manager/card-discounts/claims/list"
 CLAIM_APPROVE = "/api/v1/manager/card-discounts/claims/approve"
 CLAIM_REJECT = "/api/v1/manager/card-discounts/claims/reject"
+CLAIM_REVOKE = "/api/v1/manager/card-discounts/claims/revoke"
 COUNTS = "/api/v1/manager/requests/pending-counts"
 
 
@@ -117,6 +118,37 @@ def test_the_manager_approves_and_rejects_claims(client, manager, card, shop, cl
     assert (again.status_code, again.json()["code"]) == (409, "claim_decided")
 
 
+@pytest.fixture
+def running_claim(card, shop):
+    """An approved claim on an order still running -- the one a manager may revoke."""
+    return make_claim(card, shop["ahmed"], status=ClaimStatus.APPROVED, card_number="FAM-2")
+
+
+def test_the_manager_revokes_an_approval_with_a_reason(client, manager, running_claim):
+    no_note = call(client, CLAIM_REVOKE, {"claim_id": str(running_claim.pk)}, token=manager)
+    body = call(client, CLAIM_REVOKE, {"claim_id": str(running_claim.pk), "note": "Card was expired"},
+                token=manager).json()
+
+    assert (no_note.status_code, no_note.json()["data"]["errors"]) == (400, {"note": "is required"})
+    assert body["code"] == "ok", body
+    assert {k: body["data"][k] for k in ("status", "revoked_by", "revoked_channel", "revoke_note")} == {
+        "status": "revoked", "revoked_by": "Meera", "revoked_channel": "manager", "revoke_note": "Card was expired"}
+    assert body["data"]["revoked_at"] is not None
+    running_claim.refresh_from_db()
+    assert (running_claim.status, running_claim.revoked_by.username) == (ClaimStatus.REVOKED, "mgr001")
+    listed = call(client, CLAIM_LIST, {"status": "revoked"}, token=manager).json()["data"]["claims"]
+    assert [row["claim_id"] for row in listed] == [str(running_claim.pk)]
+
+
+def test_only_an_approved_claim_on_a_running_order_is_revoked(client, manager, claim, running_claim):
+    pending = call(client, CLAIM_REVOKE, {"claim_id": str(claim.pk), "note": "x"}, token=manager)
+    Order.objects.filter(pk=running_claim.order_id).update(status="completed")
+    billed = call(client, CLAIM_REVOKE, {"claim_id": str(running_claim.pk), "note": "x"}, token=manager)
+
+    assert (pending.status_code, pending.json()["code"]) == (409, "claim_not_approved")
+    assert (billed.status_code, billed.json()["code"]) == (409, "order_closed")
+
+
 def test_an_unknown_or_other_company_claim_is_404(client, manager, claim, world):
     CardDiscountClaim.objects.filter(pk=claim.pk).update(company=world["other"])
 
@@ -142,7 +174,7 @@ def test_another_companys_rows_are_never_listed(client, manager, asked, world):
     assert call(client, CN_LIST, {}, token=manager).json()["data"]["credit_notes"] == []
 
 
-@pytest.mark.parametrize("url", [CN_LIST, CN_APPROVE, CLAIM_LIST, CLAIM_APPROVE, COUNTS])
+@pytest.mark.parametrize("url", [CN_LIST, CN_APPROVE, CLAIM_LIST, CLAIM_APPROVE, CLAIM_REVOKE, COUNTS])
 def test_an_operator_token_is_refused(client, token, url):
     response = call(client, url, {}, token=token)
 

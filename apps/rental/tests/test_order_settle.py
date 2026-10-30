@@ -261,6 +261,29 @@ def test_only_an_approved_request_on_this_order_can_be_redeemed(client, world, t
     assert_nothing_settled(returned)
 
 
+def test_a_revoked_approval_is_refused_at_settle(client, world, token, shop, grade, returned):
+    """Owner, 30 Oct 2026: a bill that still names a revoked approval is made
+    again without it."""
+    from apps.discount import services as discount_services
+
+    approval = make_discount(grade, requires_approval=True)
+    claim = make_claim(approval, shop["ahmed"], status=ClaimStatus.APPROVED,
+                       order=Order.objects.get(pk=returned["sync_id"]), when=timezone.now())
+    discount_services.revoke_claim(claim.order.created_by, claim, "Card was expired")
+    request_data = bill(returned, shop, net_amount="104.50",
+                        card_discount={"request_sync_id": str(claim.pk), "discount_percentage": "5.00",
+                                       "discount_amount": "5.50"})
+    request_data["payments"][0]["amount"] = "4.50"
+
+    body = settle(client, token, request_data)
+
+    assert (body["code"], body["message"]) == (
+        "card_discount_revoked", "That card-discount approval was revoked. Bill without it.")
+    claim.refresh_from_db()
+    assert claim.status == ClaimStatus.REVOKED
+    assert_nothing_settled(returned)
+
+
 def test_an_approved_card_discount_must_be_applied(client, world, token, shop, grade, returned):
     """Another tablet settling without the card discount approved for the
     first is refused, with the claim to apply -- the claim is not cancelled."""

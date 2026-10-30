@@ -27,6 +27,10 @@ from core.api import (
     whole_number_field,
 )
 
+# discount.models.ClaimStatus, spelled out: apps.discount imports this app's
+# models, so importing it back here would be circular.
+CLAIM_STATUSES = ("pending", "approved", "rejected", "cancelled", "redeemed", "revoked")
+
 
 class PhoneFields(serializers.Serializer):
     """The phone, three ways, all required: the app sends the full number it
@@ -568,6 +572,22 @@ class ManagerCreditNoteApproveRequest(ManagerCreditNoteRejectRequest):
     """The amount to issue, VAT included -- above 0, at most the order's net."""
 
     net_amount = _money_field()
+
+
+class ManagerClaimListRequest(ManagerApprovalListRequest):
+    """Card-discount claims: the shared filters, plus one status."""
+
+    status = serializers.ChoiceField(
+        choices=CLAIM_STATUSES, required=False, allow_blank=True,
+        error_messages={"invalid_choice": "must be one of " + ", ".join(CLAIM_STATUSES)})
+
+
+class ManagerClaimRevokeRequest(serializers.Serializer):
+    """Revoke an approved claim: the reason is required (owner, 30 Oct 2026)."""
+
+    claim_id = serializers.UUIDField(error_messages={**REQUIRED, "invalid": "must be a UUID"})
+    note = serializers.CharField(max_length=255, error_messages={
+        **REQUIRED, "blank": "is required", "max_length": "must be at most 255 characters"})
 
 
 class ManagerClaimDecisionRequest(serializers.Serializer):

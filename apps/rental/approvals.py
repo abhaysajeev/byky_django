@@ -104,7 +104,7 @@ def credit_note_row(note_id):
 
 def _claim_rows():
     return CardDiscountClaim.objects.select_related(
-        "order", "branch", "company", "card_type", "card_grade", "requested_by", "decided_by")
+        "order", "branch", "company", "card_type", "card_grade", "requested_by", "decided_by", "revoked_by")
 
 
 def claim_json(claim, zone):
@@ -122,16 +122,21 @@ def claim_json(claim, zone):
         "decided_by": _name(claim.decided_by), "decided_channel": claim.decided_channel or None,
         "decided_at": _local(claim.decided_at, zone), "remarks": claim.remarks,
         "request_remarks": claim.request_remarks,       # the operator's note when asking
+        # An approval taken back (owner, 30 Oct 2026): who, where, when and why.
+        "revoked_by": _name(claim.revoked_by), "revoked_channel": claim.revoked_channel or None,
+        "revoked_at": _local(claim.revoked_at, zone), "revoke_note": claim.revoke_note,
     }
 
 
-def claim_list(company_ids, *, pending_only=False, state_id=None, branch_id=None, from_date=None,
-               to_date=None, zone=None, page=1):
+def claim_list(company_ids, *, pending_only=False, status=None, state_id=None, branch_id=None,
+               from_date=None, to_date=None, zone=None, page=1):
     rows = _where(_claim_rows(), company_ids, state_id, branch_id).order_by("-requested_at")
     if zone is not None:
         rows = _between(rows, "requested_at", zone, from_date, to_date)
     if pending_only:
         rows = rows.filter(status=ClaimStatus.PENDING)
+    if status:
+        rows = rows.filter(status=status)
     return _paged(rows, page, claim_json)
 
 

@@ -1016,7 +1016,8 @@ class OrderReturnView(_OperatorView):
 
 _SETTLE_ERRORS = (
     "order_not_synced", "sync_id_conflict", "order_closed", "items_still_out", "amount_mismatch",
-    "balance_not_settled", "unknown_card_claim", "card_claim_not_approved", "unknown_card_discount",
+    "balance_not_settled", "unknown_card_claim", "card_discount_revoked", "card_claim_not_approved",
+    "unknown_card_discount",
     "unknown_discount_request", "discount_request_not_approved", "discount_mismatch",
     "approved_discount_not_applied", "unknown_complimentary_request", "complimentary_request_not_approved",
     "approved_complimentary_not_applied", "approved_card_discount_not_applied", "unknown_payment_mode",
