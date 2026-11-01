@@ -1,10 +1,12 @@
-"""Logs › Sync Issues on the web: system users only; the list, the detail,
-and Replay / Dismiss through their endpoints."""
+"""Logs › Sync Issues on the web: the list, the detail, and Replay / Dismiss
+through their endpoints. A company user with the Read tick sees their own
+company's issues; Replay and Dismiss are system admins' only (1 Nov 2026)."""
 
 import json
 
 import pytest
 
+from apps.company.models import Company
 from apps.portal.models import Role
 from apps.portal.services import grant_all
 from apps.rental.models import OrderItem, OrderItemStatus
@@ -41,17 +43,60 @@ def post_json(client, url, payload):
     return client.post(url, json.dumps(payload), content_type="application/json")
 
 
-def test_a_company_user_is_refused_and_never_sees_the_screen(client, world, parked):
-    role = Role.objects.create(company=world["company"], name="Everything")
+@pytest.fixture
+def company_admin(client, world):
+    """The company's Administrator role: every screen ticked, as on live."""
+    role = Role.objects.create(company=world["company"], name="Administrator")
     grant_all(role)
     User.objects.create_user("boss", PASSWORD, display_name="Boss", company=world["company"], role=role,
                              allowed_channels=[Channel.WEB])
     client.post("/login/", {"username": "boss", "password": PASSWORD})
+    return client
 
-    for url in ("/sync/issues/", f"/sync/issues/{parked['head']}/"):
-        assert client.get(url).status_code == 403, url
-    response = post_json(client, f"/sync/issues/{parked['head']}/dismiss/", {"reason": "x"})
-    assert response.status_code == 403
+
+def test_a_company_admin_sees_their_companys_issues(company_admin, parked):
+    page = company_admin.get("/sync/issues/").content.decode()
+
+    assert f"#{parked['head']}" in page and "amount_mismatch" in page
+    assert "Sync Issues" in company_admin.get("/dashboard/").content.decode()
+
+
+def test_a_company_admin_views_but_cannot_replay_or_dismiss(company_admin, parked):
+    head = parked["head"]
+    page = company_admin.get(f"/sync/issues/{head}/").content.decode()
+
+    assert "amount_mismatch" in page
+    assert "data-sync-replay" not in page and "data-sync-dismiss" not in page and "data-sync-body" not in page
+    assert "/monitoring/requests/" not in page and "/monitoring/errors/" not in page
+    for action, payload in (("replay", {}), ("dismiss", {"reason": "x"})):
+        response = post_json(company_admin, f"/sync/issues/{head}/{action}/", payload)
+        assert response.status_code == 403, action
+    assert SyncIssue.objects.get(pk=head).status == IssueStatus.OPEN
+
+
+def test_a_company_admin_never_sees_another_companys_issue(company_admin, world, parked):
+    mine = world["company"]
+    other = Company.objects.create(short_code="ZSYNC", name="Other Rentals", country=mine.country, state=mine.state,
+                                   phone_number="+9711111111", email="ops@other.test")
+    SyncIssue.objects.update(company=other)            # the head and the call waiting on it
+
+    for pk in (parked["head"], parked["follower"]):
+        assert company_admin.get(f"/sync/issues/{pk}/").status_code == 404, pk
+    assert "No issues match" in company_admin.get("/sync/issues/?status=all").content.decode()
+
+
+def test_the_other_logs_stay_system_only_for_a_company_admin(company_admin):
+    for url in ("/monitoring/requests/", "/monitoring/errors/"):
+        assert company_admin.get(url).status_code == 403, url
+
+
+def test_a_company_user_without_the_tick_is_refused(client, world, parked):
+    role = Role.objects.create(company=world["company"], name="Cashier")
+    User.objects.create_user("cashier", PASSWORD, display_name="Cashier", company=world["company"], role=role,
+                             allowed_channels=[Channel.WEB])
+    client.post("/login/", {"username": "cashier", "password": PASSWORD})
+
+    assert client.get("/sync/issues/").status_code == 403
     assert "Sync Issues" not in client.get("/dashboard/").content.decode()
 
 
