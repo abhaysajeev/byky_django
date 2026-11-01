@@ -101,10 +101,10 @@ queue can be replayed or dismissed (apps/sync/services.py).
           <div class="scr-detail-row"><span class="scr-detail-label">Session</span><span class="scr-detail-value">{{ issue.session.logged_in_at|date:"d M Y, H:i" }}{% if issue.session.logged_out_at %} – {{ issue.session.logged_out_at|date:"d M Y, H:i" }}{% else %} · still open{% endif %}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">sync_id</span><span class="scr-detail-value scr-mon-wrap">{{ issue.sync_id }}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">order_id</span><span class="scr-detail-value scr-mon-wrap">{{ issue.order_id|default:"—" }}</span></div>
-          <div class="scr-detail-row"><span class="scr-detail-label">Request</span><span class="scr-detail-value scr-mon-wrap">{% if request_log %}<a href="{% url 'monitoring-request-detail' request_log.pk %}">{{ request_log.status }} · {{ request_log.path }}</a>{% else %}—{% endif %}</span></div>
-          {% for e in error_logs %}
+          <div class="scr-detail-row"><span class="scr-detail-label">Request</span><span class="scr-detail-value scr-mon-wrap">{% if request_log %}{% if may_see_requests %}<a href="{% url 'monitoring-request-detail' request_log.pk %}">{{ request_log.status }} · {{ request_log.path }}</a>{% else %}{{ request_log.status }} · {{ request_log.path }}{% endif %}{% else %}—{% endif %}</span></div>
+          {% if may_see_errors %}{% for e in error_logs %}
           <div class="scr-detail-row"><span class="scr-detail-label">Error log</span><span class="scr-detail-value"><a href="{% url 'monitoring-error-detail' e.pk %}">{{ e.created_at|date:"d M Y, H:i:s" }}</a></span></div>
-          {% endfor %}
+          {% endfor %}{% endif %}
         </div>
       </div>
     </div>
