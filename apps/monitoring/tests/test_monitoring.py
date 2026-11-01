@@ -218,7 +218,9 @@ def test_a_company_user_is_refused_even_with_every_box_ticked(client, world):
     sidebar = client.get("/dashboard/").content.decode()
     assert "Device Requests" not in sidebar and "Error Logs" not in sidebar
     user = User.objects.get(username__iexact="boss")
-    assert privileges.matrix_context(user, "monitoring")["permissions"] == []
+    # Of the Logs pages, only Sync Issues (view only for a company, 1 Nov 2026)
+    # is ever offered to a company's roles.
+    assert privileges.matrix_context(user, "monitoring")["screens"] == ["Sync Issues"]
 
 
 def test_a_system_user_reads_filters_and_opens_both_logs(client, world, system_user):
