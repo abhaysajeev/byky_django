@@ -881,9 +881,18 @@ def settle_order(session, values, request_data, reply_for):
                     apply=apply)
 
 
+def _money_lines(payments):
+    """The entries that move money. A zero advance (a booking or an added
+    vehicle with nothing taken -- the only kind the request lets be 0) is
+    skipped here: it is never a payment row, and its mode and id are not
+    checked."""
+    return [p for p in payments if p["amount"] > 0]
+
+
 def _payment_modes(company, payments):
     """{id: PaymentMode} for a call's payment entries -- each mode this
     company's and active, each entry id unused -- or the refusal."""
+    payments = _money_lines(payments)
     if not payments:
         return {}
     modes = {
@@ -900,8 +909,8 @@ def _payment_modes(company, payments):
 
 
 def _record_payments(session, order, payments, modes):
-    """Each payment entry of a call, through record_payment."""
-    for payment in payments:
+    """Each payment entry of a call that moves money, through record_payment."""
+    for payment in _money_lines(payments):
         record_payment(
             order, payment_id=payment["sync_id"], kind=payment["kind"], mode=modes[payment["payment_mode_id"]],
             amount=payment["amount"], paid_at=payment["paid_at"], device=session.device, user=session.user,
