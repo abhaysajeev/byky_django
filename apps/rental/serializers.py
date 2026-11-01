@@ -121,14 +121,19 @@ class OrderItemRequest(serializers.Serializer):
 
 class OrderPaymentRequest(serializers.Serializer):
     """One payment entry (design 4.4). At booking only an `advance`; the rest
-    of the kinds arrive with their own calls (settle, payments)."""
+    of the kinds arrive with their own calls (settle, payments).
+
+    `amount` may be 0: the tablet sends a zero advance when nothing was
+    collected (live, 31 Oct 2026), and refusing it left the whole booking
+    unsynced. A zero entry is accepted and not recorded -- no payment row,
+    nothing in the totals (services._money_lines)."""
 
     sync_id = uuid7_field()
     kind = serializers.ChoiceField(
         choices=[PaymentKind.ADVANCE], error_messages={**REQUIRED, "invalid_choice": "must be advance"},
     )
     payment_mode_id = whole_number_field()
-    amount = _money_field(min_value=Decimal("0.01"))
+    amount = _money_field()
     reference_no = text_field(max_length=50, required=False, allow_blank=True)
     reference_date = date_field(required=False, allow_null=True)
     paid_at = datetime_field()
@@ -306,6 +311,9 @@ class SettlePaymentRequest(OrderPaymentRequest):
         choices=[PaymentKind.SETTLEMENT, PaymentKind.REFUND],
         error_messages={**REQUIRED, "invalid_choice": "must be settlement or refund"},
     )
+    # Only a booking's advance may be 0 (OrderPaymentRequest); money taken or
+    # handed back at settle is real money.
+    amount = _money_field(min_value=Decimal("0.01"))
 
 
 def _percent_field(**kwargs):
