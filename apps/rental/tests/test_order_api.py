@@ -3,6 +3,7 @@ app sees them -- the booking in order_lifecycle_design.md 3.1, resent,
 conflicting and refused, and read back from another tablet."""
 
 import copy
+from decimal import Decimal
 
 import pytest
 from django.utils import timezone
@@ -176,6 +177,33 @@ def test_a_booking_with_no_payment_is_unpaid(client, world, token, shop):
     assert (body["data"]["payment_status"], body["data"]["payments"]) == (PaymentStatus.PENDING, [])
 
 
+def test_a_zero_advance_is_accepted_and_not_recorded(client, world, token, shop):
+    """Live, 31 Oct 2026: the tablet sends a 0 advance when nothing was taken.
+    The booking goes through; the zero line is no payment row."""
+    request_data = booking(world, shop, payments=[
+        {"sync_id": str(uuid7()), "kind": "advance", "payment_mode_id": shop["cash"].pk,
+         "amount": "0.000", "reference_no": "", "reference_date": "2026-10-02", "paid_at": "2026-10-02 16:00:05"},
+    ])
+
+    body = call(client, BOOK, request_data, token=token).json()
+
+    assert body["code"] == "ok", body
+    assert (body["data"]["payment_status"], body["data"]["payments"]) == (PaymentStatus.PENDING, [])
+    assert not Payment.objects.exists()
+    assert call(client, BOOK, request_data, token=token).json()["code"] == "duplicate"
+
+
+def test_a_zero_line_beside_a_real_advance_records_only_the_real_one(client, world, token, shop):
+    request_data = booking(world, shop)
+    request_data["payments"][1].update(amount="0.00", payment_mode_id=999999)   # its mode is not even checked
+
+    body = call(client, BOOK, request_data, token=token).json()
+
+    assert body["code"] == "ok", body
+    assert [p["amount"] for p in body["data"]["payments"]] == ["60.000"]
+    assert list(Payment.objects.values_list("amount", flat=True)) == [Decimal("60.00")]
+
+
 def test_the_counter_only_moves_forward(client, world, token, shop):
     call(client, BOOK, booking(world, shop, number=231), token=token)
     later = booking(world, shop, number=220)
@@ -282,13 +310,13 @@ def test_unknown_ids_are_refused_and_nothing_is_written(client, world, token, sh
 
 @pytest.mark.parametrize(("change", "field"), [
     (lambda data: data["payments"][0].update(kind="refund"), "payments"),
-    (lambda data: data["payments"][0].update(amount="0.00"), "payments"),
+    (lambda data: data["payments"][0].update(amount="-1.00"), "payments"),
     (lambda data: data["items"][1].update(sync_id=data["items"][0]["sync_id"]), "items"),
     (lambda data: data["payments"][1].update(sync_id=data["payments"][0]["sync_id"]), "payments"),
     (lambda data: data["items"][0].update(expected_end_time="2026-10-02 15:00:00"), "items"),
     (lambda data: data.update(items=[]), "items"),
     (lambda data: data.pop("booked_at"), "booked_at"),
-], ids=["not-advance", "zero-payment", "item-ids", "payment-ids", "end-before-start", "no-items", "no-booked-at"])
+], ids=["not-advance", "negative-payment", "item-ids", "payment-ids", "end-before-start", "no-items", "no-booked-at"])
 def test_the_request_is_checked(client, world, token, shop, change, field):
     request_data = booking(world, shop)
     change(request_data)

@@ -183,6 +183,17 @@ def test_a_zero_bill_settles(client, world, token, shop, booked):
     assert Invoice.objects.get().items.count() == 0
 
 
+@pytest.mark.parametrize("kind", ["settlement", "refund"])
+def test_a_zero_settle_payment_is_still_refused(client, token, shop, returned, kind):
+    """Only a booking's advance may be 0; money at settle is real money."""
+    request_data = bill(returned, shop)
+    request_data["payments"][0].update(kind=kind, amount="0.00")
+
+    body = settle(client, token, request_data)
+
+    assert body["code"] == "invalid_request" and "payments" in body["data"]["errors"], body
+
+
 def test_a_resent_settle_is_a_duplicate_and_a_changed_one_a_conflict(client, token, shop, returned):
     request_data = bill(returned, shop)
     first = settle(client, token, request_data)
