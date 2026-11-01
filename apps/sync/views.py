@@ -30,6 +30,13 @@ def issues_for(user):
     return scoped_to(SyncIssue.objects.all(), user, field="company")
 
 
+def may_act(user):
+    """Replay and Dismiss: system admins only (owner, 1 Nov 2026). A company
+    user sees their own company's issues (Read) but never acts on them,
+    whatever their role's Update tick says."""
+    return bool(getattr(user, "sees_every_company", False)) and has_permission(user, PAGE, "update")
+
+
 def _pretty(value):
     return json.dumps(value, indent=2, ensure_ascii=False, sort_keys=True)
 
@@ -112,7 +119,9 @@ class SyncIssueDetailView(MonitoringView):
         context.update({
             "issue": issue,
             "is_head": issue.is_open and issue.waiting_on is None,
-            "may_update": has_permission(self.request.user, PAGE, "update"),
+            "may_update": may_act(self.request.user),
+            "may_see_requests": has_permission(self.request.user, "monitoring.request_log", "read"),
+            "may_see_errors": has_permission(self.request.user, "monitoring.error_log", "read"),
             "body": _pretty(issue.request_data),
             "original": _pretty(issue.original_request_data),
             "attempts": [(a, _pretty(a.reply) if a.reply is not None else "") for a in issue.attempts.all()],
@@ -135,7 +144,7 @@ class _IssueAction(writes.WriteView):
     page_code = PAGE
 
     def post(self, request, pk):
-        if not self.may("update"):
+        if not may_act(request.user):
             return self.refused()
         data = writes._payload(request)
         try:
