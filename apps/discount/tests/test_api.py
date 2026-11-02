@@ -293,6 +293,26 @@ def test_a_request_creates_a_pending_claim_with_the_devices_figures(client, worl
     assert claim.requested_at == datetime.datetime(2026, 9, 30, 13, 5, tzinfo=datetime.UTC)   # 17:05 Dubai
 
 
+def test_the_operators_note_is_kept_apart_from_the_deciders(client, world, token, approval_world):
+    """Owner, 29 Oct 2026: the operator may say why when asking; the decision's
+    remarks never overwrite it."""
+    data = approval_data(approval_world, remarks="Regular customer, card shown")
+    assert request_approval(client, token, data).json()["code"] == "ok"
+    claim = CardDiscountClaim.objects.get(pk=data["sync_id"])
+    assert (claim.request_remarks, claim.remarks) == ("Regular customer, card shown", "")
+
+    claim.status, claim.decided_at, claim.remarks = ClaimStatus.APPROVED, claim.requested_at, "Card checked"
+    claim.save()
+    status = call(client, "/api/v1/operator/card-discounts/approval/status",
+                  {"order_id": data["order_id"], "sync_id": data["sync_id"]}, token=token).json()["data"]
+    assert (status["request_remarks"], status["remarks"]) == ("Regular customer, card shown", "Card checked")
+
+    without = approval_data(approval_world, sync_id=str(uuid7()))
+    CardDiscountClaim.objects.all().delete()
+    request_approval(client, token, without)
+    assert CardDiscountClaim.objects.get(pk=without["sync_id"]).request_remarks == ""
+
+
 def test_a_resent_sync_id_answers_with_the_current_status(client, world, token, approval_world):
     data = approval_data(approval_world)
     request_approval(client, token, data)
@@ -400,7 +420,7 @@ def test_a_pending_request(client, world, token, requested):
         "sync_id": data["sync_id"], "order_id": data["order_id"], "status": "pending",
         "card_discount_id": requested["current"].pk, "card_type_name": "Corporate", "card_grade_name": "Gold",
         "bill_amount": "120.000", "discount_percent": "15.00", "discount_amount": "18.000", "net_amount": "102.000",
-        "requested_at": "2026-09-30 17:05:00", "decided_at": None, "remarks": "",
+        "requested_at": "2026-09-30 17:05:00", "decided_at": None, "remarks": "", "request_remarks": "",
     }
     assert shape({**body["data"], "decided_at": "x"}) == shape(api._STATUS_SAMPLE)
 

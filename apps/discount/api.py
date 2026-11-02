@@ -269,7 +269,9 @@ purpose `card_discount`) and send its id as `card_photo_id`. If the upload has
 not reached the server yet the request is refused `photo_not_uploaded`: keep it
 queued and send it again after the upload. `card_photo` (a plain link) is still
 accepted from older app builds. `requested_at` is `YYYY-MM-DD HH:MM:SS`,
-company time.
+company time. `remarks` (optional, up to 255) -- the operator's note for the
+approver; shown to the manager and on the web, and returned as
+`request_remarks` (the approver's own note is `remarks`).
 
 One pending request per order at a time, and none while the order has a manager
 discount or complimentary request waiting or approved (`discount_requested`,
@@ -351,6 +353,7 @@ _STATUS_SAMPLE = {
     "card_discount_id": 12, "card_type_name": "Corporate", "card_grade_name": "Gold",
     "bill_amount": "120.00", "discount_percent": "15.00", "discount_amount": "18.00", "net_amount": "102.00",
     "requested_at": "2026-09-30 17:05:00", "decided_at": "2026-09-30 17:09:42", "remarks": "Card checked",
+    "request_remarks": "Regular customer, card shown",
 }
 
 _STATUS_DESCRIPTION = """
@@ -364,7 +367,9 @@ and the `order_id` it was made for -- both required, and they must agree.
 * `redeemed` -- the discount was used on the closed bill.
 
 `decided_at` is null while pending (for a cancelled request, when it was
-cancelled); `remarks` is "" when none. Times `YYYY-MM-DD HH:MM:SS`, company time.
+cancelled); `remarks` is the approver's note, `request_remarks` the operator's
+own note sent with the request -- "" when none. Times `YYYY-MM-DD HH:MM:SS`,
+company time.
 """
 
 
@@ -429,4 +434,5 @@ class ApprovalStatusView(APIView):
             "decided_at": claim.decided_at.astimezone(zone).strftime("%Y-%m-%d %H:%M:%S")
             if claim.decided_at else None,
             "remarks": claim.remarks,
+            "request_remarks": claim.request_remarks,
         })

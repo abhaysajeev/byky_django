@@ -353,12 +353,16 @@ class Vehicle(ApprovalMixin, TimeStampedModel):
 # decisions of 23-26 Oct 2026 (design/inventory/service-and-image-sharing.md):
 # the operator reports a vehicle or a station asset; a manager approves or
 # rejects; the web puts it back in service. Renting a reported vehicle is not
-# refused -- the report is information (26 Oct 2026).
+# refused -- the report is information (26 Oct 2026) -- except one of an issue
+# type that needs warehouse service, once a manager approves it (29 Oct 2026).
 
 class IssueTarget(models.TextChoices):
     VEHICLE = "vehicle", "Vehicle"
     ASSET = "asset", "Asset"
     BOTH = "both", "Both"
+
+
+WAREHOUSE_FOR_VEHICLES = "Needs warehouse service is for vehicle issue types only."
 
 
 class IssueType(ApprovalMixin, TimeStampedModel):
@@ -371,6 +375,10 @@ class IssueType(ApprovalMixin, TimeStampedModel):
     code = models.CharField("Code", max_length=20, blank=True)
     applies_to = models.CharField("Applies To", max_length=10, choices=IssueTarget.choices, default=IssueTarget.BOTH)
     description = models.TextField(blank=True)
+    # The vehicle goes to the warehouse: once a manager approves a request of
+    # this type, the vehicle cannot be rented until it is back in service
+    # (owner, 29 Oct 2026). Vehicle issue types only.
+    needs_warehouse_service = models.BooleanField("Needs Warehouse Service", default=False)
 
     class Meta:
         db_table = "issue_type"
@@ -380,6 +388,11 @@ class IssueType(ApprovalMixin, TimeStampedModel):
                 models.functions.Lower("name"), "company",
                 name="uniq_issue_type_name_per_company",
                 violation_error_message="An issue type with this name already exists.",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(needs_warehouse_service=False) | models.Q(applies_to=IssueTarget.VEHICLE),
+                name="issue_type_warehouse_for_vehicles",
+                violation_error_message=WAREHOUSE_FOR_VEHICLES,
             ),
         ]
         indexes = [models.Index(fields=["company"])]
@@ -425,6 +438,9 @@ class ServiceRequest(TimeStampedModel):
     )
     issue = models.TextField(blank=True)
     photo = models.ForeignKey("photos.Photo", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    # Copied from the issue type when reported, so editing the type later never
+    # changes a request already made. Approved, it keeps the vehicle off rent.
+    needs_warehouse_service = models.BooleanField(default=False)
 
     device = models.ForeignKey("devices.Device", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
     requested_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT, related_name="+")

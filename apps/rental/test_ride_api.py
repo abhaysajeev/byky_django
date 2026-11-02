@@ -60,7 +60,9 @@ order. Otherwise close it with `test-rides/end` (vehicle back) or
 
 Refusals: `test_rides_not_allowed`, `unknown_employee` (not an active employee
 of the company), `employee_blocked`, `unknown_vehicle`, `vehicle_not_at_station`,
-`vehicle_already_rented` (out on rent), `vehicle_on_test_ride`, `test_no_used`,
+`vehicle_already_rented` (out on rent), `vehicle_on_test_ride`,
+`vehicle_in_warehouse_service` (an approved service request needing warehouse
+service holds it), `test_no_used`,
 `device_settings_not_done`, `sync_id_conflict`.
 
 The station's other tablets get a quiet push (`type: test_ride_changed`) on
@@ -95,6 +97,7 @@ _MESSAGES = {
     "test_rides_not_allowed": "Test rides are not allowed at this station.",
     "vehicle_already_rented": "That vehicle is out on rent.",
     "vehicle_on_test_ride": "That vehicle is already on a test ride.",
+    "vehicle_in_warehouse_service": "That vehicle is in warehouse service.",
     "test_no_used": "That test number is already used.",
     "device_settings_not_done": "This station's device settings are not set up yet.",
     "sync_id_conflict": "That sync_id is already used.",
@@ -128,8 +131,8 @@ class TestRideStartView(_OperatorView):
              {"errors": {"customer_name": "is required for a customer test ride"}}),
             *_rows("unknown_vehicle", "unknown_employee", status=404),
             *_rows("vehicle_not_at_station", status=400), *_rows("employee_blocked"),
-            *_rows("test_rides_not_allowed", "vehicle_already_rented", "vehicle_on_test_ride", "test_no_used",
-                   "device_settings_not_done", "sync_id_conflict"),
+            *_rows("test_rides_not_allowed", "vehicle_already_rented", "vehicle_on_test_ride",
+                   "vehicle_in_warehouse_service", "test_no_used", "device_settings_not_done", "sync_id_conflict"),
             *parking.SCHEMA_ROWS, *_COMMON,
         ),
     )

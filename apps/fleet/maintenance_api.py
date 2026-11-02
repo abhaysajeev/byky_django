@@ -15,6 +15,7 @@ kind `service`, apps/rental/requests.py):
   POST /api/v1/manager/image-shares/list          view only
 """
 
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from drf_spectacular.utils import OpenApiExample, extend_schema
 from rest_framework.permissions import IsAuthenticated
@@ -30,6 +31,7 @@ from apps.fleet.serializers import (
     AssetsRequest,
     ImageShareCreateRequest,
     ImageShareListRequest,
+    IssueTypeCreateRequest,
     IssueTypesRequest,
     ManagerAssetCheckListRequest,
     ManagerImageShareListRequest,
@@ -424,6 +426,15 @@ company -- `state_id`, `branch_id` -- with `photo_url` / `photo_thumb_url`
 # -- Issue types -------------------------------------------------------------------------
 
 
+_ISSUE_TYPE_ROW = {"issue_type_id": 3, "name": "Brake failure", "code": "BRK", "applies_to": "vehicle",
+                   "needs_warehouse_service": True}
+
+
+def issue_type_row(issue_type):
+    return {"issue_type_id": issue_type.pk, "name": issue_type.name, "code": issue_type.code,
+            "applies_to": issue_type.applies_to, "needs_warehouse_service": issue_type.needs_warehouse_service}
+
+
 class IssueTypesView(_AppView):
     """POST /api/v1/{app}/issue-types -- operator app only."""
 
@@ -435,12 +446,17 @@ The company's active issue types (Inventory -> Issue Type), by name.
 `applies_to` is `vehicle`, `asset` or `both`; send `target` (`vehicle` /
 `asset`) for only the ones that fit -- each includes `both`. Send the picked
 `issue_type_id` with `service-requests`.
+
+`needs_warehouse_service` (vehicle types only): a request of this type, once a
+manager approves it, keeps the vehicle off rent until it is back in service --
+`/vehicles` says `warehouse_service: true`, `can_rent: false`, and booking it
+is refused `vehicle_in_warehouse_service`.
 """,
         request=envelope_request("IssueTypesEnvelope", IssueTypesRequest, request_data_required=False),
         responses=envelope_responses(
-            (200, "ok", "Issue types.", {"issue_types": [
-                {"issue_type_id": 3, "name": "Brake failure", "code": "BRK", "applies_to": "vehicle"},
-                {"issue_type_id": 7, "name": "Damaged", "code": "", "applies_to": "both"}]}),
+            (200, "ok", "Issue types.", {"issue_types": [_ISSUE_TYPE_ROW, {
+                "issue_type_id": 7, "name": "Damaged", "code": "", "applies_to": "both",
+                "needs_warehouse_service": False}]}),
             *_OPERATOR_COMMON, SERVER_ERROR,
         ),
     )
@@ -455,9 +471,66 @@ The company's active issue types (Inventory -> Issue Type), by name.
         target = form.validated_data.get("target")
         if target:
             rows = rows.filter(applies_to__in=[target, IssueTarget.BOTH])
-        return envelope("ok", "Issue types.", {"issue_types": [
-            {"issue_type_id": t.pk, "name": t.name, "code": t.code, "applies_to": t.applies_to}
-            for t in rows.order_by("name")]})
+        return envelope("ok", "Issue types.", {"issue_types": [issue_type_row(t) for t in rows.order_by("name")]})
+
+
+class IssueTypeCreateView(_AppView):
+    """POST /api/v1/{app}/issue-types/create -- operator app only."""
+
+    @extend_schema(
+        tags=["Operator Service & Maintenance"],
+        summary="Add an issue type, to pick at once",
+        description="""
+A new issue type from the tablet (owner, 29 Oct 2026) -- saved **active** for the
+whole company, so it is in `issue-types` for every station and can be sent as
+`issue_type_id` with `service-requests` straight away. The web can edit or
+deactivate it later (Inventory -> Issue Type).
+
+`name` (required, up to 100), `applies_to` (`vehicle`, `asset` or `both`),
+`description` (optional), `needs_warehouse_service` (optional, default false --
+**vehicle types only**: a manager's approval of such a request keeps the vehicle
+off rent until it is back in service).
+
+**A name that already exists** (ignoring case and extra spaces) is not an
+error: the existing issue type comes back with `"created": false` -- pick it.
+""",
+        request=envelope_request("IssueTypeCreateEnvelope", IssueTypeCreateRequest),
+        responses=envelope_responses(
+            (200, "ok", "Issue type added.", {**_ISSUE_TYPE_ROW, "created": True}),
+            (200, "ok", "Issue type already exists.", {**_ISSUE_TYPE_ROW, "created": False}, "ok (already exists)"),
+            (400, "invalid_request", "needs_warehouse_service is for vehicle issue types only (applies_to vehicle).",
+             {"errors": {"needs_warehouse_service": "is for vehicle issue types only (applies_to vehicle)"}}),
+            *_OPERATOR_COMMON, SERVER_ERROR,
+        ),
+    )
+    def post(self, request, app):
+        branch, refused = self.operator_station(request, app)
+        if refused:
+            return refused
+        _, request_data = request_parts(request)
+        form = IssueTypeCreateRequest(data=request_data)
+        form.is_valid(raise_exception=True)
+        values, company = form.validated_data, branch.company
+        existing = IssueType.objects.filter(company=company, name__iexact=values["name"]).first()
+        if existing is not None:
+            return envelope("ok", "Issue type already exists.", {**issue_type_row(existing), "created": False})
+        issue_type = IssueType(
+            company=company, name=values["name"], applies_to=values["applies_to"],
+            description=(values.get("description") or "").strip(),
+            needs_warehouse_service=values.get("needs_warehouse_service", False),
+            created_by=request.user, modified_by=request.user,
+        )
+        issue_type.apply_approval_defaults()                 # no approval asked: approved and active
+        try:
+            with transaction.atomic():
+                issue_type.save()
+        except IntegrityError:
+            # Lost a race with the same name: answer with the one that won.
+            existing = IssueType.objects.filter(company=company, name__iexact=values["name"]).first()
+            if existing is None:
+                raise
+            return envelope("ok", "Issue type already exists.", {**issue_type_row(existing), "created": False})
+        return envelope("ok", "Issue type added.", {**issue_type_row(issue_type), "created": True})
 
 
 # -- Asset checks ------------------------------------------------------------------------

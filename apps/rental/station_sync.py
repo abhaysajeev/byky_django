@@ -15,7 +15,9 @@ used reaches the order's station's other tablets the same quiet way
 (`request_changed`) -- never the tablet that acted, and for a decision never the
 asking tablet, which has its own audible alert (apps/notifications). A request
 closed by a settle or a cancel is not pushed: the order's own push covers it.
-Service requests are not station-synced.
+Service requests (owner, 29 Oct 2026) are too: reported, approved, rejected and
+back in service reach the station's other tablets (`service_request_changed`),
+never the reporting tablet -- it has its own alerts.
 
 Sent after the change commits, from the worker; a failure to queue or send is
 logged and never touches the order.
@@ -304,3 +306,60 @@ def test_ride_push(ride_id, action, device_id, at):
     if ride is None:
         return 0
     return _send(ride, test_ride_message(ride, action, at), device_id)
+
+
+# -- Service requests (owner, 29 Oct 2026) ---------------------------------------------------
+
+SERVICE_VERBS = {"raised": "reported", "approved": "under maintenance", "rejected": "rejected",
+                 "completed": "back in service"}
+
+
+def service_request_changed(req, action):
+    """After this transaction commits, tell the station's other tablets that a
+    service request was reported, approved, rejected or put back in service --
+    so their vehicle lists (under maintenance, warehouse service) follow. The
+    reporting tablet is not told: it reported it, and has its own audible alert
+    for the decisions (apps/notifications)."""
+    req_id, device_id, at = str(req.pk), req.device_id, timezone.now()
+
+    def queue():
+        try:
+            from apps.rental.tasks import station_service_push
+
+            station_service_push.delay(req_id, action, device_id, at.isoformat())
+        except Exception:
+            log.warning("station sync for service request %s not queued", req_id, exc_info=True)
+
+    transaction.on_commit(queue)
+
+
+def service_message(req, action, at):
+    from core.timezones import zone_for
+
+    target = req.vehicle.vehicle_name if req.vehicle_id else req.asset.asset_code
+    issue = req.issue_type.name if req.issue_type_id else req.issue
+    return Push(
+        title=f"Service {req.request_no} {SERVICE_VERBS[action]}",
+        body=" · ".join(part for part in (target, issue, req.branch.name) if part),
+        data={"type": "service_request_changed", "service_request_id": str(req.pk), "request_no": req.request_no,
+              "target": "vehicle" if req.vehicle_id else "asset",
+              # Push data is strings only: "" for the target it is not.
+              "vehicle_id": str(req.vehicle_id) if req.vehicle_id else "",
+              "asset_id": str(req.asset_id) if req.asset_id else "",
+              "action": action, "status": req.status,
+              "needs_warehouse_service": "true" if req.needs_warehouse_service else "false",
+              "branch_id": str(req.branch_id),
+              "at": at.astimezone(zone_for(req.company)).strftime(TIME_FORMAT)},
+        tag=f"service_request:{req.pk}", collapse_key=f"service_request:{req.pk}",
+    )
+
+
+def service_push(req_id, action, device_id, at):
+    """The worker's side of service_request_changed. Returns how many were sent."""
+    from apps.fleet.models import ServiceRequest
+
+    req = (ServiceRequest.objects.select_related("vehicle", "asset", "issue_type", "branch", "company")
+           .filter(pk=req_id).first())
+    if req is None:
+        return 0
+    return _send(req, service_message(req, action, at), device_id)

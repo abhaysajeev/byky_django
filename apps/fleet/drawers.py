@@ -282,6 +282,12 @@ ISSUE_TYPE = {
                     "id": "applies_to", "label": "Applies To", "kind": "select", "required": True,
                     "options_from": "issue_targets_list", "option_key": "name",
                 },
+                # Vehicle issue types only (owner, 29 Oct 2026): approved, the
+                # vehicle is off rent until it is back in service.
+                {
+                    "id": "needs_warehouse_service", "label": "Needs Warehouse Service", "kind": "checkbox",
+                    "required": False, "show_if": "applies_to:vehicle",
+                },
                 {"id": "description", "label": "Description", "kind": "textarea", "required": False},
             ],
         }

@@ -207,6 +207,29 @@ ORDER_STATUSES = [
 _STATUS_LABEL = dict(ORDER_STATUSES)
 
 
+_APPLIED = {"base": "Base fare", "season": "Season fare", "special_price": "Special price"}
+
+
+def fare_terms(details):
+    """One line for the fare terms a vehicle line was priced on (the tablet's
+    fare_details, owner 29 Oct 2026) -- e.g. "Special price · AED 50.00 ·
+    grace 5 min · AED 15.00 per extra 15 min (grace 3)". "" when none were
+    sent. Reads only what is there: the block is stored as the tablet sent it."""
+    if not isinstance(details, dict) or not details:
+        return ""
+    parts = [_APPLIED.get(details.get("applied"), "")]
+    if details.get("base_fare") not in (None, ""):
+        parts.append(f"AED {details['base_fare']}")
+    if details.get("grace_minutes"):
+        parts.append(f"grace {details['grace_minutes']} min")
+    if details.get("concurrent_fare") not in (None, "") and details.get("concurrent_interval_minutes"):
+        extra = f"AED {details['concurrent_fare']} per extra {details['concurrent_interval_minutes']} min"
+        if details.get("concurrent_grace_minutes"):
+            extra += f" (grace {details['concurrent_grace_minutes']})"
+        parts.append(extra)
+    return " · ".join(p for p in parts if p)
+
+
 def _status_key(order, items_out):
     if order.status == OrderStatus.ACTIVE:
         return "active" if items_out else "awaiting"
@@ -378,6 +401,7 @@ class OrderDetailView(RentalScreenView):
                     "base_fare": item.base_fare, "overtime_amount": item.overtime_amount,
                     "total_amount": item.total_amount, "reason": item.reason,
                     "replaced_by": replaced_by[item.pk].vehicle.vehicle_name if item.pk in replaced_by else "",
+                    "fare_terms": fare_terms(item.fare_details),
                 }
                 for item in items
             ],
@@ -530,7 +554,7 @@ def _receipt(invoice, zone):
         "rounding": invoice.rounding_adjustment, "net_amount": invoice.net_amount,
         "customer": invoice.customer_name or "—", "mobile": invoice.customer_mobile or "—",
         "id_type": customer.get_id_type_display() if customer.id_type else "—", "id_no": customer.id_no or "—",
-        "star_rating": invoice.star_rating,
+        "star_rating": invoice.star_rating, "rating_remarks": invoice.rating_remarks,
         "balance": invoice.net_amount - order.paid_amount, "time": _hhmm(run),
         "payments": invoice.payments,
         "order_no": order.order_no, "tablet": invoice.device.device_registration_id,
