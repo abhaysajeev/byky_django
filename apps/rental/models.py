@@ -318,6 +318,11 @@ class OrderItem(TimeStampedModel):
     start_time = models.DateTimeField()
     expected_end_time = models.DateTimeField()      # start + package
     end_time = models.DateTimeField(null=True, blank=True)   # returned / replaced / removed (tablet time)
+    # The tablet returned this vehicle at this time, but the return call was
+    # parked for the office to correct (apps/sync). The line stays active --
+    # still open and unbilled -- but the vehicle is back: not on rent, free to
+    # book again. Cleared when the return is finally recorded (3 Nov 2026).
+    return_pending_at = models.DateTimeField(null=True, blank=True)
 
     base_fare = models.DecimalField(**MONEY)        # the package price agreed at booking
     # The fare terms the tablet priced this line on, exactly as it sent them
@@ -353,9 +358,11 @@ class OrderItem(TimeStampedModel):
                 name="order_item_amounts_not_negative",
             ),
             # A vehicle is on one active line at a time -- legacy trusted the
-            # device's own state and had no such rule.
+            # device's own state and had no such rule. A line whose return is
+            # parked (return_pending_at) does not count: the vehicle is back.
             models.UniqueConstraint(
-                fields=["vehicle"], condition=models.Q(status=OrderItemStatus.ACTIVE),
+                fields=["vehicle"],
+                condition=models.Q(status=OrderItemStatus.ACTIVE, return_pending_at__isnull=True),
                 name="uniq_active_order_item_per_vehicle",
                 violation_error_message="This vehicle is already on an active rental.",
             ),

@@ -88,7 +88,7 @@
     var chips = r.vehicles.map(function (v) {
       var when = v.state === 'out' ? (v.due ? 'due ' + v.due : 'out') : v.end ? v.start + '–' + v.end : v.start;
       return '<span class="scr-live-chip is-' + esc(v.state) + '"><i></i>' + esc(v.no) +
-        '<em>' + esc(v.state) + ' · ' + esc(when) + '</em></span>';
+        '<em>' + esc(v.state) + ' · ' + esc(when) + (v.note ? ' · ' + esc(v.note) : '') + '</em></span>';
     }).join('');
     return '<tr class="scr-live-veh-row" data-veh-for="' + esc(r.id) + '"' + (open[r.id] ? '' : ' hidden') + '>' +
       '<td colspan="' + COLS + '"><div class="scr-live-veh">' + (chips || '<span class="scr-live-nil">No vehicles</span>') +
