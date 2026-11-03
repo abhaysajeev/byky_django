@@ -236,12 +236,10 @@ def decide_claim(user, claim, approve, remarks="", channel=DecisionChannel.WEB):
 
 def revoke_claim(user, claim, note, channel=DecisionChannel.WEB):
     """Take an approved claim back before the bill uses it (owner, 30 Oct 2026),
-    on the web or in the manager app. The reason is required. The tablet sees
+    on the web or in the manager app. The reason is optional (owner, 3 Nov 2026). The tablet sees
     `revoked` in approval/status and is told; a settle naming it is then
     refused (card_discount_revoked). Pattern: rental.requests.revoke."""
     note = (note or "").strip()[:255]
-    if not note:
-        raise DiscountRefused("note_required", "Give a reason for revoking.", 400)
     with transaction.atomic():
         claim = type(claim).objects.select_for_update().select_related("order").get(pk=claim.pk)
         if claim.status != ClaimStatus.APPROVED:

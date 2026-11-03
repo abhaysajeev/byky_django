@@ -770,7 +770,8 @@ class ClaimRevokeView(_ManagerView):
         tags=["Manager Card Discounts"],
         summary="Revoke an approved card-discount request",
         description=_APPROVALS + "\n**This call** takes back an **approved** claim the bill has not used yet "
-                                 "(owner, 30 Oct 2026). `note`, the reason, is **required** (up to 255). The "
+                                 "(owner, 30 Oct 2026). `note`, the reason, is **optional** (up to 255; left out, "
+                                 "`null` or empty all mean none -- owner, 3 Nov 2026). The "
                                  "asking tablet is told (`Card discount approval revoked`) and sees `revoked` "
                                  "in `card-discounts/approval/status`; a settle that still names it is refused "
                                  "with `card_discount_revoked`, so the bill is made again without it. Only an "
@@ -781,7 +782,6 @@ class ClaimRevokeView(_ManagerView):
             (200, "ok", "Approval revoked.", {
                 **_CLAIM_DECIDED, "status": "revoked", "revoked_by": "Sara K", "revoked_channel": "manager",
                 "revoked_at": "2026-10-08 17:05:00", "revoke_note": "Card was expired"}),
-            (400, "invalid_request", "note is required.", {"errors": {"note": "is required"}}),
             (404, "unknown_claim", "No such card discount request.", {}),
             (409, "claim_not_approved", "Only an approved request can be revoked.", {}),
             (409, "order_closed", "This order is already completed or cancelled.", {}),
@@ -796,7 +796,8 @@ class ClaimRevokeView(_ManagerView):
         if claim is None:
             return envelope("unknown_claim", "No such card discount request.", http_status=404)
         try:
-            discount_services.revoke_claim(request.user, claim, values["note"], channel=DecisionChannel.MANAGER)
+            discount_services.revoke_claim(request.user, claim, values.get("note"),
+                                           channel=DecisionChannel.MANAGER)
         except discount_services.DiscountRefused as refusal:
             return envelope(refusal.code, refusal.message, http_status=refusal.status)
         return envelope("ok", "Approval revoked.", approvals.claim_row(claim.pk))

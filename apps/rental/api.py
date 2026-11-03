@@ -2381,7 +2381,7 @@ class ManagerRequestApproveView(_ManagerView):
     def post(self, request, app):
         return self.decide(request, app, ManagerRequestApproveRequest, lambda v, companies: order_requests.approve(
             request.user, v["request_sync_id"], companies, DecisionChannel.MANAGER,
-            v.get("discount_type"), v.get("discount_value"), v.get("note", "")), "Request approved.")
+            v.get("discount_type"), v.get("discount_value"), v.get("note") or ""), "Request approved.")
 
 
 class ManagerRequestRejectView(_ManagerView):
@@ -2399,7 +2399,7 @@ class ManagerRequestRejectView(_ManagerView):
     )
     def post(self, request, app):
         return self.decide(request, app, ManagerRequestDecisionRequest, lambda v, companies: order_requests.reject(
-            request.user, v["request_sync_id"], companies, DecisionChannel.MANAGER, v.get("note", "")),
+            request.user, v["request_sync_id"], companies, DecisionChannel.MANAGER, v.get("note") or ""),
             "Request rejected.")
 
 
@@ -2426,5 +2426,5 @@ class ManagerRequestRevokeView(_ManagerView):
     )
     def post(self, request, app):
         return self.decide(request, app, ManagerRequestDecisionRequest, lambda v, companies: order_requests.revoke(
-            request.user, v["request_sync_id"], companies, DecisionChannel.MANAGER, v.get("note", "")),
+            request.user, v["request_sync_id"], companies, DecisionChannel.MANAGER, v.get("note") or ""),
             "Approval revoked.")
