@@ -232,24 +232,46 @@ ORDER_STATUSES = order_status.CHOICES
 _APPLIED = {"base": "Base fare", "season": "Season fare", "special_price": "Special price"}
 
 
-def fare_terms(details):
-    """One line for the fare terms a vehicle line was priced on (the tablet's
-    fare_details, owner 29 Oct 2026) -- e.g. "Special price · AED 50.00 ·
-    grace 5 min · AED 15.00 per extra 15 min (grace 3)". "" when none were
-    sent. Reads only what is there: the block is stored as the tablet sent it."""
+# Cancel order on the web order screen: hidden for now (client, 3 Nov 2026).
+# The cancel endpoint and the tablet's cancel request are unchanged; set True
+# to show the button again.
+WEB_ORDER_CANCEL = False
+
+
+def _fare_parts(details):
+    """(price parts, extra-time rule) of the fare terms a vehicle line was
+    priced on (the tablet's fare_details, as sent)."""
     if not isinstance(details, dict) or not details:
-        return ""
+        return [], ""
     parts = [_APPLIED.get(details.get("applied"), "")]
     if details.get("base_fare") not in (None, ""):
         parts.append(f"AED {details['base_fare']}")
     if details.get("grace_minutes"):
         parts.append(f"grace {details['grace_minutes']} min")
+    extra = ""
     if details.get("concurrent_fare") not in (None, "") and details.get("concurrent_interval_minutes"):
         extra = f"AED {details['concurrent_fare']} per extra {details['concurrent_interval_minutes']} min"
         if details.get("concurrent_grace_minutes"):
             extra += f" (grace {details['concurrent_grace_minutes']})"
-        parts.append(extra)
-    return " · ".join(p for p in parts if p)
+    return [p for p in parts if p], extra
+
+
+def fare_terms(details):
+    """One line for the fare terms a vehicle line was priced on (the tablet's
+    fare_details, owner 29 Oct 2026) -- e.g. "Special price · AED 50.00 ·
+    grace 5 min · AED 15.00 per extra 15 min (grace 3)". "" when none were
+    sent. Reads only what is there: the block is stored as the tablet sent it."""
+    price, extra = _fare_parts(details)
+    return " · ".join([*price, extra] if extra else price)
+
+
+def fare_terms_lines(details):
+    """The same terms on two lines for the order screen (owner, 3 Nov 2026):
+    the package price ("Base fare · AED 50.00 · grace 4 min"), then the
+    extra-time rule whole ("AED 10.00 per extra 6 min (grace 2)"). [] when no
+    terms were sent."""
+    price, extra = _fare_parts(details)
+    return [line for line in (" · ".join(price), extra) if line]
 
 
 def _status(value):
@@ -414,6 +436,7 @@ class OrderDetailView(RentalScreenView):
                     "total_amount": item.total_amount, "reason": item.reason,
                     "replaced_by": replaced_by[item.pk].vehicle.vehicle_name if item.pk in replaced_by else "",
                     "fare_terms": fare_terms(item.fare_details),
+                    "fare_lines": fare_terms_lines(item.fare_details),
                 }
                 for item in items
             ],
@@ -446,7 +469,8 @@ class OrderDetailView(RentalScreenView):
             "list_url": reverse("rental-order-list"),
             # A running order may be cancelled straight from here by whoever
             # decides requests (they approve operators' cancels too).
-            "can_cancel": order.status == OrderStatus.ACTIVE and has_permission(user, "rental.request", "approve"),
+            "can_cancel": (WEB_ORDER_CANCEL and order.status == OrderStatus.ACTIVE
+                           and has_permission(user, "rental.request", "approve")),
             "cancel_url": reverse("rental-order-cancel", args=[order.pk]),
             "cancellation": _cancellation(order, local),
         })

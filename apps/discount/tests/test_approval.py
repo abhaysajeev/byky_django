@@ -151,10 +151,8 @@ def test_an_approved_request_is_revoked_with_a_reason(client_in, world, pending)
     post(client_in, f"/discount/approval/{pending.pk}/approve/", {})
     url = f"/discount/approval/{pending.pk}/revoke/"
 
-    blank = post(client_in, url, {"note": "  "})
     body = post(client_in, url, {"note": " Card was expired "}).json()
 
-    assert (blank.status_code, blank.json()["errors"][0]["field"]) == (400, "Reason")
     assert body == {"ok": True, "message": "Approval revoked."}
     pending.refresh_from_db()
     assert (pending.status, pending.revoked_by.username, pending.revoked_channel, pending.revoke_note) == (
@@ -187,3 +185,14 @@ def test_the_database_keeps_a_revoked_claim_consistent(world):
     discount = make_discount(world["our"]["grade"], requires_approval=True)
     with pytest.raises(IntegrityError), transaction.atomic():
         make_claim(discount, world["our"]["customer"], status=ClaimStatus.REVOKED, decided_at=timezone.now())
+
+
+def test_an_approved_request_is_revoked_without_a_reason(client_in, world, pending):
+    """Owner, 3 Nov 2026: the reason is optional on the web too."""
+    post(client_in, f"/discount/approval/{pending.pk}/approve/", {})
+
+    body = post(client_in, f"/discount/approval/{pending.pk}/revoke/", {"note": "  "}).json()
+
+    assert body == {"ok": True, "message": "Approval revoked."}
+    pending.refresh_from_db()
+    assert (pending.status, pending.revoke_note) == ("revoked", "")
