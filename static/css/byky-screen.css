@@ -281,6 +281,8 @@ button.scr-tile.is-active { border-color: #cc0000; box-shadow: 0 0 0 3px rgba(20
 .scr-records-empty { padding: 26px 14px; text-align: center; font-size: 12px; color: #a9a6c4; }
 .scr-contact { font-size: 12.5px; color: #4b4770; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .scr-contact-sub { font-size: 11px; color: #9490bb; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* The order's fare terms wrap under the package instead of widening the table (owner, 3 Nov 2026). */
+.scr-contact-sub.scr-fare-terms { white-space: normal; max-width: 260px; line-height: 1.45; }
 
 .scr-fill { display: flex; align-items: center; gap: 9px; }
 .scr-fill-track { width: 62px; height: 6px; border-radius: 99px; background: #f0eff7; overflow: hidden; flex: 0 0 auto; }
