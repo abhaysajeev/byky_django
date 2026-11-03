@@ -11,6 +11,7 @@ urlpatterns = [
 
     # Screens
     path("portal/role/list/", screens.RoleListView.as_view(), name="portal-role-list"),
+    path("portal/privileges/system/", screens.SystemPrivilegeView.as_view(), name="system-privileges"),
     path("portal/user/list/", screens.UserListView.as_view(), name="portal-user-list"),
 
     # Writes
