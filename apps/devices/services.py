@@ -644,6 +644,8 @@ def approve_device(devices_qs, pk, *, user, name, branch=None, replaces_pk=None,
                 )
 
         if branch is not None:
+            if device.channel != Channel.OPERATOR:
+                raise DeviceActionError(NOT_OPERATOR, "Station")
             _check_station(branch, device, excluding=old)
 
         if old is not None:
@@ -811,11 +813,61 @@ def unblock_device(devices_qs, pk, *, user, reason=""):
 # signs in again and gets the new station (or none).
 
 
+NOT_OPERATOR = "Only RMS operator devices have a station."
+
+
 def _mappable(devices_qs, pk):
     device = _locked(devices_qs, pk)
     if device.status not in (DeviceStatus.APPROVED, DeviceStatus.BLOCKED):
         raise DeviceActionError("Only an approved or blocked device can be mapped.", "Device")
+    # Stations are for station tills: the employee and manager apps run on
+    # people's own phones and never use one (owner, 3 Nov 2026).
+    if device.channel != Channel.OPERATOR:
+        raise DeviceActionError(NOT_OPERATOR, "Device")
     return device
+
+
+def live_sessions(device_ids, now=None):
+    """{device_id: the user signed in on it now} -- an open session whose
+    refresh token has not expired. A session left open on a tablet that was
+    switched off for weeks has expired: it does not count."""
+    now = now or timezone.now()
+    from apps.portal.session_models import AppSession
+
+    rows = (AppSession.objects
+            .filter(device_id__in=device_ids, logged_out_at__isnull=True, refresh_expires_at__gt=now)
+            .select_related("user").order_by("-logged_in_at"))
+    signed_in = {}
+    for session in rows:
+        signed_in.setdefault(session.device_id, session.user)
+    return signed_in
+
+
+def _nobody_signed_in(device, now):
+    """Re-map and Close mapping only on an idle device (owner, 3 Nov 2026):
+    closing a live session under the operator left the app stuck on
+    `session_closed` (31 Oct 2026). They log out first -- or a system admin
+    uses Force logout for a lost tablet."""
+    user = live_sessions([device.pk], now).get(device.pk)
+    if user is not None:
+        who = user.display_name or user.username
+        raise DeviceActionError(
+            f"{who} is logged in on this device. They must log out first, or use Force logout.", "Device")
+
+
+def force_logout(devices_qs, pk, *, user, now=None):
+    """Sign whoever is on this device out -- for a lost or broken tablet whose
+    user cannot log out. System admins only (the view checks). Returns how
+    many sessions were closed."""
+    now = now or timezone.now()
+    with transaction.atomic():
+        device = _locked(devices_qs, pk)
+        signed_in = live_sessions([device.pk], now).get(device.pk)
+        if signed_in is None:
+            raise DeviceActionError("Nobody is logged in on this device.", "Device")
+        closed = close_sessions_for_device(device, LogoutReason.FORCED, now=now)
+        log.info("force logout of device %s (%s) by %s", device.pk, signed_in, user)
+        return closed
 
 
 def transaction_letter(branch, raw, *, device=None):
@@ -861,6 +913,7 @@ def remap_device(devices_qs, pk, *, user, branch, letter="", now=None):
             raise DeviceActionError("This device has no station yet. Use Add Device Mapping.", "Device")
         if current.branch_id == branch.pk:
             raise DeviceActionError("The device is already at this station.", "Station")
+        _nobody_signed_in(device, now)
         _check_station(branch, device)
         letter = transaction_letter(branch, letter, device=device)
         close_sessions_for_device(device, LogoutReason.FORCED, now=now)
@@ -895,6 +948,7 @@ def close_mapping(devices_qs, pk, *, user, now=None):
         device = _mappable(devices_qs, pk)
         if _open_mapping(device) is None:
             raise DeviceActionError("This device has no station to close.", "Device")
+        _nobody_signed_in(device, now)
         close_sessions_for_device(device, LogoutReason.FORCED, now=now)
         return _close_mapping(device, now, user)
 
