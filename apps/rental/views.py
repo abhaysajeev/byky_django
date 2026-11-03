@@ -24,7 +24,7 @@ from apps.discount.models import CardDiscountClaim, ClaimStatus
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
-from apps.rental import drawers, forms, live, scoping
+from apps.rental import blocked, drawers, forms, live, scoping
 from apps.rental.models import (
     CREDIT_NOTE_LIVE,
     CreditNoteSource,
@@ -126,8 +126,31 @@ class CustomerListView(RentalScreenView):
             "remarks": customer.remarks,
             "is_blocked": customer.is_blocked,
             "block_reason": customer.block_reason,
+            "was_blocked": "yes" if customer.is_blocked else "no",
+            "unblock_reason": "",
             "is_active": customer.is_active,
         }
+
+
+class BlockedCustomerListView(RentalScreenView):
+    """Blocked Customers: blocked now, every block / unblock, Block / Unblock
+    with a reason (apps/rental/blocked.py)."""
+
+    template_name = "rental/blocked_customer_list.html"
+    page_code = "rental.blocked_customer"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(blocked.context_for(self.request))
+        return context
+
+
+class BlockedCustomerExport(PagePermissionMixin, View):
+    page_code = "rental.blocked_customer"
+    required_action = "print"
+
+    def get(self, request):
+        return blocked.workbook(request)
 
 
 class CustomerDelete(company_writes.EntityDeleteView):

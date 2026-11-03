@@ -394,6 +394,43 @@ def blocked_customers(company):
             .order_by(F("blocked_at").desc(nulls_last=True), "first_name", "last_name", "pk"))
 
 
+class BlockRefused(Exception):
+    def __init__(self, message, field=""):
+        super().__init__(message)
+        self.message, self.field = message, field
+
+
+def log_block_change(customer, user, reason, now=None):
+    """One CustomerBlockLog row for the change just made to `customer`."""
+    from apps.rental.models import CustomerBlockAction, CustomerBlockLog
+
+    CustomerBlockLog.objects.create(
+        customer=customer, company_id=customer.company_id, reason=reason[:255], at=now or timezone.now(),
+        action=CustomerBlockAction.BLOCK if customer.is_blocked else CustomerBlockAction.UNBLOCK,
+        created_by=user, modified_by=user,
+    )
+
+
+def set_customer_blocked(customer, blocked, reason, user, now=None):
+    """Block or unblock from the Blocked Customers dashboard: a reason both
+    ways (owner, 3 Nov 2026), the current state stamped, the change logged."""
+    reason = (reason or "").strip()
+    if bool(customer.is_blocked) == bool(blocked):
+        raise BlockRefused("This customer is already blocked." if blocked else "This customer is not blocked.")
+    if not reason:
+        raise BlockRefused("Give a reason.", "Reason")
+    now = now or timezone.now()
+    with transaction.atomic():
+        was_blocked = customer.is_blocked
+        customer.is_blocked = bool(blocked)
+        customer.block_reason = reason[:255] if blocked else ""
+        stamp_block(customer, was_blocked, user, now=now)
+        customer.modified_by = user
+        customer.save()
+        log_block_change(customer, user, reason, now=now)
+    return customer
+
+
 def stamp_block(customer, was_blocked, user, now=None):
     """Record when and by whom a customer was blocked: set when the block goes
     on, cleared when it comes off, left alone while it stays."""

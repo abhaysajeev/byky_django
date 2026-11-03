@@ -148,6 +148,32 @@ class Customer(ApprovalMixin, TimeStampedModel):
         return " ".join(part for part in (self.first_name, self.last_name) if part)
 
 
+class CustomerBlockAction(models.TextChoices):
+    BLOCK = "block", "Blocked"
+    UNBLOCK = "unblock", "Unblocked"
+
+
+class CustomerBlockLog(TimeStampedModel):
+    """Every block and unblock of a customer, with its reason (owner, 3 Nov
+    2026: the Blocked Customers dashboard). A log: never edited. Who did it is
+    created_by; `at` is when. Customer.is_blocked / block_reason / blocked_at /
+    blocked_by stay the current state the tablets read."""
+
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name="block_log")
+    company = models.ForeignKey("company.Company", on_delete=models.PROTECT, related_name="+")
+    action = models.CharField(max_length=10, choices=CustomerBlockAction.choices)
+    reason = models.CharField(max_length=255)
+    at = models.DateTimeField()
+
+    class Meta:
+        db_table = "customer_block_log"
+        ordering = ["-at", "-id"]
+        indexes = [models.Index(fields=["company", "-at"]), models.Index(fields=["customer"])]
+
+    def __str__(self):
+        return f"{self.customer} {self.get_action_display().lower()} {self.at:%Y-%m-%d}"
+
+
 # --- Order ---------------------------------------------------------------------
 #
 # The design is order_lifecycle_design.md (section 4). Traced against the

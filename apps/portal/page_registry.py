@@ -151,6 +151,10 @@ PAGES = [
     # approve = approve, reject or revoke an operator's request (web and manager app).
     ("rental.request", "rental", "Requests", "rental-request-list", ["read", "approve"], 2, False),
     ("rental.customer", "rental", "Customer", "rental-customer-list", CRUD_PRINT, 2, False),
+    # Who is blocked now and every block / unblock (owner, 3 Nov 2026); Block
+    # and Unblock themselves need Customer's Update.
+    ("rental.blocked_customer", "rental", "Blocked Customers", "rental-blocked-customer-list",
+     ["read", "print"], 2, False),
     ("rental.payment_mode", "rental", "Payment Mode", "rental-payment-mode-list", CRUD_PRINT, 3, False),
     ("rental.privileges", "rental", "Privileges", "rental-privileges", ["read", "update"], 9, False),
     ("discount.card_type", "discount", "Card Type", "discount-card-type-list", CRUD_PRINT, 1, False),
