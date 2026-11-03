@@ -1661,13 +1661,17 @@ def bill_prefix_for(branch):
     the same fallback the legacy used (Service_Operator_Login.sql:747-755).
     Upper-cased, as the legacy did when it built each number.
     """
-    settings = (
+    return (_settings_prefix(branch) or branch.short_code or "").upper()
+
+
+def _settings_prefix(branch):
+    """The station's approved, active settings prefix, or None."""
+    return (
         DeviceSettings.objects
         .filter(branch=branch, is_active=True, approval_status=ApprovalStatus.APPROVED)
         .values_list("order_no_prefix", flat=True)
         .first()
-    )
-    return (settings or branch.short_code or "").upper()
+    ) or None
 
 
 def counter_for(device, branch, kind):
@@ -1679,11 +1683,23 @@ def counter_for(device, branch, kind):
     Service_Operator_Login.sql -- the legacy did this check-and-create right
     inside the login proc, once per bill kind. Called twice at login (order,
     test_ride); every later count-up is the tablet's own job, offline.
+
+    The prefix follows the station's settings (3 Nov 2026): when the approved
+    "Order No Starting Characters" changes, an existing counter takes the new
+    prefix the next time it is read (login, settings download, a booking) and
+    keeps its running number -- ABCO21083000015 is followed by
+    <new>1083000016. Only an approved, active setting moves it: while an edit
+    waits for approval the counter keeps the prefix it has.
     """
-    counter, _ = BillContinuity.objects.get_or_create(
+    counter, created = BillContinuity.objects.get_or_create(
         device=device, branch=branch, kind=kind,
         defaults={"prefix": bill_prefix_for(branch)},
     )
+    if not created:
+        current = _settings_prefix(branch)
+        if current and current.upper() != counter.prefix:
+            counter.prefix = current.upper()
+            BillContinuity.objects.filter(pk=counter.pk).update(prefix=counter.prefix, modified_on=timezone.now())
     return counter
 
 
