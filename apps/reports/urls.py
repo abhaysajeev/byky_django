@@ -5,7 +5,9 @@ from django.urls import path
 from apps.reports import views
 from apps.reports.defs import REPORTS
 
-urlpatterns = []
+urlpatterns = [
+    path("privileges/", views.ReportsPrivilegeView.as_view(), name="reports-privileges"),
+]
 for _report in REPORTS:
     urlpatterns += [
         path(f"{_report.slug}/", views.ReportView.as_view(report=_report), name=f"reports-{_report.slug}"),

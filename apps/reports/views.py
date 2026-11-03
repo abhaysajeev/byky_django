@@ -18,6 +18,7 @@ from django.utils import timezone
 from django.views import View
 
 from apps.portal.permissions import PagePermissionMixin
+from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
 from apps.reports import xlsx
 from apps.reports.base import COUNT, DATA, DATE, DATETIME, MONEY, PERCENT
@@ -203,3 +204,12 @@ def _too_big(rows, report):
         json.dumps({"detail": f"{rows:,} {report.unit[1]} -- more than {EXPORT_LIMIT:,} rows. "
                               "Narrow the dates or filters and export again."}),
         status=413, content_type="application/json")
+
+
+class ReportsPrivilegeView(PrivilegeScreenView):
+    """Reports' copy of the shared privilege grid: which roles see which reports
+    and may export them (owner, 3 Nov 2026)."""
+
+    page_code = "reports.privileges"
+    module_code = "reports"
+    module_label = "Reports"
