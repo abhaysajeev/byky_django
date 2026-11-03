@@ -9,6 +9,7 @@ from apps.fleet import api, maintenance_api
 urlpatterns = [
     path("vehicles", api.VehiclesView.as_view(), name="api-app-vehicles"),
     path("assets", maintenance_api.AssetsView.as_view(), name="api-app-assets"),
+    path("asset-types", maintenance_api.AssetTypesView.as_view(), name="api-app-asset-types"),
     path("service-requests", maintenance_api.ServiceRequestCreateView.as_view(), name="api-app-service-requests"),
     path("service-requests/list", maintenance_api.ServiceRequestListView.as_view(),
          name="api-app-service-request-list"),

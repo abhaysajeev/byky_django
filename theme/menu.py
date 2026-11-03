@@ -20,6 +20,7 @@ from itertools import groupby
 from django.urls import NoReverseMatch, reverse
 
 from apps.portal.models import Page
+from apps.portal.page_registry import MENU_FOLDED_INTO
 from apps.portal.services import permissions_for
 from core.enums import Channel
 
@@ -47,6 +48,7 @@ def build_menu(user):
     }
     if not readable:
         return {"menu": []}
+    readable -= {code for code, into in MENU_FOLDED_INTO.items() if into in readable}
 
     pages = (
         Page.objects.filter(code__in=readable, is_active=True, module__is_active=True)

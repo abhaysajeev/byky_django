@@ -29,6 +29,7 @@ from apps.fare.pricing import FareSpec, Price, Rule, Season
 from apps.fare.scoping import fares_for
 from apps.fleet.models import VehicleType
 from apps.fleet.scoping import vehicle_types_for
+from core import money
 from core.enums import ApprovalStatus
 
 # Deferred while save_fare rewrites a fare, re-checked before it returns.
@@ -247,7 +248,7 @@ def _own_ids(meta, fare):
 
 def _money_or_none(value):
     """A concurrent fare as text, or None when it is not set."""
-    return None if value is None else str(value)
+    return money.fmt(value)
 
 
 def _price_json(price):

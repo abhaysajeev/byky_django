@@ -1,6 +1,6 @@
 from django.urls import path
 
-from apps.company import views
+from apps.company import configurations, views
 
 urlpatterns = [
     # Screens
@@ -10,6 +10,8 @@ urlpatterns = [
     path("department/list/", views.DepartmentListView.as_view(), name="company-department-list"),
     path("branch/list/", views.BranchListView.as_view(), name="company-branch-list"),
     path("branch-working-time/edit/", views.BranchWorkingTimeView.as_view(), name="company-branch-working-time-edit"),
+    path("configurations/", views.ConfigurationsView.as_view(), name="company-configurations"),
+    path("configurations/save/", configurations.ConfigurationSave.as_view(), name="company-configurations-save"),
     path("privileges/", views.CompanyPrivilegeView.as_view(), name="company-privileges"),
 
     # Writes

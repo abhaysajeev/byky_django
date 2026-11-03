@@ -34,6 +34,8 @@ from apps.rental.serializers import (
     ManagerBranchesRequest,
     ManagerCategoriesRequest,
     ManagerClaimDecisionRequest,
+    ManagerClaimListRequest,
+    ManagerClaimRevokeRequest,
     ManagerCreditNoteApproveRequest,
     ManagerCreditNoteRejectRequest,
     ManagerPendingCountsRequest,
@@ -41,6 +43,7 @@ from apps.rental.serializers import (
     ManagerVehiclesRequest,
     ManagerVehicleTypesRequest,
 )
+from core import money
 from core.api import envelope, manager_only, request_parts
 from core.schema import SERVER_ERROR, envelope_request, envelope_responses
 from core.timezones import zone_for
@@ -81,6 +84,7 @@ class _ManagerView(APIView):
         _, request_data = request_parts(request)
         form = self.form_class(data=request_data)
         form.is_valid(raise_exception=True)
+        money.refuse_too_precise(form)
         companies = list(companies_for(request.user).values_list("id", flat=True))
         return form.validated_data, companies, zone_for(getattr(request.user, "company", None)), None
 
@@ -389,7 +393,8 @@ _ORDER_SAMPLE = {
     "order_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9", "order_no": "ABCO1105700000006",
     "station_name": "Creek Park Gate 1", "customer_name": "Ahmed Al Mansoori", "customer_mobile": "971501234567",
     "booked_at": "2026-10-08 08:58:10", "start_time": "2026-10-08 09:00:00", "end_time": "2026-10-08 11:00:00",
-    "duration_minutes": 120, "order_status": "partially_received", "amount": "250.000",
+    "duration_minutes": 120, "order_status": "partially_received",
+    "order_status_label": "Partially Received", "amount": "250.000",
     "advance_paid": "100.000", "invoice_no": None,
     "credit_note": {"credit_note_no": "ABCO1105700000004CN", "status": "approved", "net_amount": "20.000"},
     "vehicles": [
@@ -409,8 +414,9 @@ _ORDERS_SAMPLE = {
     "from_date": "2026-10-01", "to_date": "2026-10-08",
     "state_id": None, "branch_id": 7, "branch_name": "Creek Park Gate 1", "vehicle_type_id": None, "vehicle_id": None,
     "order_status": "all",
-    "summary": {"all": 15, "running": 4, "partially_received": 2, "awaiting_settlement": 1,
-                "fully_received": 8, "cancelled": 0, "replaced": 1},
+    "summary": {"all": 15, "running": 3, "replaced": 1, "partially_received": 2,
+                "replaced_partially_received": 0, "awaiting_settlement": 1, "received": 7,
+                "replaced_received": 1, "cancelled": 0},
     "orders": [_ORDER_SAMPLE], "page": 1, "pages": 1, "total_orders": 15,
 }
 
@@ -433,15 +439,19 @@ station outside the state, a vehicle of another type) answers an empty list
 and a zero summary. A station that is not yours is `unknown_branch`. The
 filters are echoed back as sent (`null` when not).
 
-**`order_status`** (each order; also the filter, default `all`):
-- `running` -- no vehicle back yet;
+**`order_status`** (each order, with `order_status_label`; also the filter,
+default `all`; `summary` counts each). The same list as every other screen:
+- `running` -- vehicles out, none back yet;
+- `replaced` -- as running, and a vehicle was swapped;
 - `partially_received` -- some vehicles back, some still out;
+- `replaced_partially_received` -- as partially received, and a vehicle was swapped;
 - `awaiting_settlement` -- every vehicle back, the bill not settled yet;
-- `fully_received` -- settled;
+- `received` -- settled;
+- `replaced_received` -- settled, and a vehicle was swapped;
 - `cancelled`.
 
-`summary.replaced` counts orders with a replaced vehicle -- it overlaps the
-others. Per order: `end_time` is the last vehicle back once settled, else the
+A parked return (the vehicle back, its return call held for correction)
+counts as back. Per order: `end_time` is the last vehicle back once settled, else the
 latest expected end; `amount` is the settled net, or what the lines come to so
 far (back at their total, out at their package price); `advance_paid` is the
 money held now; `credit_note` its waiting or issued credit note. `vehicles`
@@ -543,6 +553,7 @@ _CLAIM_ROW = {
     "requested_by": "Rashed", "requested_at": "2026-10-08 16:50:00",
     "decided_by": None, "decided_channel": None, "decided_at": None, "remarks": "",
     "request_remarks": "Regular customer, card shown",
+    "revoked_by": None, "revoked_channel": None, "revoked_at": None, "revoke_note": "",
 }
 _CLAIM_DECIDED = {**_CLAIM_ROW, "status": "approved", "decided_by": "Sara K", "decided_channel": "manager",
                   "decided_at": "2026-10-08 16:52:00"}
@@ -657,7 +668,7 @@ class CreditNoteRejectView(_CreditNoteDecisionView):
 class ClaimListView(_ManagerView):
     """POST /api/v1/{app}/card-discounts/claims/list -- manager app only."""
 
-    form_class = ManagerApprovalListRequest
+    form_class = ManagerClaimListRequest
 
     @extend_schema(
         tags=["Manager Card Discounts"],
@@ -667,8 +678,11 @@ class ClaimListView(_ManagerView):
                                      "for zooming), paths on this server that need the access token "
                                      "(`GET /api/v1/manager/photos/<id>`). Older requests may carry only "
                                      "`card_photo`, a plain link the tablet sent. A claim still pending when "
-                                     "its order was billed is `cancelled`.",
-        request=envelope_request("ManagerClaimListEnvelope", ManagerApprovalListRequest),
+                                     "its order was billed is `cancelled`; one approved and then taken back "
+                                     "is `revoked` (`revoked_by`, `revoked_channel`, `revoked_at`, "
+                                     "`revoke_note`).\n`status` (optional): only claims in that status -- "
+                                     "`pending`, `approved`, `rejected`, `cancelled`, `redeemed`, `revoked`.",
+        request=envelope_request("ManagerClaimListEnvelope", ManagerClaimListRequest),
         responses=envelope_responses(
             (200, "ok", "List.", {"claims": [_CLAIM_ROW], **_PAGED}),
             _LIST_INVALID, *_COMMON,
@@ -679,9 +693,9 @@ class ClaimListView(_ManagerView):
         if refused:
             return refused
         rows, page = approvals.claim_list(
-            companies, pending_only=values["pending"], state_id=values.get("state_id"),
-            branch_id=values.get("branch_id"), from_date=values.get("from_date"), to_date=values.get("to_date"),
-            zone=zone, page=values["page"],
+            companies, pending_only=values["pending"], status=values.get("status") or None,
+            state_id=values.get("state_id"), branch_id=values.get("branch_id"), from_date=values.get("from_date"),
+            to_date=values.get("to_date"), zone=zone, page=values["page"],
         )
         return _list_reply(rows, page, "claims")
 
@@ -745,6 +759,47 @@ class ClaimRejectView(_ClaimDecisionView):
     )
     def post(self, request, app):
         return self.decide(request, app)
+
+
+class ClaimRevokeView(_ManagerView):
+    """POST /api/v1/{app}/card-discounts/claims/revoke -- manager app only."""
+
+    form_class = ManagerClaimRevokeRequest
+
+    @extend_schema(
+        tags=["Manager Card Discounts"],
+        summary="Revoke an approved card-discount request",
+        description=_APPROVALS + "\n**This call** takes back an **approved** claim the bill has not used yet "
+                                 "(owner, 30 Oct 2026). `note`, the reason, is **required** (up to 255). The "
+                                 "asking tablet is told (`Card discount approval revoked`) and sees `revoked` "
+                                 "in `card-discounts/approval/status`; a settle that still names it is refused "
+                                 "with `card_discount_revoked`, so the bill is made again without it. Only an "
+                                 "approved claim (`claim_not_approved`), on an order still running "
+                                 "(`order_closed`).",
+        request=envelope_request("ManagerClaimRevokeEnvelope", ManagerClaimRevokeRequest),
+        responses=envelope_responses(
+            (200, "ok", "Approval revoked.", {
+                **_CLAIM_DECIDED, "status": "revoked", "revoked_by": "Sara K", "revoked_channel": "manager",
+                "revoked_at": "2026-10-08 17:05:00", "revoke_note": "Card was expired"}),
+            (400, "invalid_request", "note is required.", {"errors": {"note": "is required"}}),
+            (404, "unknown_claim", "No such card discount request.", {}),
+            (409, "claim_not_approved", "Only an approved request can be revoked.", {}),
+            (409, "order_closed", "This order is already completed or cancelled.", {}),
+            *_COMMON,
+        ),
+    )
+    def post(self, request, app):
+        values, companies, _, refused = self.values(request, app)
+        if refused:
+            return refused
+        claim = CardDiscountClaim.objects.filter(pk=values["claim_id"], company_id__in=companies).first()
+        if claim is None:
+            return envelope("unknown_claim", "No such card discount request.", http_status=404)
+        try:
+            discount_services.revoke_claim(request.user, claim, values["note"], channel=DecisionChannel.MANAGER)
+        except discount_services.DiscountRefused as refusal:
+            return envelope(refusal.code, refusal.message, http_status=refusal.status)
+        return envelope("ok", "Approval revoked.", approvals.claim_row(claim.pk))
 
 
 class PendingCountsView(_ManagerView):

@@ -22,6 +22,7 @@ urlpatterns = [
     path("approval/<uuid:pk>/", views.ApprovalDetailView.as_view(), name="discount-approval-detail"),
     path("approval/<uuid:pk>/approve/", writes.ClaimApprove.as_view(), name="discount-approval-approve"),
     path("approval/<uuid:pk>/reject/", writes.ClaimReject.as_view(), name="discount-approval-reject"),
+    path("approval/<uuid:pk>/revoke/", writes.ClaimRevoke.as_view(), name="discount-approval-revoke"),
 
     path("redemption/list/", views.RedemptionListView.as_view(), name="discount-redemption-list"),
     path("redemption/export/", views.RedemptionExport.as_view(), name="discount-redemption-export"),

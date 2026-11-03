@@ -8,6 +8,8 @@ BranchApprovalAuthority is designed here but lands with the crew module, since
 it points at Employee (design/02-company.md sign-off).
 """
 
+from decimal import Decimal
+
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
@@ -370,3 +372,67 @@ class BranchApprovalAuthority(TimeStampedModel):
 
     def __str__(self):
         return f"{self.employee} approves {self.get_authority_type_display()} at {self.branch}"
+
+
+# --- Configurations (owner, 3 Nov 2026 -- client change request 1) ----------------
+
+
+class RoundOffMode(models.TextChoices):
+    """Legacy RoundOff 0/1/2. "Auto" was the legacy's word for Nearest."""
+
+    NEAREST = "nearest", "Nearest"
+    UPWARD = "upward", "Upward"
+    DOWNWARD = "downward", "Downward"
+
+
+# The round-off steps each decimals setting offers (owner, 3 Nov 2026).
+ROUND_OFF_STEPS = {
+    2: [Decimal("0.05"), Decimal("0.10"), Decimal("0.25"), Decimal("0.50"), Decimal("1.00")],
+    3: [Decimal("0.005"), Decimal("0.010"), Decimal("0.050"), Decimal("0.100"), Decimal("0.250"),
+        Decimal("0.500"), Decimal("1.000")],
+}
+DECIMAL_PLACES = [(2, "2 (0.00)"), (3, "3 (0.000)")]
+
+
+class CompanyConfig(TimeStampedModel):
+    """A company's own settings: one row per company, made on first save.
+
+    report_day_start -- the business day's start for report windows: set to
+    04:00, a report opens on yesterday 04:00 -> today 03:59 (reports only).
+    Empty keeps the calendar day."""
+
+    company = models.OneToOneField(Company, on_delete=models.CASCADE, related_name="config")
+    report_day_start = models.TimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "company_config"
+
+    def __str__(self):
+        return f"{self.company} configuration"
+
+
+class CompanyMoneySetting(TimeStampedModel):
+    """How money is written for one company in one country: decimal places,
+    and the bill's round-off at settle. A station uses its own country's row,
+    anything without a station the company's country (core/money.py). It
+    replaces the per-station round-off of Device Settings."""
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="money_settings")
+    country = models.ForeignKey(Country, on_delete=models.PROTECT, related_name="+")
+    decimal_places = models.PositiveSmallIntegerField(choices=DECIMAL_PLACES, default=3)
+    round_off_mode = models.CharField(max_length=16, choices=RoundOffMode.choices, default=RoundOffMode.UPWARD)
+    round_off_step = models.DecimalField(max_digits=5, decimal_places=3, default=Decimal("0.250"))
+
+    class Meta:
+        db_table = "company_money_setting"
+        ordering = ["company", "country__name"]
+        constraints = [
+            models.UniqueConstraint(fields=["company", "country"], name="uniq_money_setting_per_country",
+                                    violation_error_message="This country already has money settings."),
+            models.CheckConstraint(condition=models.Q(decimal_places__in=[2, 3]),
+                                   name="money_setting_places_2_or_3"),
+            models.CheckConstraint(condition=models.Q(round_off_step__gt=0), name="money_setting_step_positive"),
+        ]
+
+    def __str__(self):
+        return f"{self.company} {self.country}: {self.decimal_places} decimals"

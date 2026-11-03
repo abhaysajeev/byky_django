@@ -89,3 +89,21 @@ class CompanyTimezoneMiddleware:
             return self.get_response(request)
         finally:
             timezone.deactivate()
+
+
+class MoneyMiddleware:
+    """Sets this request's money setting (core/money.py) from the signed-in
+    company -- web pages. App calls set theirs when the token is checked."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        from core import money
+
+        company = getattr(getattr(request, "user", None), "company", None)
+        token = money.activate(money.money_for(company) if company is not None else None)
+        try:
+            return self.get_response(request)
+        finally:
+            money.reset(token)

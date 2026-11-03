@@ -20,11 +20,12 @@ import datetime
 from decimal import Decimal
 
 from django.core.paginator import Paginator
-from django.db.models import Case, CharField, Count, Exists, Max, OuterRef, Q, Sum, Value, When
+from django.db.models import Count, Exists, Max, OuterRef, Q, Sum
 from django.utils import timezone
 
 from apps.company.models import Branch, State
 from apps.fleet.models import Category, Vehicle, VehicleType
+from apps.rental import order_status
 from apps.rental.models import (
     CreditNote,
     CreditNoteStatus,
@@ -37,16 +38,16 @@ from apps.rental.models import (
     Payment,
     PaymentKind,
 )
+from core import money
 from core.enums import ApprovalStatus
 
 TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 PAGE_SIZE = 50
 ZERO = Decimal("0.000")
 
-# The order statuses the manager app shows, derived from the order and its lines.
-RUNNING, PARTIAL, AWAITING, RECEIVED, CANCELLED = (
-    "running", "partially_received", "awaiting_settlement", "fully_received", "cancelled")
-ORDER_STATUSES = (RUNNING, PARTIAL, AWAITING, RECEIVED, CANCELLED)
+# The order statuses the manager app shows: the shared display status
+# (apps/rental/order_status.py, owner 3 Nov 2026).
+ORDER_STATUSES = order_status.VALUES
 
 # The lines that bill: out now, or back. Replaced and removed lines do not.
 _BILLING = (OrderItemStatus.ACTIVE, OrderItemStatus.RETURNED)
@@ -63,7 +64,8 @@ def _local(moment, zone):
 
 
 def _money(value):
-    return str(value if value is not None else ZERO)
+    """Money as text with the company's decimals (core/money.py, CR1); none is 0."""
+    return money.fmt(value if value is not None else ZERO)
 
 
 # -- Masters ------------------------------------------------------------------------
@@ -302,26 +304,10 @@ def _is_share(filters):
 # -- Order details ------------------------------------------------------------------------
 
 
-def _has_line(status):
-    return Exists(OrderItem.objects.filter(order=OuterRef("pk"), status=status))
-
-
 def _with_status(orders):
-    """Each order with its manager-app status, worked out in SQL from its lines
-    (EXISTS, not counts, so the status can be grouped on for the summary)."""
-    return orders.annotate(
-        has_out=_has_line(OrderItemStatus.ACTIVE),
-        has_back=_has_line(OrderItemStatus.RETURNED),
-        has_replaced=_has_line(OrderItemStatus.REPLACED),
-    ).annotate(
-        app_status=Case(
-            When(status=OrderStatus.CANCELLED, then=Value(CANCELLED)),
-            When(status=OrderStatus.COMPLETED, then=Value(RECEIVED)),
-            When(has_out=False, then=Value(AWAITING)),
-            When(has_back=False, then=Value(RUNNING)),
-            default=Value(PARTIAL), output_field=CharField(),
-        ),
-    )
+    """Each order with its display status as `app_status`, in SQL, so it can be
+    grouped on for the summary (apps/rental/order_status.py)."""
+    return order_status.with_display_status(orders, name="app_status")
 
 
 def orders_report(company_ids, start, end, zone, *, state_id=None, branch_id=None, vehicle_type_id=None,
@@ -353,8 +339,7 @@ def orders_report(company_ids, start, end, zone, *, state_id=None, branch_id=Non
     orders = _with_status(orders)
 
     counts = dict(orders.values("app_status").annotate(n=Count("id")).order_by().values_list("app_status", "n"))
-    summary = {"all": sum(counts.values()), **{s: counts.get(s, 0) for s in ORDER_STATUSES},
-               "replaced": orders.filter(has_replaced=True).count()}
+    summary = {"all": sum(counts.values()), **{s: counts.get(s, 0) for s in ORDER_STATUSES}}
 
     if status != "all":
         orders = orders.filter(app_status=status)
@@ -396,12 +381,12 @@ def _order_json(order, zone, now):
         "start_time": _local(order.start_time, zone),
         "end_time": _local(end, zone),
         "duration_minutes": max(int((end - order.start_time).total_seconds() // 60), 0) if end else None,
-        "order_status": order.app_status,
+        "order_status": order.app_status, "order_status_label": order_status.label(order.app_status),
         "amount": _money(amount),
         "advance_paid": _money(order.paid_amount),
         "invoice_no": invoice.invoice_no if invoice else None,
         "credit_note": {"credit_note_no": note.credit_note_no or None, "status": note.status,
-                        "net_amount": str(note.net_amount) if note.net_amount is not None else None}
+                        "net_amount": money.fmt(note.net_amount)}
         if note else None,
         "vehicles": [
             {"vehicle_id": i.vehicle_id, "vehicle_name": i.vehicle.vehicle_name,
@@ -413,7 +398,7 @@ def _order_json(order, zone, now):
             for i in sorted(order.items.all(), key=lambda i: i.start_time)
         ],
         "payments": [
-            {"mode": p.mode.name, "kind": p.kind, "amount": str(p.amount), "reference_no": p.reference_no,
+            {"mode": p.mode.name, "kind": p.kind, "amount": money.fmt(p.amount), "reference_no": p.reference_no,
              "paid_at": _local(p.paid_at, zone)}
             for p in sorted(order.payments.all(), key=lambda p: (p.paid_at, p.created_on))
         ],

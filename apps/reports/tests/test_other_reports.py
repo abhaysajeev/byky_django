@@ -66,7 +66,7 @@ def test_replacement_lists_who_swapped_what_and_when(web, replaced):
     d = data(web, "replacement-details")
 
     [row] = cells(d)
-    assert (row["old"], row["new"], row["status"], row["vehicle_status"]) == ("MO 42", "MO 41", "Running", "Replaced")
+    assert (row["old"], row["new"], row["status"], row["vehicle_status"]) == ("MO 42", "MO 41", "Replaced", "Replaced")
     assert row["replaced_at"] == "02/10/2026 04:20:00 PM" and row["replaced_by"].startswith("Rashed")
     assert d["total"] is None if "total" in d else True
 
