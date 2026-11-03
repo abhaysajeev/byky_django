@@ -53,7 +53,9 @@ def _day_start(company):
 
 def _context(request, report):
     user = request.user
-    company = getattr(user, "company", None)
+    # A system user (no company) follows the only company's business day and
+    # decimals, when there is one (core/money.py company_for_user).
+    company = money.company_for_user(user)
     zone = zone_for(company)
     now = timezone.now()
     return Ctx(user=user, zone=zone, f=Filters(request.GET, report, zone, now, day_start=_day_start(company)),
