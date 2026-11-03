@@ -78,6 +78,8 @@ PAGES = [
     ("company.branch", "company", "Branch", "company-branch-list", CRUD_PRINT_APPROVE, 5, False),
     ("company.branch_working_time", "company", "Branch Working Time",
      "company-branch-working-time-edit", ["create", "read", "update"], 6, False),
+    # Report day start and money per country (owner, 3 Nov 2026 -- CR1).
+    ("company.configurations", "company", "Configurations", "company-configurations", ["read", "update"], 7, False),
     ("company.privileges", "company", "Privileges", "company-privileges", ["read", "update"], 9, False),
     # Retired: both edited data that already lives on Branch.
     ("company.branch_address", "company", "Station Address Mapping", "", CRUD, 90, True),

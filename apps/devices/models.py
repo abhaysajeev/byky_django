@@ -489,13 +489,9 @@ class PrintType(models.TextChoices):
     LANDSCAPE = "landscape", "Landscape"
 
 
-class RoundOffMode(models.TextChoices):
-    """Legacy RoundOff 0/1/2. "Auto" was the legacy's word for Nearest."""
-
-    NEAREST = "nearest", "Nearest"
-    UPWARD = "upward", "Upward"
-    DOWNWARD = "downward", "Downward"
-
+# Round-off moved to the company's money settings (CR1, owner 3 Nov 2026);
+# kept importable here for the legacy importer and the drop migration.
+from apps.company.models import RoundOffMode  # noqa: E402
 
 # Stored as the amount itself, not a code: the legacy stored 0/1/2 and turned it
 # into 0.25 / 0.50 / 1 in C# (SFA.cs:910-914). There is no 5-fils step -- the

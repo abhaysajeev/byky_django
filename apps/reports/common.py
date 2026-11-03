@@ -27,6 +27,7 @@ class Ctx:
     zone: object
     f: object            # apps.reports.filters.Filters
     now: object
+    places: int = 3      # money decimals (core/money.py)
 
 
 # -- Filters every order-shaped report applies the same way ---------------------------

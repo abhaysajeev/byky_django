@@ -1,0 +1,116 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Configurations - Company Management{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+<script src="{% static 'js/byky-configurations.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+{% comment %}
+Report day start and money per country (owner, 3 Nov 2026 -- CR1).
+apps/company/configurations.py; one save posts the whole page.
+{% endcomment %}
+{{ steps|json_script:"config-steps" }}
+{{ countries|json_script:"config-countries" }}
+<div class="scr" data-config data-save-url="{{ save_url }}" data-company="{{ company.pk|default:'' }}"
+     data-can-update="{% if perm.update %}1{% endif %}">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Company Management</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Configurations</b>
+      </div>
+      <h1 class="scr-title">Configurations</h1>
+      <p class="scr-sub">When the business day starts for reports, and how money is written in each country.</p>
+    </div>
+    {% if companies|length > 1 %}
+    <form method="get" class="scr-head-actions" data-scr-autosubmit>
+      <select name="company" class="scr-input scr-list-select" aria-label="Company">
+        {% for c in companies %}<option value="{{ c.id }}"{% if company and c.id == company.pk %} selected{% endif %}>{{ c.name }}</option>{% endfor %}
+      </select>
+    </form>
+    {% endif %}
+  </div>
+
+  {% if not company %}
+  <div class="scr-card"><div class="scr-empty"><div><div class="scr-empty-title">No company to configure</div></div></div></div>
+  {% else %}
+  <div class="scr-card">
+    <div class="scr-form-head">
+      <div>
+        <div class="scr-form-title-row"><h2 class="scr-form-title">Reports</h2></div>
+        <p class="scr-form-sub">With a start time, a report opens on yesterday from that time to just before it today (e.g. 04:00 → 03:59). Empty keeps the calendar day.</p>
+      </div>
+    </div>
+    <div class="scr-form-body">
+      <div class="scr-grid">
+        <div class="scr-field">
+          <label class="scr-label" for="config-day-start">Business day starts at</label>
+          <input id="config-day-start" type="time" class="scr-input" value="{{ report_day_start }}" data-config-day-start{% if not perm.update %} disabled{% endif %} />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="scr-card">
+    <div class="scr-form-head">
+      <div>
+        <div class="scr-form-title-row"><h2 class="scr-form-title">Money</h2></div>
+        <p class="scr-form-sub">Decimal places and the bill's round-off, per country. A station follows its own country; everything else the company's country. Without a row: 3 decimals, upward, 0.250.</p>
+      </div>
+      {% if perm.update %}<button type="button" class="scr-btn-secondary" data-config-add>Add country</button>{% endif %}
+    </div>
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr><th>Country</th><th>Decimal places</th><th>Round-off</th><th>Round-off step</th>{% if perm.update %}<th class="scr-th-actions"></th>{% endif %}</tr>
+        </thead>
+        <tbody data-config-rows>
+          {% for r in money_rows %}
+          <tr data-config-row>
+            <td>
+              <select class="scr-input" data-f="country" aria-label="Country"{% if not perm.update %} disabled{% endif %}>
+                {% for c in countries %}<option value="{{ c.id }}"{% if c.id == r.country %} selected{% endif %}>{{ c.name }}</option>{% endfor %}
+              </select>
+            </td>
+            <td>
+              <select class="scr-input" data-f="decimal_places" aria-label="Decimal places"{% if not perm.update %} disabled{% endif %}>
+                {% for value, label in places %}<option value="{{ value }}"{% if value == r.decimal_places %} selected{% endif %}>{{ label }}</option>{% endfor %}
+              </select>
+            </td>
+            <td>
+              <select class="scr-input" data-f="round_off_mode" aria-label="Round-off"{% if not perm.update %} disabled{% endif %}>
+                {% for value, label in modes %}<option value="{{ value }}"{% if value == r.round_off_mode %} selected{% endif %}>{{ label }}</option>{% endfor %}
+              </select>
+            </td>
+            <td>
+              <select class="scr-input" data-f="round_off_step" data-value="{{ r.round_off_step }}" aria-label="Round-off step"{% if not perm.update %} disabled{% endif %}></select>
+            </td>
+            {% if perm.update %}<td><div class="scr-row-actions"><button type="button" class="scr-btn-secondary" data-config-remove>Remove</button></div></td>{% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="scr-empty" data-config-empty{% if money_rows %} hidden{% endif %}><div><div class="scr-empty-title">No countries yet: 3 decimals, upward, 0.250 apply</div></div></div>
+  </div>
+
+  {% if perm.update %}
+  <div class="scr-form-foot">
+    <div class="scr-form-actions"><button type="button" class="scr-btn-primary" data-config-save>Save</button></div>
+  </div>
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock %}
