@@ -714,9 +714,11 @@ class BillContinuity(TimeStampedModel):
     the legacy did; it is safe because the prefix differs per station.
 
     `prefix` is copied from the station's DeviceSettings when the row is first
-    created, and kept. If the station's prefix is changed later, this device
-    keeps printing in the format it started with, so its past and future numbers
-    cannot collide.
+    created. If the station's approved prefix is changed later, the counter
+    takes the new one the next time it is read (services.counter_for) and keeps
+    its running number, so past and future numbers still cannot collide: the
+    prefix differs (3 Nov 2026; before, the counter kept its first prefix
+    forever and the tablet never saw the change).
 
     `last_number` is the last number *used*. It only ever moves forward, and it
     moves by being raised to what a device reports -- GREATEST(current, n) --
