@@ -489,13 +489,9 @@ class PrintType(models.TextChoices):
     LANDSCAPE = "landscape", "Landscape"
 
 
-class RoundOffMode(models.TextChoices):
-    """Legacy RoundOff 0/1/2. "Auto" was the legacy's word for Nearest."""
-
-    NEAREST = "nearest", "Nearest"
-    UPWARD = "upward", "Upward"
-    DOWNWARD = "downward", "Downward"
-
+# Round-off moved to the company's money settings (CR1, owner 3 Nov 2026);
+# kept importable here for the legacy importer and the drop migration.
+from apps.company.models import RoundOffMode  # noqa: E402, F401
 
 # Stored as the amount itself, not a code: the legacy stored 0/1/2 and turned it
 # into 0.25 / 0.50 / 1 in C# (SFA.cs:910-914). There is no 5-fils step -- the
@@ -620,15 +616,6 @@ class DeviceSettings(ApprovalMixin, TimeStampedModel):
         "Staff Test Time Slot (Min)", default=5
     )
 
-    round_off_mode = models.CharField(
-        "Round Off Type", max_length=16, choices=RoundOffMode.choices,
-        default=RoundOffMode.UPWARD,
-    )
-    round_off_step = models.DecimalField(
-        "Round Off Limit", max_digits=4, decimal_places=2,
-        choices=ROUND_OFF_STEPS, default=Decimal("0.25"),
-    )
-
     objects = DeviceSettingsManager()
 
     class Meta:
@@ -714,9 +701,11 @@ class BillContinuity(TimeStampedModel):
     the legacy did; it is safe because the prefix differs per station.
 
     `prefix` is copied from the station's DeviceSettings when the row is first
-    created, and kept. If the station's prefix is changed later, this device
-    keeps printing in the format it started with, so its past and future numbers
-    cannot collide.
+    created. If the station's approved prefix is changed later, the counter
+    takes the new one the next time it is read (services.counter_for) and keeps
+    its running number, so past and future numbers still cannot collide: the
+    prefix differs (3 Nov 2026; before, the counter kept its first prefix
+    forever and the tablet never saw the change).
 
     `last_number` is the last number *used*. It only ever moves forward, and it
     moves by being raised to what a device reports -- GREATEST(current, n) --

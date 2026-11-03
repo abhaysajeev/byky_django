@@ -32,33 +32,38 @@ def settings(client, token, request_data=None, app="operator"):
                 headers={"HTTP_AUTHORIZATION": f"Bearer {token}"}).json()
 
 
-def test_it_returns_the_same_block_as_login(client, app_user, device, world):
+def test_it_carries_the_block_the_login_no_longer_does(client, app_user, device, world):
+    """Owner, 3 Nov 2026: the login sends no station settings; the app calls
+    this right after it."""
     login = _login(client, app_user, device).json()["data"]
 
     body = settings(client, login["tokens"]["access"])
 
     assert body["code"] == "ok"
-    assert body["data"] == {key: login[key] for key in (
-        "device_settings", "order_no_prefix", "last_order_no", "next_order_number", "next_test_number",
-        "transaction_no_prefix", "last_transaction_no")}
-    # The Swagger example shortens device_settings, as login's does; the rest is exact.
+    block = ("device_settings", "order_no_prefix", "last_order_no", "next_order_number", "next_test_number",
+             "transaction_no_prefix", "last_transaction_no", "money")
+    assert set(body["data"]) == set(block)
+    assert not set(block) & set(login)
+    # The Swagger example shortens device_settings; the rest is exact.
     assert set(body["data"]) == set(api._SETTINGS_SAMPLE)
     assert set(api._SETTINGS_SAMPLE["device_settings"]) <= set(body["data"]["device_settings"])
 
 
-def test_the_prefix_to_number_with_is_the_tablets_own_and_only_one(client, token, world):
-    """Changed at the station after this tablet started counting: the tablet
-    keeps numbering with the prefix its counter started with, and is not
-    handed the new one anywhere it could pick up by mistake."""
+def test_a_changed_station_prefix_reaches_the_tablet_in_one_place_only(client, token, world):
+    """Changed at the station after this tablet started counting (3 Nov 2026):
+    the tablet is told the new prefix -- its counter follows the approved
+    setting and keeps its running number -- and only as `order_no_prefix`,
+    never inside device_settings where it could be picked up twice."""
     DeviceSettings.objects.filter(branch=world["branch"]).update(order_no_prefix="NEWPX")
 
     data = settings(client, token)["data"]
 
-    assert data["order_no_prefix"] == "CREEK"
+    assert data["order_no_prefix"] == "NEWPX"
     assert "order_no_prefix" not in data["device_settings"]
 
 
 def test_it_tells_the_last_receipt_the_server_has_seen(client, token, device, world):
+    settings(client, token)                       # the first call makes the tablet's counter
     BillContinuity.objects.filter(device=device, kind="order").update(last_number=334)
 
     data = settings(client, token)["data"]
@@ -67,7 +72,7 @@ def test_it_tells_the_last_receipt_the_server_has_seen(client, token, device, wo
         f"CREEK{device.device_registration_id}000334", 335)
 
 
-def test_the_logo_is_sent_again_only_if_it_changed_since(client, token, world):
+def test_the_logo_is_always_sent_and_since_is_ignored(client, token, world):
     changed = timezone.now()
     DeviceSettings.objects.filter(branch=world["branch"]).update(logo=b"\x89PNG-bitmap", logo_changed_on=changed)
     zone = zone_for(world["company"])
@@ -76,7 +81,7 @@ def test_the_logo_is_sent_again_only_if_it_changed_since(client, token, world):
 
     assert settings(client, token)["data"]["device_settings"]["logo"]
     assert settings(client, token, {"since": before})["data"]["device_settings"]["logo"]
-    assert settings(client, token, {"since": after})["data"]["device_settings"]["logo"] == ""
+    assert settings(client, token, {"since": after})["data"]["device_settings"]["logo"]   # sent anyway
 
 
 def test_since_is_checked(client, token):

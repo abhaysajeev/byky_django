@@ -148,6 +148,32 @@ class Customer(ApprovalMixin, TimeStampedModel):
         return " ".join(part for part in (self.first_name, self.last_name) if part)
 
 
+class CustomerBlockAction(models.TextChoices):
+    BLOCK = "block", "Blocked"
+    UNBLOCK = "unblock", "Unblocked"
+
+
+class CustomerBlockLog(TimeStampedModel):
+    """Every block and unblock of a customer, with its reason (owner, 3 Nov
+    2026: the Blocked Customers dashboard). A log: never edited. Who did it is
+    created_by; `at` is when. Customer.is_blocked / block_reason / blocked_at /
+    blocked_by stay the current state the tablets read."""
+
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name="block_log")
+    company = models.ForeignKey("company.Company", on_delete=models.PROTECT, related_name="+")
+    action = models.CharField(max_length=10, choices=CustomerBlockAction.choices)
+    reason = models.CharField(max_length=255)
+    at = models.DateTimeField()
+
+    class Meta:
+        db_table = "customer_block_log"
+        ordering = ["-at", "-id"]
+        indexes = [models.Index(fields=["company", "-at"]), models.Index(fields=["customer"])]
+
+    def __str__(self):
+        return f"{self.customer} {self.get_action_display().lower()} {self.at:%Y-%m-%d}"
+
+
 # --- Order ---------------------------------------------------------------------
 #
 # The design is order_lifecycle_design.md (section 4). Traced against the
@@ -318,8 +344,18 @@ class OrderItem(TimeStampedModel):
     start_time = models.DateTimeField()
     expected_end_time = models.DateTimeField()      # start + package
     end_time = models.DateTimeField(null=True, blank=True)   # returned / replaced / removed (tablet time)
+    # The tablet returned this vehicle at this time, but the return call was
+    # parked for the office to correct (apps/sync). The line stays active --
+    # still open and unbilled -- but the vehicle is back: not on rent, free to
+    # book again. Cleared when the return is finally recorded (3 Nov 2026).
+    return_pending_at = models.DateTimeField(null=True, blank=True)
 
     base_fare = models.DecimalField(**MONEY)        # the package price agreed at booking
+    # The fare terms the tablet priced this line on, exactly as it sent them
+    # (owner, 29 Oct 2026): the fare can be edited later, this never is. No
+    # links to the fare's seasons or special prices -- those can be deleted;
+    # their ids live in here. Empty for lines booked without it.
+    fare_details = models.JSONField(null=True, blank=True)
     # Blank until the vehicle is returned. No discount here (it is on the
     # order's bill); VAT is inside the fare, shown once on the bill.
     run_minutes = models.PositiveIntegerField(null=True, blank=True)     # how long it actually ran
@@ -348,9 +384,11 @@ class OrderItem(TimeStampedModel):
                 name="order_item_amounts_not_negative",
             ),
             # A vehicle is on one active line at a time -- legacy trusted the
-            # device's own state and had no such rule.
+            # device's own state and had no such rule. A line whose return is
+            # parked (return_pending_at) does not count: the vehicle is back.
             models.UniqueConstraint(
-                fields=["vehicle"], condition=models.Q(status=OrderItemStatus.ACTIVE),
+                fields=["vehicle"],
+                condition=models.Q(status=OrderItemStatus.ACTIVE, return_pending_at__isnull=True),
                 name="uniq_active_order_item_per_vehicle",
                 violation_error_message="This vehicle is already on an active rental.",
             ),
@@ -531,6 +569,8 @@ class Invoice(TimeStampedModel):
     payments = models.JSONField(default=list)      # [{mode, kind, amount, reference_no}] at issue
     # The rating the operator entered at settle, 1.0-5.0; empty when none was given.
     star_rating = models.DecimalField(max_digits=2, decimal_places=1, null=True, blank=True)
+    # What the customer said with it -- the order's, not the customer's (owner, 29 Oct 2026).
+    rating_remarks = models.TextField(blank=True)
 
     class Meta:
         db_table = "invoice"

@@ -1,5 +1,6 @@
 {% extends layout_path %}
 {% load static %}
+{% load money %}
 
 {% block title %}Invoice {{ bill.invoice_no }} - Rental{% endblock title %}
 
@@ -55,7 +56,7 @@
           <div class="scr-detail-row"><span class="scr-detail-label">Tablet</span><span class="scr-detail-value">{{ bill.tablet }}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Opened</span><span class="scr-detail-value">{{ bill.starting_time }} · {{ bill.open_by }}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Closed</span><span class="scr-detail-value">{{ bill.closing_time }} · {{ bill.closed_by }}</span></div>
-          {% if bill.credit_note %}<div class="scr-detail-row"><span class="scr-detail-label">Credit Note</span><span class="scr-detail-value"><a class="scr-link-blue" href="{{ bill.credit_note.url }}">{{ bill.credit_note.label }}</a>{% if bill.credit_note.net_amount is not None %} · AED {{ bill.credit_note.net_amount }}{% endif %} · {{ bill.credit_note.status_label }}</span></div>{% endif %}
+          {% if bill.credit_note %}<div class="scr-detail-row"><span class="scr-detail-label">Credit Note</span><span class="scr-detail-value"><a class="scr-link-blue" href="{{ bill.credit_note.url }}">{{ bill.credit_note.label }}</a>{% if bill.credit_note.net_amount is not None %} · AED {{ bill.credit_note.net_amount|money }}{% endif %} · {{ bill.credit_note.status_label }}</span></div>{% endif %}
         </div>
       </div>
     </div>
@@ -68,17 +69,18 @@
           <div class="scr-detail-row"><span class="scr-detail-label">Mobile</span><span class="scr-detail-value">{{ bill.mobile }}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">ID</span><span class="scr-detail-value">{{ bill.id_type }}{% if bill.id_no != "—" %} · {{ bill.id_no }}{% endif %}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Star Rating</span><span class="scr-detail-value">{% if bill.star_rating %}★ {{ bill.star_rating }} / 5{% else %}—{% endif %}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Rating Remarks</span><span class="scr-detail-value scr-mon-wrap">{{ bill.rating_remarks|default:"—" }}</span></div>
         </div>
       </div>
       <div class="scr-form-head" style="border-top:1px solid #f0eff7"><div class="scr-form-title-row"><h2 class="scr-form-title">Totals</h2></div></div>
       <div class="scr-form-body scr-mon-body">
         <div class="scr-detail-rows">
-          <div class="scr-detail-row"><span class="scr-detail-label">Subtotal</span><span class="scr-detail-value">AED {{ bill.subtotal }}</span></div>
-          <div class="scr-detail-row"><span class="scr-detail-label">{% if bill.discount_source == "card" %}Card Discount{% elif bill.discount_source == "complimentary" %}Complimentary{% else %}Discount{% endif %}</span><span class="scr-detail-value">{% if bill.discount_percentage %}{{ bill.discount_percentage }}% · {% endif %}−AED {{ bill.discount_amount }}</span></div>
-          <div class="scr-detail-row"><span class="scr-detail-label">Rounding</span><span class="scr-detail-value">AED {{ bill.rounding }}</span></div>
-          <div class="scr-detail-row"><span class="scr-detail-label"><b>Net</b></span><span class="scr-detail-value"><b>AED {{ bill.net_amount }}</b></span></div>
-          <div class="scr-detail-row"><span class="scr-detail-label">Taxable Amount</span><span class="scr-detail-value">AED {{ bill.taxable_amount }}</span></div>
-          <div class="scr-detail-row"><span class="scr-detail-label">VAT (included)</span><span class="scr-detail-value">{{ bill.tax_percentage }}% · AED {{ bill.tax_amount }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Subtotal</span><span class="scr-detail-value">AED {{ bill.subtotal|money }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">{% if bill.discount_source == "card" %}Card Discount{% elif bill.discount_source == "complimentary" %}Complimentary{% else %}Discount{% endif %}</span><span class="scr-detail-value">{% if bill.discount_percentage %}{{ bill.discount_percentage }}% · {% endif %}−AED {{ bill.discount_amount|money }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Rounding</span><span class="scr-detail-value">AED {{ bill.rounding|money }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label"><b>Net</b></span><span class="scr-detail-value"><b>AED {{ bill.net_amount|money }}</b></span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Taxable Amount</span><span class="scr-detail-value">AED {{ bill.taxable_amount|money }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">VAT (included)</span><span class="scr-detail-value">{{ bill.tax_percentage }}% · AED {{ bill.tax_amount|money }}</span></div>
         </div>
       </div>
     </div>
@@ -104,9 +106,9 @@
             <td><div class="scr-co-name">{{ l.vehicle }}</div><div class="scr-contact-sub">{{ l.identifier }} · {{ l.vehicle_type }}</div></td>
             <td class="scr-state">{{ l.package_minutes }} min<div class="scr-contact-sub">ran {{ l.duration }}</div></td>
             <td class="scr-state">{{ l.start_time|date:"H:i" }} → {% if l.end_time %}{{ l.end_time|date:"H:i" }}{% else %}—{% endif %}<div class="scr-contact-sub">{{ l.start_time|date:"d M Y" }}</div></td>
-            <td class="scr-state">AED {{ l.base_fare }}<div class="scr-contact-sub">{{ l.base_rate }}</div></td>
-            <td class="scr-state">AED {{ l.overtime_amount }}<div class="scr-contact-sub">{{ l.extra_rate }}</div></td>
-            <td class="scr-state"><b>AED {{ l.amount }}</b></td>
+            <td class="scr-state">AED {{ l.base_fare|money }}<div class="scr-contact-sub">{{ l.base_rate }}</div></td>
+            <td class="scr-state">AED {{ l.overtime_amount|money }}<div class="scr-contact-sub">{{ l.extra_rate }}</div></td>
+            <td class="scr-state"><b>AED {{ l.amount|money }}</b></td>
           </tr>
           {% empty %}
           <tr><td colspan="6" style="padding:0"><div class="scr-empty"><div><div class="scr-empty-title">No vehicles billed</div></div></div></td></tr>

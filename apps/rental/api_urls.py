@@ -58,4 +58,5 @@ urlpatterns = [
     path("card-discounts/claims/list", manager_api.ClaimListView.as_view(), name="api-app-claim-list"),
     path("card-discounts/claims/approve", manager_api.ClaimApproveView.as_view(), name="api-app-claim-approve"),
     path("card-discounts/claims/reject", manager_api.ClaimRejectView.as_view(), name="api-app-claim-reject"),
+    path("card-discounts/claims/revoke", manager_api.ClaimRevokeView.as_view(), name="api-app-claim-revoke"),
 ]

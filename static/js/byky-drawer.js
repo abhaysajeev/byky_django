@@ -189,13 +189,15 @@
        the record being edited rather than the shape the last one had. */
     function syncShowIf() {
       [].forEach.call(drawer.querySelectorAll('[data-show-if]'), function (field) {
-        var spec = field.dataset.showIf;
-        var sep = spec.indexOf(':');
-        var key = spec.slice(0, sep);
-        var wants = spec.slice(sep + 1).split('|');
-        var input = drawer.querySelector('[data-field="' + key + '"]');
-        var inputValue = input && input.type === 'checkbox' ? (input.checked ? 'yes' : 'no') : (input && input.value);
-        var show = !!input && wants.indexOf(inputValue) > -1;
+        /* "a:x|y&b:z" -- every &-part must hold */
+        var show = field.dataset.showIf.split('&').every(function (spec) {
+          var sep = spec.indexOf(':');
+          var key = spec.slice(0, sep);
+          var wants = spec.slice(sep + 1).split('|');
+          var input = drawer.querySelector('[data-field="' + key + '"]');
+          var inputValue = input && input.type === 'checkbox' ? (input.checked ? 'yes' : 'no') : (input && input.value);
+          return !!input && wants.indexOf(inputValue) > -1;
+        });
         field.hidden = !show;
         /* a hidden field must not keep a value that no longer applies */
         if (!show) {

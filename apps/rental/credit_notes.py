@@ -15,7 +15,7 @@ is 0 < net <= the order's net; VAT is the share already inside net, at the
 invoice's rate; number = order number + "CN".
 """
 
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 
 from django.db import IntegrityError, transaction
 from django.utils import timezone
@@ -35,6 +35,7 @@ from apps.rental.models import (
     OrderStatus,
 )
 from apps.rental.services import OrderRefused, run_once
+from core import money
 from core.ids import uuid7
 
 CENT = Decimal("0.001")          # money is kept to the 3rd decimal
@@ -54,7 +55,8 @@ def vat_split(net, rate):
     tax = net x rate / (100 + rate), to the 3rd decimal; taxable = net - tax, so the
     two always add back to net."""
     net, rate = Decimal(net), Decimal(rate or 0)
-    tax = (net * rate / (100 + rate)).quantize(CENT, rounding=ROUND_HALF_UP) if rate else Decimal("0.00")
+    # To the company's decimals (core/money.py, CR1).
+    tax = money.quantize(net * rate / (100 + rate)) if rate else Decimal("0.00")
     return tax, net - tax
 
 
@@ -83,9 +85,9 @@ def note_json(note):
         "source": note.source,
         "status": note.status,
         "credit_note_no": note.credit_note_no or None,
-        "net_amount": str(note.net_amount) if approved else None,
-        "tax_amount": str(note.tax_amount) if approved else None,
-        "taxable_amount": str(note.taxable_amount) if approved else None,
+        "net_amount": money.fmt(note.net_amount) if approved else None,
+        "tax_amount": money.fmt(note.tax_amount) if approved else None,
+        "taxable_amount": money.fmt(note.taxable_amount) if approved else None,
         "reason": note.reason,
         "decision_remark": note.decision_remark,
         "decided_at": note.decided_at.isoformat() if note.decided_at else None,
@@ -170,9 +172,16 @@ def credit_notes_for_orders(company, order_ids):
 def _amount(order, net_amount):
     """The one check on the amount: more than 0, not more than the order's net."""
     try:
-        net = Decimal(str(net_amount)).quantize(CENT)
+        net = Decimal(str(net_amount))
+        if not net.is_finite():
+            raise ValueError
     except (ArithmeticError, ValueError):
         raise CreditNoteRefused("Enter the credit note amount.", "invalid_amount", 400) from None
+    places = money.current_places()
+    if money.places_of(net) > places:
+        raise CreditNoteRefused(f"The credit note amount can have at most {places} decimal places.",
+                                "invalid_amount", 400)
+    net = net.quantize(CENT)
     if net <= 0:
         raise CreditNoteRefused("The credit note amount must be more than 0.", "invalid_amount", 400)
     if order.net_amount is not None and net > order.net_amount:

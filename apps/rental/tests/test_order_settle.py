@@ -132,6 +132,7 @@ def test_an_automatic_discount_is_recorded_and_an_overpayment_refunded(client, w
     automatic = make_discount(grade, percent="20")
     request_data = bill(
         returned, shop, tax_percentage="0.00", tax_amount="0.000", net_amount="88.000",
+        star_rating="4.5", rating_remarks="Bikes were clean, quick service",
         card_discount={"card_discount_id": automatic.pk, "card_number": "FAM-0091", "discount_percentage": "20.00",
                   "discount_amount": "22.000"},
         payments=[{"sync_id": str(uuid7()), "kind": "refund", "payment_mode_id": shop["cash"].pk,
@@ -268,6 +269,29 @@ def test_only_an_approved_request_on_this_order_can_be_redeemed(client, world, t
     assert settle(client, token, request_data)["code"] == code
     claim.refresh_from_db()
     assert claim.status == (status or ClaimStatus.APPROVED)
+    assert_nothing_settled(returned)
+
+
+def test_a_revoked_approval_is_refused_at_settle(client, world, token, shop, grade, returned):
+    """Owner, 30 Oct 2026: a bill that still names a revoked approval is made
+    again without it."""
+    from apps.discount import services as discount_services
+
+    approval = make_discount(grade, requires_approval=True)
+    claim = make_claim(approval, shop["ahmed"], status=ClaimStatus.APPROVED,
+                       order=Order.objects.get(pk=returned["sync_id"]), when=timezone.now())
+    discount_services.revoke_claim(claim.order.created_by, claim, "Card was expired")
+    request_data = bill(returned, shop, net_amount="104.50",
+                        card_discount={"request_sync_id": str(claim.pk), "discount_percentage": "5.00",
+                                       "discount_amount": "5.50"})
+    request_data["payments"][0]["amount"] = "4.50"
+
+    body = settle(client, token, request_data)
+
+    assert (body["code"], body["message"]) == (
+        "card_discount_revoked", "That card-discount approval was revoked. Bill without it.")
+    claim.refresh_from_db()
+    assert claim.status == ClaimStatus.REVOKED
     assert_nothing_settled(returned)
 
 

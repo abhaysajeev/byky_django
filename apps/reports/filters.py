@@ -6,7 +6,9 @@ A dropdown left on "All" sends nothing. A value that is not a whole number
 (or not one of a status filter's choices) is ignored, as "All" -- a report
 never fails on a hand-edited URL. The date-time range is company local time:
 `from` and `to` are `YYYY-MM-DDTHH:MM` (the browser's datetime-local), `to`
-includes its whole minute; left out, today 00:00 to 23:59.
+includes its whole minute. Left out: the company's business day when its
+Configurations set one (`day_start`, e.g. 04:00 -> yesterday 04:00 to today
+03:59, whatever the time now -- owner, 3 Nov 2026), else today 00:00 to 23:59.
 """
 
 import datetime
@@ -54,7 +56,7 @@ class Filters:
     """One request's filters for one report: `.get(key)`, `.since` / `.until`
     (aware, [since, until)), and the values the bar shows back."""
 
-    def __init__(self, params, report, zone, now):
+    def __init__(self, params, report, zone, now, day_start=None):
         self.report = report
         self.zone = zone
         self.values = {}
@@ -67,8 +69,14 @@ class Filters:
             elif key in CHOICE_FILTERS:
                 self.values[key] = raw if raw in dict(report.statuses) else ""
         today = now.astimezone(zone).date()
-        start = _moment(params.get("from")) or datetime.datetime.combine(today, datetime.time.min)
-        end = _moment(params.get("to")) or datetime.datetime.combine(today, datetime.time(23, 59))
+        if day_start is not None:
+            default_end = datetime.datetime.combine(today, day_start) - datetime.timedelta(minutes=1)
+            default_start = datetime.datetime.combine(today - datetime.timedelta(days=1), day_start)
+        else:
+            default_start = datetime.datetime.combine(today, datetime.time.min)
+            default_end = datetime.datetime.combine(today, datetime.time(23, 59))
+        start = _moment(params.get("from")) or default_start
+        end = _moment(params.get("to")) or default_end
         if end < start:
             start, end = end, start
         self.start, self.end = start, end            # naive, company time -- as shown

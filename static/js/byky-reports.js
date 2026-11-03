@@ -32,7 +32,9 @@
   var seq = 0;
 
   // -- formatting ----------------------------------------------------------------------
-  var money = new Intl.NumberFormat('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  /* The company's decimals (Configurations, CR1): data-money-places on <body>. */
+  var PLACES = (parseInt(document.body.dataset.moneyPlaces, 10) || 3);
+  var money = new Intl.NumberFormat('en-US', { minimumFractionDigits: PLACES, maximumFractionDigits: PLACES });
   var whole = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
   var NUMERIC = { money: 1, count: 1, percent: 1 };
 

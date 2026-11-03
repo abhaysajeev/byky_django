@@ -48,7 +48,13 @@ class CustomerSave(WriteView):
             if customer.pk is None:
                 customer.customer_code = services.next_customer_code(customer.company)
             services.stamp_block(customer, was_blocked, request.user)
+            if was_blocked and not customer.is_blocked:
+                customer.block_reason = ""
             customer.save()
+            if bool(was_blocked) != bool(customer.is_blocked):
+                reason = (form.cleaned_data.get("block_reason") if customer.is_blocked
+                          else form.cleaned_data.get("unblock_reason")) or ""
+                services.log_block_change(customer, request.user, reason.strip())
 
         return JsonResponse({"ok": True, "pk": customer.pk, "message": "Customer saved."})
 

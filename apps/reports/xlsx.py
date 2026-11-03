@@ -31,9 +31,14 @@ TOP = Alignment(vertical="top")
 WRAP = Alignment(wrap_text=True, vertical="center", horizontal="center")
 
 
-def workbook(report, result, lines):
+def money_format(places):
+    """The money cells' number format for `places` decimals (core/money.py)."""
+    return "#,##0." + "0" * places
+
+
+def workbook(report, result, lines, places=3):
     """The export as bytes. `lines` are the three header lines (title, filters,
-    generated on/by)."""
+    generated on/by). Money cells show `places` decimals."""
     wb = Workbook()
     ws = wb.active
     ws.title = report.sheet_title[:31]
@@ -54,7 +59,7 @@ def workbook(report, result, lines):
             row += 1                                     # a blank line, then the headers again
             _header(ws, row, columns)
             row += 1
-        row = _write(ws, row, item, columns)
+        row = _write(ws, row, item, columns, places)
         previous = item.kind
 
     for c, column in enumerate(columns, start=1):
@@ -71,7 +76,7 @@ def _header(ws, row, columns):
     ws.row_dimensions[row].height = 30
 
 
-def _write(ws, row, item, columns):
+def _write(ws, row, item, columns, places=3):
     """One table row -- or, for an order with vehicle lines, its block of rows.
     Returns the next free row."""
     total = item.kind != DATA
@@ -80,12 +85,12 @@ def _write(ws, row, item, columns):
         if column.part == "line":
             for i in range(span):
                 value = (item.lines[i].get(column.key) if item.lines else item.cells.get(column.key))
-                _cell(ws, row + i, c, value, column, total)
+                _cell(ws, row + i, c, value, column, total, places)
             continue
         value = item.cells.get(column.key)
         if total and c == 1:
             value = item.label
-        _cell(ws, row, c, value, column, total)
+        _cell(ws, row, c, value, column, total, places)
         if span > 1:
             ws.merge_cells(start_row=row, start_column=c, end_row=row + span - 1, end_column=c)
             ws.cell(row=row, column=c).alignment = TOP
@@ -94,10 +99,10 @@ def _write(ws, row, item, columns):
     return row + span
 
 
-def _cell(ws, row, col, value, column, bold):
+def _cell(ws, row, col, value, column, bold, places=3):
     cell = ws.cell(row=row, column=col, value=value)
     cell.border = GRID
     if column.kind in FORMATS and value is not None and not isinstance(value, str):
-        cell.number_format = FORMATS[column.kind]
+        cell.number_format = money_format(places) if column.kind == MONEY else FORMATS[column.kind]
     if bold:
         cell.font = BOLD

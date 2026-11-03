@@ -4,13 +4,12 @@ The legacy kept "one active settings row per station" only in its screen,
 which hid stations that already had one. Here the database holds it.
 """
 
-from decimal import Decimal
 
 import pytest
 from django.db import IntegrityError
 
 from apps.company.models import DiscountType, TaxType
-from apps.devices.models import DeviceSettings, PrintType, RoundOffMode
+from apps.devices.models import DeviceSettings, PrintType
 from core.enums import ApprovalStatus
 
 
@@ -80,8 +79,6 @@ def test_defaults_are_what_the_live_rows_hold(branch):
 
     assert row.paper_feed == 2
     assert row.print_type == PrintType.LANDSCAPE
-    assert row.round_off_mode == RoundOffMode.UPWARD
-    assert row.round_off_step == Decimal("0.25")
     assert row.receipt_copies == 1
     assert (row.customer_test_minutes, row.staff_test_minutes) == (5, 5)
     assert row.share_on_whatsapp is False

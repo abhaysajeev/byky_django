@@ -59,7 +59,9 @@ def test_every_kind_is_in_one_list_newest_first(client, token, three):
     assert note_row["details"] == {"credit_note_no": None, "net_amount": None}
     assert (claim_row["details"]["card_type"], claim_row["details"]["card_number"]) == ("Family Card", "FAM-1")
     assert note_row["reason"] == "Chain broke after 10 minutes"
-    assert set(note_row) == set(reprint_row) == set(claim_row) == set(api._LIST_CREDIT_NOTE_SAMPLE)
+    # Plus order_details, the whole order (test_order_requests_list_order_details.py).
+    assert set(note_row) == set(reprint_row) == set(claim_row) == set(api._LIST_CREDIT_NOTE_SAMPLE) | {
+        "order_details"}
 
 
 def test_kind_and_pending_narrow_across_kinds(client, token, three, world):

@@ -24,3 +24,9 @@ def station_request_push(request_type, subject_id, action, status, left_out, at)
 def station_test_ride_push(ride_id, action, device_id, at):
     """Tell the station's other tablets a test ride changed (station_sync)."""
     return station_sync.test_ride_push(ride_id, action, device_id, datetime.datetime.fromisoformat(at))
+
+
+@shared_task(name="apps.rental.tasks.station_service_push", ignore_result=True)
+def station_service_push(req_id, action, device_id, at):
+    """Tell the station's other tablets a service request changed (station_sync)."""
+    return station_sync.service_push(req_id, action, device_id, datetime.datetime.fromisoformat(at))

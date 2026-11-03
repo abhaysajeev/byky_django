@@ -18,6 +18,7 @@ from apps.rental.models import (
     TestRideStatus,
     full_number,
 )
+from apps.rental.order_status import VALUES as ORDER_DISPLAY_STATUSES
 from core.api import (
     REQUIRED,
     date_field,
@@ -26,6 +27,10 @@ from core.api import (
     uuid7_field,
     whole_number_field,
 )
+
+# discount.models.ClaimStatus, spelled out: apps.discount imports this app's
+# models, so importing it back here would be circular.
+CLAIM_STATUSES = ("pending", "approved", "rejected", "cancelled", "redeemed", "revoked")
 
 
 class PhoneFields(serializers.Serializer):
@@ -112,6 +117,13 @@ class OrderItemRequest(serializers.Serializer):
     # The package price agreed now. Everything else on the bill comes later:
     # the line's final amount at return, the order's bill at settle.
     base_fare = _money_field()
+    # The fare terms the tablet priced this line on (owner, 29 Oct 2026) --
+    # fare_id, applied (base / season / special_price), season_id,
+    # special_price_id, package_minutes, base_fare, grace_minutes and the
+    # concurrent terms. Stored exactly as sent, never edited: an order keeps
+    # the terms it was booked on whatever the fare becomes. Optional for now.
+    fare_details = serializers.DictField(required=False, allow_null=True,
+                                         error_messages={"not_a_dict": "must be an object"})
 
     def validate(self, values):
         if values["expected_end_time"] < values["start_time"]:
@@ -399,6 +411,9 @@ class OrderSettleRequest(serializers.Serializer):
                         "max_decimal_places": "must have at most 1 decimal place",
                         "max_whole_digits": "must be from 1 to 5"},
     )
+    # What the customer said with the rating (owner, 29 Oct 2026) -- kept on
+    # the order's invoice, not on the customer.
+    rating_remarks = text_field(max_length=500, required=False, allow_blank=True)
 
     def validate_payments(self, payments):
         if _repeated(payment["sync_id"] for payment in payments):
@@ -568,6 +583,23 @@ class ManagerCreditNoteApproveRequest(ManagerCreditNoteRejectRequest):
     net_amount = _money_field()
 
 
+class ManagerClaimListRequest(ManagerApprovalListRequest):
+    """Card-discount claims: the shared filters, plus one status."""
+
+    status = serializers.ChoiceField(
+        choices=CLAIM_STATUSES, required=False, allow_blank=True,
+        error_messages={"invalid_choice": "must be one of " + ", ".join(CLAIM_STATUSES)})
+
+
+class ManagerClaimRevokeRequest(serializers.Serializer):
+    """Revoke an approved claim. The reason is optional (owner, 3 Nov 2026):
+    left out, null, "" or only spaces all mean no reason."""
+
+    claim_id = serializers.UUIDField(error_messages={**REQUIRED, "invalid": "must be a UUID"})
+    note = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True,
+                                 error_messages={"max_length": "must be at most 255 characters"})
+
+
 class ManagerClaimDecisionRequest(serializers.Serializer):
     claim_id = serializers.UUIDField(error_messages={**REQUIRED, "invalid": "must be a UUID"})
     remarks = serializers.CharField(max_length=255, required=False, allow_blank=True,
@@ -575,10 +607,10 @@ class ManagerClaimDecisionRequest(serializers.Serializer):
 
 
 class ManagerRequestDecisionRequest(serializers.Serializer):
-    """Reject or revoke: the request and an optional note."""
+    """Reject or revoke: the request and an optional note (null accepted too)."""
 
     request_sync_id = serializers.UUIDField(error_messages={**REQUIRED, "invalid": "must be a UUID"})
-    note = serializers.CharField(max_length=500, required=False, allow_blank=True,
+    note = serializers.CharField(max_length=500, required=False, allow_blank=True, allow_null=True,
                                  error_messages={"max_length": "must be at most 500 characters"})
 
 
@@ -678,10 +710,8 @@ class BranchOrdersRequest(DateRangeRequest):
     vehicle_type_id = whole_number_field(min_value=1, required=False, allow_null=True)
     vehicle_id = whole_number_field(min_value=1, required=False, allow_null=True)
     order_status = serializers.ChoiceField(
-        choices=["all", "running", "partially_received", "awaiting_settlement", "fully_received", "cancelled"],
-        required=False, default="all",
-        error_messages={"invalid_choice": "must be one of: all, running, partially_received, "
-                                          "awaiting_settlement, fully_received, cancelled"},
+        choices=["all", *ORDER_DISPLAY_STATUSES], required=False, default="all",
+        error_messages={"invalid_choice": "must be one of: " + ", ".join(["all", *ORDER_DISPLAY_STATUSES])},
     )
     page = whole_number_field(min_value=1, required=False, default=1)
 

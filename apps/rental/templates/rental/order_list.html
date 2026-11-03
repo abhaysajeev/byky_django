@@ -75,7 +75,7 @@
             <td><div class="scr-co-name">{{ r.customer|default:"—" }}</div><div class="scr-contact-sub">{{ r.mobile }}</div></td>
             <td><div class="scr-contact">{{ r.station }}</div><div class="scr-contact-sub">Tablet {{ r.tablet }}</div></td>
             <td>
-              {% include "rental/partials/order_status.html" with status=r.status %}
+              {% include "rental/partials/order_display_status.html" with badge=r.status_badge label=r.status_label %}
               {% if r.is_direct %}<div class="scr-contact-sub">Direct rental</div>{% endif %}
             </td>
             <td>

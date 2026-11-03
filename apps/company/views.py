@@ -13,7 +13,7 @@ from django.db.models import Count, Q
 from django.http import JsonResponse
 from django.urls import reverse
 
-from apps.company import drawers, forms, scoping, writes
+from apps.company import configurations, drawers, forms, scoping, writes
 from apps.company import services as company_services
 from apps.company.models import (
     UAE_WEEK,
@@ -363,6 +363,20 @@ class BranchListView(CompanyScreenView):
         context["save_url_branch"] = reverse("company-branch-save")
         context["delete_url_branch"] = reverse("company-branch-delete", args=[0])
         context["noun_branch"] = "Branch"
+        return context
+
+
+class ConfigurationsView(PagePermissionMixin, ThemedTemplateView):
+    """Report day start and money per country (apps/company/configurations.py)."""
+
+    template_name = "company/configurations.html"
+    page_code = configurations.PAGE
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(configurations.context_for(self.request))
+        context["save_url"] = reverse("company-configurations-save")
+        context["perm"] = {a: has_permission(self.request.user, self.page_code, a) for a in ("read", "update")}
         return context
 
 

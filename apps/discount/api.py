@@ -26,6 +26,7 @@ from apps.discount.serializers import (
 from apps.portal.authentication import AppJWTAuthentication
 from apps.sync import parking
 from apps.sync.models import IssueKind
+from core import money
 from core.api import envelope, request_parts, session_station, station_of
 from core.enums import Channel
 from core.schema import SERVER_ERROR, envelope_request, envelope_responses
@@ -269,7 +270,9 @@ purpose `card_discount`) and send its id as `card_photo_id`. If the upload has
 not reached the server yet the request is refused `photo_not_uploaded`: keep it
 queued and send it again after the upload. `card_photo` (a plain link) is still
 accepted from older app builds. `requested_at` is `YYYY-MM-DD HH:MM:SS`,
-company time.
+company time. `remarks` (optional, up to 255) -- the operator's note for the
+approver; shown to the manager and on the web, and returned as
+`request_remarks` (the approver's own note is `remarks`).
 
 One pending request per order at a time, and none while the order has a manager
 discount or complimentary request waiting or approved (`discount_requested`,
@@ -328,6 +331,7 @@ class ApprovalRequestView(APIView):
             return refused
         form = ApprovalRequest(data=request_data)
         form.is_valid(raise_exception=True)
+        money.refuse_too_precise(form)
         values = dict(form.validated_data)
         values["requested_at"] = timezone.make_aware(values["requested_at"], zone_for(branch.company))
 
@@ -351,6 +355,8 @@ _STATUS_SAMPLE = {
     "card_discount_id": 12, "card_type_name": "Corporate", "card_grade_name": "Gold",
     "bill_amount": "120.00", "discount_percent": "15.00", "discount_amount": "18.00", "net_amount": "102.00",
     "requested_at": "2026-09-30 17:05:00", "decided_at": "2026-09-30 17:09:42", "remarks": "Card checked",
+    "request_remarks": "Regular customer, card shown",
+    "revoked_at": None, "revoke_note": "",
 }
 
 _STATUS_DESCRIPTION = """
@@ -362,15 +368,20 @@ and the `order_id` it was made for -- both required, and they must agree.
 * `rejected` -- bill without it; `remarks` may say why.
 * `cancelled` -- the order was billed while the request was still pending.
 * `redeemed` -- the discount was used on the closed bill.
+* `revoked` -- it was approved, then taken back (web or manager app) before the
+  bill used it: bill **without** it. `revoke_note` says why, `revoked_at` when.
+  A settle that still names it is refused (`card_discount_revoked`).
 
 `decided_at` is null while pending (for a cancelled request, when it was
-cancelled); `remarks` is "" when none. Times `YYYY-MM-DD HH:MM:SS`, company time.
+cancelled); `remarks` is the approver's note, `request_remarks` the operator's
+own note sent with the request -- "" when none. Times `YYYY-MM-DD HH:MM:SS`,
+company time.
 """
 
 
 def _amount(value):
     """Money: AED to the 3rd decimal."""
-    return None if value is None else f"{value:.3f}"
+    return money.fmt(value)
 
 
 def _percent(value):
@@ -429,4 +440,8 @@ class ApprovalStatusView(APIView):
             "decided_at": claim.decided_at.astimezone(zone).strftime("%Y-%m-%d %H:%M:%S")
             if claim.decided_at else None,
             "remarks": claim.remarks,
+            "request_remarks": claim.request_remarks,
+            "revoked_at": claim.revoked_at.astimezone(zone).strftime("%Y-%m-%d %H:%M:%S")
+            if claim.revoked_at else None,
+            "revoke_note": claim.revoke_note,
         })

@@ -1,6 +1,6 @@
 from django.urls import path
 
-from apps.rental import views, writes
+from apps.rental import blocked, views, writes
 
 urlpatterns = [
     path("live/", views.LiveMonitorView.as_view(), name="rental-live"),
@@ -26,6 +26,9 @@ urlpatterns = [
     path("customer/list/", views.CustomerListView.as_view(), name="rental-customer-list"),
     path("customer/save/", writes.CustomerSave.as_view(), name="rental-customer-save"),
     path("customer/<int:pk>/delete/", views.CustomerDelete.as_view(), name="rental-customer-delete"),
+    path("customer/blocked/", views.BlockedCustomerListView.as_view(), name="rental-blocked-customer-list"),
+    path("customer/blocked/change/", blocked.BlockChange.as_view(), name="rental-blocked-customer-change"),
+    path("customer/blocked/export/", views.BlockedCustomerExport.as_view(), name="rental-blocked-customer-export"),
     path("payment-mode/list/", views.PaymentModeListView.as_view(), name="rental-payment-mode-list"),
     path("payment-mode/save/", views.PaymentModeSave.as_view(), name="rental-payment-mode-save"),
     path("payment-mode/<int:pk>/delete/", views.PaymentModeDelete.as_view(), name="rental-payment-mode-delete"),

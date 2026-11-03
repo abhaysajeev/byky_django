@@ -82,6 +82,10 @@
       (d.model ? d.model + ' \u00b7 ' : '') + 'Give it a name staff will recognise.';
     nameInput.value = d.name || '';
     station.value = '';
+    // Only an RMS operator device has a station (owner, 3 Nov 2026); the
+    // server refuses one for the employee and manager apps too.
+    var stationField = station.closest('.scr-field');
+    if (stationField) stationField.hidden = !!d.channel && d.channel !== 'operator';
     approveGo.disabled = false;
     openModal('device-approve');
     setTimeout(function () { nameInput.focus(); }, 50);

@@ -26,9 +26,9 @@ from apps.company.scoping import companies_for
 from apps.devices import services as devices_services
 from apps.devices.models import BillKind
 from apps.portal.authentication import AppJWTAuthentication
-from apps.rental import credit_notes, services
+from apps.rental import credit_notes, order_status, services
 from apps.rental import requests as order_requests
-from apps.rental.models import DecisionChannel, Invoice, OrderItemStatus
+from apps.rental.models import DecisionChannel, Invoice
 from apps.rental.serializers import (
     CreditNoteCancelRequest,
     CreditNoteRequest,
@@ -58,6 +58,7 @@ from apps.rental.serializers import (
 )
 from apps.sync import parking
 from apps.sync.models import IssueKind
+from core import money
 from core.api import envelope, manager_only, request_parts, session_station, station_of
 from core.enums import Channel
 from core.schema import SERVER_ERROR, envelope_request, envelope_responses
@@ -102,7 +103,7 @@ _INVOICE_SAMPLE = {
     "tax_percentage": "5.00", "tax_amount": "5.238", "rounding_adjustment": "0.000", "net_amount": "110.000",
     "payments": [{"mode": "Cash", "kind": "advance", "amount": "60.000", "reference_no": ""},
                  {"mode": "Card", "kind": "settlement", "amount": "50.000", "reference_no": "448812"}],
-    "star_rating": "4.5",
+    "star_rating": "4.5", "rating_remarks": "Bikes were clean, quick service",
 }
 
 
@@ -156,6 +157,11 @@ company, with no details.
 def _rating(value):
     """A star rating as text with its one decimal ("4.5", "5.0"), or None."""
     return None if value is None else str(value)
+
+
+def _person(user):
+    """A user by name, as the screens show them."""
+    return user.display_name or user.username
 
 
 def _customer_json(customer, zone=None):
@@ -305,6 +311,12 @@ def _local(moment, zone):
 
 
 def _money(value):
+    """Money as text with the company's decimals (core/money.py, CR1)."""
+    return money.fmt(value)
+
+
+def _percent(value):
+    """A percentage as stored (2 decimals): not money, so not the company's decimals."""
     return str(value) if value is not None else None
 
 
@@ -329,14 +341,15 @@ def invoice_json(invoice, zone):
             for item in sorted(invoice.items.all(), key=lambda line: line.start_time)
         ],
         "subtotal": _money(invoice.subtotal),
-        "discount_percentage": _money(invoice.discount_percentage),
+        "discount_percentage": _percent(invoice.discount_percentage),
         "discount_amount": _money(invoice.discount_amount),
         "discount_source": invoice.discount_source or None,
-        "tax_percentage": _money(invoice.tax_percentage), "tax_amount": _money(invoice.tax_amount),
+        "tax_percentage": _percent(invoice.tax_percentage), "tax_amount": _money(invoice.tax_amount),
         "rounding_adjustment": _money(invoice.rounding_adjustment),
         "net_amount": _money(invoice.net_amount),
         "payments": invoice.payments,
         "star_rating": _rating(invoice.star_rating),
+        "rating_remarks": invoice.rating_remarks or None,
     }
 
 
@@ -348,20 +361,26 @@ def _discount_json(order):
         claim = order.discount_claim
         source, request_id = "card", str(claim.pk) if claim.requires_approval else None
     else:
-        applied = order.requests.filter(applied_at__isnull=False).first()
+        # Read from the loaded requests (a list page prefetches them).
+        applied = next((r for r in order.requests.all() if r.applied_at is not None), None)
         if applied is None:
             return None
         source = "complimentary" if applied.kind == "complimentary" else "manager"
         request_id = str(applied.pk)
     return {
         "source": source, "request_sync_id": request_id,
-        "discount_percentage": _money(order.discount_percentage), "discount_amount": _money(order.discount_amount),
+        "discount_percentage": _percent(order.discount_percentage), "discount_amount": _money(order.discount_amount),
     }
 
 
 def _test_ride_json(order):
     ride = next(iter(order.test_rides.all()), None)
     return None if ride is None else {"test_ride_id": str(ride.pk), "test_no": ride.test_no}
+
+
+def _display(order, items=None):
+    value = order_status.display_status(order, items)
+    return {"order_status": value, "order_status_label": order_status.label(value)}
 
 
 def order_json(order, *, zone, next_order_number):
@@ -371,10 +390,51 @@ def order_json(order, *, zone, next_order_number):
     `next_order_number` is the asking tablet's receipt counter after the call."""
     items = list(order.items.select_related("vehicle").order_by("start_time", "created_on"))
     payments = list(order.payments.select_related("mode").order_by("paid_at", "created_on"))
-    invoice = Invoice.objects.filter(order_id=order.pk).first()
+    invoice = Invoice.objects.select_related("issued_by").filter(order_id=order.pk).first()
+    return {**_order_body(order, zone, items, payments, invoice), "next_order_number": next_order_number}
+
+
+def order_details_for(order_ids, zone):
+    """{order_id: the orders/detail body} for many orders at once -- the
+    operator's request list (owner, 3 Nov 2026). One query for the orders and
+    one per related table, however many orders: no next_order_number (that is
+    the asking tablet's counter, not the order's)."""
+    from django.db.models import Prefetch
+
+    from apps.rental.models import Order, OrderItem, Payment
+
+    orders = (
+        Order.objects.filter(pk__in=set(order_ids))
+        .select_related("created_by", "discount_claim", "invoice__issued_by")
+        .prefetch_related(
+            Prefetch("items", queryset=OrderItem.objects.select_related("vehicle").order_by("start_time",
+                                                                                              "created_on")),
+            Prefetch("payments", queryset=Payment.objects.select_related("mode").order_by("paid_at", "created_on")),
+            "requests", "test_rides",
+        )
+    )
+    details = {}
+    for order in orders:
+        try:
+            invoice = order.invoice
+        except Invoice.DoesNotExist:
+            invoice = None
+        details[str(order.pk)] = _order_body(order, zone, list(order.items.all()), list(order.payments.all()),
+                                             invoice)
+    return details
+
+
+def _order_body(order, zone, items, payments, invoice):
+    """Everything order_json answers with but the tablet's receipt counter."""
     return {
         "sync_id": str(order.pk), "order_no": order.order_no, "transaction_no": order.transaction_no,
         "status": order.status, "payment_status": order.payment_status,
+        # What to show (8 values, owner 3 Nov 2026); `status` still drives the flow.
+        **_display(order, items),
+        # Who booked it and who settled it (null until settled), by name -- as
+        # Live Monitoring shows them (owner, 29 Oct 2026).
+        "open_by": _person(order.created_by) if order.created_by_id else None,
+        "close_by": _person(invoice.issued_by) if invoice else None,
         "booked_at": _local(order.booked_at, zone), "start_time": _local(order.start_time, zone),
         "completed_at": _local(order.completed_at, zone), "cancelled_at": _local(order.cancelled_at, zone),
         "is_direct_bill": order.is_direct_bill, "is_hotel_order": order.is_hotel_order,
@@ -385,12 +445,12 @@ def order_json(order, *, zone, next_order_number):
         # The bill: null until settle.
         "subtotal": _money(order.subtotal),
         "discount": _discount_json(order),
-        "tax_percentage": _money(order.tax_percentage), "tax_amount": _money(order.tax_amount),
+        "tax_percentage": _percent(order.tax_percentage), "tax_amount": _money(order.tax_amount),
         "rounding_adjustment": _money(order.rounding_adjustment), "net_amount": _money(order.net_amount),
         # Money collected, from booking on; balance_due null until settle.
         "amount_received": _money(order.amount_received), "amount_refunded": _money(order.amount_refunded),
         "paid_amount": _money(order.paid_amount), "balance_due": _money(order.balance_due),
-        "items_out": sum(1 for item in items if item.status == OrderItemStatus.ACTIVE),
+        "items_out": sum(1 for item in items if order_status.is_out(item)),   # a parked return is back
         "items": [
             {
                 "sync_id": str(item.pk), "status": item.status,
@@ -406,6 +466,8 @@ def order_json(order, *, zone, next_order_number):
                 "total_amount": _money(item.total_amount),             # null until returned
                 "replaced_item_id": str(item.replaced_item_id) if item.replaced_item_id else None,
                 "reason": item.reason,
+                # The fare terms the line was priced on, as the tablet sent them; null if none were.
+                "fare_details": item.fare_details,
             }
             for item in items
         ],
@@ -423,7 +485,9 @@ def order_json(order, *, zone, next_order_number):
             "invoice_no": invoice.invoice_no, "issued_at": _local(invoice.issued_at, zone),
             "net_amount": _money(invoice.net_amount),
         } if invoice else None,
-        "next_order_number": next_order_number,
+        # The customer's rating at settle and what they said; null while running.
+        "star_rating": _rating(invoice.star_rating) if invoice else None,
+        "rating_remarks": (invoice.rating_remarks or None) if invoice else None,
     }
 
 
@@ -455,10 +519,22 @@ def _counter_number(session):
     return devices_services.counter_for(session.device, session.branch, BillKind.ORDER).next_number
 
 
+# The fare terms a line was priced on (owner, 29 Oct 2026): the tablet sends
+# them with the line on book / add / replace, and every reply returns them.
+# `applied` is base, season or special_price; special_price_id is the special
+# price (time window) that set the price, season_id its season if any.
+_FARE_DETAILS_SAMPLE = {
+    "fare_id": 88, "applied": "special_price", "season_id": None, "special_price_id": 31,
+    "package_minutes": 60, "base_fare": "50.00", "grace_minutes": 5,
+    "concurrent_interval_minutes": 15, "concurrent_fare": "15.00", "concurrent_grace_minutes": 3,
+}
+
 _ORDER_SAMPLE = {
     "sync_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9", "order_no": "DUBPP60182000231",
     "transaction_no": "DUBPP-A-12",
     "status": "active", "payment_status": "pending",
+    "order_status": "running", "order_status_label": "Running",
+    "open_by": "Rashed K", "close_by": None,
     "booked_at": "2026-10-02 16:00:05", "start_time": "2026-10-02 16:00:00",
     "completed_at": None, "cancelled_at": None,
     "is_direct_bill": False, "is_hotel_order": False, "hotel_commission": "0.00",
@@ -474,13 +550,13 @@ _ORDER_SAMPLE = {
          "fare_id": 88, "offer_id": None, "package_minutes": 60, "run_minutes": None,
          "start_time": "2026-10-02 16:00:00", "expected_end_time": "2026-10-02 17:00:00", "end_time": None,
          "base_fare": "50.00", "overtime_amount": None, "total_amount": None,
-         "replaced_item_id": None, "reason": ""},
+         "replaced_item_id": None, "reason": "", "fare_details": _FARE_DETAILS_SAMPLE},
         {"sync_id": "01923e1c-0a13-7b22-8c33-d4e5f6a7b8c9", "status": "active",
          "vehicle": {"id": 3102, "name": "DC 02", "identifier": "VB0874"},
          "fare_id": 88, "offer_id": None, "package_minutes": 60, "run_minutes": None,
          "start_time": "2026-10-02 16:00:00", "expected_end_time": "2026-10-02 17:00:00", "end_time": None,
          "base_fare": "50.00", "overtime_amount": None, "total_amount": None,
-         "replaced_item_id": None, "reason": ""},
+         "replaced_item_id": None, "reason": "", "fare_details": _FARE_DETAILS_SAMPLE},
     ],
     "payments": [
         {"sync_id": "01923e1c-0a14-7b22-8c33-d4e5f6a7b8c9", "kind": "advance",
@@ -491,6 +567,7 @@ _ORDER_SAMPLE = {
          "reference_date": "2026-10-02", "paid_at": "2026-10-02 16:00:05"},
     ],
     "invoice": None,
+    "star_rating": None, "rating_remarks": None,
     "next_order_number": 232,
 }
 
@@ -504,9 +581,12 @@ _RETURNED_ITEMS = [
     {**_ORDER_SAMPLE["items"][1], "status": "returned", "run_minutes": 60, "end_time": "2026-10-02 17:00:00",
      "overtime_amount": "0.00", "total_amount": "50.00"},
 ]
-_RETURNED_SAMPLE = {**_ORDER_SAMPLE, "items_out": 0, "items": _RETURNED_ITEMS}
+_RETURNED_SAMPLE = {**_ORDER_SAMPLE, "items_out": 0, "items": _RETURNED_ITEMS,
+                    "order_status": "awaiting_settlement", "order_status_label": "Awaiting Settlement"}
 _SETTLED_SAMPLE = {
     **_RETURNED_SAMPLE, "status": "completed", "payment_status": "paid", "completed_at": "2026-10-02 17:13:30",
+    "order_status": "received", "order_status_label": "Received",
+    "close_by": "Rashed K", "star_rating": "4.5", "rating_remarks": "Bikes were clean, quick service",
     "subtotal": "110.00",
     "discount": {"source": "card", "request_sync_id": "01923e2a-11aa-7b22-8c33-d4e5f6a7b8c9",
                  "discount_percentage": "5.00", "discount_amount": "5.50"},
@@ -525,7 +605,7 @@ _BOOK_ERRORS = (
     "sync_id_conflict", "order_no_used", "vehicle_already_rented", "vehicle_repeated", "item_id_used",
     "payment_id_used", "unknown_customer", "unknown_payment_mode", "unknown_vehicle",
     "vehicle_not_at_station", "unknown_fare", "unknown_offer", "package_not_available",
-    "vehicle_on_test_ride", "unknown_test_ride", "test_ride_closed",
+    "vehicle_on_test_ride", "vehicle_in_warehouse_service", "unknown_test_ride", "test_ride_closed",
 )
 
 _ORDER_DESCRIPTION = """
@@ -575,6 +655,20 @@ card slip or cheque.
 
 Until then they are `null`. `payment_status` is `pending` while the order is
 active and `paid` once it is settled (blank for a cancelled order).
+
+**`fare_details`** (optional per item, for now) -- the fare terms the tablet
+priced that line on, sent as one object: `fare_id`, `applied` (`base`,
+`season` or `special_price`), `season_id`, `special_price_id` (the special
+price -- time window -- that set the price), `package_minutes`, `base_fare`,
+`grace_minutes`, `concurrent_interval_minutes`, `concurrent_fare`,
+`concurrent_grace_minutes`. Stored exactly as sent and never changed, so the
+order keeps the terms it was booked on even if the fare is edited later. The
+same on add-vehicle (`item`) and replace (`new_item`). Every order reply
+returns it per item (`null` when not sent).
+
+**In every order reply**: `open_by` -- who booked the order; `close_by` -- who
+settled it (`null` until then); `star_rating` and `rating_remarks` -- the
+customer's rating at settle (`null` while running).
 
 **Times** are `YYYY-MM-DD HH:MM:SS` in company time, no offset: `booked_at`
 is when the booking happened on the tablet (earlier if it was offline),
@@ -626,6 +720,7 @@ class OrderCreateView(_OperatorView):
             services.count_receipt(session, request_data.get("order_no"))
             raise ValidationError(form.errors)
         values = form.validated_data
+        money.refuse_too_precise(form)
 
         zone = zone_for(branch.company)
         for key in ("booked_at", "start_time"):
@@ -853,6 +948,7 @@ class InvoiceDetailView(_OperatorView):
         form = InvoiceDetailRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         invoice = services.invoice_at_station(branch, order_id=values.get("order_id"),
                                               invoice_no=values.get("invoice_no"))
         if invoice is None:
@@ -959,6 +1055,7 @@ class OrderReturnView(_OperatorView):
         form = OrderReturnRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         zone = zone_for(branch.company)
         values["returned_at"] = timezone.make_aware(values["returned_at"], zone)
 
@@ -974,7 +1071,9 @@ class OrderReturnView(_OperatorView):
 
 _SETTLE_ERRORS = (
     "order_not_synced", "sync_id_conflict", "order_closed", "items_still_out", "amount_mismatch",
-    "balance_not_settled", "unknown_card_claim", "card_claim_not_approved", "unknown_card_discount",
+    "rounding_mismatch",
+    "balance_not_settled", "unknown_card_claim", "card_discount_revoked", "card_claim_not_approved",
+    "unknown_card_discount",
     "unknown_discount_request", "discount_request_not_approved", "discount_mismatch",
     "approved_discount_not_applied", "unknown_complimentary_request", "complimentary_request_not_approved",
     "approved_complimentary_not_applied", "approved_card_discount_not_applied", "unknown_payment_mode",
@@ -1057,6 +1156,10 @@ with at most one decimal (`4.5`, `5`, `2.5`); leave it out or send null when
 none was given. Stored on the invoice and returned as the customer's
 `star_rating` until a later settle rates them again. A settle that arrives late
 (parked offline) never replaces a rating from a later `settled_at`.
+
+**`rating_remarks`** (optional, up to 500 characters) -- what the customer said
+with the rating. Kept on this order's invoice only (not on the customer), and
+returned as the order's and the invoice's `rating_remarks`.
 """ + _FLOW + """
 """ + _error_table(*_SETTLE_ERRORS)
 
@@ -1070,7 +1173,7 @@ def _settle_example(name, discount, **bill):
         "payments": [{"sync_id": "01923e1c-0a16-7b22-8c33-d4e5f6a7b8c9", "kind": "settlement",
                       "payment_mode_id": 2, "amount": "4.500", "reference_no": "4421",
                       "reference_date": "2026-10-02", "paid_at": "2026-10-02 17:13:30"}],
-        "star_rating": "4.5",
+        "star_rating": "4.5", "rating_remarks": "Bikes were clean, quick service",
         **bill,
     }
     return OpenApiExample(name, request_only=True, value={"credentials": {}, "request_data": body})
@@ -1128,6 +1231,7 @@ class OrderSettleView(_OperatorView):
         form = OrderSettleRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         zone = zone_for(branch.company)
         values["settled_at"] = timezone.make_aware(values["settled_at"], zone)
         for payment in values.get("payments") or []:
@@ -1184,7 +1288,7 @@ _REMOVED_SAMPLE = {
 _CHANGE_ERRORS = ("order_not_synced", "sync_id_conflict", "order_closed")
 _NEW_LINE_ERRORS = (
     "vehicle_already_rented", "vehicle_not_at_station", "unknown_vehicle", "unknown_fare", "unknown_offer",
-    "package_not_available", "item_id_used", "vehicle_on_test_ride",
+    "package_not_available", "item_id_used", "vehicle_on_test_ride", "vehicle_in_warehouse_service",
 )
 _ADD_ERRORS = (*_CHANGE_ERRORS, *_NEW_LINE_ERRORS, "unknown_payment_mode", "payment_id_used")
 _REPLACE_ERRORS = (*_CHANGE_ERRORS, "unknown_item", "item_not_active", "invalid_time", "vehicle_repeated",
@@ -1255,6 +1359,7 @@ class _ChangeView(_OperatorView):
         form = self.form_class(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         zone = zone_for(branch.company)
         for key in self.times:
             values[key] = timezone.make_aware(values[key], zone)
@@ -1528,6 +1633,7 @@ class CreditNoteRequestView(_OperatorView):
         form = CreditNoteRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         values["requested_at"] = timezone.make_aware(values["requested_at"], zone_for(branch.company))
         try:
             data, done = credit_notes.request_credit_note(session, values, request_data)
@@ -1567,6 +1673,7 @@ class CreditNoteCancelView(_OperatorView):
         form = CreditNoteCancelRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         values["cancelled_at"] = timezone.make_aware(values["cancelled_at"], zone_for(branch.company))
         try:
             data, done = credit_notes.cancel_credit_note(session, values, request_data)
@@ -1751,6 +1858,7 @@ class OrderRequestView(_OperatorView):
         form = OrderRequestCreateRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         values["requested_at"] = timezone.make_aware(values["requested_at"], zone_for(branch.company))
         try:
             data, done = order_requests.create_request(session, values, request_data)
@@ -1789,6 +1897,7 @@ class OrderRequestWithdrawView(_OperatorView):
         form = OrderRequestWithdrawRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         values["withdrawn_at"] = timezone.make_aware(values["withdrawn_at"], zone_for(branch.company))
         try:
             data, done = order_requests.withdraw(session, values, request_data)
@@ -1828,6 +1937,7 @@ class OrderRequestUsedView(_OperatorView):
         form = OrderRequestUsedRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         values["used_at"] = timezone.make_aware(values["used_at"], zone_for(branch.company))
         try:
             data, done = order_requests.mark_used(session, values, request_data)
@@ -1877,6 +1987,14 @@ Every row has the **same fields**, whatever its kind:
   the credit note's id (`credit_note_id`), or the card discount's sync_id.
 - `order_id`, `order_no`, `customer_name`, `kind`, `status`, `reason`,
   `requested_at`.
+- `order_details` -- right after `order_no`: **the whole order**, exactly as
+  `orders/detail` returns it but without `next_order_number` (that is this
+  tablet's receipt counter, not the order's). Its status and display status,
+  customer, times, the bill once settled (`subtotal`, `discount`, VAT,
+  `net_amount`, `invoice`, rating), money taken (`paid_amount`, `balance_due`),
+  every vehicle line -- replaced and removed ones too -- with its fare
+  details, and every payment. On every row, whatever its kind. Money uses the
+  company's decimals.
 - `decided_by`, `decided_channel` (`web` / `manager`), `decided_at`,
   `decision_note` (a credit note's decision remark, a card discount's remarks).
 - Order-request fields -- `discount_type`, `discount_value`, `revoked_*`,
@@ -1904,6 +2022,20 @@ a reinstall, the card discounts it sent before no longer count as its own.
 Read-only.
 """
 
+
+def with_order_details(row, details):
+    """`row` with `order_details` placed right after `order_no`; nothing else moves."""
+    out = {}
+    for key, value in row.items():
+        out[key] = value
+        if key == "order_no":
+            out["order_details"] = details
+    return out
+
+
+# The orders/detail sample without the tablet's receipt counter: what
+# `order_details` carries in a request-list row.
+_ORDER_DETAILS_SAMPLE = {k: v for k, v in _ORDER_SAMPLE.items() if k != "next_order_number"}
 
 _LIST_OTHER = {
     "discount_type": None, "discount_value": None, "revoked_by": None, "revoked_channel": None,
@@ -1949,8 +2081,9 @@ class OrderRequestListView(_OperatorView):
         ],
         responses=envelope_responses(
             (200, "ok", "Requests.", {"requests": [
-                {**_REQUEST_PENDING_SAMPLE, "customer_name": "Ahmed Al Mansoori", "details": None},
-                _LIST_CREDIT_NOTE_SAMPLE, _LIST_CARD_DISCOUNT_SAMPLE,
+                with_order_details(row, _ORDER_DETAILS_SAMPLE) for row in (
+                    {**_REQUEST_PENDING_SAMPLE, "customer_name": "Ahmed Al Mansoori", "details": None},
+                    _LIST_CREDIT_NOTE_SAMPLE, _LIST_CARD_DISCOUNT_SAMPLE)
             ], "page": 1, "pages": 1, "total": 3}),
             (400, "invalid_request", "kind must be one of: discount, complimentary, reprint, order_reprint, "
                                      "cancel, credit_note, card_discount.",
@@ -1967,10 +2100,14 @@ class OrderRequestListView(_OperatorView):
         form = OperatorRequestListRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         rows, page = order_requests.station_list(
             branch, pending_only=values["pending"], kind=values.get("kind") or None,
             from_date=values.get("from_date"), to_date=values.get("to_date"), page=values["page"],
             device=request.auth.device if values["mine"] else None)
+        # The whole order beside each row (owner, 3 Nov 2026), loaded for the page at once.
+        details = order_details_for([row["order_id"] for row in rows], zone_for(branch.company))
+        rows = [with_order_details(row, details.get(row["order_id"])) for row in rows]
         return envelope("ok", "Requests.", {"requests": rows, "page": page.number,
                                              "pages": page.paginator.num_pages, "total": page.paginator.count})
 
@@ -2009,6 +2146,7 @@ _MANAGER_SAMPLE = {
     **_REQUEST_PENDING_SAMPLE, "branch_id": 3, "station": "Creek Park 1", "requested_by": "Rashed K",
     "order": {
         "order_no": "DUBPP60182000231", "transaction_no": "DUBPP-A-12", "status": "active",
+        "order_status": "partially_received", "order_status_label": "Partially Received",
         "customer_name": "Ahmed Al Mansoori",
         "customer_mobile": "971501234567", "booked_at": "2026-10-08 16:00:00", "advance_paid": "100.000",
         "net_amount": None,
@@ -2215,6 +2353,7 @@ class ManagerRequestListView(_ManagerView):
         form = ManagerRequestListRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         rows, page = order_requests.manager_list(
             self.company_ids(request), pending_only=values["pending"], kind=values.get("kind") or None,
             state_id=values.get("state_id"), branch_id=values.get("branch_id"),
@@ -2242,7 +2381,7 @@ class ManagerRequestApproveView(_ManagerView):
     def post(self, request, app):
         return self.decide(request, app, ManagerRequestApproveRequest, lambda v, companies: order_requests.approve(
             request.user, v["request_sync_id"], companies, DecisionChannel.MANAGER,
-            v.get("discount_type"), v.get("discount_value"), v.get("note", "")), "Request approved.")
+            v.get("discount_type"), v.get("discount_value"), v.get("note") or ""), "Request approved.")
 
 
 class ManagerRequestRejectView(_ManagerView):
@@ -2260,7 +2399,7 @@ class ManagerRequestRejectView(_ManagerView):
     )
     def post(self, request, app):
         return self.decide(request, app, ManagerRequestDecisionRequest, lambda v, companies: order_requests.reject(
-            request.user, v["request_sync_id"], companies, DecisionChannel.MANAGER, v.get("note", "")),
+            request.user, v["request_sync_id"], companies, DecisionChannel.MANAGER, v.get("note") or ""),
             "Request rejected.")
 
 
@@ -2287,5 +2426,5 @@ class ManagerRequestRevokeView(_ManagerView):
     )
     def post(self, request, app):
         return self.decide(request, app, ManagerRequestDecisionRequest, lambda v, companies: order_requests.revoke(
-            request.user, v["request_sync_id"], companies, DecisionChannel.MANAGER, v.get("note", "")),
+            request.user, v["request_sync_id"], companies, DecisionChannel.MANAGER, v.get("note") or ""),
             "Approval revoked.")
