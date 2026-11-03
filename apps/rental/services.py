@@ -6,11 +6,12 @@ import json
 from datetime import timedelta
 from decimal import Decimal
 
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import F, Q
 from django.utils import timezone
 
-from apps.company.models import PaymentMode
+from apps.company.models import Company, PaymentMode
 from apps.devices import services as devices_services
 from apps.devices.models import BillKind
 from apps.discount import services as discount_services
@@ -38,7 +39,7 @@ from apps.rental.models import (
     full_number,
 )
 from core.ids import uuid7
-from core.timezones import business_date_for
+from core.timezones import business_date_for, zone_for
 
 
 def next_customer_code(company):
@@ -402,15 +403,102 @@ def stamp_block(customer, was_blocked, user, now=None):
         customer.blocked_at, customer.blocked_by = None, None
 
 
-def active_rentals(vehicle_ids):
+def active_rentals(vehicle_ids, *, except_order=None):
     """{vehicle_id: (order_no, expected_end_time)} for the vehicles in
-    `vehicle_ids` that are out on rent now -- on an active order item (one
-    per vehicle, enforced by the database). "On rent" is never stored
-    (design 5, decision 6)."""
-    rows = OrderItem.objects.filter(vehicle_id__in=vehicle_ids, status=OrderItemStatus.ACTIVE).values_list(
-        "vehicle_id", "order__order_no", "expected_end_time",
-    )
-    return {vehicle_id: (order_no, end) for vehicle_id, order_no, end in rows}
+    `vehicle_ids` that are out on rent now. "On rent" is never stored
+    (design 5, decision 6); it is where the vehicle physically is:
+
+    - on an active order item (one per vehicle, enforced by the database) --
+      unless that line's return was parked (return_pending_at): it is back;
+    - or taken out by a call parked for the office (parked_rentals): a
+      booking, an added or a replacement vehicle not on the server yet.
+
+    `except_order` leaves out that order's own parked calls -- a replay of a
+    parked booking is not refused by its own parked copy (3 Nov 2026)."""
+    rows = OrderItem.objects.filter(
+        vehicle_id__in=vehicle_ids, status=OrderItemStatus.ACTIVE, return_pending_at__isnull=True,
+    ).values_list("vehicle_id", "order__order_no", "expected_end_time")
+    rented = parked_rentals(vehicle_ids, except_order=except_order)
+    rented.update({vehicle_id: (order_no, end) for vehicle_id, order_no, end in rows})
+    return rented
+
+
+# A parked call that takes vehicles out, and where its lines are in the body.
+_TAKES_OUT = {"booking": "items", "add": "item", "replace": "new_item"}
+
+
+def _device_time(value, zone):
+    """A tablet's `YYYY-MM-DD HH:MM:SS` (company time) from a parked body, or None."""
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            return timezone.make_aware(datetime.datetime.strptime(str(value), fmt), zone)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def parked_rentals(vehicle_ids, *, except_order=None):
+    """{vehicle_id: (order_no, expected_end_time)} for vehicles taken out by
+    calls parked in Sync Issues (open ones only): a booking's lines, an added
+    vehicle, a replacement vehicle. The office has not fixed the call yet, so
+    no order line exists -- but the ride is real (31 Oct 2026: a parked
+    booking's vehicle was booked again by another tablet).
+
+    A line with a return queued behind it (an open parked return naming that
+    line) is back, so not counted. Dismissed issues never count."""
+    from apps.sync.models import IssueKind, IssueStatus, SyncIssue
+
+    wanted = set(vehicle_ids)
+    if not wanted:
+        return {}
+    issues = SyncIssue.objects.filter(status=IssueStatus.OPEN, kind__in=list(_TAKES_OUT))
+    if except_order is not None:
+        issues = issues.exclude(order_id=except_order)
+    issues = list(issues.select_related("company").only("kind", "order_id", "request_data", "company__timezone"))
+    if not issues:
+        return {}
+    returned = {
+        (order_id, str((data or {}).get("item_id")))
+        for order_id, data in SyncIssue.objects.filter(
+            status=IssueStatus.OPEN, kind=IssueKind.RETURN, order_id__in={i.order_id for i in issues},
+        ).values_list("order_id", "request_data")
+    }
+    order_nos = dict(Order.objects.filter(pk__in={i.order_id for i in issues}).values_list("pk", "order_no"))
+    booked_nos = {i.order_id: (i.request_data or {}).get("order_no") for i in issues if i.kind == IssueKind.BOOKING}
+
+    rented = {}
+    for issue in issues:
+        data = issue.request_data or {}
+        lines = data.get(_TAKES_OUT[issue.kind])
+        lines = lines if isinstance(lines, list) else [lines]
+        order_no = order_nos.get(issue.order_id) or booked_nos.get(issue.order_id) or ""
+        for line in lines:
+            if not isinstance(line, dict) or line.get("vehicle_id") not in wanted:
+                continue
+            if (issue.order_id, str(line.get("sync_id"))) in returned:
+                continue
+            end = _device_time(line.get("expected_end_time"), zone_for(issue.company)) or timezone.now()
+            rented[line["vehicle_id"]] = (order_no, end)
+    return rented
+
+
+def mark_return_pending(company_id, request_data):
+    """A return call was just parked: the vehicle is back even though the
+    return waits for the office. Marks its line (if the line is on the server
+    and still active) with the tablet's return time, so the vehicle is free
+    to book again (case B, 3 Nov 2026). A line not on the server yet -- its
+    booking is parked too -- is covered by parked_rentals instead."""
+    company = Company.objects.filter(pk=company_id).first()
+    if company is None:
+        return 0
+    at = _device_time(request_data.get("returned_at"), zone_for(company)) or timezone.now()
+    try:
+        return OrderItem.objects.filter(
+            pk=request_data.get("item_id"), order_id=request_data.get("order_id"), order__company=company,
+            status=OrderItemStatus.ACTIVE, return_pending_at__isnull=True,
+        ).update(return_pending_at=at, modified_on=timezone.now())
+    except (ValueError, ValidationError):          # an id that is not a uuid
+        return 0
 
 
 # -- Orders: booking -------------------------------------------------------------
@@ -478,7 +566,7 @@ def _book(session, values, reply_for):
     # A rental after a test ride names it: the ride is closed as rented and
     # linked to this order (legacy Save_Order_Booking:437-482, @TestNo).
     test_ride = test_rides.for_booking(session, values["test_ride_id"]) if values.get("test_ride_id") else None
-    refs = _line_refs(company, branch, items_input, test_ride=test_ride)
+    refs = _line_refs(company, branch, items_input, test_ride=test_ride, order_id=values["sync_id"])
     modes = _payment_modes(company, payments_input)
 
     order = Order.objects.create(
@@ -504,7 +592,7 @@ def _book(session, values, reply_for):
     return order, event, reply_for(order)
 
 
-def _line_refs(company, branch, items_input, *, test_ride=None):
+def _line_refs(company, branch, items_input, *, test_ride=None, order_id=None):
     """(vehicles, fares, offers) by id for new vehicle lines -- or the refusal.
     Each vehicle this company's, at this station, in the call once, not on
     another active line and not out on a test ride (but `test_ride`, the one
@@ -522,7 +610,9 @@ def _line_refs(company, branch, items_input, *, test_ride=None):
     off_station = sorted(v.pk for v in vehicles.values() if v.current_branch_id != branch.pk)
     if off_station:
         raise OrderRefused("vehicle_not_at_station", f"Vehicle {off_station[0]} is not at this station.")
-    rented = active_rentals(vehicle_list)
+    # The order's own parked calls never block it: a replay of its parked
+    # booking (or add / replace) is that very call.
+    rented = active_rentals(vehicle_list, except_order=order_id)
     if rented:
         raise OrderRefused("vehicle_already_rented", f"Vehicle {min(rented)} is already on an active rental.")
     on_test = {vehicle_id for vehicle_id, ride in test_rides.active_test_rides(vehicle_list).items()
@@ -612,6 +702,7 @@ def return_item(session, values, request_data, reply_for):
                 f"total_amount must be base_fare {item.base_fare} + overtime_amount {values['overtime_amount']}.",
             )
         item.status, item.end_time = OrderItemStatus.RETURNED, values["returned_at"]
+        item.return_pending_at = None           # its parked return, if any, is recorded now
         item.run_minutes = values["run_minutes"]
         item.overtime_amount, item.total_amount = values["overtime_amount"], values["total_amount"]
         item.modified_by = session.user
@@ -642,7 +733,7 @@ def add_item(session, values, request_data, reply_for):
     def apply():
         order = _open_order(session, values["order_id"])
         item, payments = values["item"], values.get("payments") or []
-        refs = _line_refs(order.company, session.branch, [item])
+        refs = _line_refs(order.company, session.branch, [item], order_id=order.pk)
         modes = _payment_modes(order.company, payments)
         [line] = _new_lines(order, [item], refs, session.user)
         _record_payments(session, order, payments, modes)
@@ -688,7 +779,7 @@ def replace_item(session, values, request_data, reply_for):
         old.status, old.end_time, old.reason = OrderItemStatus.REPLACED, values["replaced_at"], values["reason"]
         old.modified_by = session.user
         old.save()
-        refs = _line_refs(order.company, session.branch, [new_item])
+        refs = _line_refs(order.company, session.branch, [new_item], order_id=order.pk)
         [line] = _new_lines(order, [new_item], refs, session.user, replaced_item=old)
         event = {
             "action": OrderAction.REPLACE, "item": old, "new_item": line, "happened_at": values["replaced_at"],

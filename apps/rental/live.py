@@ -123,9 +123,27 @@ def _last(order, events, zone):
     return "Booked", order.booked_at
 
 
+def _out(item):
+    """The vehicle is physically out: an active line whose return was not
+    parked (a parked return means it is back, awaiting correction)."""
+    return item.status == OrderItemStatus.ACTIVE and item.return_pending_at is None
+
+
+def _vehicle(item, zone):
+    pending = item.status == OrderItemStatus.ACTIVE and item.return_pending_at is not None
+    end = item.return_pending_at if pending else item.end_time
+    return {
+        "no": item.vehicle.vehicle_name, "state": "back" if pending else ITEM_STATE[item.status],
+        "start": f"{_local(item.start_time, zone):%H:%M}",
+        "end": f"{_local(end, zone):%H:%M}" if end else None,
+        "due": f"{_local(item.expected_end_time, zone):%H:%M}" if item.expected_end_time else None,
+        "note": "return awaiting correction" if pending else "",
+    }
+
+
 def row(order, zone):
     items, events = list(order.items.all()), list(order.events.all())
-    active = [i for i in items if i.status == OrderItemStatus.ACTIVE]
+    active = [i for i in items if _out(i)]
     last_label, last_at = _last(order, events, zone)
     ends = [i.expected_end_time for i in active]
     booked, start = _local(order.booked_at, zone), _local(order.start_time, zone)
@@ -141,12 +159,7 @@ def row(order, zone):
         "emirate": order.branch.location.state.name,
         "customer": order.customer_name or "—",
         "mobile": order.customer_mobile,
-        "vehicles": [{
-            "no": i.vehicle.vehicle_name, "state": ITEM_STATE[i.status],
-            "start": f"{_local(i.start_time, zone):%H:%M}",
-            "end": f"{_local(i.end_time, zone):%H:%M}" if i.end_time else None,
-            "due": f"{_local(i.expected_end_time, zone):%H:%M}" if i.expected_end_time else None,
-        } for i in items],
+        "vehicles": [_vehicle(i, zone) for i in items],
         "out": len(active),
         "back": sum(1 for i in items if i.status == OrderItemStatus.RETURNED),
         "start": order.start_time.isoformat(),
@@ -188,7 +201,8 @@ def kpis(user, params, day, zone):
     refunded = payments.filter(kind=PaymentKind.REFUND).aggregate(t=Sum("amount"))["t"] or ZERO
     booked = orders.filter(booked_at__gte=start, booked_at__lt=end)
     return {
-        "vehicles": OrderItem.objects.filter(order__in=orders, status=OrderItemStatus.ACTIVE).count(),
+        "vehicles": OrderItem.objects.filter(order__in=orders, status=OrderItemStatus.ACTIVE,
+                                             return_pending_at__isnull=True).count(),
         "running": orders.filter(status=OrderStatus.ACTIVE).count(),
         "today": booked.count(),
         "cancelled": orders.filter(status=OrderStatus.CANCELLED, cancelled_at__gte=start, cancelled_at__lt=end).count(),
