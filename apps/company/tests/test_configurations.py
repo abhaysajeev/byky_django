@@ -166,3 +166,24 @@ def test_a_chosen_range_wins_over_the_day_start():
     f = Filters({"from": "2026-11-01T00:00", "to": "2026-11-01T23:59"}, REPORT, DUBAI, now,
                 day_start=datetime.time(4, 0))
     assert f.start == datetime.datetime(2026, 11, 1, 0, 0)
+
+
+# -- a system user follows the only company (owner, 3 Nov 2026) --------------------------------
+
+
+def test_a_system_user_follows_the_only_company(world):
+    from apps.company.models import Company
+    from core.enums import UserScope
+    from core.models import User
+
+    admin = User.objects.create_user("root.admin", "Byky#2026", scope=UserScope.SYSTEM)
+    assert money.company_for_user(admin) is None              # two companies: no single answer
+    Company.objects.filter(pk=world["other"].pk).delete()
+    assert money.company_for_user(admin) == world["company"]
+
+
+def test_a_company_user_keeps_their_own_company(world):
+    from core.models import User
+
+    user = User.objects.create_user("own.user", "Byky#2026", company=world["other"])
+    assert money.company_for_user(user) == world["other"]

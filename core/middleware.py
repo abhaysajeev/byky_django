@@ -101,7 +101,8 @@ class MoneyMiddleware:
     def __call__(self, request):
         from core import money
 
-        company = getattr(getattr(request, "user", None), "company", None)
+        # A system user (no company) follows the only company, when there is one.
+        company = money.company_for_user(getattr(request, "user", None))
         token = money.activate(money.money_for(company) if company is not None else None)
         try:
             return self.get_response(request)
