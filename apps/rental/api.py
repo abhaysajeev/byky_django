@@ -361,7 +361,8 @@ def _discount_json(order):
         claim = order.discount_claim
         source, request_id = "card", str(claim.pk) if claim.requires_approval else None
     else:
-        applied = order.requests.filter(applied_at__isnull=False).first()
+        # Read from the loaded requests (a list page prefetches them).
+        applied = next((r for r in order.requests.all() if r.applied_at is not None), None)
         if applied is None:
             return None
         source = "complimentary" if applied.kind == "complimentary" else "manager"
@@ -390,6 +391,41 @@ def order_json(order, *, zone, next_order_number):
     items = list(order.items.select_related("vehicle").order_by("start_time", "created_on"))
     payments = list(order.payments.select_related("mode").order_by("paid_at", "created_on"))
     invoice = Invoice.objects.select_related("issued_by").filter(order_id=order.pk).first()
+    return {**_order_body(order, zone, items, payments, invoice), "next_order_number": next_order_number}
+
+
+def order_details_for(order_ids, zone):
+    """{order_id: the orders/detail body} for many orders at once -- the
+    operator's request list (owner, 3 Nov 2026). One query for the orders and
+    one per related table, however many orders: no next_order_number (that is
+    the asking tablet's counter, not the order's)."""
+    from django.db.models import Prefetch
+
+    from apps.rental.models import Order, OrderItem, Payment
+
+    orders = (
+        Order.objects.filter(pk__in=set(order_ids))
+        .select_related("created_by", "discount_claim", "invoice__issued_by")
+        .prefetch_related(
+            Prefetch("items", queryset=OrderItem.objects.select_related("vehicle").order_by("start_time",
+                                                                                              "created_on")),
+            Prefetch("payments", queryset=Payment.objects.select_related("mode").order_by("paid_at", "created_on")),
+            "requests", "test_rides",
+        )
+    )
+    details = {}
+    for order in orders:
+        try:
+            invoice = order.invoice
+        except Invoice.DoesNotExist:
+            invoice = None
+        details[str(order.pk)] = _order_body(order, zone, list(order.items.all()), list(order.payments.all()),
+                                             invoice)
+    return details
+
+
+def _order_body(order, zone, items, payments, invoice):
+    """Everything order_json answers with but the tablet's receipt counter."""
     return {
         "sync_id": str(order.pk), "order_no": order.order_no, "transaction_no": order.transaction_no,
         "status": order.status, "payment_status": order.payment_status,
@@ -452,7 +488,6 @@ def order_json(order, *, zone, next_order_number):
         # The customer's rating at settle and what they said; null while running.
         "star_rating": _rating(invoice.star_rating) if invoice else None,
         "rating_remarks": (invoice.rating_remarks or None) if invoice else None,
-        "next_order_number": next_order_number,
     }
 
 
@@ -1952,6 +1987,14 @@ Every row has the **same fields**, whatever its kind:
   the credit note's id (`credit_note_id`), or the card discount's sync_id.
 - `order_id`, `order_no`, `customer_name`, `kind`, `status`, `reason`,
   `requested_at`.
+- `order_details` -- right after `order_no`: **the whole order**, exactly as
+  `orders/detail` returns it but without `next_order_number` (that is this
+  tablet's receipt counter, not the order's). Its status and display status,
+  customer, times, the bill once settled (`subtotal`, `discount`, VAT,
+  `net_amount`, `invoice`, rating), money taken (`paid_amount`, `balance_due`),
+  every vehicle line -- replaced and removed ones too -- with its fare
+  details, and every payment. On every row, whatever its kind. Money uses the
+  company's decimals.
 - `decided_by`, `decided_channel` (`web` / `manager`), `decided_at`,
   `decision_note` (a credit note's decision remark, a card discount's remarks).
 - Order-request fields -- `discount_type`, `discount_value`, `revoked_*`,
@@ -1979,6 +2022,20 @@ a reinstall, the card discounts it sent before no longer count as its own.
 Read-only.
 """
 
+
+def with_order_details(row, details):
+    """`row` with `order_details` placed right after `order_no`; nothing else moves."""
+    out = {}
+    for key, value in row.items():
+        out[key] = value
+        if key == "order_no":
+            out["order_details"] = details
+    return out
+
+
+# The orders/detail sample without the tablet's receipt counter: what
+# `order_details` carries in a request-list row.
+_ORDER_DETAILS_SAMPLE = {k: v for k, v in _ORDER_SAMPLE.items() if k != "next_order_number"}
 
 _LIST_OTHER = {
     "discount_type": None, "discount_value": None, "revoked_by": None, "revoked_channel": None,
@@ -2024,8 +2081,9 @@ class OrderRequestListView(_OperatorView):
         ],
         responses=envelope_responses(
             (200, "ok", "Requests.", {"requests": [
-                {**_REQUEST_PENDING_SAMPLE, "customer_name": "Ahmed Al Mansoori", "details": None},
-                _LIST_CREDIT_NOTE_SAMPLE, _LIST_CARD_DISCOUNT_SAMPLE,
+                with_order_details(row, _ORDER_DETAILS_SAMPLE) for row in (
+                    {**_REQUEST_PENDING_SAMPLE, "customer_name": "Ahmed Al Mansoori", "details": None},
+                    _LIST_CREDIT_NOTE_SAMPLE, _LIST_CARD_DISCOUNT_SAMPLE)
             ], "page": 1, "pages": 1, "total": 3}),
             (400, "invalid_request", "kind must be one of: discount, complimentary, reprint, order_reprint, "
                                      "cancel, credit_note, card_discount.",
@@ -2047,6 +2105,9 @@ class OrderRequestListView(_OperatorView):
             branch, pending_only=values["pending"], kind=values.get("kind") or None,
             from_date=values.get("from_date"), to_date=values.get("to_date"), page=values["page"],
             device=request.auth.device if values["mine"] else None)
+        # The whole order beside each row (owner, 3 Nov 2026), loaded for the page at once.
+        details = order_details_for([row["order_id"] for row in rows], zone_for(branch.company))
+        rows = [with_order_details(row, details.get(row["order_id"])) for row in rows]
         return envelope("ok", "Requests.", {"requests": rows, "page": page.number,
                                              "pages": page.paginator.num_pages, "total": page.paginator.count})
 
