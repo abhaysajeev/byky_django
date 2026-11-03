@@ -29,7 +29,9 @@ def test_the_station_lists_its_requests_newest_first(client, token, manager, boo
     assert (row["status"], row["customer_name"], row["order_no"]) == ("approved", "Ahmed Al Mansoori",
                                                                       booked["order_no"])
     assert (data["page"], data["pages"], data["total"]) == (1, 1, 1)
-    assert shape(row) == shape({**api._REQUEST_APPROVED_SAMPLE, "customer_name": "", "details": None})
+    # order_details (the whole order) is checked in test_order_requests_list_order_details.py.
+    assert shape({k: v for k, v in row.items() if k != "order_details"}) == shape(
+        {**api._REQUEST_APPROVED_SAMPLE, "customer_name": "", "details": None})
 
 
 def test_pending_and_kind_narrow_the_list(client, token, manager, booked):
