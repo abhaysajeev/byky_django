@@ -41,6 +41,7 @@ from apps.rental.models import (
     OrderStatus,
     PaymentKind,
 )
+from core import money
 from core.ordering import recent_first
 from core.timezones import business_date_for, zone_for
 from theme import drawers as theme_drawers
@@ -256,7 +257,8 @@ def _status(value):
 
 
 def _aed(value):
-    return f"AED {value:,.3f}" if value is not None else None
+    """AED with the company's decimals (core/money.py, CR1)."""
+    return f"AED {money.quantize(value):,}" if value is not None else None
 
 
 def _day_bounds(day, zone):
@@ -513,7 +515,7 @@ def _rate(amount, minutes):
     concurrent values are optional)."""
     if amount is None or not minutes:
         return "—"
-    return f"{amount:.3f}/{minutes} MINS"
+    return f"{money.fmt(amount)}/{minutes} MINS"
 
 
 def _receipt(invoice, zone):

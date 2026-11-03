@@ -38,6 +38,7 @@ from apps.rental.models import (
     Payment,
     PaymentKind,
 )
+from core import money
 from core.enums import ApprovalStatus
 
 TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
@@ -63,7 +64,8 @@ def _local(moment, zone):
 
 
 def _money(value):
-    return str(value if value is not None else ZERO)
+    """Money as text with the company's decimals (core/money.py, CR1); none is 0."""
+    return money.fmt(value if value is not None else ZERO)
 
 
 # -- Masters ------------------------------------------------------------------------
@@ -384,7 +386,7 @@ def _order_json(order, zone, now):
         "advance_paid": _money(order.paid_amount),
         "invoice_no": invoice.invoice_no if invoice else None,
         "credit_note": {"credit_note_no": note.credit_note_no or None, "status": note.status,
-                        "net_amount": str(note.net_amount) if note.net_amount is not None else None}
+                        "net_amount": money.fmt(note.net_amount)}
         if note else None,
         "vehicles": [
             {"vehicle_id": i.vehicle_id, "vehicle_name": i.vehicle.vehicle_name,
@@ -396,7 +398,7 @@ def _order_json(order, zone, now):
             for i in sorted(order.items.all(), key=lambda i: i.start_time)
         ],
         "payments": [
-            {"mode": p.mode.name, "kind": p.kind, "amount": str(p.amount), "reference_no": p.reference_no,
+            {"mode": p.mode.name, "kind": p.kind, "amount": money.fmt(p.amount), "reference_no": p.reference_no,
              "paid_at": _local(p.paid_at, zone)}
             for p in sorted(order.payments.all(), key=lambda p: (p.paid_at, p.created_on))
         ],

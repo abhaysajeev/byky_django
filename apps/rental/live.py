@@ -26,6 +26,7 @@ from apps.rental.models import (
     Payment,
     PaymentKind,
 )
+from core import money as core_money
 from core.realtime import publish
 
 ZERO = Decimal("0")
@@ -98,8 +99,8 @@ def with_rows(orders):
 
 
 def _money(value):
-    """AED to the 3rd decimal, as stored and billed (rental.models.MONEY)."""
-    return f"{value:.3f}" if value is not None else None
+    """Money with the company's decimals (core/money.py, CR1)."""
+    return core_money.fmt(value)
 
 
 def _local(moment, zone):
@@ -209,7 +210,7 @@ def kpis(user, params, day, zone):
         "running": orders.filter(status=OrderStatus.ACTIVE).count(),
         "today": booked.count(),
         "cancelled": orders.filter(status=OrderStatus.CANCELLED, cancelled_at__gte=start, cancelled_at__lt=end).count(),
-        "collected": f"{taken - refunded:,.3f}",
+        "collected": f"{core_money.quantize(taken - refunded):,}",
     }
 
 

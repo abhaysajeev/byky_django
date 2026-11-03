@@ -12,6 +12,7 @@ show, and checks what comes in. The database keeps 3 places, so 2 and 3 both
 fit.
 """
 
+from contextvars import ContextVar
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -30,6 +31,28 @@ class Money:
 
 
 DEFAULT = Money()
+
+# The setting for this request: set once by MoneyMiddleware (web, from the
+# signed-in company) and by the app token's authentication (the session's
+# station, else the company), so the format helpers need not be told.
+# Outside a request -- tasks, the shell -- it stays DEFAULT.
+_current = ContextVar("byky_money", default=DEFAULT)
+
+
+def activate(setting):
+    return _current.set(setting or DEFAULT)
+
+
+def reset(token):
+    _current.reset(token)
+
+
+def current():
+    return _current.get()
+
+
+def current_places():
+    return _current.get().decimal_places
 
 
 def _country_id(company, branch):
@@ -62,16 +85,18 @@ def _exp(places):
     return Decimal(1).scaleb(-places)
 
 
-def quantize(value, places=DEFAULT_PLACES):
-    """`value` to `places` decimals, half up. None stays None."""
+def quantize(value, places=None):
+    """`value` to `places` decimals (default: this request's), half up. None
+    stays None."""
     if value is None:
         return None
+    places = current_places() if places is None else places
     return Decimal(value).quantize(_exp(places), rounding=ROUND_HALF_UP)
 
 
-def fmt(value, places=DEFAULT_PLACES):
-    """`value` as a string with exactly `places` decimals ("75.00"); None
-    stays None."""
+def fmt(value, places=None):
+    """`value` as a string with exactly `places` decimals ("75.00"; default:
+    this request's); None stays None."""
     if value is None:
         return None
     return str(quantize(value, places))
@@ -121,3 +146,42 @@ def check_round_off(net, adjustment, money):
     if mode == "nearest" and abs(adjustment) > step / 2:
         return f"rounding_adjustment must be within half a step ({fmt(step / 2, money.decimal_places + 1)}) (nearest)."
     return None
+
+
+# -- Incoming amounts (CR1) ------------------------------------------------------------
+# A money field is a serializer DecimalField with 3 decimal places (the
+# database's): percentages (2) and star ratings are left alone. With the
+# company on 2 decimals, "75.255" is refused rather than silently cut.
+
+
+def _too_precise(field, value, places, path):
+    from rest_framework import serializers
+
+    if value is None:
+        return []
+    if isinstance(field, serializers.ListSerializer | serializers.ListField):
+        return [hit for i, item in enumerate(value)
+                for hit in _too_precise(field.child, item, places, f"{path}[{i}]")]
+    if isinstance(field, serializers.Serializer):
+        found = []
+        for name, child in field.fields.items():
+            if isinstance(value, dict) and name in value:
+                found += _too_precise(child, value[name], places, f"{path}.{name}" if path else name)
+        return found
+    if (isinstance(field, serializers.DecimalField) and field.decimal_places == DEFAULT_PLACES
+            and isinstance(value, Decimal) and places_of(value) > places):
+        return [path]
+    return []
+
+
+def refuse_too_precise(form, values=None, places=None):
+    """Raise a DRF ValidationError for any money field in a validated `form`
+    with more decimals than this request's setting allows."""
+    from rest_framework.exceptions import ValidationError
+
+    places = current_places() if places is None else places
+    if places >= DEFAULT_PLACES:
+        return
+    found = _too_precise(form, form.validated_data if values is None else values, places, "")
+    if found:
+        raise ValidationError({path: [f"must have at most {places} decimal places"] for path in found})

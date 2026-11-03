@@ -1,5 +1,6 @@
 {% extends layout_path %}
 {% load static %}
+{% load money %}
 
 {% block title %}{{ req.get_kind_display }} request {{ order.order_no }} - Rental{% endblock title %}
 
@@ -82,7 +83,7 @@
           <div class="scr-detail-row"><span class="scr-detail-label">Printed</span><span class="scr-detail-value">{{ used_at|date:"d M Y, H:i" }} · by the tablet</span></div>
           {% endif %}
           {% if req.applied_at %}
-          <div class="scr-detail-row"><span class="scr-detail-label">Applied</span><span class="scr-detail-value">AED {{ req.applied_amount }} · at settle, {{ applied_at|date:"d M Y, H:i" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Applied</span><span class="scr-detail-value">AED {{ req.applied_amount|money }} · at settle, {{ applied_at|date:"d M Y, H:i" }}</span></div>
           {% endif %}
         </div>
       </div>
@@ -94,9 +95,9 @@
         <div class="scr-detail-rows">
           <div class="scr-detail-row"><span class="scr-detail-label">Order</span><span class="scr-detail-value"><a class="scr-link-blue" href="{{ order_url }}">{{ order.order_no }}</a> · {{ booked_at|date:"d M Y, H:i" }}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Customer</span><span class="scr-detail-value">{{ order.customer_name|default:"—" }}{% if order.customer_mobile %} · {{ order.customer_mobile }}{% endif %}</span></div>
-          <div class="scr-detail-row"><span class="scr-detail-label">Advance Paid</span><span class="scr-detail-value">AED {{ order.paid_amount }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Advance Paid</span><span class="scr-detail-value">AED {{ order.paid_amount|money }}</span></div>
           {% if order.net_amount is not None %}
-          <div class="scr-detail-row"><span class="scr-detail-label">Bill</span><span class="scr-detail-value">Subtotal AED {{ order.subtotal }} · discount AED {{ order.discount_amount }} · net AED {{ order.net_amount }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Bill</span><span class="scr-detail-value">Subtotal AED {{ order.subtotal|money }} · discount AED {{ order.discount_amount|money }} · net AED {{ order.net_amount|money }}</span></div>
           {% endif %}
         </div>
       </div>

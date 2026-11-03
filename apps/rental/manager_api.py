@@ -43,6 +43,7 @@ from apps.rental.serializers import (
     ManagerVehiclesRequest,
     ManagerVehicleTypesRequest,
 )
+from core import money
 from core.api import envelope, manager_only, request_parts
 from core.schema import SERVER_ERROR, envelope_request, envelope_responses
 from core.timezones import zone_for
@@ -83,6 +84,7 @@ class _ManagerView(APIView):
         _, request_data = request_parts(request)
         form = self.form_class(data=request_data)
         form.is_valid(raise_exception=True)
+        money.refuse_too_precise(form)
         companies = list(companies_for(request.user).values_list("id", flat=True))
         return form.validated_data, companies, zone_for(getattr(request.user, "company", None)), None
 

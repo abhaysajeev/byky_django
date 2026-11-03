@@ -26,6 +26,7 @@ from apps.discount.serializers import (
 from apps.portal.authentication import AppJWTAuthentication
 from apps.sync import parking
 from apps.sync.models import IssueKind
+from core import money
 from core.api import envelope, request_parts, session_station, station_of
 from core.enums import Channel
 from core.schema import SERVER_ERROR, envelope_request, envelope_responses
@@ -330,6 +331,7 @@ class ApprovalRequestView(APIView):
             return refused
         form = ApprovalRequest(data=request_data)
         form.is_valid(raise_exception=True)
+        money.refuse_too_precise(form)
         values = dict(form.validated_data)
         values["requested_at"] = timezone.make_aware(values["requested_at"], zone_for(branch.company))
 
@@ -379,7 +381,7 @@ company time.
 
 def _amount(value):
     """Money: AED to the 3rd decimal."""
-    return None if value is None else f"{value:.3f}"
+    return money.fmt(value)
 
 
 def _percent(value):

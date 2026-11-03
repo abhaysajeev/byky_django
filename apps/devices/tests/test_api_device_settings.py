@@ -40,7 +40,7 @@ def test_it_returns_the_same_block_as_login(client, app_user, device, world):
     assert body["code"] == "ok"
     assert body["data"] == {key: login[key] for key in (
         "device_settings", "order_no_prefix", "last_order_no", "next_order_number", "next_test_number",
-        "transaction_no_prefix", "last_transaction_no")}
+        "transaction_no_prefix", "last_transaction_no", "money")}
     # The Swagger example shortens device_settings, as login's does; the rest is exact.
     assert set(body["data"]) == set(api._SETTINGS_SAMPLE)
     assert set(api._SETTINGS_SAMPLE["device_settings"]) <= set(body["data"]["device_settings"])

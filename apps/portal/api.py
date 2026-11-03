@@ -36,6 +36,7 @@ from apps.portal.serializers import (
     ServerTimeRequest,
 )
 from apps.portal.session_models import AppSession, LogoutReason
+from core import money
 from core.api import PublicAPIView, envelope, request_parts
 from core.enums import Channel
 from core.network import client_ip
@@ -110,6 +111,8 @@ def _employee_login(request, form, push_token=None):
         "tokens": _issue_tokens(user, session, push_token=push_token),
         "employee": crew_services.employee_profile(employee),
         "roster": crew_services.current_week_roster(employee),
+        # How money is written for the company's country (Configurations, CR1).
+        "money": money.money_for(user.company).as_json(),
     }
     return envelope("ok", f"Welcome, {employee.full_name}.", data)
 
@@ -149,7 +152,7 @@ def _operator_login(request, form, push_token=None):
             "name": branch.name,
             "branch_code": branch.short_code,
             "is_hotel": branch.is_hotel,
-            "hotel_commission": str(branch.hotel_commission),
+            "hotel_commission": money.fmt(branch.hotel_commission, money.places_for(branch.company, branch)),
             "accepts_app_payment": branch.accepts_app_payment,
             "is_multi_device": branch.is_multi_device,
             "allows_test_ride": branch.allows_test_ride,
@@ -185,6 +188,7 @@ def _manager_login(request, form, push_token=None):
     data = {
         "tokens": _issue_tokens(user, session, push_token=push_token),
         "employee": crew_services.employee_profile(employee, Channel.MANAGER),
+        "money": money.money_for(user.company).as_json(),
     }
     return envelope("ok", f"Welcome, {employee.full_name}.", data)
 
@@ -226,6 +230,7 @@ _EMPLOYEE_LOGIN_SUCCESS_DATA = {
         "attendance_method": "qr_station", "team_scope": "own",
     },
     "roster": _ROSTER_SAMPLE,
+    "money": {"decimal_places": 2, "round_off_mode": "upward", "round_off_step": "0.25"},
 }
 
 _OPERATOR_LOGIN_SUCCESS_DATA = {
@@ -246,6 +251,7 @@ _OPERATOR_LOGIN_SUCCESS_DATA = {
     },
     "order_no_prefix": "AUH01", "last_order_no": "AUH0160182000334", "next_order_number": 335, "next_test_number": 6,
     "transaction_no_prefix": "AUH01-A", "last_transaction_no": "AUH01-A-12",
+    "money": {"decimal_places": 2, "round_off_mode": "upward", "round_off_step": "0.25"},
 }
 
 _MANAGER_LOGIN_SUCCESS_DATA = {
@@ -262,6 +268,7 @@ _MANAGER_LOGIN_SUCCESS_DATA = {
         "can_approve_leave": True,
         "attendance_method": "self", "team_scope": "company",
     },
+    "money": {"decimal_places": 2, "round_off_mode": "upward", "round_off_step": "0.25"},
 }
 
 

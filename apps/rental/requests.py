@@ -52,6 +52,7 @@ from apps.rental.models import (
     OrderStatus,
 )
 from apps.rental.services import OrderRefused, _open_order, lock_order, run_once
+from core import money
 from core.enums import Channel
 from core.timezones import zone_for
 
@@ -131,7 +132,7 @@ def request_json(req, zone):
         "revoked_channel": req.revoked_channel or None,
         "revoked_at": _local(req.revoked_at, zone),
         "revoke_note": req.revoke_note,
-        "applied_amount": str(req.applied_amount) if req.applied_amount is not None else None,
+        "applied_amount": money.fmt(req.applied_amount),
         "applied_at": _local(req.applied_at, zone),
         "used_at": _local(req.used_at, zone),
     }
@@ -379,7 +380,7 @@ def _credit_note_row(note, zone):
         requested_at=note.requested_at, decided_by=note.decided_by, decided_channel=note.decided_channel,
         decided_at=note.decided_at, note=note.decision_remark,
         details={"credit_note_no": note.credit_note_no or None,
-                 "net_amount": str(note.net_amount) if approved else None},
+                 "net_amount": money.fmt(note.net_amount) if approved else None},
     )
 
 
@@ -589,6 +590,12 @@ def _lines(order, zone, now):
 
 
 def _money(value):
+    """Money as text with the company's decimals (core/money.py, CR1)."""
+    return money.fmt(value)
+
+
+def _percent(value):
+    """A percentage as stored (2 decimals): not money, so not the company's decimals."""
     return str(value) if value is not None else None
 
 
@@ -607,7 +614,7 @@ def _billing(order, zone):
     return {
         "fare_amount": _money(money.fare(order)), "deposit_amount": _money(money.deposit(order)),
         "amount_received": _money(order.amount_received), "amount_refunded": _money(order.amount_refunded),
-        "tax_percentage": _money(tax_percentage),
+        "tax_percentage": _percent(tax_percentage),
         "tax_amount": _money(invoice.tax_amount) if invoice else None,
         "bill_amount": _money(invoice.net_amount) if invoice else None,
         "closed_by": _name(invoice.issued_by) if invoice else None,

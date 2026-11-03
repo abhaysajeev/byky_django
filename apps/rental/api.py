@@ -58,6 +58,7 @@ from apps.rental.serializers import (
 )
 from apps.sync import parking
 from apps.sync.models import IssueKind
+from core import money
 from core.api import envelope, manager_only, request_parts, session_station, station_of
 from core.enums import Channel
 from core.schema import SERVER_ERROR, envelope_request, envelope_responses
@@ -310,6 +311,12 @@ def _local(moment, zone):
 
 
 def _money(value):
+    """Money as text with the company's decimals (core/money.py, CR1)."""
+    return money.fmt(value)
+
+
+def _percent(value):
+    """A percentage as stored (2 decimals): not money, so not the company's decimals."""
     return str(value) if value is not None else None
 
 
@@ -334,10 +341,10 @@ def invoice_json(invoice, zone):
             for item in sorted(invoice.items.all(), key=lambda line: line.start_time)
         ],
         "subtotal": _money(invoice.subtotal),
-        "discount_percentage": _money(invoice.discount_percentage),
+        "discount_percentage": _percent(invoice.discount_percentage),
         "discount_amount": _money(invoice.discount_amount),
         "discount_source": invoice.discount_source or None,
-        "tax_percentage": _money(invoice.tax_percentage), "tax_amount": _money(invoice.tax_amount),
+        "tax_percentage": _percent(invoice.tax_percentage), "tax_amount": _money(invoice.tax_amount),
         "rounding_adjustment": _money(invoice.rounding_adjustment),
         "net_amount": _money(invoice.net_amount),
         "payments": invoice.payments,
@@ -361,7 +368,7 @@ def _discount_json(order):
         request_id = str(applied.pk)
     return {
         "source": source, "request_sync_id": request_id,
-        "discount_percentage": _money(order.discount_percentage), "discount_amount": _money(order.discount_amount),
+        "discount_percentage": _percent(order.discount_percentage), "discount_amount": _money(order.discount_amount),
     }
 
 
@@ -402,7 +409,7 @@ def order_json(order, *, zone, next_order_number):
         # The bill: null until settle.
         "subtotal": _money(order.subtotal),
         "discount": _discount_json(order),
-        "tax_percentage": _money(order.tax_percentage), "tax_amount": _money(order.tax_amount),
+        "tax_percentage": _percent(order.tax_percentage), "tax_amount": _money(order.tax_amount),
         "rounding_adjustment": _money(order.rounding_adjustment), "net_amount": _money(order.net_amount),
         # Money collected, from booking on; balance_due null until settle.
         "amount_received": _money(order.amount_received), "amount_refunded": _money(order.amount_refunded),
@@ -678,6 +685,7 @@ class OrderCreateView(_OperatorView):
             services.count_receipt(session, request_data.get("order_no"))
             raise ValidationError(form.errors)
         values = form.validated_data
+        money.refuse_too_precise(form)
 
         zone = zone_for(branch.company)
         for key in ("booked_at", "start_time"):
@@ -905,6 +913,7 @@ class InvoiceDetailView(_OperatorView):
         form = InvoiceDetailRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         invoice = services.invoice_at_station(branch, order_id=values.get("order_id"),
                                               invoice_no=values.get("invoice_no"))
         if invoice is None:
@@ -1011,6 +1020,7 @@ class OrderReturnView(_OperatorView):
         form = OrderReturnRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         zone = zone_for(branch.company)
         values["returned_at"] = timezone.make_aware(values["returned_at"], zone)
 
@@ -1026,6 +1036,7 @@ class OrderReturnView(_OperatorView):
 
 _SETTLE_ERRORS = (
     "order_not_synced", "sync_id_conflict", "order_closed", "items_still_out", "amount_mismatch",
+    "rounding_mismatch",
     "balance_not_settled", "unknown_card_claim", "card_discount_revoked", "card_claim_not_approved",
     "unknown_card_discount",
     "unknown_discount_request", "discount_request_not_approved", "discount_mismatch",
@@ -1185,6 +1196,7 @@ class OrderSettleView(_OperatorView):
         form = OrderSettleRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         zone = zone_for(branch.company)
         values["settled_at"] = timezone.make_aware(values["settled_at"], zone)
         for payment in values.get("payments") or []:
@@ -1312,6 +1324,7 @@ class _ChangeView(_OperatorView):
         form = self.form_class(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         zone = zone_for(branch.company)
         for key in self.times:
             values[key] = timezone.make_aware(values[key], zone)
@@ -1585,6 +1598,7 @@ class CreditNoteRequestView(_OperatorView):
         form = CreditNoteRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         values["requested_at"] = timezone.make_aware(values["requested_at"], zone_for(branch.company))
         try:
             data, done = credit_notes.request_credit_note(session, values, request_data)
@@ -1624,6 +1638,7 @@ class CreditNoteCancelView(_OperatorView):
         form = CreditNoteCancelRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         values["cancelled_at"] = timezone.make_aware(values["cancelled_at"], zone_for(branch.company))
         try:
             data, done = credit_notes.cancel_credit_note(session, values, request_data)
@@ -1808,6 +1823,7 @@ class OrderRequestView(_OperatorView):
         form = OrderRequestCreateRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         values["requested_at"] = timezone.make_aware(values["requested_at"], zone_for(branch.company))
         try:
             data, done = order_requests.create_request(session, values, request_data)
@@ -1846,6 +1862,7 @@ class OrderRequestWithdrawView(_OperatorView):
         form = OrderRequestWithdrawRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         values["withdrawn_at"] = timezone.make_aware(values["withdrawn_at"], zone_for(branch.company))
         try:
             data, done = order_requests.withdraw(session, values, request_data)
@@ -1885,6 +1902,7 @@ class OrderRequestUsedView(_OperatorView):
         form = OrderRequestUsedRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         values["used_at"] = timezone.make_aware(values["used_at"], zone_for(branch.company))
         try:
             data, done = order_requests.mark_used(session, values, request_data)
@@ -2024,6 +2042,7 @@ class OrderRequestListView(_OperatorView):
         form = OperatorRequestListRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         rows, page = order_requests.station_list(
             branch, pending_only=values["pending"], kind=values.get("kind") or None,
             from_date=values.get("from_date"), to_date=values.get("to_date"), page=values["page"],
@@ -2273,6 +2292,7 @@ class ManagerRequestListView(_ManagerView):
         form = ManagerRequestListRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         rows, page = order_requests.manager_list(
             self.company_ids(request), pending_only=values["pending"], kind=values.get("kind") or None,
             state_id=values.get("state_id"), branch_id=values.get("branch_id"),

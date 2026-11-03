@@ -38,6 +38,7 @@ from apps.rental.models import (
     PaymentKind,
     full_number,
 )
+from core import money
 from core.ids import uuid7
 from core.timezones import business_date_for, zone_for
 
@@ -142,6 +143,8 @@ ORDER_ERRORS = {
     "invalid_time": (400, "That time is before the vehicle's start time.", False),
     "items_still_out": (409, "Every vehicle must be returned before the order is settled.", False),
     "amount_mismatch": (400, "The amounts do not add up.", False),
+    # The bill's round-off does not follow the company's money settings (CR1).
+    "rounding_mismatch": (400, "The round-off does not follow the money settings.", False),
     "balance_not_settled": (409, "The bill is not paid in full.", False),
     "unknown_card_claim": (404, "That card-discount request is not on this order.", False),
     "card_discount_revoked": (409, "That card-discount approval was revoked. Bill without it.", False),
@@ -945,6 +948,13 @@ def settle_order(session, values, request_data, reply_for):
                 f"net_amount must be subtotal - discount_amount + rounding_adjustment = {expected_net} "
                 f"(VAT is included in the fares, not added).",
             )
+        # The company's round-off (Configurations, CR1): checked once its
+        # money settings are saved; before that the bill is taken as sent.
+        setting = money.money_for(order.company, order.branch)
+        if setting is not money.DEFAULT:
+            problem = money.check_round_off(values["net_amount"], values["rounding_adjustment"], setting)
+            if problem:
+                raise OrderRefused("rounding_mismatch", problem)
 
         approval = order_requests.check_at_settle(order, values)
         if not card:

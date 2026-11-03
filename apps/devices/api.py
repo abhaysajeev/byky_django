@@ -269,6 +269,8 @@ _SETTINGS_SAMPLE = {
     "next_test_number": 6,
     "transaction_no_prefix": "DUBPP-A",
     "last_transaction_no": "DUBPP-A-12",
+    # The station's country's money settings (Configurations, CR1).
+    "money": {"decimal_places": 2, "round_off_mode": "upward", "round_off_step": "0.25"},
 }
 
 _SETTINGS_DESCRIPTION = """

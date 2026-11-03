@@ -36,6 +36,7 @@ from apps.fare.models import (
     SlabDay,
 )
 from apps.fare.pricing import Issue
+from core import money
 
 MAX_MINUTES = 1440
 TIME = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
@@ -143,8 +144,10 @@ class _Reader:
             return self.fail(key, where, "Enter an amount, such as 50.00.")
         if amount < 0:
             return self.fail(key, where, "The amount cannot be negative.")
-        if amount.as_tuple().exponent < -3 and amount != amount.quantize(CENTS):
-            return self.fail(key, where, "Use at most three decimal places.")
+        # The company's decimals (core/money.py, CR1): 2 or 3.
+        places = money.current_places()
+        if money.places_of(amount) > places:
+            return self.fail(key, where, f"Use at most {'two' if places == 2 else 'three'} decimal places.")
         if amount > MAX_MONEY:
             return self.fail(key, where, "That amount is too large.")
         return amount.quantize(CENTS)

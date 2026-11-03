@@ -114,7 +114,6 @@
             <th>Logo</th>
             <th>Paper Feed</th>
             <th>Copies</th>
-            <th>Round Off</th>
             <th>Status</th>
             <th>Updated</th>
             <th>Actions</th>
@@ -136,7 +135,6 @@
             </td>
             <td class="scr-contact">{{ r.row.paper_feed }}</td>
             <td class="scr-contact">{{ r.row.receipt_copies }}</td>
-            <td class="scr-contact">{{ r.row.get_round_off_mode_display }} · {{ r.row.round_off_step }}</td>
             <td><span class="scr-badge scr-badge-active"><i></i>Set</span></td>
             <td>
               <div class="scr-contact">{{ r.row.modified_on|default:r.row.created_on|date:"d M Y, H:i" }}</div>

@@ -91,6 +91,7 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "core.middleware.CurrentUserMiddleware",
     "core.middleware.CompanyTimezoneMiddleware",
+    "core.middleware.MoneyMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
