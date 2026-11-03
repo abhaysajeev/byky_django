@@ -24,9 +24,13 @@ def pending(world):
 
 
 def test_the_queue_shows_pending_requests_by_tab(client_in, world, pending):
-    body = client_in.get("/discount/approval/list/").content.decode()
-    assert "Ours Anil" in body and "4455" in body
-    assert "No approved requests" in client_in.get("/discount/approval/list/?tab=approved").content.decode()
+    """Card-discount requests are listed in Requests now (owner, 3 Nov 2026);
+    the old list URL opens it."""
+    old = client_in.get("/discount/approval/list/")
+    assert (old.status_code, old.url) == (302, "/rental/request/list/?kind=card_discount")
+    body = client_in.get("/rental/request/list/?kind=card_discount").content.decode()
+    assert "Ours Anil" in body and "ORD-1001" in body and "Card discount" in body
+    assert "No approved requests" in client_in.get("/rental/request/list/?kind=card_discount&tab=approved").content.decode()
 
 
 def test_the_detail_shows_the_request_and_the_customers_history(client_in, world, pending):
@@ -132,8 +136,8 @@ def test_cancelled_requests_have_their_tab(client_in, world, pending):
     from apps.discount import services
 
     services.cancel_pending_for_order(pending.order)
-    body = client_in.get("/discount/approval/list/?tab=cancelled").content.decode()
-    assert "ORD-1001" in body and "Cancelled" in body
+    body = client_in.get("/rental/request/list/?kind=card_discount&tab=closed").content.decode()       # cancelled by the settle: Closed
+    assert "ORD-1001" in body and "Closed" in body
 
 
 def test_the_database_allows_one_pending_request_per_order(world, pending):
@@ -157,7 +161,7 @@ def test_an_approved_request_is_revoked_with_a_reason(client_in, world, pending)
         ClaimStatus.REVOKED, "sara.k", "web", "Card was expired")
     detail = client_in.get(f"/discount/approval/{pending.pk}/").content.decode()
     assert "Revoke Reason" in detail and "Card was expired" in detail and 'data-decision="revoke"' not in detail
-    assert "ORD-1001" in client_in.get("/discount/approval/list/?tab=revoked").content.decode()
+    assert "ORD-1001" in client_in.get("/rental/request/list/?kind=card_discount&tab=revoked").content.decode()
 
 
 def test_only_an_approved_request_on_a_running_order_is_revoked(client_in, world, pending):

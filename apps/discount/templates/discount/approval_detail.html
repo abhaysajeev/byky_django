@@ -22,14 +22,14 @@
       <div class="scr-crumb">
         <span>Discount Card</span>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
-        <a href="{{ list_url }}">Card Discount Approval</a>
+        <a href="{{ list_url }}">Requests</a>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
         <b>Request</b>
       </div>
       <h1 class="scr-title">{{ claim.customer }}</h1>
     </div>
     <div class="scr-head-actions">
-      <a href="{{ list_url }}{% if claim.status != 'pending' %}?tab={{ claim.status }}{% endif %}" class="scr-btn-secondary">Back</a>
+      <a href="{{ list_url }}&amp;tab={{ back_tab }}" class="scr-btn-secondary">Back</a>
       {% if claim.status == "pending" and perm.approve %}
       <button type="button" class="scr-btn-danger" data-scr-modal-open="claim-decision" data-decision="reject">Reject</button>
       <button type="button" class="scr-btn-primary" data-scr-modal-open="claim-decision" data-decision="approve">Approve</button>
