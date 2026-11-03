@@ -26,9 +26,9 @@ from apps.company.scoping import companies_for
 from apps.devices import services as devices_services
 from apps.devices.models import BillKind
 from apps.portal.authentication import AppJWTAuthentication
-from apps.rental import credit_notes, services
+from apps.rental import credit_notes, order_status, services
 from apps.rental import requests as order_requests
-from apps.rental.models import DecisionChannel, Invoice, OrderItemStatus
+from apps.rental.models import DecisionChannel, Invoice
 from apps.rental.serializers import (
     CreditNoteCancelRequest,
     CreditNoteRequest,
@@ -58,6 +58,7 @@ from apps.rental.serializers import (
 )
 from apps.sync import parking
 from apps.sync.models import IssueKind
+from core import money
 from core.api import envelope, manager_only, request_parts, session_station, station_of
 from core.enums import Channel
 from core.schema import SERVER_ERROR, envelope_request, envelope_responses
@@ -310,6 +311,12 @@ def _local(moment, zone):
 
 
 def _money(value):
+    """Money as text with the company's decimals (core/money.py, CR1)."""
+    return money.fmt(value)
+
+
+def _percent(value):
+    """A percentage as stored (2 decimals): not money, so not the company's decimals."""
     return str(value) if value is not None else None
 
 
@@ -334,10 +341,10 @@ def invoice_json(invoice, zone):
             for item in sorted(invoice.items.all(), key=lambda line: line.start_time)
         ],
         "subtotal": _money(invoice.subtotal),
-        "discount_percentage": _money(invoice.discount_percentage),
+        "discount_percentage": _percent(invoice.discount_percentage),
         "discount_amount": _money(invoice.discount_amount),
         "discount_source": invoice.discount_source or None,
-        "tax_percentage": _money(invoice.tax_percentage), "tax_amount": _money(invoice.tax_amount),
+        "tax_percentage": _percent(invoice.tax_percentage), "tax_amount": _money(invoice.tax_amount),
         "rounding_adjustment": _money(invoice.rounding_adjustment),
         "net_amount": _money(invoice.net_amount),
         "payments": invoice.payments,
@@ -361,13 +368,18 @@ def _discount_json(order):
         request_id = str(applied.pk)
     return {
         "source": source, "request_sync_id": request_id,
-        "discount_percentage": _money(order.discount_percentage), "discount_amount": _money(order.discount_amount),
+        "discount_percentage": _percent(order.discount_percentage), "discount_amount": _money(order.discount_amount),
     }
 
 
 def _test_ride_json(order):
     ride = next(iter(order.test_rides.all()), None)
     return None if ride is None else {"test_ride_id": str(ride.pk), "test_no": ride.test_no}
+
+
+def _display(order, items=None):
+    value = order_status.display_status(order, items)
+    return {"order_status": value, "order_status_label": order_status.label(value)}
 
 
 def order_json(order, *, zone, next_order_number):
@@ -381,6 +393,8 @@ def order_json(order, *, zone, next_order_number):
     return {
         "sync_id": str(order.pk), "order_no": order.order_no, "transaction_no": order.transaction_no,
         "status": order.status, "payment_status": order.payment_status,
+        # What to show (8 values, owner 3 Nov 2026); `status` still drives the flow.
+        **_display(order, items),
         # Who booked it and who settled it (null until settled), by name -- as
         # Live Monitoring shows them (owner, 29 Oct 2026).
         "open_by": _person(order.created_by) if order.created_by_id else None,
@@ -395,12 +409,12 @@ def order_json(order, *, zone, next_order_number):
         # The bill: null until settle.
         "subtotal": _money(order.subtotal),
         "discount": _discount_json(order),
-        "tax_percentage": _money(order.tax_percentage), "tax_amount": _money(order.tax_amount),
+        "tax_percentage": _percent(order.tax_percentage), "tax_amount": _money(order.tax_amount),
         "rounding_adjustment": _money(order.rounding_adjustment), "net_amount": _money(order.net_amount),
         # Money collected, from booking on; balance_due null until settle.
         "amount_received": _money(order.amount_received), "amount_refunded": _money(order.amount_refunded),
         "paid_amount": _money(order.paid_amount), "balance_due": _money(order.balance_due),
-        "items_out": sum(1 for item in items if item.status == OrderItemStatus.ACTIVE),
+        "items_out": sum(1 for item in items if order_status.is_out(item)),   # a parked return is back
         "items": [
             {
                 "sync_id": str(item.pk), "status": item.status,
@@ -484,6 +498,7 @@ _ORDER_SAMPLE = {
     "sync_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9", "order_no": "DUBPP60182000231",
     "transaction_no": "DUBPP-A-12",
     "status": "active", "payment_status": "pending",
+    "order_status": "running", "order_status_label": "Running",
     "open_by": "Rashed K", "close_by": None,
     "booked_at": "2026-10-02 16:00:05", "start_time": "2026-10-02 16:00:00",
     "completed_at": None, "cancelled_at": None,
@@ -531,9 +546,11 @@ _RETURNED_ITEMS = [
     {**_ORDER_SAMPLE["items"][1], "status": "returned", "run_minutes": 60, "end_time": "2026-10-02 17:00:00",
      "overtime_amount": "0.00", "total_amount": "50.00"},
 ]
-_RETURNED_SAMPLE = {**_ORDER_SAMPLE, "items_out": 0, "items": _RETURNED_ITEMS}
+_RETURNED_SAMPLE = {**_ORDER_SAMPLE, "items_out": 0, "items": _RETURNED_ITEMS,
+                    "order_status": "awaiting_settlement", "order_status_label": "Awaiting Settlement"}
 _SETTLED_SAMPLE = {
     **_RETURNED_SAMPLE, "status": "completed", "payment_status": "paid", "completed_at": "2026-10-02 17:13:30",
+    "order_status": "received", "order_status_label": "Received",
     "close_by": "Rashed K", "star_rating": "4.5", "rating_remarks": "Bikes were clean, quick service",
     "subtotal": "110.00",
     "discount": {"source": "card", "request_sync_id": "01923e2a-11aa-7b22-8c33-d4e5f6a7b8c9",
@@ -668,6 +685,7 @@ class OrderCreateView(_OperatorView):
             services.count_receipt(session, request_data.get("order_no"))
             raise ValidationError(form.errors)
         values = form.validated_data
+        money.refuse_too_precise(form)
 
         zone = zone_for(branch.company)
         for key in ("booked_at", "start_time"):
@@ -895,6 +913,7 @@ class InvoiceDetailView(_OperatorView):
         form = InvoiceDetailRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         invoice = services.invoice_at_station(branch, order_id=values.get("order_id"),
                                               invoice_no=values.get("invoice_no"))
         if invoice is None:
@@ -1001,6 +1020,7 @@ class OrderReturnView(_OperatorView):
         form = OrderReturnRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         zone = zone_for(branch.company)
         values["returned_at"] = timezone.make_aware(values["returned_at"], zone)
 
@@ -1016,7 +1036,9 @@ class OrderReturnView(_OperatorView):
 
 _SETTLE_ERRORS = (
     "order_not_synced", "sync_id_conflict", "order_closed", "items_still_out", "amount_mismatch",
-    "balance_not_settled", "unknown_card_claim", "card_claim_not_approved", "unknown_card_discount",
+    "rounding_mismatch",
+    "balance_not_settled", "unknown_card_claim", "card_discount_revoked", "card_claim_not_approved",
+    "unknown_card_discount",
     "unknown_discount_request", "discount_request_not_approved", "discount_mismatch",
     "approved_discount_not_applied", "unknown_complimentary_request", "complimentary_request_not_approved",
     "approved_complimentary_not_applied", "approved_card_discount_not_applied", "unknown_payment_mode",
@@ -1174,6 +1196,7 @@ class OrderSettleView(_OperatorView):
         form = OrderSettleRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         zone = zone_for(branch.company)
         values["settled_at"] = timezone.make_aware(values["settled_at"], zone)
         for payment in values.get("payments") or []:
@@ -1301,6 +1324,7 @@ class _ChangeView(_OperatorView):
         form = self.form_class(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         zone = zone_for(branch.company)
         for key in self.times:
             values[key] = timezone.make_aware(values[key], zone)
@@ -1574,6 +1598,7 @@ class CreditNoteRequestView(_OperatorView):
         form = CreditNoteRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         values["requested_at"] = timezone.make_aware(values["requested_at"], zone_for(branch.company))
         try:
             data, done = credit_notes.request_credit_note(session, values, request_data)
@@ -1613,6 +1638,7 @@ class CreditNoteCancelView(_OperatorView):
         form = CreditNoteCancelRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         values["cancelled_at"] = timezone.make_aware(values["cancelled_at"], zone_for(branch.company))
         try:
             data, done = credit_notes.cancel_credit_note(session, values, request_data)
@@ -1797,6 +1823,7 @@ class OrderRequestView(_OperatorView):
         form = OrderRequestCreateRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         values["requested_at"] = timezone.make_aware(values["requested_at"], zone_for(branch.company))
         try:
             data, done = order_requests.create_request(session, values, request_data)
@@ -1835,6 +1862,7 @@ class OrderRequestWithdrawView(_OperatorView):
         form = OrderRequestWithdrawRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         values["withdrawn_at"] = timezone.make_aware(values["withdrawn_at"], zone_for(branch.company))
         try:
             data, done = order_requests.withdraw(session, values, request_data)
@@ -1874,6 +1902,7 @@ class OrderRequestUsedView(_OperatorView):
         form = OrderRequestUsedRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         values["used_at"] = timezone.make_aware(values["used_at"], zone_for(branch.company))
         try:
             data, done = order_requests.mark_used(session, values, request_data)
@@ -2013,6 +2042,7 @@ class OrderRequestListView(_OperatorView):
         form = OperatorRequestListRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         rows, page = order_requests.station_list(
             branch, pending_only=values["pending"], kind=values.get("kind") or None,
             from_date=values.get("from_date"), to_date=values.get("to_date"), page=values["page"],
@@ -2055,6 +2085,7 @@ _MANAGER_SAMPLE = {
     **_REQUEST_PENDING_SAMPLE, "branch_id": 3, "station": "Creek Park 1", "requested_by": "Rashed K",
     "order": {
         "order_no": "DUBPP60182000231", "transaction_no": "DUBPP-A-12", "status": "active",
+        "order_status": "partially_received", "order_status_label": "Partially Received",
         "customer_name": "Ahmed Al Mansoori",
         "customer_mobile": "971501234567", "booked_at": "2026-10-08 16:00:00", "advance_paid": "100.000",
         "net_amount": None,
@@ -2261,6 +2292,7 @@ class ManagerRequestListView(_ManagerView):
         form = ManagerRequestListRequest(data=request_data)
         form.is_valid(raise_exception=True)
         values = form.validated_data
+        money.refuse_too_precise(form)
         rows, page = order_requests.manager_list(
             self.company_ids(request), pending_only=values["pending"], kind=values.get("kind") or None,
             state_id=values.get("state_id"), branch_id=values.get("branch_id"),

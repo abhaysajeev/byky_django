@@ -15,24 +15,26 @@
 {% endblock page_js %}
 
 {% block content %}
-<div class="scr" data-card-approval data-approve-url="{{ approve_url }}" data-reject-url="{{ reject_url }}">
+<div class="scr" data-card-approval data-approve-url="{{ approve_url }}" data-reject-url="{{ reject_url }}" data-revoke-url="{{ revoke_url }}">
 
   <div class="scr-head">
     <div>
       <div class="scr-crumb">
         <span>Discount Card</span>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
-        <a href="{{ list_url }}">Card Discount Approval</a>
+        <a href="{{ list_url }}">Requests</a>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
         <b>Request</b>
       </div>
       <h1 class="scr-title">{{ claim.customer }}</h1>
     </div>
     <div class="scr-head-actions">
-      <a href="{{ list_url }}{% if claim.status != 'pending' %}?tab={{ claim.status }}{% endif %}" class="scr-btn-secondary">Back</a>
+      <a href="{{ list_url }}&amp;tab={{ back_tab }}" class="scr-btn-secondary">Back</a>
       {% if claim.status == "pending" and perm.approve %}
       <button type="button" class="scr-btn-danger" data-scr-modal-open="claim-decision" data-decision="reject">Reject</button>
       <button type="button" class="scr-btn-primary" data-scr-modal-open="claim-decision" data-decision="approve">Approve</button>
+      {% elif can_revoke and perm.approve %}
+      <button type="button" class="scr-btn-danger" data-scr-modal-open="claim-decision" data-decision="revoke">Revoke</button>
       {% endif %}
     </div>
   </div>
@@ -70,6 +72,10 @@
           {% endif %}
           {% if claim.remarks %}
           <div class="scr-detail-row"><span class="scr-detail-label">Remarks</span><span class="scr-detail-value">{{ claim.remarks }}</span></div>
+          {% endif %}
+          {% if claim.revoked_at %}
+          <div class="scr-detail-row"><span class="scr-detail-label">Revoked</span><span class="scr-detail-value">{{ claim.revoked_at|date:"d M Y, H:i" }}{% if claim.revoked_by %} · {{ claim.revoked_by }}{% endif %}{% if claim.revoked_channel_label %} · {{ claim.revoked_channel_label }}{% endif %}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Revoke Reason</span><span class="scr-detail-value scr-mon-wrap">{{ claim.revoke_note }}</span></div>
           {% endif %}
         </div>
       </div>
@@ -143,7 +149,7 @@
     </div>
   </div>
 
-  {% if claim.status == "pending" and perm.approve %}
+  {% if perm.approve and claim.status == "pending" or perm.approve and can_revoke %}
   <div class="scr-modal-veil" data-scr-modal-veil="claim-decision" hidden></div>
   <div class="scr-modal" data-scr-modal="claim-decision" hidden>
     <div class="scr-modal-head">
@@ -157,7 +163,7 @@
     </div>
     <div class="scr-modal-body">
       <div class="scr-field">
-        <label class="scr-label" for="claim-remarks">Remarks</label>
+        <label class="scr-label" for="claim-remarks" data-decision-label>Remarks</label>
         <textarea id="claim-remarks" class="scr-input" rows="3" maxlength="255" style="height:auto; padding:10px 12px" data-decision-remarks></textarea>
       </div>
     </div>

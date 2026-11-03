@@ -28,6 +28,7 @@ from django.utils import timezone
 from apps.fleet.models import (
     SERVICE_OPEN,
     Asset,
+    AssetType,
     ServiceRequest,
     ServiceRequestCounter,
     ServiceRequestStatus,
@@ -360,3 +361,66 @@ def station_assets(branch):
         "brand": a.brand.brand_name if a.brand_id else None, "serial_no": a.serial_no,
         "description": a.description, "open_request_no": reported.get(a.pk), **last(a),
     } for a in assets]
+
+
+# -- The manager app's asset masters (owner, 30 Oct 2026) -------------------------------
+
+MANAGER_ASSETS_PAGE = 50
+
+
+def company_asset_types(company_ids):
+    """The active, approved asset types of the manager's companies, by name."""
+    return [{
+        "asset_type_id": t.pk, "asset_type_code": t.asset_type_code, "asset_type_name": t.asset_type_name,
+        "description": t.description,
+    } for t in AssetType.objects.filter(company_id__in=company_ids, is_active=True,
+                                        approval_status=ApprovalStatus.APPROVED).order_by("asset_type_name", "pk")]
+
+
+def company_assets(company_ids, *, state_id=None, branch_id=None, asset_type_id=None, serial_no="",
+                   zone=None, page=1):
+    """(rows, page) -- every active, approved asset of the manager's companies,
+    each with every field the Asset screen holds, where it is, its open service
+    request and its last check. Every filter is optional; `serial_no` matches
+    any part of the serial number, ignoring case."""
+    rows = (Asset.objects.filter(company_id__in=company_ids, is_active=True,
+                                 approval_status=ApprovalStatus.APPROVED)
+            .select_related("asset_type", "brand", "custodian", "branch__location__state"))
+    if state_id:
+        rows = rows.filter(branch__location__state_id=state_id)
+    if branch_id:
+        rows = rows.filter(branch_id=branch_id)
+    if asset_type_id:
+        rows = rows.filter(asset_type_id=asset_type_id)
+    if serial_no:
+        rows = rows.filter(serial_no__icontains=serial_no)
+    page = Paginator(rows.order_by("asset_code", "pk"), MANAGER_ASSETS_PAGE).get_page(page)
+    assets = list(page.object_list)
+    reported = open_for_assets(a.pk for a in assets)
+    from apps.fleet.asset_checks import last_checks
+
+    checked = last_checks(a.pk for a in assets)
+
+    def row(a):
+        check = checked.get(a.pk)
+        state = a.branch.location.state if a.branch_id else None
+        return {
+            "asset_id": a.pk, "asset_code": a.asset_code,
+            "asset_type_id": a.asset_type_id, "asset_type_code": a.asset_type.asset_type_code,
+            "asset_type": a.asset_type.asset_type_name,
+            "brand_id": a.brand_id, "brand": a.brand.brand_name if a.brand_id else None,
+            "serial_no": a.serial_no, "manufacturer": a.manufacturer, "supplier": a.supplier,
+            "purchase_invoice_no": a.purchase_invoice_no, "description": a.description,
+            "warranty_from_date": a.warranty_from_date.isoformat() if a.warranty_from_date else None,
+            "warranty_to_date": a.warranty_to_date.isoformat() if a.warranty_to_date else None,
+            "custodian_id": a.custodian_id,
+            "custodian_code": a.custodian.employee_code if a.custodian_id else None,
+            "custodian_name": a.custodian.full_name if a.custodian_id else None,
+            "branch_id": a.branch_id, "station": a.branch.name if a.branch_id else None,
+            "state_id": state.pk if state else None, "state": state.name if state else None,
+            "open_request_no": reported.get(a.pk),
+            "last_check_status": check.status if check else None,
+            "last_checked_at": _local(check.checked_at, zone) if check and zone else None,
+        }
+
+    return [row(a) for a in assets], page

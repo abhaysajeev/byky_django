@@ -9,7 +9,8 @@
   var root = document.querySelector('[data-credit-note]');
   if (!root) return;
 
-  function money(value) { return (Math.round(value * 1000) / 1000).toFixed(3); }
+  var PLACES = (parseInt(document.body.dataset.moneyPlaces, 10) || 3);   /* the company's decimals (CR1) */
+  function money(value) { var f = Math.pow(10, PLACES); return (Math.round(value * f) / f).toFixed(PLACES); }
 
   root.querySelectorAll('[data-cn-amount]').forEach(function (field) {
     var input = field.querySelector('[data-cn-net]');

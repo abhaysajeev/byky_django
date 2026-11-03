@@ -12,6 +12,7 @@ import datetime
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
 from django.http import Http404, StreamingHttpResponse
+from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils import timezone
 
@@ -23,7 +24,8 @@ from apps.discount.models import CardDiscount, CardGrade, CardType, ClaimStatus,
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
-from apps.rental.models import OrderItemStatus
+from apps.rental import order_status
+from apps.rental.models import OrderItemStatus, OrderStatus
 from core.ordering import recent_first
 from core.timezones import zone_for
 from theme import drawers as theme_drawers
@@ -250,6 +252,7 @@ APPROVAL_TABS = [
     (ClaimStatus.PENDING, "Pending"),
     (ClaimStatus.APPROVED, "Approved"),
     (ClaimStatus.REJECTED, "Rejected"),
+    (ClaimStatus.REVOKED, "Revoked"),
     (ClaimStatus.CANCELLED, "Cancelled"),
 ]
 
@@ -281,7 +284,7 @@ def _claim_row(claim, zone):
         "order_start": claim.order.start_time.astimezone(zone),
         "order_vehicles": claim.order.items.exclude(status=OrderItemStatus.REPLACED).count(),
         "order_total": claim.order.subtotal, "order_net": claim.order.net_amount,       # blank until settled
-        "order_status": claim.order.get_status_display(),
+        "order_status": order_status.label(order_status.display_status(claim.order)),
         "bill_amount": claim.bill_amount, "discount_amount": claim.discount_amount,
         "net_amount": claim.net_amount,
         **_photo(claim),
@@ -290,19 +293,30 @@ def _claim_row(claim, zone):
         "decided_channel": claim.decided_channel, "decided_channel_label": claim.get_decided_channel_display(),
         "remarks": claim.remarks, "request_remarks": claim.request_remarks,
         "redeemed_at": claim.redeemed_at.astimezone(zone) if claim.redeemed_at else None,
+        "revoked_at": claim.revoked_at.astimezone(zone) if claim.revoked_at else None,
+        "revoked_by": claim.revoked_by.display_name if claim.revoked_by_id else "",
+        "revoked_channel_label": claim.get_revoked_channel_display(), "revoke_note": claim.revoke_note,
         "detail_url": reverse("discount-approval-detail", args=[claim.pk]),
     }
 
 
 class ApprovalListView(DiscountScreenView):
+    """Card-discount requests are listed in Requests now (owner, 3 Nov 2026):
+    this URL -- and the sidebar entry a card-only approver still has -- opens
+    Requests filtered to them. The rendering below stays for reference only."""
+
     template_name = "discount/approval_list.html"
     page_code = "discount.approval"
+
+    def get(self, request, *args, **kwargs):
+        return redirect(f"{reverse('rental-request-list')}?kind=card_discount")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         zone = zone_for(getattr(self.request.user, "company", None))
         claims = (scoping.claims_for(self.request.user).filter(requires_approval=True)
-                  .select_related("card_type", "card_grade", "branch", "requested_by", "decided_by", "order"))
+                  .select_related("card_type", "card_grade", "branch", "requested_by", "decided_by",
+                                  "revoked_by", "order"))
         tab = self.request.GET.get("tab", ClaimStatus.PENDING)
         if tab not in dict(APPROVAL_TABS):
             tab = ClaimStatus.PENDING
@@ -324,7 +338,7 @@ class ApprovalDetailView(DiscountScreenView):
         context = super().get_context_data(**kwargs)
         user = self.request.user
         zone = zone_for(getattr(user, "company", None))
-        related = ("card_type", "card_grade", "branch", "requested_by", "decided_by", "order")
+        related = ("card_type", "card_grade", "branch", "requested_by", "decided_by", "revoked_by", "order")
         claim = scoping.claims_for(user).select_related(*related).filter(pk=self.kwargs["pk"]).first()
         if claim is None:
             raise Http404("No such request.")
@@ -337,9 +351,15 @@ class ApprovalDetailView(DiscountScreenView):
                 customer_id=claim.customer_id, card_discount_id=claim.card_discount_id,
                 status=ClaimStatus.REDEEMED).count(),
             "usage": claim.card_discount.usage_label,
-            "list_url": reverse("discount-approval-list"),
+            # Card-discount requests are listed in Requests (owner, 3 Nov 2026).
+            "list_url": f"{reverse('rental-request-list')}?kind=card_discount",
+            "back_tab": {ClaimStatus.REDEEMED: "approved", ClaimStatus.CANCELLED: "closed"}.get(
+                claim.status, claim.status),
             "approve_url": reverse("discount-approval-approve", args=[claim.pk]),
             "reject_url": reverse("discount-approval-reject", args=[claim.pk]),
+            "revoke_url": reverse("discount-approval-revoke", args=[claim.pk]),
+            # An approval can be taken back until its bill uses it.
+            "can_revoke": claim.status == ClaimStatus.APPROVED and claim.order.status == OrderStatus.ACTIVE,
         })
         return context
 

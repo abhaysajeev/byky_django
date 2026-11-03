@@ -88,7 +88,7 @@
     var chips = r.vehicles.map(function (v) {
       var when = v.state === 'out' ? (v.due ? 'due ' + v.due : 'out') : v.end ? v.start + '–' + v.end : v.start;
       return '<span class="scr-live-chip is-' + esc(v.state) + '"><i></i>' + esc(v.no) +
-        '<em>' + esc(v.state) + ' · ' + esc(when) + '</em></span>';
+        '<em>' + esc(v.state) + ' · ' + esc(when) + (v.note ? ' · ' + esc(v.note) : '') + '</em></span>';
     }).join('');
     return '<tr class="scr-live-veh-row" data-veh-for="' + esc(r.id) + '"' + (open[r.id] ? '' : ' hidden') + '>' +
       '<td colspan="' + COLS + '"><div class="scr-live-veh">' + (chips || '<span class="scr-live-nil">No vehicles</span>') +
@@ -124,7 +124,7 @@
       cell('c-amt c-disc', 'Discount', money(r.discount)) +
       cell('c-amt c-net', 'Net', money(r.net) +
         (Number(r.discount) > 0 ? '<div class="scr-live-q scr-live-fold">Disc ' + money(r.discount) + '</div>' : '')) +
-      cell('c-status', 'Status', '<span class="scr-live-badge is-' + esc(r.status) + '">' + esc(r.status_label) + '</span>' +
+      cell('c-status', 'Status', '<span class="scr-live-badge is-' + esc(r.display_status) + '">' + esc(r.display_label) + '</span>' +
         '<div class="scr-live-q">' + esc(r.last) + (r.last_at ? ' · ' + ago(r.last_at) : '') + '</div>') +
       '<td class="c-act">' + bike + '</td>' +
       '</tr>' + vehicleRow(r);

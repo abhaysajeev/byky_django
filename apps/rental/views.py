@@ -7,8 +7,9 @@ import uuid
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
-from django.db.models import Count, Q, Sum
+from django.db.models import CharField, Count, Q, Sum, Value
 from django.http import Http404, JsonResponse
 from django.shortcuts import render
 from django.urls import reverse
@@ -18,10 +19,12 @@ from django.views import View
 from apps.company import writes as company_writes
 from apps.company.models import PaymentMode, State
 from apps.company.scoping import branches_for, companies_for, payment_modes_for
+from apps.discount import scoping as card_scoping
+from apps.discount.models import CardDiscountClaim, ClaimStatus
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
-from apps.rental import drawers, forms, live, scoping
+from apps.rental import blocked, drawers, forms, live, order_status, scoping
 from apps.rental.models import (
     CREDIT_NOTE_LIVE,
     CreditNoteSource,
@@ -38,6 +41,7 @@ from apps.rental.models import (
     OrderStatus,
     PaymentKind,
 )
+from core import money
 from core.ordering import recent_first
 from core.timezones import business_date_for, zone_for
 from theme import drawers as theme_drawers
@@ -123,8 +127,31 @@ class CustomerListView(RentalScreenView):
             "remarks": customer.remarks,
             "is_blocked": customer.is_blocked,
             "block_reason": customer.block_reason,
+            "was_blocked": "yes" if customer.is_blocked else "no",
+            "unblock_reason": "",
             "is_active": customer.is_active,
         }
+
+
+class BlockedCustomerListView(RentalScreenView):
+    """Blocked Customers: blocked now, every block / unblock, Block / Unblock
+    with a reason (apps/rental/blocked.py)."""
+
+    template_name = "rental/blocked_customer_list.html"
+    page_code = "rental.blocked_customer"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(blocked.context_for(self.request))
+        return context
+
+
+class BlockedCustomerExport(PagePermissionMixin, View):
+    page_code = "rental.blocked_customer"
+    required_action = "print"
+
+    def get(self, request):
+        return blocked.workbook(request)
 
 
 class CustomerDelete(company_writes.EntityDeleteView):
@@ -198,13 +225,8 @@ class RentalPrivilegeView(PrivilegeScreenView):
 
 ORDERS_PER_PAGE = 50
 
-# The order's state as the back office reads it. "Awaiting settlement" -- every
-# vehicle back, the bill not closed -- is derived, never stored.
-ORDER_STATUSES = [
-    ("active", "Active"), ("awaiting", "Awaiting settlement"),
-    ("completed", "Completed"), ("cancelled", "Cancelled"),
-]
-_STATUS_LABEL = dict(ORDER_STATUSES)
+# The order's display status, as every screen shows it (apps/rental/order_status.py).
+ORDER_STATUSES = order_status.CHOICES
 
 
 _APPLIED = {"base": "Base fare", "season": "Season fare", "special_price": "Special price"}
@@ -230,14 +252,13 @@ def fare_terms(details):
     return " · ".join(p for p in parts if p)
 
 
-def _status_key(order, items_out):
-    if order.status == OrderStatus.ACTIVE:
-        return "active" if items_out else "awaiting"
-    return order.status
+def _status(value):
+    return {"status": value, "status_label": order_status.label(value), "status_badge": order_status.BADGES[value]}
 
 
 def _aed(value):
-    return f"AED {value:,.3f}" if value is not None else None
+    """AED with the company's decimals (core/money.py, CR1)."""
+    return f"AED {money.quantize(value):,}" if value is not None else None
 
 
 def _day_bounds(day, zone):
@@ -255,22 +276,15 @@ def _date_param(value):
 def _orders(request, zone):
     """The orders the list shows, narrowed by the query string."""
     params = request.GET
-    active_items = Count("items", filter=Q(items__status=OrderItemStatus.ACTIVE))
-    orders = (scoping.orders_for(request.user).select_related("branch", "device")
-              .annotate(items_out=active_items))
+    orders = order_status.with_display_status(scoping.orders_for(request.user).select_related("branch", "device"))
     text = params.get("q", "").strip()
     if text:
         orders = orders.filter(Q(order_no__icontains=text) | Q(customer_name__icontains=text)
                                | Q(customer_mobile__icontains=text))
     if params.get("branch", "").isdigit():
         orders = orders.filter(branch_id=int(params["branch"]))
-    status = params.get("status", "")
-    if status == "active":
-        orders = orders.filter(status=OrderStatus.ACTIVE, items_out__gt=0)
-    elif status == "awaiting":
-        orders = orders.filter(status=OrderStatus.ACTIVE, items_out=0)
-    elif status in (OrderStatus.COMPLETED, OrderStatus.CANCELLED):
-        orders = orders.filter(status=status)
+    if params.get("status") in order_status.VALUES:
+        orders = orders.filter(display_status=params["status"])
     start, end = _date_param(params.get("from")), _date_param(params.get("to"))
     if start:
         orders = orders.filter(booked_at__gte=_day_bounds(start, zone)[0])
@@ -298,12 +312,11 @@ def _order_kpis(user, branch_id, zone, company):
 
 
 def _order_row(order):
-    status = _status_key(order, order.items_out)
     return {
         "order_no": order.order_no, "transaction_no": order.transaction_no, "booked_at": order.booked_at,
         "customer": order.customer_name, "mobile": order.customer_mobile,
         "station": order.branch.name, "tablet": order.device.device_registration_id,
-        "status": status, "status_label": _STATUS_LABEL[status], "is_direct": order.is_direct_bill,
+        **_status(order.display_status), "is_direct": order.is_direct_bill,
         "detail_url": reverse("rental-order-detail", args=[order.pk]),
     }
 
@@ -375,8 +388,7 @@ class OrderDetailView(RentalScreenView):
 
         items = list(order.items.select_related("vehicle__vehicle_type").order_by("start_time", "created_on"))
         replaced_by = {item.replaced_item_id: item for item in items if item.replaced_item_id}
-        items_out = sum(1 for item in items if item.status == OrderItemStatus.ACTIVE)
-        status = _status_key(order, items_out)
+        items_out = sum(1 for item in items if order_status.is_out(item))
         invoice = Invoice.objects.filter(order=order).select_related("issued_by").first()
         claim = order.discount_claim
 
@@ -384,7 +396,7 @@ class OrderDetailView(RentalScreenView):
             return moment.astimezone(zone) if moment else None
 
         context.update({
-            "order": order, "status": status, "status_label": _STATUS_LABEL[status],
+            "order": order, **_status(order_status.display_status(order, items)),
             "booked_at": local(order.booked_at), "start_time": local(order.start_time),
             "completed_at": local(order.completed_at), "cancelled_at": local(order.cancelled_at),
             "operator": order.created_by.display_name if order.created_by_id else "",
@@ -503,7 +515,7 @@ def _rate(amount, minutes):
     concurrent values are optional)."""
     if amount is None or not minutes:
         return "—"
-    return f"{amount:.3f}/{minutes} MINS"
+    return f"{money.fmt(amount)}/{minutes} MINS"
 
 
 def _receipt(invoice, zone):
@@ -831,10 +843,72 @@ def rule_label(req):
     return f"AED {req.discount_value}"
 
 
+# Card-discount requests (apps/discount) are listed here too, like the other
+# kinds (owner, 3 Nov 2026). UI only: their detail page and their approve /
+# reject / revoke stay the card-discount ones, under the Card Discount Approval
+# permission -- each row follows its own kind's permission.
+CARD_KIND, CARD_KIND_LABEL = "card_discount", "Card discount"
+CARD_TABS = {
+    "pending": (ClaimStatus.PENDING,),
+    "approved": (ClaimStatus.APPROVED, ClaimStatus.REDEEMED),      # used at settle: badge "Used"
+    "rejected": (ClaimStatus.REJECTED,),
+    "revoked": (ClaimStatus.REVOKED,),
+    "closed": (ClaimStatus.CANCELLED,),                             # cancelled by the settle: "Closed"
+}
+CARD_BADGE = {ClaimStatus.REDEEMED: "used", ClaimStatus.CANCELLED: "closed"}
+
+
+def may_see_requests(user):
+    return has_permission(user, "rental.request", "read")
+
+
+def may_see_card_requests(user):
+    return has_permission(user, "discount.approval", "read")
+
+
+def _card_requests(request, zone):
+    """The card-discount requests the same filters match (only those needing a
+    manager), or none when the user cannot see them or another kind is asked."""
+    params, user = request.GET, request.user
+    kind = params.get("kind")
+    if not may_see_card_requests(user) or (kind and kind != CARD_KIND):
+        return CardDiscountClaim.objects.none()
+    rows = (card_scoping.claims_for(user).filter(requires_approval=True)
+            .select_related("order", "branch", "requested_by"))
+    text = params.get("q", "").strip()
+    if text:
+        rows = rows.filter(Q(order__order_no__icontains=text) | Q(customer_name__icontains=text)
+                           | Q(mobile_full__icontains=text))
+    if params.get("branch", "").isdigit():
+        rows = rows.filter(branch_id=int(params["branch"]))
+    start, end = _date_param(params.get("from")), _date_param(params.get("to"))
+    if start:
+        rows = rows.filter(requested_at__gte=_day_bounds(start, zone)[0])
+    if end:
+        rows = rows.filter(requested_at__lt=_day_bounds(end, zone)[1])
+    return rows
+
+
+def _card_row(claim, zone):
+    return {
+        "requested_at": claim.requested_at.astimezone(zone), "kind": CARD_KIND_LABEL,
+        "order_no": claim.order.order_no, "order_url": reverse("rental-order-detail", args=[claim.order_id]),
+        "customer": claim.customer_name, "mobile": claim.mobile_full,
+        "station": claim.branch.name if claim.branch_id else "",
+        "requested_by": claim.requested_by.display_name if claim.requested_by_id else "",
+        "reason": claim.request_remarks, "rule": f"{claim.discount_percent.quantize(Decimal('0.01'))}%",
+        "applied_amount": claim.discount_amount if claim.status == ClaimStatus.REDEEMED else None,
+        "status": CARD_BADGE.get(claim.status, claim.status),
+        "detail_url": reverse("discount-approval-detail", args=[claim.pk]),
+    }
+
+
 def _requests(request, zone):
     """The requests the list's filters match, every state -- the tab picks the
     state, so its counts come from the same filters."""
     params = request.GET
+    if not may_see_requests(request.user) or params.get("kind") == CARD_KIND:
+        return scoping.requests_for(request.user).none()
     rows = scoping.requests_for(request.user).select_related("order", "branch", "requested_by")
     text = params.get("q", "").strip()
     if text:
@@ -853,8 +927,19 @@ def _requests(request, zone):
 
 
 class RequestListView(RentalScreenView):
+    """Operator requests and card-discount requests in one list. Opens for
+    either permission; each kind's rows only for its own."""
+
     template_name = "rental/request_list.html"
     page_code = "rental.request"
+
+    def dispatch(self, request, *args, **kwargs):
+        user = getattr(request, "user", None)
+        if user and not may_see_requests(user):
+            if not may_see_card_requests(user):
+                raise PermissionDenied("You do not have permission for this screen.")
+            self.page_code = "discount.approval"        # a card-only approver
+        return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -865,11 +950,21 @@ class RequestListView(RentalScreenView):
         if tab not in tabs:
             tab = "pending"
         rows = _requests(self.request, zone)
+        cards = _card_requests(self.request, zone)
         by_status = dict(rows.order_by().values_list("status").annotate(n=Count("pk")))
-        # Waiting ones oldest first -- the longest wait is answered first.
-        ordering = "requested_at" if tab == "pending" else "-requested_at"
-        page = Paginator(rows.filter(status__in=tabs[tab][1]).order_by(ordering),
-                         REQUESTS_PER_PAGE).get_page(params.get("page"))
+        card_status = dict(cards.order_by().values_list("status").annotate(n=Count("pk")))
+        # One list across both kinds, newest first -- or, on Pending, oldest
+        # first: the longest wait is answered first. Paged as one UNION of
+        # (id, time, kind), then each page's rows are loaded from their table.
+        tagged = (rows.filter(status__in=tabs[tab][1]).order_by()
+                  .values_list("pk", "requested_at", Value("request", output_field=CharField()))
+                  .union(cards.filter(status__in=CARD_TABS[tab]).order_by()
+                         .values_list("pk", "requested_at", Value("card", output_field=CharField())), all=True))
+        tagged = tagged.order_by("requested_at" if tab == "pending" else "-requested_at")
+        page = Paginator(tagged, REQUESTS_PER_PAGE).get_page(params.get("page"))
+        wanted = list(page.object_list)
+        loaded = {pk: req for pk, req in rows.in_bulk([pk for pk, _, src in wanted if src == "request"]).items()}
+        loaded.update(cards.in_bulk([pk for pk, _, src in wanted if src == "card"]))
         filters = params.copy()
         for key in ("page", "tab"):
             filters.pop(key, None)
@@ -877,28 +972,35 @@ class RequestListView(RentalScreenView):
         query["tab"] = tab
         context.update({
             "tab": tab, "tab_label": tabs[tab][0],
-            "tabs": [{"value": value, "label": label, "count": sum(by_status.get(s, 0) for s in states)}
+            "tabs": [{"value": value, "label": label,
+                      "count": sum(by_status.get(s, 0) for s in states)
+                      + sum(card_status.get(s, 0) for s in CARD_TABS[value])}
                      for value, label, states in REQUEST_TABS],
             "filter_query": filters.urlencode(),
             "rows": [
-                {
-                    "requested_at": req.requested_at.astimezone(zone), "kind": req.get_kind_display(),
-                    "order_no": req.order.order_no, "order_url": reverse("rental-order-detail", args=[req.order_id]),
-                    "customer": req.order.customer_name, "mobile": req.order.customer_mobile,
-                    "station": req.branch.name,
-                    "requested_by": req.requested_by.display_name if req.requested_by_id else "",
-                    "reason": req.reason, "rule": rule_label(req), "applied_amount": req.applied_amount,
-                    "status": req.status,
-                    "detail_url": reverse("rental-request-detail", args=[req.pk]),
-                }
-                for req in page.object_list
+                _card_row(loaded[pk], zone) if src == "card" else _request_row(loaded[pk], zone)
+                for pk, _, src in wanted if pk in loaded
             ],
             "page": page, "query": query.urlencode(), "params": params,
             "filtered": any(params.get(k) for k in ("q", "kind", "branch", "from", "to")),
             "branches": list(branches_for(user).filter(is_active=True).order_by("name").values("id", "name")),
-            "kinds": OrderRequestKind.choices,
+            "kinds": ((list(OrderRequestKind.choices) if may_see_requests(user) else [])
+                      + ([(CARD_KIND, CARD_KIND_LABEL)] if may_see_card_requests(user) else [])),
         })
         return context
+
+
+def _request_row(req, zone):
+    return {
+        "requested_at": req.requested_at.astimezone(zone), "kind": req.get_kind_display(),
+        "order_no": req.order.order_no, "order_url": reverse("rental-order-detail", args=[req.order_id]),
+        "customer": req.order.customer_name, "mobile": req.order.customer_mobile,
+        "station": req.branch.name,
+        "requested_by": req.requested_by.display_name if req.requested_by_id else "",
+        "reason": req.reason, "rule": rule_label(req), "applied_amount": req.applied_amount,
+        "status": req.status,
+        "detail_url": reverse("rental-request-detail", args=[req.pk]),
+    }
 
 
 class RequestDetailView(RentalScreenView):
@@ -934,6 +1036,7 @@ class RequestDetailView(RentalScreenView):
             })
         context.update({
             "req": req, "order": order, "lines": lines, "rule": rule_label(req),
+            "order_display": _status(order_status.display_status(order)),
             "order_running": order.status == OrderStatus.ACTIVE,
             # A discount, complimentary or cancel while the order runs; an invoice
             # reprint once it is settled; an order receipt reprint unless cancelled.

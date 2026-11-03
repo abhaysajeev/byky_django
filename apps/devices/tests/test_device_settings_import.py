@@ -19,7 +19,7 @@ from django.db import connection
 from apps.company.models import Branch
 from apps.devices import legacy_import as legacy
 from apps.devices import services
-from apps.devices.models import DeviceSettings, PrintType, RoundOffMode
+from apps.devices.models import DeviceSettings, PrintType
 from core.enums import ApprovalStatus
 
 pytestmark = pytest.mark.django_db
@@ -50,8 +50,8 @@ def test_the_legacy_codes_become_the_words_they_meant():
     rows = [d for _, d, *_ in legacy.settings()]
 
     assert {d["print_type"] for d in rows} == {PrintType.LANDSCAPE}
-    assert {d["round_off_mode"] for d in rows} == {RoundOffMode.UPWARD, RoundOffMode.NEAREST}
-    assert {str(d["round_off_step"]) for d in rows} == {"0.25"}
+    # Round-off is no longer per station (CR1): the company's money settings hold it.
+    assert all("round_off_mode" not in d and "round_off_step" not in d for d in rows)
 
 
 def test_a_missing_test_slot_falls_back_to_five_minutes():

@@ -264,10 +264,6 @@ DEVICE_SETTINGS = {
         {
             "title": "Pricing and test rides",
             "fields": [
-                {"id": "round_off_mode", "label": "Round Off Type", "kind": "select", "required": True,
-                 "default": "upward", "options_from": "round_off_modes"},
-                {"id": "round_off_step", "label": "Round Off Limit", "kind": "select", "required": True,
-                 "default": "0.25", "options_from": "round_off_steps"},
                 {"id": "customer_test_minutes", "label": "Customer Test Time Slot (Min)", "kind": "number",
                  "required": True, "help": "How long a customer may try a vehicle before it counts as a rental."},
                 {"id": "staff_test_minutes", "label": "Staff Test Time Slot (Min)", "kind": "number",

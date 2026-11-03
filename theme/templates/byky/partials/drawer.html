@@ -109,11 +109,11 @@ field.readonly       always read-only -- a value this screen displays but
         <div class="byky-fields">
           {% for f in sec.fields %}
           {% comment %}
-          data-show-if="<field id>:<value>[|<value>]" hides a field until the
+          data-show-if="<field id>:<value>[|<value>][&<field id>:<value>...]" hides a field until the
           named control holds one of those values -- Branch's flag group only
           applies to a Branch Office. byky-drawer.js syncs it.
           {% endcomment %}
-          <div class="byky-field byky-span-{{ f.width|default:6 }}"{% if f.show_if %} data-show-if="{{ f.show_if }}" hidden{% endif %}>
+          <div class="byky-field byky-span-{{ f.width|default:6 }}"{% if f.show_if %} data-show-if="{{ f.show_if }}" hidden{% elif f.kind == "hidden" %} hidden{% endif %}>
             <label class="byky-label" for="{{ f.id }}">
               <span>{{ f.label }}</span>{% if f.required %}<em class="byky-req">*</em>{% endif %}
             </label>
@@ -262,6 +262,8 @@ field.readonly       always read-only -- a value this screen displays but
             {% elif f.kind == "time" %}
               <input type="time" id="{{ f.id }}" class="byky-input" data-field="{{ f.id }}"{% if f.readonly %} readonly{% endif %} />
 
+            {% elif f.kind == "hidden" %}
+              <input type="hidden" id="{{ f.id }}" data-field="{{ f.id }}" />
             {% elif f.kind == "custom" %}
               <div class="byky-days-host" data-days-host="{{ f.id }}"></div>
 

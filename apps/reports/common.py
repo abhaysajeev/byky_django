@@ -7,11 +7,11 @@ from dataclasses import dataclass
 
 from django.db.models import Q, Sum
 
+from apps.rental import order_status as display
 from apps.rental.models import (
     CreditNote,
     CreditNoteStatus,
     OrderItemStatus,
-    OrderStatus,
     Payment,
     PaymentKind,
 )
@@ -27,6 +27,7 @@ class Ctx:
     zone: object
     f: object            # apps.reports.filters.Filters
     now: object
+    places: int = 3      # money decimals (core/money.py)
 
 
 # -- Filters every order-shaped report applies the same way ---------------------------
@@ -131,18 +132,9 @@ def credit_notes_by_order(order_ids):
 
 
 def order_status(order):
-    """The order's status as the reports name it (Rent Details' rule): settled
-    Received, Cancelled, no vehicle back Running, else Partially Received --
-    which includes every vehicle back but not yet settled. Reads `order.items`
-    (prefetch it)."""
-    if order.status == OrderStatus.COMPLETED:
-        return "Received"
-    if order.status == OrderStatus.CANCELLED:
-        return "Cancelled"
-    statuses = {item.status for item in order.items.all()}
-    if OrderItemStatus.RETURNED not in statuses and OrderItemStatus.ACTIVE in statuses:
-        return "Running"
-    return "Partially Received"
+    """The order's display status label (apps/rental/order_status.py). Reads
+    `order.items` (prefetch it)."""
+    return display.label(display.display_status(order))
 
 
 def vehicles_of(order):

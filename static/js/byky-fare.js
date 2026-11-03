@@ -100,7 +100,8 @@
     var end = rule.end === '00:00' ? '24:00' : rule.end;
     return rule.start === '00:00' && end === '24:00' ? 'All day' : rule.start + ' – ' + end;
   }
-  function money(value) { var n = parseFloat(value); return isNaN(n) ? '—' : n.toFixed(3); }
+  var PLACES = (parseInt(document.body.dataset.moneyPlaces, 10) || 3);   /* the company's decimals (CR1) */
+  function money(value) { var n = parseFloat(value); return isNaN(n) ? '—' : n.toFixed(PLACES); }
   function minutes(value) { return value === '' || value == null ? '—' : esc(value) + ' min'; }
 
   // -- Static fields ---------------------------------------------------------
@@ -437,7 +438,7 @@
   function checkNumber(el) {
     var problem = numberProblem(el);
     if (!problem && el.dataset.num === 'money') {
-      var tidy = parseFloat(el.value).toFixed(3);
+      var tidy = parseFloat(el.value).toFixed(PLACES);
       if (tidy !== el.value) { el.value = tidy; el.dispatchEvent(new Event('input', { bubbles: true })); }
     }
     markNumber(el, problem);

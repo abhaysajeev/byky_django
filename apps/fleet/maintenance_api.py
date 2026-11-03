@@ -34,6 +34,7 @@ from apps.fleet.serializers import (
     IssueTypeCreateRequest,
     IssueTypesRequest,
     ManagerAssetCheckListRequest,
+    ManagerAssetsRequest,
     ManagerImageShareListRequest,
     ServiceRequestCreateRequest,
     ServiceRequestDecisionRequest,
@@ -96,28 +97,93 @@ _ASSETS_SAMPLE = {"assets": [
 ]}
 
 
+_MANAGER_ASSET_ROW = {
+    "asset_id": 7, "asset_code": "CCTV-ADC1-01", "asset_type_id": 2, "asset_type_code": "CCTV",
+    "asset_type": "CCTV", "brand_id": 4, "brand": "Hikvision", "serial_no": "HK2231-778",
+    "manufacturer": "Hikvision Digital", "supplier": "Gulf Security LLC", "purchase_invoice_no": "INV-2024-0117",
+    "description": "Entrance camera", "warranty_from_date": "2024-03-01", "warranty_to_date": "2027-02-28",
+    "custodian_id": 31, "custodian_code": "BYKY031", "custodian_name": "Rashed Ali",
+    "branch_id": 12, "station": "Abu Dhabi Corniche 1", "state_id": 3, "state": "Abu Dhabi",
+    "open_request_no": None, "last_check_status": "active", "last_checked_at": "2026-10-27 09:15:00",
+}
+
+
 class AssetsView(_AppView):
-    """POST /api/v1/{app}/assets -- operator app only."""
+    """POST /api/v1/{app}/assets -- operator app (this station) or manager app
+    (every station of the company, filtered and paged)."""
 
     @extend_schema(
-        tags=["Operator Service & Maintenance"],
-        summary="The assets at this station (to report one for service)",
+        tags=["Operator Service & Maintenance", "Manager Assets"],
+        summary="Assets: this station's (operator) or the company's (manager)",
         description="""
-Every active, approved asset whose station is this one (Inventory -> Asset,
-"Branch"), in asset-code order. `open_request_no` is the service request still
-open on it (pending or under maintenance), else `null` -- a second report of it
-is refused (`already_reported`). `last_check_status` (`active` /
-`needs_inspection`) and `last_checked_at` are its latest check (`asset-checks`),
-else `null`. `request_data` may be empty.
+**Operator app** -- every active, approved asset whose station is this one
+(Inventory -> Asset, "Branch"), in asset-code order. `open_request_no` is the
+service request still open on it (pending or under maintenance), else `null`
+-- a second report of it is refused (`already_reported`). `last_check_status`
+(`active` / `needs_inspection`) and `last_checked_at` are its latest check
+(`asset-checks`), else `null`. `request_data` may be empty; filters are ignored.
+
+**Manager app** -- every active, approved asset of the company, in asset-code
+order, 50 a page (`page` from 1), with every field the Asset screen holds:
+type, brand, serial no, manufacturer, supplier, purchase invoice, warranty,
+custodian, its station and state, plus `open_request_no` and its last check.
+Every filter is optional and they combine: `state_id`, `branch_id`,
+`asset_type_id` (`asset-types`), `serial_no` (any part of it, ignoring case).
+`asset_id` is what `asset-checks/list` filters on.
 """,
-        request=envelope_request("AssetsEnvelope", AssetsRequest, request_data_required=False),
-        responses=envelope_responses((200, "ok", "Assets.", _ASSETS_SAMPLE), *_OPERATOR_COMMON, SERVER_ERROR),
+        request=envelope_request("AssetsEnvelope", ManagerAssetsRequest, request_data_required=False),
+        responses=envelope_responses(
+            (200, "ok", "Assets.", _ASSETS_SAMPLE, "Operator app"),
+            (200, "ok", "Assets.", {"assets": [_MANAGER_ASSET_ROW], "page": 1, "pages": 1, "total": 1},
+             "Manager app"),
+            *_OPERATOR_COMMON, SERVER_ERROR,
+        ),
     )
     def post(self, request, app):
+        if app == Channel.MANAGER:
+            refused = manager_only(request, app)
+            if refused:
+                return refused
+            _, request_data = request_parts(request)
+            form = ManagerAssetsRequest(data=request_data)
+            form.is_valid(raise_exception=True)
+            values = form.validated_data
+            rows, page = service_requests.company_assets(
+                self.company_ids(request), state_id=values.get("state_id"), branch_id=values.get("branch_id"),
+                asset_type_id=values.get("asset_type_id"), serial_no=(values.get("serial_no") or "").strip(),
+                zone=zone_for(getattr(request.user, "company", None)), page=values["page"])
+            return envelope("ok", "Assets.", _page(page, {"assets": rows}))
         branch, refused = self.operator_station(request, app)
         if refused:
             return refused
         return envelope("ok", "Assets.", {"assets": service_requests.station_assets(branch)})
+
+
+class AssetTypesView(_AppView):
+    """POST /api/v1/{app}/asset-types -- manager app only."""
+
+    @extend_schema(
+        tags=["Manager Assets"],
+        summary="The company's asset types (for the asset filters)",
+        description="Every active, approved asset type of the company, by name (Inventory -> Asset Type). "
+                    "`asset_type_id` is what `assets` and `asset-checks/list` filter on. `request_data` may "
+                    "be empty.",
+        request=envelope_request("AssetTypesEnvelope", AssetsRequest, request_data_required=False),
+        responses=envelope_responses(
+            (200, "ok", "Asset types.", {"asset_types": [
+                {"asset_type_id": 2, "asset_type_code": "CCTV", "asset_type_name": "CCTV",
+                 "description": "Cameras"},
+                {"asset_type_id": 5, "asset_type_code": "PRN", "asset_type_name": "Printer", "description": ""},
+            ]}),
+            *_MANAGER_COMMON, SERVER_ERROR,
+        ),
+    )
+    def post(self, request, app):
+        refused = manager_only(request, app)
+        if refused:
+            return refused
+        return envelope("ok", "Asset types.",
+                        {"asset_types": service_requests.company_asset_types(self.company_ids(request))})
 
 
 # -- Service requests: report ------------------------------------------------------------
@@ -612,7 +678,9 @@ class AssetCheckListView(_AppView):
 Asset checks, newest first, 50 a page (`page` from 1). **Operator app**: this
 station's -- `mine` for only this tablet's, `status`; no photo URLs.
 **Manager app**: every station of the company -- `state_id`, `branch_id`,
-`asset_id`, `status` -- with `photo_url` / `photo_thumb_url` (server-relative,
+`asset_id`, `asset_type_id` (`asset-types`), `serial_no` (any part of the
+asset's serial number, ignoring case), `status`, all optional and combined --
+with `photo_url` / `photo_thumb_url` (server-relative,
 need the access token). Both: `from_date` / `to_date` (`YYYY-MM-DD`, company
 time, both days included). View only.
 """,
@@ -635,7 +703,8 @@ time, both days included). View only.
             zone = zone_for(getattr(request.user, "company", None))
             rows, page = asset_checks.company_list(
                 self.company_ids(request), state_id=values.get("state_id"), branch_id=values.get("branch_id"),
-                asset_id=values.get("asset_id"), status=values.get("status") or None,
+                asset_id=values.get("asset_id"), asset_type_id=values.get("asset_type_id"),
+                serial_no=(values.get("serial_no") or "").strip(), status=values.get("status") or None,
                 from_date=values.get("from_date"), to_date=values.get("to_date"), zone=zone, page=values["page"])
             return envelope("ok", "Asset checks.", _page(page, {
                 "checks": [asset_checks.check_json(r, zone, Channel.MANAGER) for r in rows]}))

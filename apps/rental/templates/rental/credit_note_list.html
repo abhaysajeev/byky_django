@@ -1,5 +1,6 @@
 {% extends layout_path %}
 {% load static %}
+{% load money %}
 
 {% block title %}Credit Notes - Rental{% endblock title %}
 
@@ -84,7 +85,7 @@ The row opens its page, where it is approved, rejected or printed.
             <td class="scr-state">{{ r.invoice_no }}</td>
             <td><div class="scr-co-name">{{ r.customer|default:"—" }}</div><div class="scr-contact-sub">{{ r.mobile }}</div></td>
             <td class="scr-state">{{ r.station }}</td>
-            <td class="scr-state">{% if r.net_amount is not None %}AED {{ r.net_amount }}{% else %}—{% endif %}</td>
+            <td class="scr-state">{% if r.net_amount is not None %}AED {{ r.net_amount|money }}{% else %}—{% endif %}</td>
             <td>{% include "rental/partials/credit_note_status.html" with status=r.status %}</td>
             <td>
               <div class="scr-row-actions">

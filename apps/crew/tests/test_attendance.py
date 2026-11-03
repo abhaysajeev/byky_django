@@ -615,7 +615,7 @@ def test_manager_login_returns_the_tokens_and_the_manager(client, world):
     body = response.json()
     assert body["code"] == "ok"
     assert body["message"] == "Welcome, Meera K."
-    assert set(body["data"]) == {"tokens", "employee"}            # no roster: managers are not rostered
+    assert set(body["data"]) == {"tokens", "employee", "money"}   # no roster: managers are not rostered
     assert set(body["data"]["tokens"]) == {"access", "refresh", "access_expires_at", "refresh_expires_at"}
     employee = body["data"]["employee"]
     assert (employee["employee_code"], employee["full_name"], employee["designation"]) == (

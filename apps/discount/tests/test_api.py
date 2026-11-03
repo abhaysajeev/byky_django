@@ -421,6 +421,7 @@ def test_a_pending_request(client, world, token, requested):
         "card_discount_id": requested["current"].pk, "card_type_name": "Corporate", "card_grade_name": "Gold",
         "bill_amount": "120.000", "discount_percent": "15.00", "discount_amount": "18.000", "net_amount": "102.000",
         "requested_at": "2026-09-30 17:05:00", "decided_at": None, "remarks": "", "request_remarks": "",
+        "revoked_at": None, "revoke_note": "",
     }
     assert shape({**body["data"], "decided_at": "x"}) == shape(api._STATUS_SAMPLE)
 

@@ -104,8 +104,8 @@ def station_list(branch, *, device=None, status=None, from_date=None, to_date=No
     return page_of(between(rows, zone, from_date, to_date) if zone else rows, page)
 
 
-def company_list(company_ids, *, state_id=None, branch_id=None, asset_id=None, status=None, from_date=None,
-                 to_date=None, zone=None, page=1):
+def company_list(company_ids, *, state_id=None, branch_id=None, asset_id=None, asset_type_id=None,
+                 serial_no="", status=None, from_date=None, to_date=None, zone=None, page=1):
     rows = AssetCheck.objects.filter(company_id__in=company_ids)
     if state_id:
         rows = rows.filter(branch__location__state_id=state_id)
@@ -113,6 +113,10 @@ def company_list(company_ids, *, state_id=None, branch_id=None, asset_id=None, s
         rows = rows.filter(branch_id=branch_id)
     if asset_id:
         rows = rows.filter(asset_id=asset_id)
+    if asset_type_id:
+        rows = rows.filter(asset__asset_type_id=asset_type_id)
+    if serial_no:                            # any part of the serial number, ignoring case
+        rows = rows.filter(asset__serial_no__icontains=serial_no)
     if status:
         rows = rows.filter(status=status)
     return page_of(between(rows, zone, from_date, to_date) if zone else rows, page)

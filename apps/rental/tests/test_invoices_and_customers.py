@@ -151,9 +151,18 @@ def test_blocking_on_the_web_is_stamped_and_unblocking_clears_it(web, shop):
     ahmed.refresh_from_db()
     assert ahmed.blocked_at == stamped
 
-    save_on_web(web, ahmed)                                                         # unblocked
+    refused = web.post("/rental/customer/save/", {                 # an unblock needs a reason
+        "pk": ahmed.pk, "company": ahmed.company_id, "first_name": ahmed.first_name,
+        "mobile_country_code": ahmed.mobile_country_code, "mobile_no": ahmed.mobile_no, "is_active": "on"})
+    assert refused.json()["ok"] is False
+    ahmed.refresh_from_db()
+    assert ahmed.is_blocked is True
+
+    save_on_web(web, ahmed, unblock_reason="Paid for the damage")                   # unblocked
     ahmed.refresh_from_db()
     assert (ahmed.is_blocked, ahmed.blocked_at, ahmed.blocked_by) == (False, None, None)
+    assert list(ahmed.block_log.order_by("at", "id").values_list("action", "reason")) == [
+        ("block", "Damaged a kart"), ("unblock", "Paid for the damage")]
 
 
 def test_the_tablet_lists_blocked_customers_newest_block_first(client, world, token, shop, web):

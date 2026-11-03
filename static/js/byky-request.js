@@ -12,7 +12,11 @@
 
   var RULES = {
     percent: { label: 'Percentage', step: '0.01', max: '100', placeholder: '0.00', help: 'Up to 100%, two decimals.' },
-    amount: { label: 'Amount (AED)', step: '0.001', max: '', placeholder: '0.000', help: 'AED, up to three decimals.' }
+    amount: (function () {   /* the company's decimals (CR1) */
+      var p = (parseInt(document.body.dataset.moneyPlaces, 10) || 3);
+      return { label: 'Amount (AED)', step: (1 / Math.pow(10, p)).toFixed(p), max: '',
+               placeholder: (0).toFixed(p), help: 'AED, up to ' + (p === 2 ? 'two' : 'three') + ' decimals.' };
+    })()
   };
 
   var value = root.querySelector('[data-rq-value]');

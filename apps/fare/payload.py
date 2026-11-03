@@ -28,6 +28,7 @@ from decimal import Decimal, InvalidOperation
 from apps.fare import pricing
 from apps.fare.models import FareLevel, RuleKind
 from apps.fare.pricing import MAX_MINUTES, MIDNIGHT, FareSpec, Issue, Price, Rule, Season
+from core import money
 
 # (name, label, kind, minimum, required) -- minutes are whole numbers up to one
 # day. The concurrent three are optional (owner, 23 Oct 2026): blank is None.
@@ -81,8 +82,10 @@ class _Reader:
             return self.fail(key, where, "Enter an amount, such as 50.00.")
         if amount < 0:
             return self.fail(key, where, "The amount cannot be negative.")
-        if amount.as_tuple().exponent < -3 and amount != amount.quantize(CENTS):
-            return self.fail(key, where, "Use at most three decimal places.")
+        # The company's decimals (core/money.py, CR1): 2 or 3.
+        places = money.current_places()
+        if money.places_of(amount) > places:
+            return self.fail(key, where, f"Use at most {'two' if places == 2 else 'three'} decimal places.")
         if amount > MAX_MONEY:
             return self.fail(key, where, "That amount is too large.")
         return amount.quantize(CENTS)                 # "80" and "80.00" are one price
