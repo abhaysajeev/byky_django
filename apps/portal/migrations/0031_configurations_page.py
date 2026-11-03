@@ -16,7 +16,7 @@ def apply_registry(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('portal', '0029_sync_issues_for_companies'),
+        ('portal', '0030_blocked_customers_page'),
     ]
 
     operations = [
