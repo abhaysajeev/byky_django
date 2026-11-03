@@ -261,7 +261,7 @@ class RegistrationView(PublicAPIView):
 _SETTINGS_SAMPLE = {
     "device_settings": {
         "settings_code": "S01", "station": "Dubai Parks",
-        "logo_changed_at": "2026-09-20T09:12:00+04:00", "logo": "",
+        "logo_changed_at": "2026-09-20T09:12:00+04:00", "logo": "iVBORw0KGgoAAAANSUhEUgAA...",
     },
     "order_no_prefix": "DUBPP",
     "last_order_no": "DUBPP60182000334",
@@ -274,10 +274,10 @@ _SETTINGS_SAMPLE = {
 }
 
 _SETTINGS_DESCRIPTION = """
-This tablet's station settings and receipt numbering -- the same block the
-operator login returns, on its own, so the app can refresh it without signing
-in again (on opening, after its offline queue has uploaded, or from a refresh
-button).
+This tablet's station settings, receipt numbering and money settings. The
+operator login no longer returns them (owner, 3 Nov 2026): **call this right
+after login**, and again whenever the app wants them fresh (on opening, after
+its offline queue has uploaded, or from a refresh button).
 
 **Transaction numbers** (owner, 28 Oct 2026): the tablet counts the day's
 bookings itself -- 1, 2, 3... restarting at 1 each day -- and sends
@@ -295,9 +295,8 @@ seen from this tablet at this station (`null` before its first);
 tablet's queue have not moved it yet, so the tablet carries on from whichever
 is higher -- its own number or the server's.
 
-**`since`** (optional, `YYYY-MM-DD HH:MM:SS`, company time) -- when the tablet
-last synced. `device_settings.logo` is `""` when the logo has not changed since
-then; leave `since` out to always get it.
+`device_settings.logo` is always sent. `since` is still accepted, for app
+builds that send it, and is ignored.
 
 The station and tablet are the signed-in session's own, never sent.
 """
@@ -336,11 +335,8 @@ class DeviceSettingsView(APIView):
         _, request_data = request_parts(request)
         form = DeviceSettingsRequest(data=request_data)
         form.is_valid(raise_exception=True)
-        since = form.validated_data.get("since")
-        if since is not None:
-            since = timezone.make_aware(since, zone_for(branch.company))
-
-        data = services.operator_settings(request.auth.device, branch, since=since)
+        # `since` is validated for older builds and ignored: the logo is always sent.
+        data = services.operator_settings(request.auth.device, branch)
         if data is None:
             return envelope("device_settings_not_done", "This station's receipt settings are not set up yet.",
                             http_status=409)

@@ -126,7 +126,7 @@ def _operator_login(request, form, push_token=None):
         )
 
     try:
-        user, session, device, branch = auth.sign_in_operator(
+        user, session, _device, branch = auth.sign_in_operator(
             form.validated_data["username"], form.validated_data["password"], installation_id,
             ip_address=client_ip(request),
             user_agent=request.META.get("HTTP_USER_AGENT", ""),
@@ -157,10 +157,10 @@ def _operator_login(request, form, push_token=None):
             "is_multi_device": branch.is_multi_device,
             "allows_test_ride": branch.allows_test_ride,
         },
-        # Never None here -- sign_in_operator already refused
-        # device_settings_not_done if it were. The same block as
-        # POST /device/settings.
-        **devices_services.operator_settings(device, branch),
+        # The station's settings, receipt numbering and money are no longer
+        # here: the app calls POST /device/settings right after login (owner,
+        # 3 Nov 2026). sign_in_operator still refuses device_settings_not_done,
+        # so a station without receipt settings cannot be signed in to.
     }
     return envelope("ok", "Logged in.", data)
 
@@ -246,12 +246,6 @@ _OPERATOR_LOGIN_SUCCESS_DATA = {
         "hotel_commission": "0.00", "accepts_app_payment": False,
         "is_multi_device": False, "allows_test_ride": True,
     },
-    "device_settings": {
-        "settings_code": "S01", "station": "Creek Park 1", "logo": "iVBORw0KGgoAAAANSUhEUgAA...",
-    },
-    "order_no_prefix": "AUH01", "last_order_no": "AUH0160182000334", "next_order_number": 335, "next_test_number": 6,
-    "transaction_no_prefix": "AUH01-A", "last_transaction_no": "AUH01-A-12",
-    "money": {"decimal_places": 2, "round_off_mode": "upward", "round_off_step": "0.25"},
 }
 
 _MANAGER_LOGIN_SUCCESS_DATA = {
@@ -291,6 +285,8 @@ class LoginView(PublicAPIView):
             "`installation_id`: Employee and Manager check it's "
             "registered/approved/not-blocked/not-retired; Operator additionally "
             "requires it be mapped to a branch with receipt settings configured. "
+            "**Operator:** the station's settings, receipt numbering and `money` are not in "
+            "this reply -- call `POST /device/settings` right after login. "
             "Manager gets the tokens and its `employee` block (the same as the employee "
             "login, no roster -- managers are not rostered; `branch_id` is the home "
             "branch, null when none). See the success examples below for "

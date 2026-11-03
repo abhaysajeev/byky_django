@@ -108,11 +108,9 @@ def test_login_returns_the_full_response_shape(client, app_user, device, world):
     assert body["code"] == "ok"
 
     data = body["data"]
-    assert set(data) == {
-        "tokens", "first_name", "employee_code", "full_name", "roster", "branch", "device_settings",
-        "order_no_prefix", "last_order_no", "next_order_number", "next_test_number",
-        "transaction_no_prefix", "last_transaction_no", "money",
-    }
+    # The station's settings, numbering and money moved to POST /device/settings
+    # (owner, 3 Nov 2026).
+    assert set(data) == {"tokens", "first_name", "employee_code", "full_name", "roster", "branch"}
     assert data["tokens"]["access"] and data["tokens"]["refresh"]
     assert (data["first_name"], data["employee_code"], data["full_name"]) == ("Rashed", "OPR001", "Rashed K")
 
@@ -126,30 +124,37 @@ def test_login_returns_the_full_response_shape(client, app_user, device, world):
     assert branch["is_multi_device"] is True
     assert branch["allows_test_ride"] is True
 
-    assert data["device_settings"]["settings_code"] == "S01"
-    assert data["order_no_prefix"] == "CREEK"
-    assert data["last_order_no"] is None
-    assert data["next_order_number"] == 1
-    assert data["next_test_number"] == 1
+    settings = call(client, "/api/v1/operator/device/settings", None,
+                    headers={"HTTP_AUTHORIZATION": f"Bearer {data['tokens']['access']}"}).json()["data"]
+    assert settings["device_settings"]["settings_code"] == "S01"
+    assert settings["order_no_prefix"] == "CREEK"
+    assert settings["last_order_no"] is None
+    assert settings["next_order_number"] == 1
+    assert settings["next_test_number"] == 1
 
     assert AppSession.objects.filter(
         user=app_user, channel=Channel.OPERATOR, device=device, logged_out_at__isnull=True,
     ).exists()
 
 
-def test_a_second_login_advances_the_bill_numbers(client, app_user, device):
+def test_the_bill_numbers_are_a_persisted_counter(client, app_user, device):
     """Confirms the counter is a real, persisted row, not recomputed from
     nothing each time -- last_number moves only when something raises it,
-    never by the read itself."""
+    never by the read itself. Read from POST /device/settings, which the app
+    calls after login."""
     from apps.devices.models import BillContinuity
 
-    _login(client, app_user, device)
+    def settings():
+        access = _login(client, app_user, device).json()["data"]["tokens"]["access"]
+        return call(client, "/api/v1/operator/device/settings", None,
+                    headers={"HTTP_AUTHORIZATION": f"Bearer {access}"}).json()["data"]
+
+    settings()
     counter = BillContinuity.objects.get(device=device, kind="order")
     counter.last_number = 40
     counter.save(update_fields=["last_number"])
 
-    response = _login(client, app_user, device)
-    data = response.json()["data"]
+    data = settings()
     assert data["next_order_number"] == 41
     assert data["last_order_no"] == f"CREEK{device.device_registration_id}000040"
 
