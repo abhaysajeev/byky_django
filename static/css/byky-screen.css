@@ -544,6 +544,11 @@ textarea.scr-drawer-input { height: auto; min-height: 72px; padding: 10px 13px; 
 .scr a.scr-menu-item { color: #4b4770; }
 .scr a.scr-menu-item:hover { color: #1a1640; }
 .scr-menu-item-danger:hover { background: #fbebec; color: #d81f26; }
+/* Disabled menu items (e.g. Re-map on a device with no station, or while
+   someone is logged in): greyed, no hover, as .scr-pager-btn:disabled. */
+.scr-menu-item:disabled,.scr-menu-item[disabled]{color:#c9c6dd;cursor:not-allowed;background:none}
+.scr-menu-item:disabled svg,.scr-menu-item[disabled] svg{opacity:.55}
+.scr-menu-item:disabled:hover,.scr-menu-item[disabled]:hover{color:#c9c6dd;background:none}
 
 /* Row-level "..." action menu (Country & State etc.): the toggle is the
    30px .scr-icon-btn, not the 38px labelled .scr-menu-btn above, so it needs

@@ -44,6 +44,7 @@ from apps.devices.models import (
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
+from core.enums import Channel
 from core.ordering import recent_first, recent_key
 from theme import drawers as theme_drawers
 from theme.views import ThemedTemplateView
@@ -268,9 +269,11 @@ class DeviceMappingView(DeviceScreenView):
         context = super().get_context_data(**kwargs)
         user = self.request.user
 
+        # Operator (RMS) devices only: the employee and manager apps run on
+        # people's own phones and never have a station (owner, 3 Nov 2026).
         devices = list(
             scoping.devices_for(user)
-            .filter(status__in=[DeviceStatus.APPROVED, DeviceStatus.BLOCKED])
+            .filter(status__in=[DeviceStatus.APPROVED, DeviceStatus.BLOCKED], channel=Channel.OPERATOR)
             .order_by("name", "device_registration_id")
         )
         device_ids = [d.pk for d in devices]
@@ -282,6 +285,7 @@ class DeviceMappingView(DeviceScreenView):
             .select_related("branch")
         }
         latest_sessions, in_use = _latest_sessions(user, device_ids)
+        signed_in = services.live_sessions(device_ids)
 
         # The device or its mapping, whichever changed last, puts it on top.
         devices.sort(key=lambda d: recent_key(_latest(d, open_mappings.get(d.pk))))
@@ -310,6 +314,12 @@ class DeviceMappingView(DeviceScreenView):
                 "online": online,
                 "blocked": blocked,
                 "mapped": mapping is not None,
+                # Who is logged in now (an open, unexpired session): Re-map and
+                # Close mapping wait until they log out.
+                "signed_in": (
+                    (signed_in[device.pk].display_name or signed_in[device.pk].username)
+                    if device.pk in signed_in else ""
+                ),
                 # Where the closed mappings live: a row here is the open one, so
                 # its to_date is always empty. The history is on the device.
                 "detail_url": reverse(
@@ -338,6 +348,9 @@ class DeviceMappingView(DeviceScreenView):
         context.update({
             "devices": rows,
             "unmapped_devices_list": unmapped,
+            # Force logout, for a lost tablet whose user cannot log out:
+            # system admins only.
+            "may_force_logout": bool(getattr(user, "sees_every_company", False)),
             "remap_stations": list(
                 branches_for(user).filter(is_active=True).order_by("name").values("id", "name")
             ),
@@ -346,6 +359,7 @@ class DeviceMappingView(DeviceScreenView):
                 "remap": reverse("devices-mapping-remap", args=[0]),
                 "close": reverse("devices-mapping-close", args=[0]),
                 "letter": reverse("devices-mapping-letter", args=[0]),
+                "force_logout": reverse("devices-mapping-force-logout", args=[0]),
             },
             "counts": {
                 "total": len(rows),
@@ -538,6 +552,22 @@ class DeviceCloseMappingView(MappingActionView):
 
     def act(self, devices, pk, data):
         return services.close_mapping(devices, pk, user=self.request.user)
+
+
+class DeviceForceLogoutView(MappingActionView):
+    """Sign whoever is on a device out -- a lost or broken tablet whose user
+    cannot log out, so Re-map can go ahead. System admins only."""
+
+    permission = "update"
+    done = "Signed out. The device can be re-mapped now."
+
+    def post(self, request, pk, *args, **kwargs):
+        if not getattr(request.user, "sees_every_company", False):
+            return self.refused()
+        return super().post(request, pk, *args, **kwargs)
+
+    def act(self, devices, pk, data):
+        return services.force_logout(devices, pk, user=self.request.user)
 
 
 # --- App Releases and App Mapping ----------------------------------------------

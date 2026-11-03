@@ -21,7 +21,7 @@
   function crud() { return window.BykyCrud || {}; }
 
   function urlFor(kind, pk) {
-    var key = { remap: 'urlRemap', close: 'urlClose', letter: 'urlLetter' }[kind];
+    var key = { remap: 'urlRemap', close: 'urlClose', letter: 'urlLetter', force: 'urlForceLogout' }[kind];
     return root.dataset[key].replace(/\/0\/([a-z]+)\/$/, '/' + pk + '/$1/');
   }
 
@@ -191,6 +191,24 @@
     send(letterGo, urlFor('letter', current.pk), { transaction_letter: letterBox.value }, 'device-letter');
   });
 
+  /* ── Force logout (system admins, a lost tablet) ──────────────────── */
+
+  var force = document.querySelector('[data-scr-modal="device-force-logout"]');
+  var forceGo = force && force.querySelector('[data-force-go]');
+
+  function openForce(d) {
+    current = d;
+    force.querySelector('[data-force-title]').textContent = 'Force logout on ' + label(d) + '?';
+    force.querySelector('[data-force-sub]').textContent = d.signedIn + ' is logged in' + (d.station ? ' at ' + d.station : '') + '.';
+    forceGo.disabled = false;
+    show('device-force-logout', true);
+  }
+
+  if (forceGo) forceGo.addEventListener('click', function () {
+    if (!current) return;
+    send(forceGo, urlFor('force', current.pk), {}, 'device-force-logout');
+  });
+
   /* ── the menu buttons ─────────────────────────────────────────────── */
 
   document.addEventListener('click', function (e) {
@@ -202,10 +220,12 @@
     var d = {
       pk: btn.dataset.pk, number: btn.dataset.number, name: btn.dataset.name,
       station: btn.dataset.station, stationId: btn.dataset.stationId, from: btn.dataset.from,
-      online: btn.dataset.online === 'yes', prefix: btn.dataset.prefix, letter: btn.dataset.letter
+      online: btn.dataset.online === 'yes', prefix: btn.dataset.prefix, letter: btn.dataset.letter,
+      signedIn: btn.dataset.signedIn
     };
     if (btn.dataset.mappingAction === 'remap' && remap) openRemap(d);
     if (btn.dataset.mappingAction === 'close' && unmap) openUnmap(d);
     if (btn.dataset.mappingAction === 'letter' && letterModal) openLetter(d);
+    if (btn.dataset.mappingAction === 'force-logout' && force) openForce(d);
   });
 })();

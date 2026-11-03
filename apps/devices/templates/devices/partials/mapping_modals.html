@@ -50,7 +50,6 @@ No date is typed: mapping is stamped when it is saved, as the legacy did. Needs 
   </div>
   <div class="scr-modal-body">
     <p class="scr-modal-line">The mapping ends now and stays in the station history. Until the device is mapped again, nobody can log in on it at a station.</p>
-    <p class="scr-modal-line text-danger" data-mapping-logout hidden>Someone is logged in on this device. They will be logged out now.</p>
   </div>
   <div class="scr-modal-foot scr-dev-foot">
     <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
@@ -80,5 +79,25 @@ No date is typed: mapping is stamped when it is saved, as the legacy did. Needs 
   <div class="scr-modal-foot scr-dev-foot">
     <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
     <button type="button" class="scr-btn-primary" data-letter-go>Save</button>
+  </div>
+</div>
+
+<div class="scr-modal-veil" data-scr-modal-veil="device-force-logout" hidden></div>
+<div class="scr-modal scr-dev-modal" data-scr-modal="device-force-logout" hidden>
+  <div class="scr-modal-head">
+    <div>
+      <div class="scr-modal-title" data-force-title>Force logout?</div>
+      <p class="scr-modal-sub" data-force-sub></p>
+    </div>
+    <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+    </button>
+  </div>
+  <div class="scr-modal-body">
+    <p class="scr-modal-line">For a lost or broken tablet whose user cannot log out. They are signed out now; the device can then be re-mapped or its mapping closed.</p>
+  </div>
+  <div class="scr-modal-foot scr-dev-foot">
+    <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+    <button type="button" class="scr-btn-danger" data-force-go>Force logout</button>
   </div>
 </div>
