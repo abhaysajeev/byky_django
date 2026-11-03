@@ -299,6 +299,14 @@ class PrivilegeScreenView(PagePermissionMixin, ThemedTemplateView):
         return context
 
 
+class SystemPrivilegeView(PrivilegeScreenView):
+    """Users & Roles' copy of the shared privilege grid (owner, 3 Nov 2026)."""
+
+    page_code = "system.privileges"
+    module_code = "system"
+    module_label = "Users & Roles"
+
+
 def _payload(request):
     if request.content_type and "application/json" in request.content_type:
         try:

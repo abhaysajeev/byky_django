@@ -184,9 +184,13 @@ PAGES = [
      ["read", "print"], 8, False),
     ("reports.vehicle_details", "reports", "Vehicle Details", "reports-vehicle-details", ["read", "print"], 9, False),
     ("reports.asset_details", "reports", "Asset Details", "reports-asset-details", ["read", "print"], 10, False),
+    # Which roles see which reports (owner, 3 Nov 2026: company admins use custom roles).
+    ("reports.privileges", "reports", "Privileges", "reports-privileges", ["read", "update"], 99, False),
 
     ("system.role", "system", "Roles", "portal-role-list", CRUD, 1, False),
     ("system.user", "system", "Users", "portal-user-list", CRUD, 2, False),
+    # Which roles may manage roles and users (owner, 3 Nov 2026).
+    ("system.privileges", "system", "Privileges", "system-privileges", ["read", "update"], 9, False),
 
     # Read only: logs are written by the server, never by a person.
     ("monitoring.request_log", "monitoring", "Device Requests", "monitoring-request-list", ["read"], 1, False),
