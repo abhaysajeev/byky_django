@@ -89,7 +89,7 @@
     </div>
 
     <div class="scr-card">
-      <div class="scr-form-head"><div class="scr-form-title-row"><h2 class="scr-form-title">Order</h2>{% include "rental/partials/order_status.html" with status=order.status %}</div></div>
+      <div class="scr-form-head"><div class="scr-form-title-row"><h2 class="scr-form-title">Order</h2>{% include "rental/partials/order_display_status.html" with badge=order_display.status_badge label=order_display.status_label %}</div></div>
       <div class="scr-form-body scr-mon-body">
         <div class="scr-detail-rows">
           <div class="scr-detail-row"><span class="scr-detail-label">Order</span><span class="scr-detail-value"><a class="scr-link-blue" href="{{ order_url }}">{{ order.order_no }}</a> · {{ booked_at|date:"d M Y, H:i" }}</span></div>

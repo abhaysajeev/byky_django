@@ -24,7 +24,7 @@ from apps.discount.models import CardDiscountClaim, ClaimStatus
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
-from apps.rental import blocked, drawers, forms, live, scoping
+from apps.rental import blocked, drawers, forms, live, order_status, scoping
 from apps.rental.models import (
     CREDIT_NOTE_LIVE,
     CreditNoteSource,
@@ -224,13 +224,8 @@ class RentalPrivilegeView(PrivilegeScreenView):
 
 ORDERS_PER_PAGE = 50
 
-# The order's state as the back office reads it. "Awaiting settlement" -- every
-# vehicle back, the bill not closed -- is derived, never stored.
-ORDER_STATUSES = [
-    ("active", "Active"), ("awaiting", "Awaiting settlement"),
-    ("completed", "Completed"), ("cancelled", "Cancelled"),
-]
-_STATUS_LABEL = dict(ORDER_STATUSES)
+# The order's display status, as every screen shows it (apps/rental/order_status.py).
+ORDER_STATUSES = order_status.CHOICES
 
 
 _APPLIED = {"base": "Base fare", "season": "Season fare", "special_price": "Special price"}
@@ -256,10 +251,8 @@ def fare_terms(details):
     return " · ".join(p for p in parts if p)
 
 
-def _status_key(order, items_out):
-    if order.status == OrderStatus.ACTIVE:
-        return "active" if items_out else "awaiting"
-    return order.status
+def _status(value):
+    return {"status": value, "status_label": order_status.label(value), "status_badge": order_status.BADGES[value]}
 
 
 def _aed(value):
@@ -281,22 +274,15 @@ def _date_param(value):
 def _orders(request, zone):
     """The orders the list shows, narrowed by the query string."""
     params = request.GET
-    active_items = Count("items", filter=Q(items__status=OrderItemStatus.ACTIVE))
-    orders = (scoping.orders_for(request.user).select_related("branch", "device")
-              .annotate(items_out=active_items))
+    orders = order_status.with_display_status(scoping.orders_for(request.user).select_related("branch", "device"))
     text = params.get("q", "").strip()
     if text:
         orders = orders.filter(Q(order_no__icontains=text) | Q(customer_name__icontains=text)
                                | Q(customer_mobile__icontains=text))
     if params.get("branch", "").isdigit():
         orders = orders.filter(branch_id=int(params["branch"]))
-    status = params.get("status", "")
-    if status == "active":
-        orders = orders.filter(status=OrderStatus.ACTIVE, items_out__gt=0)
-    elif status == "awaiting":
-        orders = orders.filter(status=OrderStatus.ACTIVE, items_out=0)
-    elif status in (OrderStatus.COMPLETED, OrderStatus.CANCELLED):
-        orders = orders.filter(status=status)
+    if params.get("status") in order_status.VALUES:
+        orders = orders.filter(display_status=params["status"])
     start, end = _date_param(params.get("from")), _date_param(params.get("to"))
     if start:
         orders = orders.filter(booked_at__gte=_day_bounds(start, zone)[0])
@@ -324,12 +310,11 @@ def _order_kpis(user, branch_id, zone, company):
 
 
 def _order_row(order):
-    status = _status_key(order, order.items_out)
     return {
         "order_no": order.order_no, "transaction_no": order.transaction_no, "booked_at": order.booked_at,
         "customer": order.customer_name, "mobile": order.customer_mobile,
         "station": order.branch.name, "tablet": order.device.device_registration_id,
-        "status": status, "status_label": _STATUS_LABEL[status], "is_direct": order.is_direct_bill,
+        **_status(order.display_status), "is_direct": order.is_direct_bill,
         "detail_url": reverse("rental-order-detail", args=[order.pk]),
     }
 
@@ -401,8 +386,7 @@ class OrderDetailView(RentalScreenView):
 
         items = list(order.items.select_related("vehicle__vehicle_type").order_by("start_time", "created_on"))
         replaced_by = {item.replaced_item_id: item for item in items if item.replaced_item_id}
-        items_out = sum(1 for item in items if item.status == OrderItemStatus.ACTIVE)
-        status = _status_key(order, items_out)
+        items_out = sum(1 for item in items if order_status.is_out(item))
         invoice = Invoice.objects.filter(order=order).select_related("issued_by").first()
         claim = order.discount_claim
 
@@ -410,7 +394,7 @@ class OrderDetailView(RentalScreenView):
             return moment.astimezone(zone) if moment else None
 
         context.update({
-            "order": order, "status": status, "status_label": _STATUS_LABEL[status],
+            "order": order, **_status(order_status.display_status(order, items)),
             "booked_at": local(order.booked_at), "start_time": local(order.start_time),
             "completed_at": local(order.completed_at), "cancelled_at": local(order.cancelled_at),
             "operator": order.created_by.display_name if order.created_by_id else "",
@@ -1050,6 +1034,7 @@ class RequestDetailView(RentalScreenView):
             })
         context.update({
             "req": req, "order": order, "lines": lines, "rule": rule_label(req),
+            "order_display": _status(order_status.display_status(order)),
             "order_running": order.status == OrderStatus.ACTIVE,
             # A discount, complimentary or cancel while the order runs; an invoice
             # reprint once it is settled; an order receipt reprint unless cancelled.

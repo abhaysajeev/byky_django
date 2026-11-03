@@ -37,7 +37,7 @@ from apps.discount.models import CardDiscountClaim, ClaimStatus
 from apps.notifications import services as notifications
 from apps.notifications.models import Action
 from apps.photos import services as photo_services
-from apps.rental import live, station_sync
+from apps.rental import live, order_status, station_sync
 from apps.rental.models import (
     REQUEST_LIVE,
     DecisionChannel,
@@ -615,11 +615,17 @@ def _billing(order, zone):
     }
 
 
+def _display(order):
+    value = order_status.display_status(order)
+    return {"order_status": value, "order_status_label": order_status.label(value)}
+
+
 def _order_block(order, zone, now):
     """The order a manager decides about: customer, advance, every vehicle,
     and its money (_billing)."""
     return {
         "order_no": order.order_no, "transaction_no": order.transaction_no, "status": order.status,
+        **_display(order),
         "customer_name": order.customer_name, "customer_mobile": order.customer_mobile,
         "booked_at": _local(order.booked_at, zone),
         "advance_paid": str(order.paid_amount),

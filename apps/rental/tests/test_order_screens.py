@@ -112,7 +112,7 @@ def test_the_list_shows_this_companys_orders_with_their_columns(client_in, world
     [row] = response.context["rows"]
     assert (row["customer"], row["mobile"], row["station"], row["tablet"]) == (
         "Ahmed Al Mansoori", "971501234567", "Abu Dhabi Corniche 1", shop["tablet"].device_registration_id)
-    assert (row["status_label"], row["is_direct"]) == ("Active", True)
+    assert (row["status_label"], row["is_direct"]) == ("Running", True)
     assert "Direct rental" in html
 
 
@@ -124,9 +124,9 @@ def test_the_status_says_what_is_left_to_do(client_in, world, shop):
 
     labels = {r["order_no"]: r["status_label"] for r in rows(client_in)}
 
-    assert labels == {"O-OUT": "Active", "O-BACK": "Awaiting settlement", "O-DONE": "Completed",
+    assert labels == {"O-OUT": "Running", "O-BACK": "Awaiting Settlement", "O-DONE": "Received",
                       "O-CANCEL": "Cancelled"}
-    for status, expected in (("active", "O-OUT"), ("awaiting", "O-BACK"), ("completed", "O-DONE"),
+    for status, expected in (("running", "O-OUT"), ("awaiting_settlement", "O-BACK"), ("received", "O-DONE"),
                              ("cancelled", "O-CANCEL")):
         assert [r["order_no"] for r in rows(client_in, status=status)] == [expected]
 
@@ -206,7 +206,7 @@ def test_a_settled_order_shows_its_bill_vehicles_payments_invoice_and_history(cl
 
     assert response.status_code == 200
     html = response.content.decode()
-    for text in ("ADC0000231", "Completed", "AED 63.00", "Chain broken", "Replaced", "Returned", "R-1",
+    for text in ("ADC0000231", "Replaced &amp; Received", "AED 63.00", "Chain broken", "Replaced", "Returned", "R-1",
                  "DC 02 · 72 min · AED 60.00"):
         assert text in html, text
     assert "Not billed yet" not in html

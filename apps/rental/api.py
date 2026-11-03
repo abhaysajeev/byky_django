@@ -26,9 +26,9 @@ from apps.company.scoping import companies_for
 from apps.devices import services as devices_services
 from apps.devices.models import BillKind
 from apps.portal.authentication import AppJWTAuthentication
-from apps.rental import credit_notes, services
+from apps.rental import credit_notes, order_status, services
 from apps.rental import requests as order_requests
-from apps.rental.models import DecisionChannel, Invoice, OrderItemStatus
+from apps.rental.models import DecisionChannel, Invoice
 from apps.rental.serializers import (
     CreditNoteCancelRequest,
     CreditNoteRequest,
@@ -370,6 +370,11 @@ def _test_ride_json(order):
     return None if ride is None else {"test_ride_id": str(ride.pk), "test_no": ride.test_no}
 
 
+def _display(order, items=None):
+    value = order_status.display_status(order, items)
+    return {"order_status": value, "order_status_label": order_status.label(value)}
+
+
 def order_json(order, *, zone, next_order_number):
     """The one shape every order call answers with (order_lifecycle_design.md
     3): the order, its customer, its totals, every item and every payment.
@@ -381,6 +386,8 @@ def order_json(order, *, zone, next_order_number):
     return {
         "sync_id": str(order.pk), "order_no": order.order_no, "transaction_no": order.transaction_no,
         "status": order.status, "payment_status": order.payment_status,
+        # What to show (8 values, owner 3 Nov 2026); `status` still drives the flow.
+        **_display(order, items),
         # Who booked it and who settled it (null until settled), by name -- as
         # Live Monitoring shows them (owner, 29 Oct 2026).
         "open_by": _person(order.created_by) if order.created_by_id else None,
@@ -400,7 +407,7 @@ def order_json(order, *, zone, next_order_number):
         # Money collected, from booking on; balance_due null until settle.
         "amount_received": _money(order.amount_received), "amount_refunded": _money(order.amount_refunded),
         "paid_amount": _money(order.paid_amount), "balance_due": _money(order.balance_due),
-        "items_out": sum(1 for item in items if item.status == OrderItemStatus.ACTIVE),
+        "items_out": sum(1 for item in items if order_status.is_out(item)),   # a parked return is back
         "items": [
             {
                 "sync_id": str(item.pk), "status": item.status,
@@ -484,6 +491,7 @@ _ORDER_SAMPLE = {
     "sync_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9", "order_no": "DUBPP60182000231",
     "transaction_no": "DUBPP-A-12",
     "status": "active", "payment_status": "pending",
+    "order_status": "running", "order_status_label": "Running",
     "open_by": "Rashed K", "close_by": None,
     "booked_at": "2026-10-02 16:00:05", "start_time": "2026-10-02 16:00:00",
     "completed_at": None, "cancelled_at": None,
@@ -531,9 +539,11 @@ _RETURNED_ITEMS = [
     {**_ORDER_SAMPLE["items"][1], "status": "returned", "run_minutes": 60, "end_time": "2026-10-02 17:00:00",
      "overtime_amount": "0.00", "total_amount": "50.00"},
 ]
-_RETURNED_SAMPLE = {**_ORDER_SAMPLE, "items_out": 0, "items": _RETURNED_ITEMS}
+_RETURNED_SAMPLE = {**_ORDER_SAMPLE, "items_out": 0, "items": _RETURNED_ITEMS,
+                    "order_status": "awaiting_settlement", "order_status_label": "Awaiting Settlement"}
 _SETTLED_SAMPLE = {
     **_RETURNED_SAMPLE, "status": "completed", "payment_status": "paid", "completed_at": "2026-10-02 17:13:30",
+    "order_status": "received", "order_status_label": "Received",
     "close_by": "Rashed K", "star_rating": "4.5", "rating_remarks": "Bikes were clean, quick service",
     "subtotal": "110.00",
     "discount": {"source": "card", "request_sync_id": "01923e2a-11aa-7b22-8c33-d4e5f6a7b8c9",
@@ -2056,6 +2066,7 @@ _MANAGER_SAMPLE = {
     **_REQUEST_PENDING_SAMPLE, "branch_id": 3, "station": "Creek Park 1", "requested_by": "Rashed K",
     "order": {
         "order_no": "DUBPP60182000231", "transaction_no": "DUBPP-A-12", "status": "active",
+        "order_status": "partially_received", "order_status_label": "Partially Received",
         "customer_name": "Ahmed Al Mansoori",
         "customer_mobile": "971501234567", "booked_at": "2026-10-08 16:00:00", "advance_paid": "100.000",
         "net_amount": None,

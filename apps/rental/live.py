@@ -16,7 +16,7 @@ from decimal import Decimal
 from django.db.models import Prefetch, Q, Sum
 from django.urls import reverse
 
-from apps.rental import money, scoping
+from apps.rental import money, order_status, scoping
 from apps.rental.models import (
     OrderAction,
     OrderEvent,
@@ -148,6 +148,7 @@ def row(order, zone):
     ends = [i.expected_end_time for i in active]
     booked, start = _local(order.booked_at, zone), _local(order.start_time, zone)
     closed_at = order.completed_at or order.cancelled_at
+    shown = order_status.display_status(order, items)
     return {
         "id": str(order.pk),
         "order_no": order.order_no,
@@ -161,7 +162,7 @@ def row(order, zone):
         "mobile": order.customer_mobile,
         "vehicles": [_vehicle(i, zone) for i in items],
         "out": len(active),
-        "back": sum(1 for i in items if i.status == OrderItemStatus.RETURNED),
+        "back": sum(1 for i in items if order_status.is_back(i)),
         "start": order.start_time.isoformat(),
         "start_label": f"{start:%H:%M}",
         "due": min(ends).isoformat() if ends else None,
@@ -170,6 +171,8 @@ def row(order, zone):
         "closed_by": _closed_by(events) or "—",
         "status": order.status,
         "status_label": STATUS_LABEL[order.status],
+        # The badge shows the display status; row bands and filters keep `status`.
+        "display_status": order_status.TONES[shown], "display_label": order_status.label(shown),
         # The legacy grid's amounts (DMSGetAllStatusTrackingDetailsForPartialView_New):
         # collected, fare, deposit; once settled the bill (net less VAT), VAT,
         # discount and net. Owner, 28 Oct 2026.

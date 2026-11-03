@@ -39,7 +39,7 @@
       <div class="scr-form-head">
         <div class="scr-form-title-row">
           <h2 class="scr-form-title">Order</h2>
-          {% include "rental/partials/order_status.html" with status=status %}
+          {% include "rental/partials/order_display_status.html" with badge=status_badge label=status_label %}
         </div>
       </div>
       <div class="scr-form-body scr-mon-body">
