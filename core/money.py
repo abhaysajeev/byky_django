@@ -77,6 +77,24 @@ def money_for(company, branch=None):
     return Money(row.decimal_places, row.round_off_mode, row.round_off_step)
 
 
+def company_for_user(user):
+    """The company whose settings a signed-in user's screens follow: their own,
+    or -- for a system user, who has none -- the only company when there is
+    exactly one (BYKY today). With several, None: the defaults apply, as
+    there is no one right answer (owner, 3 Nov 2026)."""
+    company = getattr(user, "company", None)
+    if company is not None or not getattr(user, "is_authenticated", False):
+        return company
+    from core.enums import UserScope
+
+    if getattr(user, "scope", None) != UserScope.SYSTEM:
+        return None
+    from apps.company.models import Company
+
+    only = list(Company.objects.all()[:2])
+    return only[0] if len(only) == 1 else None
+
+
 def places_for(company, branch=None):
     return money_for(company, branch).decimal_places
 

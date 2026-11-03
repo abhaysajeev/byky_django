@@ -125,7 +125,7 @@
   function showBand() {
     var lo = lowerValue.value.trim(), hi = upperValue.value.trim();
     var forWhat = promotionFor.value;
-    lowerValue.placeholder = upperValue.placeholder = forWhat === 'quantity' ? 'e.g. 2' : '0.000';
+    lowerValue.placeholder = upperValue.placeholder = forWhat === 'quantity' ? 'e.g. 2' : (0).toFixed(PLACES);
     if (!forWhat || lo === '' || hi === '') { band.textContent = 'Choose Promotion For and the band.'; return; }
     var a = +lo, b = +hi;
     if (isNaN(a) || isNaN(b)) { band.textContent = 'Enter numbers for the band.'; return; }

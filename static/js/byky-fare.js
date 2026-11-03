@@ -128,7 +128,7 @@
       var minutes = f[2] === 'min';
       var attrs = minutes
         ? 'inputmode="numeric" maxlength="4" data-num="minutes" data-min="' + f[3] + '" data-max="' + MAX_MINUTES + '" placeholder="0"'
-        : 'inputmode="decimal" maxlength="14" data-num="money" placeholder="0.000"';
+        : 'inputmode="decimal" maxlength="14" data-num="money" placeholder="' + (0).toFixed(PLACES) + '"';
       var optional = !f[4];
       var value = price[f[0]] == null ? '' : price[f[0]];
       return '<div class="scr-field"' + (optional ? ' data-concurrent' : '') + '><label class="scr-label" for="' + id + '">' +
