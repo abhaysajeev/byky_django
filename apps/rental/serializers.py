@@ -592,11 +592,12 @@ class ManagerClaimListRequest(ManagerApprovalListRequest):
 
 
 class ManagerClaimRevokeRequest(serializers.Serializer):
-    """Revoke an approved claim: the reason is required (owner, 30 Oct 2026)."""
+    """Revoke an approved claim. The reason is optional (owner, 3 Nov 2026):
+    left out, null, "" or only spaces all mean no reason."""
 
     claim_id = serializers.UUIDField(error_messages={**REQUIRED, "invalid": "must be a UUID"})
-    note = serializers.CharField(max_length=255, error_messages={
-        **REQUIRED, "blank": "is required", "max_length": "must be at most 255 characters"})
+    note = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True,
+                                 error_messages={"max_length": "must be at most 255 characters"})
 
 
 class ManagerClaimDecisionRequest(serializers.Serializer):
@@ -606,10 +607,10 @@ class ManagerClaimDecisionRequest(serializers.Serializer):
 
 
 class ManagerRequestDecisionRequest(serializers.Serializer):
-    """Reject or revoke: the request and an optional note."""
+    """Reject or revoke: the request and an optional note (null accepted too)."""
 
     request_sync_id = serializers.UUIDField(error_messages={**REQUIRED, "invalid": "must be a UUID"})
-    note = serializers.CharField(max_length=500, required=False, allow_blank=True,
+    note = serializers.CharField(max_length=500, required=False, allow_blank=True, allow_null=True,
                                  error_messages={"max_length": "must be at most 500 characters"})
 
 

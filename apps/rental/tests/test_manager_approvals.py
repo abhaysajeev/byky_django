@@ -124,12 +124,20 @@ def running_claim(card, shop):
     return make_claim(card, shop["ahmed"], status=ClaimStatus.APPROVED, card_number="FAM-2")
 
 
+@pytest.mark.parametrize("note", [{}, {"note": None}, {"note": ""}, {"note": "   "}])
+def test_the_manager_revokes_without_a_reason(client, manager, running_claim, note):
+    """Owner, 3 Nov 2026: the reason is optional -- left out, null, empty or
+    spaces all revoke, with an empty note."""
+    body = call(client, CLAIM_REVOKE, {"claim_id": str(running_claim.pk), **note}, token=manager).json()
+
+    assert body["code"] == "ok", body
+    assert (body["data"]["status"], body["data"]["revoke_note"]) == ("revoked", "")
+
+
 def test_the_manager_revokes_an_approval_with_a_reason(client, manager, running_claim):
-    no_note = call(client, CLAIM_REVOKE, {"claim_id": str(running_claim.pk)}, token=manager)
     body = call(client, CLAIM_REVOKE, {"claim_id": str(running_claim.pk), "note": "Card was expired"},
                 token=manager).json()
 
-    assert (no_note.status_code, no_note.json()["data"]["errors"]) == (400, {"note": "is required"})
     assert body["code"] == "ok", body
     assert {k: body["data"][k] for k in ("status", "revoked_by", "revoked_channel", "revoke_note")} == {
         "status": "revoked", "revoked_by": "Meera", "revoked_channel": "manager", "revoke_note": "Card was expired"}
