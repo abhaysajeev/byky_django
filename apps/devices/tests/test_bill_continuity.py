@@ -83,18 +83,62 @@ def test_past_six_digits_the_number_grows(device, branch):
     assert services.format_bill_number(counter(device, branch), 1_234_567) == "DUBPP601821234567"
 
 
-def test_the_prefix_is_a_snapshot(device, branch):
-    """A counter keeps the format it started with, so a later change to the
-    station's prefix cannot make this device's old and new numbers collide."""
-    row = counter(device, branch, prefix="DUBPP")
-    DeviceSettings.objects.create(
-        branch=branch, settings_code="S01", order_no_prefix="NEWPX",
-        header_1="BYKY", header_2="Corniche", footer_1="Thanks",
-        approval_status=ApprovalStatus.APPROVED,
+def settings(branch, prefix, **fields):
+    return DeviceSettings.objects.create(
+        branch=branch, settings_code="S01", order_no_prefix=prefix,
+        header_1="BYKY", header_2="Corniche", footer_1="Thanks", **fields,
     )
 
-    row.refresh_from_db()
-    assert services.format_bill_number(row, 1).startswith("DUBPP")
+
+def test_a_changed_station_prefix_moves_the_counter_and_keeps_its_number(device, branch):
+    """3 Nov 2026: the station's Order No Starting Characters were changed on
+    the web, but the tablet kept being told the old prefix. The counter now
+    follows the approved setting the next time it is read, and its running
+    number carries on: DUBPP60182000015 is followed by NEWPX60182000016."""
+    counter(device, branch, prefix="DUBPP", last=15)
+    settings(branch, "newpx", approval_status=ApprovalStatus.APPROVED)
+
+    row = services.counter_for(device, branch, BillKind.ORDER)
+
+    assert (row.prefix, row.last_number) == ("NEWPX", 15)
+    assert BillContinuity.objects.get(pk=row.pk).prefix == "NEWPX"
+    assert services.format_bill_number(row) == "NEWPX60182000016"
+
+
+def test_the_test_ride_counter_follows_the_new_prefix_too(device, branch):
+    counter(device, branch, kind=BillKind.TEST_RIDE, prefix="DUBPP", last=3)
+    settings(branch, "NEWPX", approval_status=ApprovalStatus.APPROVED)
+
+    row = services.counter_for(device, branch, BillKind.TEST_RIDE)
+
+    assert services.format_bill_number(row) == "TNEWPX60182000004"
+
+
+def test_a_prefix_edit_waiting_for_approval_does_not_move_the_counter(device, branch):
+    """Without an approved setting bill_prefix_for falls back to the branch
+    code -- the counter must not jump to it while an edit is pending."""
+    counter(device, branch, prefix="DUBPP", last=15)
+    settings(branch, "NEWPX")                                   # pending
+
+    row = services.counter_for(device, branch, BillKind.ORDER)
+
+    assert (row.prefix, row.last_number) == ("DUBPP", 15)
+
+
+def test_without_settings_an_existing_counter_keeps_its_prefix(device, branch):
+    counter(device, branch, prefix="DUBPP", last=15)
+
+    assert services.counter_for(device, branch, BillKind.ORDER).prefix == "DUBPP"
+
+
+def test_the_settings_reply_tells_the_tablet_the_new_prefix(device, branch):
+    counter(device, branch, prefix="DUBPP", last=15)
+    settings(branch, "NEWPX", approval_status=ApprovalStatus.APPROVED)
+
+    reply = services.operator_settings(device, branch)
+
+    assert (reply["order_no_prefix"], reply["last_order_no"], reply["next_order_number"]) == (
+        "NEWPX", "NEWPX60182000015", 16)
 
 
 def test_the_prefix_comes_from_approved_settings(branch):
