@@ -9,6 +9,7 @@ from apps.fleet import api, maintenance_api
 urlpatterns = [
     path("vehicles", api.VehiclesView.as_view(), name="api-app-vehicles"),
     path("assets", maintenance_api.AssetsView.as_view(), name="api-app-assets"),
+    path("asset-types", maintenance_api.AssetTypesView.as_view(), name="api-app-asset-types"),
     path("service-requests", maintenance_api.ServiceRequestCreateView.as_view(), name="api-app-service-requests"),
     path("service-requests/list", maintenance_api.ServiceRequestListView.as_view(),
          name="api-app-service-request-list"),
@@ -19,6 +20,7 @@ urlpatterns = [
     path("image-shares", maintenance_api.ImageShareCreateView.as_view(), name="api-app-image-shares"),
     path("image-shares/list", maintenance_api.ImageShareListView.as_view(), name="api-app-image-share-list"),
     path("issue-types", maintenance_api.IssueTypesView.as_view(), name="api-app-issue-types"),
+    path("issue-types/create", maintenance_api.IssueTypeCreateView.as_view(), name="api-app-issue-type-create"),
     path("asset-checks", maintenance_api.AssetCheckCreateView.as_view(), name="api-app-asset-checks"),
     path("asset-checks/list", maintenance_api.AssetCheckListView.as_view(), name="api-app-asset-check-list"),
     path("asset-checks/detail", maintenance_api.AssetCheckDetailView.as_view(), name="api-app-asset-check-detail"),

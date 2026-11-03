@@ -15,7 +15,7 @@
 {% endblock page_js %}
 
 {% block content %}
-<div class="scr" data-device-mapping data-url-remap="{{ mapping_urls.remap }}" data-url-close="{{ mapping_urls.close }}" data-url-letter="{{ mapping_urls.letter }}">
+<div class="scr" data-device-mapping data-url-remap="{{ mapping_urls.remap }}" data-url-close="{{ mapping_urls.close }}" data-url-letter="{{ mapping_urls.letter }}" data-url-force-logout="{{ mapping_urls.force_logout }}">
 
   <div class="scr-head">
     <div>
@@ -141,10 +141,11 @@
                     </a>
                     {% if perm.update %}
                     {% comment %}
-                    Re-map and Close log out whoever is on the device; the
-                    modal says so when the row is in use (data-online).
+                    Re-map and Close only on an idle device: while someone is
+                    logged in they are disabled and say who (services.
+                    _nobody_signed_in). Disabled items are greyed (byky-screen.css).
                     {% endcomment %}
-                    <button type="button" class="scr-menu-item" data-mapping-action="remap" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-name="{{ d.name }}" data-station="{{ d.station }}" data-station-id="{{ d.station_id }}" data-from="{{ d.from_date|date:'d M Y, H:i' }}" data-online="{% if d.online %}yes{% endif %}"{% if not d.mapped %} disabled title="No station yet — use Add Device Mapping"{% endif %}>
+                    <button type="button" class="scr-menu-item" data-mapping-action="remap" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-name="{{ d.name }}" data-station="{{ d.station }}" data-station-id="{{ d.station_id }}" data-from="{{ d.from_date|date:'d M Y, H:i' }}" data-online="{% if d.online %}yes{% endif %}"{% if not d.mapped %} disabled title="No station yet — use Add Device Mapping"{% elif d.signed_in %} disabled title="{{ d.signed_in }} is logged in — they must log out first"{% endif %}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10a2.1 2.1 0 0 0-3-3L5 17z"></path><path d="M14.5 6.5 17.5 9.5"></path></svg>
                       Re-map to another station
                     </button>
@@ -156,9 +157,15 @@
                     {% endif %}
                     {% endif %}
                     {% if perm.delete %}
-                    <button type="button" class="scr-menu-item scr-menu-item-danger" data-mapping-action="close" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-name="{{ d.name }}" data-station="{{ d.station }}" data-station-id="{{ d.station_id }}" data-from="{{ d.from_date|date:'d M Y, H:i' }}" data-online="{% if d.online %}yes{% endif %}"{% if not d.mapped %} disabled title="No station to close"{% endif %}>
+                    <button type="button" class="scr-menu-item scr-menu-item-danger" data-mapping-action="close" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-name="{{ d.name }}" data-station="{{ d.station }}" data-station-id="{{ d.station_id }}" data-from="{{ d.from_date|date:'d M Y, H:i' }}" data-online="{% if d.online %}yes{% endif %}"{% if not d.mapped %} disabled title="No station to close"{% elif d.signed_in %} disabled title="{{ d.signed_in }} is logged in — they must log out first"{% endif %}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
                       Close mapping
+                    </button>
+                    {% endif %}
+                    {% if may_force_logout and perm.update and d.signed_in %}
+                    <button type="button" class="scr-menu-item scr-menu-item-danger" data-mapping-action="force-logout" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-name="{{ d.name }}" data-station="{{ d.station }}" data-signed-in="{{ d.signed_in }}">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><path d="m16 17 5-5-5-5"></path><path d="M21 12H9"></path></svg>
+                      Force logout
                     </button>
                     {% endif %}
                   </div>

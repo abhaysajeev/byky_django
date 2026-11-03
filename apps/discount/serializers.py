@@ -61,6 +61,8 @@ class ApprovalRequest(serializers.Serializer):
     # The photo uploaded first to POST /api/v1/operator/photos (apps/photos).
     card_photo_id = serializers.UUIDField(required=False, allow_null=True,
                                           error_messages={"invalid": "must be a photo_id (UUID)"})
+    # The operator's note for the approver (owner, 29 Oct 2026). Optional.
+    remarks = text_field(max_length=255, required=False, allow_blank=True)
 
 
 class ApprovalStatusRequest(serializers.Serializer):

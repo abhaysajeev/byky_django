@@ -59,3 +59,21 @@ class ClaimApprove(_ClaimDecision):
 class ClaimReject(_ClaimDecision):
     approve = False
     done = "Request rejected."
+
+
+class ClaimRevoke(_ClaimDecision):
+    """Take an approved claim back before its bill uses it -- the reason is
+    required (owner, 30 Oct 2026). Same permission as approving."""
+
+    def post(self, request, pk, *args, **kwargs):
+        if not self.may("approve"):
+            return self.refused()
+        claim = get_object_or_404(self.rows(), pk=pk)
+        note = str(_payload(request).get("note") or "")
+        try:
+            services.revoke_claim(request.user, claim, note)
+        except services.DiscountRefused as refusal:
+            field = "Reason" if refusal.code == "note_required" else ""
+            return JsonResponse({"ok": False, "code": "invalid",
+                                 "errors": [{"field": field, "message": refusal.message}]}, status=400)
+        return JsonResponse({"ok": True, "message": "Approval revoked."})

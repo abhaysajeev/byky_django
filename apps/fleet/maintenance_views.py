@@ -167,6 +167,7 @@ class ServiceRequestListView(_InventoryScreen):
                 "request_no": r.request_no, "station": r.branch.name, "target": _target(r), "issue": service_requests.summary(r),
                 "requested_by": r.requested_by.display_name if r.requested_by_id else "",
                 "requested_at": r.requested_at.astimezone(zone), "status": r.status,
+                "warehouse": r.needs_warehouse_service,
                 "out_for": _out_for(r, now), "detail_url": reverse("fleet-service-request-detail", args=[r.pk]),
             } for r in page.object_list],
             "page": page, "query": query.urlencode(), "filter_query": filter_query.urlencode(), "params": params,

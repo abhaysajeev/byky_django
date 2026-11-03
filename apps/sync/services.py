@@ -69,22 +69,30 @@ def replay(issues_qs, pk, *, user, request_data=None, now=None):
         if str(request_data.get("sync_id", "")) != str(issue.sync_id):
             raise SyncActionError("sync_id cannot be changed: it is how the tablet's retries are matched.")
 
-    resolved = []
     with parking.queue_lock(_queue_key(issue)):
         issue.refresh_from_db()
         _check_head(issue)
-        if not _run(issue, request_data if request_data is not None else issue.request_data, user, now):
-            return {"resolved": resolved, "stopped_at": issue}
-        resolved.append(issue.pk)
-        if issue.order_id is None:
-            return {"resolved": resolved, "stopped_at": None}
-        followers = (SyncIssue.objects
-                     .filter(company_id=issue.company_id, order_id=issue.order_id, status=IssueStatus.OPEN)
-                     .order_by("id"))
-        for follower in followers:
-            if not _run(follower, follower.request_data, user, now):
-                return {"resolved": resolved, "stopped_at": follower}
-            resolved.append(follower.pk)
+        outcome = _replay_queue(issue, request_data, user, now)
+        # A replayed booking's lines now exist; returns still waiting behind
+        # it free their vehicles (rental.services.mark_return_pending).
+        parking.mark_parked_returns(issue.company_id, issue.order_id)
+    return outcome
+
+
+def _replay_queue(issue, request_data, user, now):
+    resolved = []
+    if not _run(issue, request_data if request_data is not None else issue.request_data, user, now):
+        return {"resolved": resolved, "stopped_at": issue}
+    resolved.append(issue.pk)
+    if issue.order_id is None:
+        return {"resolved": resolved, "stopped_at": None}
+    followers = (SyncIssue.objects
+                 .filter(company_id=issue.company_id, order_id=issue.order_id, status=IssueStatus.OPEN)
+                 .order_by("id"))
+    for follower in followers:
+        if not _run(follower, follower.request_data, user, now):
+            return {"resolved": resolved, "stopped_at": follower}
+        resolved.append(follower.pk)
     return {"resolved": resolved, "stopped_at": None}
 
 

@@ -39,6 +39,7 @@ from apps.rental.models import (
     Order,
     OrderRequest,
     OrderRequestKind,
+    OrderStatus,
 )
 from core.ids import uuid7
 from core.timezones import business_date_for, zone_for
@@ -233,6 +234,28 @@ def decide_claim(user, claim, approve, remarks="", channel=DecisionChannel.WEB):
     return claim
 
 
+def revoke_claim(user, claim, note, channel=DecisionChannel.WEB):
+    """Take an approved claim back before the bill uses it (owner, 30 Oct 2026),
+    on the web or in the manager app. The reason is optional (owner, 3 Nov 2026). The tablet sees
+    `revoked` in approval/status and is told; a settle naming it is then
+    refused (card_discount_revoked). Pattern: rental.requests.revoke."""
+    note = (note or "").strip()[:255]
+    with transaction.atomic():
+        claim = type(claim).objects.select_for_update().select_related("order").get(pk=claim.pk)
+        if claim.status != ClaimStatus.APPROVED:
+            raise DiscountRefused("claim_not_approved", "Only an approved request can be revoked.", 409)
+        if claim.order.status != OrderStatus.ACTIVE:
+            raise DiscountRefused("order_closed", "This order is already completed or cancelled.", 409)
+        claim.status = ClaimStatus.REVOKED
+        claim.revoked_by, claim.revoked_channel, claim.revoked_at = user, channel, timezone.now()
+        claim.revoke_note, claim.modified_by = note, user
+        claim.save(update_fields=["status", "revoked_by", "revoked_channel", "revoked_at", "revoke_note",
+                                  "modified_by", "modified_on"])
+        notifications.notify(claim, Action.REVOKED)
+        station_sync.request_changed(claim, Action.REVOKED)
+    return claim
+
+
 # -- Customer card usage (apps/discount/api.py::CardUsageView) ---------------------
 
 
@@ -358,6 +381,7 @@ def _request_approval(session, values, company, sync_id):
         fare_basis=discount.fare_basis, requires_approval=True,
         customer=customer, customer_name=customer.full_name, mobile_full=customer.mobile_full,
         card_number=values.get("card_number") or "", card_photo=values.get("card_photo") or "", photo=photo,
+        request_remarks=values.get("remarks") or "",
         order=order, bill_amount=values["bill_amount"], discount_percent=values["discount_percent"],
         discount_amount=values["discount_amount"], net_amount=values["net_amount"],
         branch=session.branch, requested_by=session.user,
@@ -396,8 +420,8 @@ def cancel_pending_for_order(order, now=None):
 
 class RedeemRefused(Exception):
     """The discount named at settle cannot be applied. `code` is one of the
-    order API's refusals (unknown_card_claim, card_claim_not_approved,
-    unknown_card_discount)."""
+    order API's refusals (unknown_card_claim, card_discount_revoked,
+    card_claim_not_approved, unknown_card_discount)."""
 
     def __init__(self, code):
         super().__init__(code)
@@ -425,6 +449,8 @@ def redeem_for_order(session, order, discount, *, at, bill_amount, net_amount):
                  .filter(pk=discount["request_sync_id"], order=order).first())
         if claim is None:
             raise RedeemRefused("unknown_card_claim")
+        if claim.status == ClaimStatus.REVOKED:
+            raise RedeemRefused("card_discount_revoked")
         if claim.status != ClaimStatus.APPROVED:
             raise RedeemRefused("card_claim_not_approved")
         for field, value in figures.items():

@@ -257,7 +257,24 @@ def _store(request, session, app, kind, sync_id, key, request_data, reason, *,
         # order is on the server yet (rental.services.count_receipt).
         from apps.rental.services import count_receipt
         count_receipt(session, request_data.get("order_no"))
+    if kind == IssueKind.RETURN:
+        # The vehicle is back, whatever the office later makes of the call.
+        mark_parked_returns(issue.company_id, issue.order_id)
     return issue
+
+
+def mark_parked_returns(company_id, order_id):
+    """Every open parked return of an order frees its vehicle now
+    (rental.services.mark_return_pending): run when a return is parked, and
+    after a replay -- a parked booking's line exists only once the booking is
+    replayed, while its return may still wait (3 Nov 2026)."""
+    if order_id is None:
+        return
+    from apps.rental.services import mark_return_pending
+
+    for data in SyncIssue.objects.filter(company_id=company_id, order_id=order_id, kind=IssueKind.RETURN,
+                                         status=IssueStatus.OPEN).values_list("request_data", flat=True):
+        mark_return_pending(company_id, data or {})
 
 
 # -- The parkable views, by kind --------------------------------------------------------

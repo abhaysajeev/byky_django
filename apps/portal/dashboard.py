@@ -29,6 +29,7 @@ from apps.crew.models import Attendance, PunchType
 from apps.devices.models import DeviceMapping, DeviceStatus
 from apps.rental import scoping as rental_scoping
 from apps.rental.models import OrderItem, OrderItemStatus
+from core import money
 from core.timezones import zone_for
 
 LIVE_CACHE_SECONDS = 30
@@ -46,7 +47,8 @@ def _midnight(day, zone):
 
 
 def _aed(amount):
-    return f"{(amount or Decimal('0')):,.3f}"
+    """With the company's decimals (core/money.py, CR1)."""
+    return f"{money.quantize(amount or Decimal('0')):,}"
 
 
 def format_mobile(mobile):

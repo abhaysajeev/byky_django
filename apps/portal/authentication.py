@@ -38,7 +38,7 @@ class AppJWTAuthentication(BaseAuthentication):
         session = (
             AppSession.objects
             .filter(pk=payload.get("sid"), logged_out_at__isnull=True)
-            .select_related("user")
+            .select_related("user__company", "branch__location")
             .first()
         )
         if session is None:
@@ -55,6 +55,11 @@ class AppJWTAuthentication(BaseAuthentication):
         # For the request log: which device, branch and user this call came
         # from (apps/monitoring/middleware.py reads the Django request).
         request._request.app_session = session
+        # Money for this call: the station's country, else the company's
+        # (core/money.py; MoneyMiddleware resets it after the request).
+        from core import money
+
+        money.activate(money.money_for(session.user.company, session.branch) if session.user.company_id else None)
         return (session.user, session)
 
     def authenticate_header(self, request):

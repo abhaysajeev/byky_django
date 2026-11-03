@@ -1,5 +1,6 @@
 {% extends layout_path %}
 {% load static %}
+{% load money %}
 
 {% block title %}Order {{ order.order_no }} - Rental{% endblock title %}
 
@@ -39,7 +40,7 @@
       <div class="scr-form-head">
         <div class="scr-form-title-row">
           <h2 class="scr-form-title">Order</h2>
-          {% include "rental/partials/order_status.html" with status=status %}
+          {% include "rental/partials/order_display_status.html" with badge=status_badge label=status_label %}
         </div>
       </div>
       <div class="scr-form-body scr-mon-body">
@@ -70,23 +71,24 @@
         <div class="scr-empty"><div><div class="scr-empty-title">Not billed yet</div><p class="scr-empty-sub">The bill is made when the order is settled, after every vehicle is back.</p></div></div>
         {% else %}
         <div class="scr-detail-rows">
-          <div class="scr-detail-row"><span class="scr-detail-label">Subtotal</span><span class="scr-detail-value">AED {{ order.subtotal }}</span></div>
-          <div class="scr-detail-row"><span class="scr-detail-label">Card Discount</span><span class="scr-detail-value">{% if order.discount_claim_id %}{{ discount_card }} · {{ order.discount_percentage }}% · −AED {{ order.discount_amount }}{% else %}—{% endif %}</span></div>
-          <div class="scr-detail-row"><span class="scr-detail-label">Rounding</span><span class="scr-detail-value">AED {{ order.rounding_adjustment }}</span></div>
-          <div class="scr-detail-row"><span class="scr-detail-label"><b>Net</b></span><span class="scr-detail-value"><b>AED {{ order.net_amount }}</b></span></div>
-          <div class="scr-detail-row"><span class="scr-detail-label">VAT (included)</span><span class="scr-detail-value">{{ order.tax_percentage }}% · AED {{ order.tax_amount }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Subtotal</span><span class="scr-detail-value">AED {{ order.subtotal|money }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Card Discount</span><span class="scr-detail-value">{% if order.discount_claim_id %}{{ discount_card }} · {{ order.discount_percentage }}% · −AED {{ order.discount_amount|money }}{% else %}—{% endif %}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Rounding</span><span class="scr-detail-value">AED {{ order.rounding_adjustment|money }}</span></div>
+          <div class="scr-detail-row scr-detail-net"><span class="scr-detail-label"><b>Net</b></span><span class="scr-detail-value"><b>AED {{ order.net_amount|money }}</b></span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">VAT (included)</span><span class="scr-detail-value">{{ order.tax_percentage }}% · AED {{ order.tax_amount|money }}</span></div>
         </div>
         {% endif %}
         <div class="scr-detail-rows" style="margin-top:14px">
-          <div class="scr-detail-row"><span class="scr-detail-label">Received</span><span class="scr-detail-value">AED {{ order.amount_received }}</span></div>
-          <div class="scr-detail-row"><span class="scr-detail-label">Refunded</span><span class="scr-detail-value">AED {{ order.amount_refunded }}</span></div>
-          <div class="scr-detail-row"><span class="scr-detail-label">Paid</span><span class="scr-detail-value">AED {{ order.paid_amount }}</span></div>
-          <div class="scr-detail-row"><span class="scr-detail-label">Balance Due</span><span class="scr-detail-value">{% if order.balance_due is None %}—{% else %}AED {{ order.balance_due }}{% endif %}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Received</span><span class="scr-detail-value">AED {{ order.amount_received|money }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Refunded</span><span class="scr-detail-value">AED {{ order.amount_refunded|money }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Paid</span><span class="scr-detail-value">AED {{ order.paid_amount|money }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Balance Due</span><span class="scr-detail-value">{% if order.balance_due is None %}—{% else %}AED {{ order.balance_due|money }}{% endif %}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Payment</span><span class="scr-detail-value">{{ order.get_payment_status_display|default:"—" }}</span></div>
-          {% for r in requests %}<div class="scr-detail-row"><span class="scr-detail-label">{{ r.kind }} Request</span><span class="scr-detail-value"><a class="scr-link-blue" href="{{ r.url }}">{{ r.label|default:r.kind }}</a> · {{ r.status_label }}{% if r.applied_amount is not None %} · applied AED {{ r.applied_amount }}{% endif %}</span></div>{% endfor %}
+          {% for r in requests %}<div class="scr-detail-row"><span class="scr-detail-label">{{ r.kind }} Request</span><span class="scr-detail-value"><a class="scr-link-blue" href="{{ r.url }}">{{ r.label|default:r.kind }}</a> · {{ r.status_label }}{% if r.applied_amount is not None %} · applied AED {{ r.applied_amount|money }}{% endif %}</span></div>{% endfor %}
           {% if invoice %}
           <div class="scr-detail-row"><span class="scr-detail-label">Invoice</span><span class="scr-detail-value">{{ invoice.invoice_no }} · {{ invoice.issued_at|date:"d M Y, H:i" }} · {{ invoice.issued_by }}</span></div>
-          {% if credit_note %}<div class="scr-detail-row"><span class="scr-detail-label">Credit Note</span><span class="scr-detail-value"><a class="scr-link-blue" href="{{ credit_note.url }}">{{ credit_note.label }}</a>{% if credit_note.net_amount is not None %} · AED {{ credit_note.net_amount }}{% endif %} · {{ credit_note.status_label }}</span></div>{% endif %}
+          <div class="scr-detail-row"><span class="scr-detail-label">Rating</span><span class="scr-detail-value scr-mon-wrap">{% if invoice.star_rating %}★ {{ invoice.star_rating }} / 5{% else %}—{% endif %}{% if invoice.rating_remarks %} · “{{ invoice.rating_remarks }}”{% endif %}</span></div>
+          {% if credit_note %}<div class="scr-detail-row"><span class="scr-detail-label">Credit Note</span><span class="scr-detail-value"><a class="scr-link-blue" href="{{ credit_note.url }}">{{ credit_note.label }}</a>{% if credit_note.net_amount is not None %} · AED {{ credit_note.net_amount|money }}{% endif %} · {{ credit_note.status_label }}</span></div>{% endif %}
           {% endif %}
         </div>
       </div>
@@ -117,12 +119,12 @@
               {% include "rental/partials/order_status.html" with status=i.status %}
               {% if i.replaced_by %}<div class="scr-contact-sub">by {{ i.replaced_by }}{% if i.reason %} · {{ i.reason }}{% endif %}</div>{% elif i.reason %}<div class="scr-contact-sub">{{ i.reason }}</div>{% endif %}
             </td>
-            <td class="scr-state">{{ i.package_minutes }} min{% if i.run_minutes is not None %}<div class="scr-contact-sub">ran {{ i.run_minutes }} min</div>{% endif %}</td>
+            <td class="scr-state">{{ i.package_minutes }} min{% if i.run_minutes is not None %}<div class="scr-contact-sub">ran {{ i.run_minutes }} min</div>{% endif %}{% for line in i.fare_lines %}<div class="scr-contact-sub" title="Fare terms this line was priced on">{{ line }}</div>{% endfor %}</td>
             <td class="scr-state">{{ i.start_time|date:"H:i" }} → {{ i.expected_end_time|date:"H:i" }}<div class="scr-contact-sub">{{ i.start_time|date:"d M Y" }}</div></td>
             <td class="scr-state">{% if i.end_time %}{{ i.end_time|date:"H:i" }}{% else %}—{% endif %}</td>
-            <td class="scr-state">AED {{ i.base_fare }}</td>
-            <td class="scr-state">{% if i.overtime_amount is None %}—{% else %}AED {{ i.overtime_amount }}{% endif %}</td>
-            <td class="scr-state">{% if i.total_amount is None %}—{% else %}<b>AED {{ i.total_amount }}</b>{% endif %}</td>
+            <td class="scr-state">AED {{ i.base_fare|money }}</td>
+            <td class="scr-state">{% if i.overtime_amount is None %}—{% else %}AED {{ i.overtime_amount|money }}{% endif %}</td>
+            <td class="scr-state">{% if i.total_amount is None %}—{% else %}<b>AED {{ i.total_amount|money }}</b>{% endif %}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -150,7 +152,7 @@
             <td class="scr-state">{{ p.kind_label }}</td>
             <td class="scr-state">{{ p.mode }}</td>
             <td class="scr-state">{{ p.reference_no|default:"—" }}{% if p.reference_date %}<div class="scr-contact-sub">{{ p.reference_date|date:"d M Y" }}</div>{% endif %}</td>
-            <td class="scr-state"><b>AED {{ p.amount }}</b></td>
+            <td class="scr-state"><b>AED {{ p.amount|money }}</b></td>
           </tr>
           {% empty %}
           <tr><td colspan="5" style="padding:0"><div class="scr-empty"><div><div class="scr-empty-title">No payments yet</div></div></div></td></tr>

@@ -72,6 +72,13 @@ CUSTOMER = {
                     "id": "block_reason", "label": "Block Reason", "kind": "text",
                     "required": False, "show_if": "is_blocked:yes", "width": 12,
                 },
+                # The record's state when opened, so the unblock reason shows
+                # only when a blocked customer is being unblocked.
+                {"id": "was_blocked", "label": "", "kind": "hidden"},
+                {
+                    "id": "unblock_reason", "label": "Unblock Reason", "kind": "text",
+                    "required": False, "show_if": "was_blocked:yes&is_blocked:no", "width": 12,
+                },
             ],
         },
     ],

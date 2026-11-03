@@ -69,7 +69,8 @@ def _station_or_refusal(session, app, *, replay=False):
 
 _MARK_SAMPLE = {
     "sync_id": "01923f8e-5b2a-7c3d-9e4f-a1b2c3d4e5f6", "punch_type": "punch_out", "source": "qr_scan",
-    "employee_code": "BYKY014", "rms_scan_time": "2026-09-30 01:05:12",
+    "employee_id": 214, "employee_code": "BYKY014", "employee_name": "Rashed K",
+    "rms_scan_time": "2026-09-30 01:05:12",
     "punch_in_sync_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9", "status": "closed",
 }
 
@@ -239,7 +240,9 @@ class AttendanceMarkView(APIView):
 def _mark_json(row, zone):
     return {
         "sync_id": str(row.pk), "punch_type": row.punch_type, "source": row.source,
-        "employee_code": row.employee_code, "rms_scan_time": _local(row.rms_scan_time, zone),
+        # Who was marked: id and name beside the code (device team, 29 Oct 2026).
+        "employee_id": row.employee_id, "employee_code": row.employee_code, "employee_name": row.employee_name,
+        "rms_scan_time": _local(row.rms_scan_time, zone),
         "punch_in_sync_id": str(row.punch_in_id) if row.punch_in_id else None,
         "status": services.SessionStatus.CLOSED if row.punch_type == PunchType.PUNCH_OUT
         else services.session_status(row),

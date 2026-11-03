@@ -43,6 +43,18 @@ class AssetsRequest(serializers.Serializer):
     """Nothing to send: the station is the session's."""
 
 
+class ManagerAssetsRequest(serializers.Serializer):
+    """The manager app's asset list: every filter optional (owner, 30 Oct 2026).
+    `serial_no` matches any part of the serial number, ignoring case."""
+
+    state_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    branch_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    asset_type_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    serial_no = serializers.CharField(max_length=50, required=False, allow_blank=True, allow_null=True,
+                                      error_messages={"max_length": "must be at most 50 characters"})
+    page = whole_number_field(min_value=1, required=False, default=1)
+
+
 class ServiceRequestCreateRequest(serializers.Serializer):
     """The tablet reports a vehicle or a station asset. `sync_id` is this
     call's id and becomes the request's id."""
@@ -131,6 +143,26 @@ class IssueTypesRequest(serializers.Serializer):
                                      error_messages={"invalid_choice": "must be vehicle or asset"})
 
 
+class IssueTypeCreateRequest(serializers.Serializer):
+    """A new issue type from the tablet, to pick at once (owner, 29 Oct 2026)."""
+
+    name = serializers.CharField(max_length=100, error_messages={
+        "required": "is required", "blank": "is required", "max_length": "must be at most 100 characters"})
+    applies_to = serializers.ChoiceField(choices=["vehicle", "asset", "both"], error_messages={
+        "required": "is required", "invalid_choice": "must be vehicle, asset or both"})
+    description = serializers.CharField(required=False, allow_blank=True, max_length=1000)
+    # Vehicle issue types only: a manager's approval of such a request takes
+    # the vehicle off rent until it is back in service.
+    needs_warehouse_service = serializers.BooleanField(required=False, default=False)
+
+    def validate(self, values):
+        values["name"] = " ".join(values["name"].split())
+        if values.get("needs_warehouse_service") and values["applies_to"] != "vehicle":
+            raise serializers.ValidationError(
+                {"needs_warehouse_service": "is for vehicle issue types only (applies_to vehicle)"})
+        return values
+
+
 class AssetCheckCreateRequest(serializers.Serializer):
     """The tablet checks an asset of its station: photo (uploaded first,
     purpose asset_check) and condition; remarks optional. `sync_id` is this
@@ -159,6 +191,9 @@ class ManagerAssetCheckListRequest(_DatesMixin):
     state_id = whole_number_field(min_value=1, required=False, allow_null=True)
     branch_id = whole_number_field(min_value=1, required=False, allow_null=True)
     asset_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    asset_type_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    serial_no = serializers.CharField(max_length=50, required=False, allow_blank=True, allow_null=True,
+                                      error_messages={"max_length": "must be at most 50 characters"})
     status = serializers.ChoiceField(choices=AssetCheckStatus.values, required=False, allow_blank=True,
                                      error_messages={"invalid_choice": "must be active or needs_inspection"})
     page = whole_number_field(min_value=1, required=False, default=1)

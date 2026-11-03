@@ -2,8 +2,10 @@
 
 design/03-login.md section 8.6: nobody types a date -- mapping is stamped when
 it is saved, as the legacy did; intervals are half-open, a re-map closes the
-open row at the moment the new one opens, and whoever is logged in on the
-device is logged out by the move.
+open row at the moment the new one opens. Re-map and Close mapping only on an
+idle device: while someone is logged in they are refused (owner, 3 Nov 2026),
+and a system admin can Force logout a lost tablet. Only RMS operator devices
+have a station.
 """
 
 import datetime
@@ -15,6 +17,8 @@ from django.utils import timezone
 from apps.devices import scoping, services
 from apps.devices.models import Device, DeviceMapping, DeviceStatus
 from apps.portal.auth import open_session
+from apps.portal.models import Role
+from apps.portal.services import grant_all
 from apps.portal.session_models import LogoutReason
 from core.enums import Channel, UserScope
 from core.models import User
@@ -35,10 +39,10 @@ def devices(admin):
     return scoping.devices_for(admin)
 
 
-def tablet(company, installation_id="tab-1", status=DeviceStatus.APPROVED):
+def tablet(company, installation_id="tab-1", status=DeviceStatus.APPROVED, channel=OPERATOR):
     return Device.objects.create(
         company=company, installation_id=installation_id, platform="android",
-        channel=OPERATOR, status=status, name=f"POS-{installation_id}",
+        channel=channel, status=status, name=f"POS-{installation_id}",
         approved_at=timezone.now(),
     )
 
@@ -137,36 +141,91 @@ def test_close_ends_the_mapping_now(devices, admin, company, branch):
     assert not DeviceMapping.objects.filter(device=device, to_date__isnull=True).exists()
 
 
-def _signed_in(company, device, branch, username="op.x"):
+def _signed_in(company, device, branch, username="op.x", *, expired=False):
+    """A tablet login as the API makes it: open, with a refresh token valid
+    for 30 days (or already expired)."""
     operator = User.objects.create_user(username, "Byky#2026", company=company,
                                         scope=UserScope.COMPANY, allowed_channels=[OPERATOR])
-    return open_session(operator, OPERATOR, device=device, branch=branch)
+    session = open_session(operator, OPERATOR, device=device, branch=branch)
+    session.refresh_expires_at = timezone.now() + datetime.timedelta(days=-1 if expired else 30)
+    session.save(update_fields=["refresh_expires_at"])
+    return session
 
 
-def test_remap_logs_out_whoever_is_on_the_device(devices, admin, company, branch, other_branch):
+def test_remap_is_refused_while_someone_is_logged_in(devices, admin, company, branch, other_branch):
+    """31 Oct 2026: a remap closed a live session under the operator and the
+    app stuck on session_closed. Now they log out first."""
     device = tablet(company)
     mapped(device, branch)
     session = _signed_in(company, device, branch)
-    moment = timezone.now()
 
-    services.remap_device(devices, device.pk, user=admin, branch=other_branch, now=moment)
+    with pytest.raises(services.DeviceActionError, match="op.x is logged in"):
+        services.remap_device(devices, device.pk, user=admin, branch=other_branch)
 
     session.refresh_from_db()
-    assert session.logged_out_at == moment
+    assert session.logged_out_at is None
+    assert DeviceMapping.objects.get(device=device, to_date__isnull=True).branch == branch
+
+
+def test_close_is_refused_while_someone_is_logged_in(devices, admin, company, branch):
+    device = tablet(company)
+    mapped(device, branch)
+    session = _signed_in(company, device, branch)
+
+    with pytest.raises(services.DeviceActionError, match="must log out first"):
+        services.close_mapping(devices, device.pk, user=admin)
+
+    session.refresh_from_db()
+    assert session.logged_out_at is None
+    assert DeviceMapping.objects.filter(device=device, to_date__isnull=True).exists()
+
+
+def test_an_expired_session_does_not_block_a_remap(devices, admin, company, branch, other_branch):
+    """A tablet switched off for weeks: its session never closed but has
+    expired. The remap goes ahead and closes it."""
+    device = tablet(company)
+    mapped(device, branch)
+    session = _signed_in(company, device, branch, expired=True)
+
+    services.remap_device(devices, device.pk, user=admin, branch=other_branch)
+
+    session.refresh_from_db()
     assert session.logout_reason == LogoutReason.FORCED
     assert DeviceMapping.objects.get(device=device, to_date__isnull=True).branch == other_branch
 
 
-def test_close_logs_out_whoever_is_on_the_device(devices, admin, company, branch):
+def test_force_logout_signs_out_then_the_remap_works(devices, admin, company, branch, other_branch):
     device = tablet(company)
     mapped(device, branch)
     session = _signed_in(company, device, branch)
 
-    services.close_mapping(devices, device.pk, user=admin)
+    assert services.force_logout(devices, device.pk, user=admin) == 1
+    services.remap_device(devices, device.pk, user=admin, branch=other_branch)
 
     session.refresh_from_db()
     assert session.logout_reason == LogoutReason.FORCED
-    assert not DeviceMapping.objects.filter(device=device, to_date__isnull=True).exists()
+    with pytest.raises(services.DeviceActionError, match="Nobody is logged in"):
+        services.force_logout(devices, device.pk, user=admin)
+
+
+@pytest.mark.parametrize("channel", [Channel.EMPLOYEE, Channel.MANAGER])
+def test_only_operator_devices_get_a_station(devices, admin, company, branch, channel):
+    phone = tablet(company, "phone-1", channel=channel)
+
+    with pytest.raises(services.DeviceActionError, match="Only RMS operator devices"):
+        services.map_device(devices, phone.pk, user=admin, branch=branch)
+
+
+@pytest.mark.parametrize("channel", [Channel.EMPLOYEE, Channel.MANAGER])
+def test_approving_a_phone_with_a_station_is_refused(devices, admin, company, branch, channel):
+    phone = tablet(company, "phone-2", status=DeviceStatus.PENDING, channel=channel)
+
+    with pytest.raises(services.DeviceActionError, match="Only RMS operator devices"):
+        services.approve_device(devices, phone.pk, user=admin, name="Staff phone", branch=branch)
+
+    services.approve_device(devices, phone.pk, user=admin, name="Staff phone")       # without: fine
+    phone.refresh_from_db()
+    assert phone.status == DeviceStatus.APPROVED
 
 
 def test_a_refused_remap_logs_nobody_out(devices, admin, company, branch):
@@ -255,3 +314,60 @@ def test_the_screen_wires_remap_close_and_the_drawer(signed_in, company, branch)
     # The Add drawer lists the unmapped device, not the mapped one.
     assert f"{unmapped.device_registration_id} — POS-tab-2" in html
     assert f"{device.device_registration_id} — POS-tab-1" not in html
+
+
+def test_the_screen_lists_operator_devices_only(signed_in, company, branch):
+    tablet(company, "tab-op")
+    phone = tablet(company, "phone-emp", channel=Channel.EMPLOYEE)
+
+    html = signed_in.get("/devices/mapping/").content.decode()
+
+    assert "POS-tab-op" in html
+    assert f'data-pk="{phone.pk}"' not in html and "POS-phone-emp" not in html
+
+
+def test_remap_and_close_are_greyed_and_say_who_while_logged_in(signed_in, company, branch):
+    device = tablet(company)
+    mapped(device, branch)
+    _signed_in(company, device, branch)
+
+    html = signed_in.get("/devices/mapping/").content.decode()
+
+    assert html.count('disabled title="op.x is logged in — they must log out first"') == 2
+    assert 'data-mapping-action="force-logout"' not in html          # a company admin: no Force logout
+    assert ".scr-menu-item:disabled" in open("static/css/byky-screen.css").read()
+
+
+@pytest.fixture
+def system_admin(client, db):
+    role = Role.objects.create(company=None, name="System Administrator")
+    grant_all(role)
+    User.objects.create_user("platform.admin", "Byky#2026", display_name="Platform", scope=UserScope.SYSTEM,
+                             role=role, allowed_channels=[Channel.WEB])
+    client.post("/login/", {"username": "platform.admin", "password": "Byky#2026"})
+    return client
+
+
+def test_force_logout_is_for_system_admins_only(client, signed_in, company, branch):
+    device = tablet(company)
+    mapped(device, branch)
+    session = _signed_in(company, device, branch)
+
+    assert post(signed_in, f"/devices/mapping/{device.pk}/force-logout/").status_code == 403
+    session.refresh_from_db()
+    assert session.logged_out_at is None
+
+
+def test_a_system_admin_sees_and_uses_force_logout(system_admin, company, branch):
+    device = tablet(company)
+    mapped(device, branch)
+    session = _signed_in(company, device, branch)
+
+    html = system_admin.get("/devices/mapping/").content.decode()
+    assert f'data-mapping-action="force-logout" data-pk="{device.pk}"' in html
+
+    response = post(system_admin, f"/devices/mapping/{device.pk}/force-logout/")
+
+    assert response.status_code == 200 and response.json()["ok"], response.content
+    session.refresh_from_db()
+    assert session.logout_reason == LogoutReason.FORCED

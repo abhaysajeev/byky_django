@@ -190,7 +190,8 @@ def cancel_on_web(web, booked, reason="Wrong vehicle booked"):
 
 def test_the_web_cancels_a_running_order_directly(client, web, booked):
     page = web.get(f"/rental/order/{booked['sync_id']}/").content.decode()
-    assert "data-order-cancel" in page and "Cancel order" in page
+    # The button is hidden on the web for now (client, 3 Nov 2026); the endpoint stays.
+    assert "data-order-cancel" not in page and "Cancel order" not in page
 
     response = cancel_on_web(web, booked)
 

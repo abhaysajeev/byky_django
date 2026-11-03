@@ -263,9 +263,10 @@ def test_the_web_list_with_overdue_and_the_read_right(client, world, token, shop
 # -- Device settings: Cashier -> Staff -----------------------------------------------------
 
 
-def test_login_sends_the_staff_minutes_under_both_names(client, world, shop, allowed):
-    body = call(client, "/api/v1/operator/auth/login", {
-        "username": "OPR001", "password": orders.fare_api.PASSWORD, "installation_id": "till-1"}).json()
-    settings = body["data"]["device_settings"]
+def test_device_settings_send_the_staff_minutes_under_both_names(client, world, shop, allowed):
+    access = call(client, "/api/v1/operator/auth/login", {
+        "username": "OPR001", "password": orders.fare_api.PASSWORD,
+        "installation_id": "till-1"}).json()["data"]["tokens"]["access"]
+    settings = call(client, "/api/v1/operator/device/settings", None, token=access).json()["data"]["device_settings"]
     assert (settings["customer_test_minutes"], settings["staff_test_minutes"], settings["cashier_test_minutes"]) == (
         5, 10, 10)

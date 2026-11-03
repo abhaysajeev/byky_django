@@ -13,7 +13,7 @@ from django.urls import reverse
 
 from apps.company.models import Company, Country, State
 from apps.portal.models import Page, Role
-from apps.portal.page_registry import PAGES, SYSTEM_ONLY
+from apps.portal.page_registry import MENU_FOLDED_INTO, PAGES, SYSTEM_ONLY
 from apps.portal.services import grant_all
 from core.enums import Channel, UserScope
 from core.models import User
@@ -51,6 +51,10 @@ def test_every_screen_renders_for_a_role_that_may_read_it(client, company):
         if code in SYSTEM_ONLY:
             # Every box ticked, still refused: system-only is a scope rule.
             assert response.status_code == 403, code
+            continue
+        if code in MENU_FOLDED_INTO:
+            # Listed inside another page now: its URL opens that page.
+            assert response.status_code == 302, code
             continue
         assert response.status_code == 200 and b"byky-sidebar" in response.content, code
 
