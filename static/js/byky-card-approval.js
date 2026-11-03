@@ -1,7 +1,7 @@
 /* Card Discount Approval detail (apps/discount/templates/discount/approval_detail.html).
    Approve / Reject / Revoke open one dialog (byky-screen.js opens and closes
    it); this sets which decision it is and posts it with the remarks -- for a
-   revoke, the reason, which is required. */
+   revoke, the reason, which is optional (owner, 3 Nov 2026). */
 (function () {
   'use strict';
 
@@ -23,7 +23,7 @@
       title.textContent = TITLES[decision];
       go.textContent = BUTTONS[decision];
       go.className = decision === 'approve' ? 'scr-btn-primary' : 'scr-btn-danger';
-      if (label) label.textContent = decision === 'revoke' ? 'Reason (required)' : 'Remarks';
+      if (label) label.textContent = decision === 'revoke' ? 'Reason (optional)' : 'Remarks';
       remarks.value = '';
     });
   });
@@ -31,11 +31,6 @@
   go.addEventListener('click', function () {
     if (go.disabled) return;
     var text = remarks.value.trim();
-    if (decision === 'revoke' && !text) {
-      window.BykyCrud.showMessages({ title: 'Could not complete',
-        items: [{ field: 'Reason', message: 'Give a reason for revoking.' }] });
-      return;
-    }
     go.disabled = true;
     var url = { approve: root.dataset.approveUrl, reject: root.dataset.rejectUrl,
                 revoke: root.dataset.revokeUrl }[decision];
