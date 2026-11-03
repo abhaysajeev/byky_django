@@ -29,7 +29,6 @@ from apps.company import writes
 from apps.company.scoping import branches_for, companies_for
 from apps.devices import drawers, scoping, services
 from apps.devices.models import (
-    ROUND_OFF_STEPS,
     AppRelease,
     AppReleaseMapping,
     Device,
@@ -38,7 +37,6 @@ from apps.devices.models import (
     DeviceStatus,
     PrintType,
     ReleaseScope,
-    RoundOffMode,
     UpdateType,
 )
 from apps.portal.permissions import PagePermissionMixin
@@ -1052,8 +1050,6 @@ class DeviceSettingsView(DeviceScreenView):
                 {"id": name, "name": label} for name, label in services.SETTINGS_SHAREABLE.items()
             ],
             "print_types": [{"id": v, "name": label} for v, label in PrintType.choices],
-            "round_off_modes": [{"id": v, "name": label} for v, label in RoundOffMode.choices],
-            "round_off_steps": [{"id": str(v), "name": label} for v, label in ROUND_OFF_STEPS],
             "settings_company_note": _company_note(companies),
             "settings_urls": {
                 "save": reverse("devices-settings-save"),
@@ -1107,8 +1103,6 @@ def _settings_json(row, *, copyable=False):
         "print_logo": row.print_logo,
         "receipt_copies": str(row.receipt_copies),
         "share_on_whatsapp": row.share_on_whatsapp,
-        "round_off_mode": row.round_off_mode,
-        "round_off_step": str(row.round_off_step),
         "customer_test_minutes": str(row.customer_test_minutes),
         "staff_test_minutes": str(row.staff_test_minutes),
         "header_1": row.header_1,

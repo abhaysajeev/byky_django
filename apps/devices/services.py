@@ -16,7 +16,6 @@ legacy built it on the tablet, out of reach of the server that had to check it.
 import base64
 import logging
 import re
-from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
@@ -29,7 +28,6 @@ from apps.company import services as company_services
 from apps.company.models import Branch, BranchWorkingTime, Company
 from apps.devices.models import (
     BILL_NUMBER_WIDTH,
-    ROUND_OFF_STEPS,
     VERSION_NAME,
     AppRelease,
     AppReleaseMapping,
@@ -43,11 +41,11 @@ from apps.devices.models import (
     DeviceStatusLog,
     PrintType,
     ReleaseScope,
-    RoundOffMode,
     UpdateType,
 )
 from apps.portal.auth import close_sessions_for_device
 from apps.portal.session_models import LogoutReason
+from core import money
 from core.enums import ApprovalStatus, Channel
 from core.timezones import business_date_for, business_day_range
 
@@ -1367,8 +1365,6 @@ SETTINGS_SHAREABLE = {
     "print_logo": "Print Logo",
     "receipt_copies": "No of Receipt Copy",
     "share_on_whatsapp": "Share on WhatsApp",
-    "round_off_mode": "Round Off Type",
-    "round_off_step": "Round Off Limit",
     "customer_test_minutes": "Customer Test Time Slot",
     "staff_test_minutes": "Staff Test Time Slot",
 }
@@ -1483,20 +1479,6 @@ def _check_settings(data, *, branch, instance, settings_qs, branches_qs):
     if print_type not in PrintType.values:
         errors.append({"field": "Print Type", "message": "Choose Portrait or Landscape."})
     fields["print_type"] = print_type
-
-    mode = _text(data.get("round_off_mode")) or RoundOffMode.UPWARD
-    if mode not in RoundOffMode.values:
-        errors.append({"field": "Round Off Type", "message": "Choose Nearest, Upward or Downward."})
-    fields["round_off_mode"] = mode
-
-    steps = [value for value, _ in ROUND_OFF_STEPS]
-    try:
-        step = Decimal(str(data.get("round_off_step")))
-    except (InvalidOperation, TypeError, ValueError):
-        step = None
-    if step not in steps:
-        errors.append({"field": "Round Off Limit", "message": "Choose 25 fils, 50 fils or 1 AED."})
-    fields["round_off_step"] = step
 
     fields["print_logo"] = bool(data.get("print_logo"))
     fields["share_on_whatsapp"] = bool(data.get("share_on_whatsapp"))
@@ -1670,6 +1652,7 @@ def settings_payload(branch, *, since=None):
         return None
 
     company = row.branch.company
+    setting = money.money_for(company, row.branch)
     fresh = since is None or row.logo_changed_on is None or row.logo_changed_on >= since
     logo = bytes(row.logo) if row.logo else b""
     return {
@@ -1695,8 +1678,10 @@ def settings_payload(branch, *, since=None):
         # The same value under its old name, for app builds that still read it
         # (renamed Cashier -> Staff, 28 Oct 2026).
         "cashier_test_minutes": row.staff_test_minutes,
-        "round_off_mode": row.round_off_mode,
-        "round_off_step": str(row.round_off_step),
+        # From the company's money settings now (CR1); kept here under the
+        # same names for app builds that read them from device_settings.
+        "round_off_mode": setting.round_off_mode,
+        "round_off_step": money.fmt(setting.round_off_step, setting.decimal_places),
         "tax_type": company.tax_type,
         "discount_type": company.discount_type,
         "logo_changed_at": row.logo_changed_on,
@@ -1862,4 +1847,7 @@ def operator_settings(device, branch, *, since=None):
         # sends <prefix>-<n> with each (owner, 28 Oct 2026).
         "transaction_no_prefix": transaction_no_prefix(branch, open_mapping(device)),
         "last_transaction_no": last_transaction_no(device, branch),
+        # The station's country's money (Configurations, CR1): round every
+        # amount to decimal_places and apply the round-off at settle.
+        "money": money.money_for(branch.company, branch).as_json(),
     }

@@ -1,0 +1,152 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Blocked Customers - Rental{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+<script src="{% static 'js/byky-blocked-customers.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+{% comment %}
+Who is blocked now, and every block and unblock with its reason (owner, 3 Nov
+2026). Block / Unblock need Customer's Update permission; a reason is required
+both ways. apps/rental/blocked.py.
+{% endcomment %}
+<div class="scr" data-blocked-customers data-change-url="{{ block_url }}">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Rental</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Blocked Customers</b>
+      </div>
+      <h1 class="scr-title">Blocked Customers</h1>
+      <p class="scr-sub">Who cannot rent now, and every block and unblock with its reason.</p>
+    </div>
+    <div class="scr-head-actions">
+      {% if may_export %}
+      <a class="scr-btn-secondary" href="{{ export_url }}?{{ query }}">Export Excel</a>
+      {% endif %}
+      {% if may_change %}
+      <button type="button" class="scr-btn-primary" data-blocked-open="block">Block a customer</button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="scr-tiles">
+    <a class="scr-tile" href="?tab=blocked"><div><div class="scr-tile-val">{{ kpis.blocked }}</div><div class="scr-tile-lab">Blocked now</div></div></a>
+    <a class="scr-tile" href="?tab=history&amp;action=block"><div><div class="scr-tile-val">{{ kpis.blocked_30 }}</div><div class="scr-tile-lab">Blocked, last 30 days</div></div></a>
+    <a class="scr-tile" href="?tab=history&amp;action=unblock"><div><div class="scr-tile-val">{{ kpis.unblocked_30 }}</div><div class="scr-tile-lab">Unblocked, last 30 days</div></div></a>
+  </div>
+
+  <div class="scr-card" data-scr-server-paged>
+    <div class="scr-content-tabs">
+      {% for t in tabs %}
+      <a class="scr-content-tab{% if t.value == tab %} is-on{% endif %}" href="?tab={{ t.value }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}">{{ t.label }}</a>
+      {% endfor %}
+    </div>
+    <form method="get" class="scr-toolbar scr-mon-toolbar" data-scr-autosubmit>
+      <input type="hidden" name="tab" value="{{ tab }}" />
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="text" name="q" value="{{ params.q }}" placeholder="Name, phone or customer code" aria-label="Search" />
+      </div>
+      <div class="scr-mon-dates">
+        <input type="date" name="from" class="scr-input" value="{{ params.from }}" aria-label="From" title="From" />
+        <span>to</span>
+        <input type="date" name="to" class="scr-input" value="{{ params.to }}" aria-label="To" title="To" />
+      </div>
+      <select name="by" class="scr-input scr-list-select" aria-label="By">
+        <option value="">Anyone</option>
+        {% for id, name in people %}<option value="{{ id }}"{% if params.by == id|stringformat:"s" %} selected{% endif %}>{{ name }}</option>{% endfor %}
+      </select>
+      {% if tab == "history" %}
+      <select name="action" class="scr-input scr-list-select" aria-label="Action">
+        <option value="">Blocks and unblocks</option>
+        {% for value, label in actions %}<option value="{{ value }}"{% if params.action == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+      {% endif %}
+      <button type="submit" class="scr-btn">Filter</button>
+      {% if filtered %}<a href="?tab={{ tab }}" class="scr-btn-secondary">Clear</a>{% endif %}
+      <span class="scr-toolbar-count">{{ page.paginator.count }} {% if tab == "blocked" %}customer{{ page.paginator.count|pluralize }}{% else %}change{{ page.paginator.count|pluralize }}{% endif %}</span>
+    </form>
+
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Customer</th>
+            {% if tab == "history" %}<th>Action</th>{% endif %}
+            <th>Reason</th>
+            <th>{% if tab == "blocked" %}Blocked at{% else %}At{% endif %}</th>
+            <th>By</th>
+            {% if tab == "blocked" and may_change %}<th class="scr-th-actions"></th>{% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr>
+            <td><div class="scr-co-name">{{ r.name }}</div><div class="scr-contact-sub">{{ r.mobile }} · {{ r.code }}</div></td>
+            {% if tab == "history" %}
+            <td>{% if r.action == "block" %}<span class="scr-badge scr-badge-rejected"><i></i>Blocked</span>{% else %}<span class="scr-badge scr-badge-approved"><i></i>Unblocked</span>{% endif %}</td>
+            {% endif %}
+            <td class="scr-state">{{ r.reason|default:"—" }}</td>
+            <td class="scr-contact">{{ r.at|date:"d M Y, H:i"|default:"—" }}</td>
+            <td class="scr-contact">{{ r.by|default:"—" }}</td>
+            {% if tab == "blocked" and may_change %}
+            <td><div class="scr-row-actions"><button type="button" class="scr-btn-secondary" data-blocked-open="unblock" data-customer="{{ r.pk }}" data-name="{{ r.name }}">Unblock</button></div></td>
+            {% endif %}
+          </tr>
+          {% empty %}
+          <tr><td colspan="6" style="padding:0"><div class="scr-empty"><div><div class="scr-empty-title">{% if tab == "blocked" %}{% if filtered %}No blocked customers match{% else %}No blocked customers{% endif %}{% else %}{% if filtered %}No changes match{% else %}No blocks or unblocks yet{% endif %}{% endif %}</div></div></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% include "byky/partials/server_pager.html" %}
+  </div>
+
+  {% if may_change %}
+  <div class="scr-modal-veil" data-scr-modal-veil="customer-block" hidden></div>
+  <div class="scr-modal" data-scr-modal="customer-block" hidden>
+    <div class="scr-modal-head">
+      <div>
+        <div class="scr-modal-title" data-block-title>Block a customer</div>
+        <p class="scr-modal-sub" data-block-sub>They cannot rent until unblocked. The reason is kept in the history.</p>
+      </div>
+      <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+      </button>
+    </div>
+    <div class="scr-modal-body">
+      <div class="scr-field" data-block-pick>
+        <label class="scr-label" for="block-customer">Customer<span class="scr-required">*</span></label>
+        <input id="block-customer" type="text" class="scr-input" list="block-customers" placeholder="Type a name or phone" autocomplete="off" data-block-customer />
+        <datalist id="block-customers">
+          {% for c in unblocked_customers %}<option value="{{ c.label }}" data-id="{{ c.id }}"></option>{% endfor %}
+        </datalist>
+      </div>
+      <div class="scr-field">
+        <label class="scr-label" for="block-reason">Reason<span class="scr-required">*</span></label>
+        <input id="block-reason" type="text" class="scr-input" maxlength="255" data-block-reason />
+      </div>
+    </div>
+    <div class="scr-modal-foot">
+      <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
+      <button type="button" class="scr-btn-danger" data-block-go>Block</button>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

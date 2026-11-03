@@ -36,6 +36,7 @@ from apps.portal.serializers import (
     ServerTimeRequest,
 )
 from apps.portal.session_models import AppSession, LogoutReason
+from core import money
 from core.api import PublicAPIView, envelope, request_parts
 from core.enums import Channel
 from core.network import client_ip
@@ -110,6 +111,8 @@ def _employee_login(request, form, push_token=None):
         "tokens": _issue_tokens(user, session, push_token=push_token),
         "employee": crew_services.employee_profile(employee),
         "roster": crew_services.current_week_roster(employee),
+        # How money is written for the company's country (Configurations, CR1).
+        "money": money.money_for(user.company).as_json(),
     }
     return envelope("ok", f"Welcome, {employee.full_name}.", data)
 
@@ -123,7 +126,7 @@ def _operator_login(request, form, push_token=None):
         )
 
     try:
-        user, session, device, branch = auth.sign_in_operator(
+        user, session, _device, branch = auth.sign_in_operator(
             form.validated_data["username"], form.validated_data["password"], installation_id,
             ip_address=client_ip(request),
             user_agent=request.META.get("HTTP_USER_AGENT", ""),
@@ -149,15 +152,15 @@ def _operator_login(request, form, push_token=None):
             "name": branch.name,
             "branch_code": branch.short_code,
             "is_hotel": branch.is_hotel,
-            "hotel_commission": str(branch.hotel_commission),
+            "hotel_commission": money.fmt(branch.hotel_commission, money.places_for(branch.company, branch)),
             "accepts_app_payment": branch.accepts_app_payment,
             "is_multi_device": branch.is_multi_device,
             "allows_test_ride": branch.allows_test_ride,
         },
-        # Never None here -- sign_in_operator already refused
-        # device_settings_not_done if it were. The same block as
-        # POST /device/settings.
-        **devices_services.operator_settings(device, branch),
+        # The station's settings, receipt numbering and money are no longer
+        # here: the app calls POST /device/settings right after login (owner,
+        # 3 Nov 2026). sign_in_operator still refuses device_settings_not_done,
+        # so a station without receipt settings cannot be signed in to.
     }
     return envelope("ok", "Logged in.", data)
 
@@ -185,6 +188,7 @@ def _manager_login(request, form, push_token=None):
     data = {
         "tokens": _issue_tokens(user, session, push_token=push_token),
         "employee": crew_services.employee_profile(employee, Channel.MANAGER),
+        "money": money.money_for(user.company).as_json(),
     }
     return envelope("ok", f"Welcome, {employee.full_name}.", data)
 
@@ -226,6 +230,7 @@ _EMPLOYEE_LOGIN_SUCCESS_DATA = {
         "attendance_method": "qr_station", "team_scope": "own",
     },
     "roster": _ROSTER_SAMPLE,
+    "money": {"decimal_places": 2, "round_off_mode": "upward", "round_off_step": "0.25"},
 }
 
 _OPERATOR_LOGIN_SUCCESS_DATA = {
@@ -241,11 +246,6 @@ _OPERATOR_LOGIN_SUCCESS_DATA = {
         "hotel_commission": "0.00", "accepts_app_payment": False,
         "is_multi_device": False, "allows_test_ride": True,
     },
-    "device_settings": {
-        "settings_code": "S01", "station": "Creek Park 1", "logo": "iVBORw0KGgoAAAANSUhEUgAA...",
-    },
-    "order_no_prefix": "AUH01", "last_order_no": "AUH0160182000334", "next_order_number": 335, "next_test_number": 6,
-    "transaction_no_prefix": "AUH01-A", "last_transaction_no": "AUH01-A-12",
 }
 
 _MANAGER_LOGIN_SUCCESS_DATA = {
@@ -262,6 +262,7 @@ _MANAGER_LOGIN_SUCCESS_DATA = {
         "can_approve_leave": True,
         "attendance_method": "self", "team_scope": "company",
     },
+    "money": {"decimal_places": 2, "round_off_mode": "upward", "round_off_step": "0.25"},
 }
 
 
@@ -284,6 +285,8 @@ class LoginView(PublicAPIView):
             "`installation_id`: Employee and Manager check it's "
             "registered/approved/not-blocked/not-retired; Operator additionally "
             "requires it be mapped to a branch with receipt settings configured. "
+            "**Operator:** the station's settings, receipt numbering and `money` are not in "
+            "this reply -- call `POST /device/settings` right after login. "
             "Manager gets the tokens and its `employee` block (the same as the employee "
             "login, no roster -- managers are not rostered; `branch_id` is the home "
             "branch, null when none). See the success examples below for "

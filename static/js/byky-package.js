@@ -41,7 +41,8 @@
   }
   function copy(value) { return JSON.parse(JSON.stringify(value)); }
   function newKey(prefix) { counter += 1; return prefix + 'n' + counter; }
-  function money(value) { var n = parseFloat(value); return isNaN(n) ? '—' : n.toFixed(3); }
+  var PLACES = (parseInt(document.body.dataset.moneyPlaces, 10) || 3);   /* the company's decimals (CR1) */
+  function money(value) { var n = parseFloat(value); return isNaN(n) ? '—' : n.toFixed(PLACES); }
 
   // -- Dates and times ---------------------------------------------------------------
 
@@ -342,7 +343,7 @@
   function checkNumber(el) {
     var problem = el.disabled ? '' : numberProblem(el);
     if (!problem && el.dataset.num === 'money' && el.value.trim()) {
-      var tidy = parseFloat(el.value).toFixed(3);
+      var tidy = parseFloat(el.value).toFixed(PLACES);
       if (tidy !== el.value) el.value = tidy;
     }
     markNumber(el, problem);

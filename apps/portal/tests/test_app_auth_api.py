@@ -106,7 +106,7 @@ def test_login_returns_tokens_profile_and_roster(client, app_user, device):
     assert body["code"] == "ok"
 
     data = body["data"]
-    assert set(data) == {"tokens", "employee", "roster"}
+    assert set(data) == {"tokens", "employee", "roster", "money"}
     assert data["tokens"]["access"] and data["tokens"]["refresh"]
     assert data["employee"]["employee_code"] == "BYKY001"
     assert data["employee"]["full_name"] == "Rashed K"

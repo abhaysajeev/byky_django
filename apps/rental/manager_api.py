@@ -43,6 +43,7 @@ from apps.rental.serializers import (
     ManagerVehiclesRequest,
     ManagerVehicleTypesRequest,
 )
+from core import money
 from core.api import envelope, manager_only, request_parts
 from core.schema import SERVER_ERROR, envelope_request, envelope_responses
 from core.timezones import zone_for
@@ -83,6 +84,7 @@ class _ManagerView(APIView):
         _, request_data = request_parts(request)
         form = self.form_class(data=request_data)
         form.is_valid(raise_exception=True)
+        money.refuse_too_precise(form)
         companies = list(companies_for(request.user).values_list("id", flat=True))
         return form.validated_data, companies, zone_for(getattr(request.user, "company", None)), None
 
@@ -391,7 +393,8 @@ _ORDER_SAMPLE = {
     "order_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9", "order_no": "ABCO1105700000006",
     "station_name": "Creek Park Gate 1", "customer_name": "Ahmed Al Mansoori", "customer_mobile": "971501234567",
     "booked_at": "2026-10-08 08:58:10", "start_time": "2026-10-08 09:00:00", "end_time": "2026-10-08 11:00:00",
-    "duration_minutes": 120, "order_status": "partially_received", "amount": "250.000",
+    "duration_minutes": 120, "order_status": "partially_received",
+    "order_status_label": "Partially Received", "amount": "250.000",
     "advance_paid": "100.000", "invoice_no": None,
     "credit_note": {"credit_note_no": "ABCO1105700000004CN", "status": "approved", "net_amount": "20.000"},
     "vehicles": [
@@ -411,8 +414,9 @@ _ORDERS_SAMPLE = {
     "from_date": "2026-10-01", "to_date": "2026-10-08",
     "state_id": None, "branch_id": 7, "branch_name": "Creek Park Gate 1", "vehicle_type_id": None, "vehicle_id": None,
     "order_status": "all",
-    "summary": {"all": 15, "running": 4, "partially_received": 2, "awaiting_settlement": 1,
-                "fully_received": 8, "cancelled": 0, "replaced": 1},
+    "summary": {"all": 15, "running": 3, "replaced": 1, "partially_received": 2,
+                "replaced_partially_received": 0, "awaiting_settlement": 1, "received": 7,
+                "replaced_received": 1, "cancelled": 0},
     "orders": [_ORDER_SAMPLE], "page": 1, "pages": 1, "total_orders": 15,
 }
 
@@ -435,15 +439,19 @@ station outside the state, a vehicle of another type) answers an empty list
 and a zero summary. A station that is not yours is `unknown_branch`. The
 filters are echoed back as sent (`null` when not).
 
-**`order_status`** (each order; also the filter, default `all`):
-- `running` -- no vehicle back yet;
+**`order_status`** (each order, with `order_status_label`; also the filter,
+default `all`; `summary` counts each). The same list as every other screen:
+- `running` -- vehicles out, none back yet;
+- `replaced` -- as running, and a vehicle was swapped;
 - `partially_received` -- some vehicles back, some still out;
+- `replaced_partially_received` -- as partially received, and a vehicle was swapped;
 - `awaiting_settlement` -- every vehicle back, the bill not settled yet;
-- `fully_received` -- settled;
+- `received` -- settled;
+- `replaced_received` -- settled, and a vehicle was swapped;
 - `cancelled`.
 
-`summary.replaced` counts orders with a replaced vehicle -- it overlaps the
-others. Per order: `end_time` is the last vehicle back once settled, else the
+A parked return (the vehicle back, its return call held for correction)
+counts as back. Per order: `end_time` is the last vehicle back once settled, else the
 latest expected end; `amount` is the settled net, or what the lines come to so
 far (back at their total, out at their package price); `advance_paid` is the
 money held now; `credit_note` its waiting or issued credit note. `vehicles`

@@ -328,7 +328,7 @@ def test_an_order_moves_through_the_statuses(client, world, token, manager, shop
     call(client, SETTLE, bill(data, shop, subtotal="100.000", tax_amount="4.762", net_amount="100.000",
                               payments=[]), token=token)
     report, found = statuses(client, manager, world)
-    assert found == ["fully_received"]
+    assert found == ["received"]
     [order] = report["orders"]
     assert (order["amount"], order["invoice_no"], order["end_time"], order["duration_minutes"]) == (
         "100.000", data["order_no"], "2026-10-02 17:00:00", 60)
@@ -344,8 +344,9 @@ def test_the_summary_counts_the_whole_range_and_the_filter_narrows_the_list(clie
 
     report, found = statuses(client, manager, world, order_status="running")
 
-    assert report["summary"] == {"all": 2, "running": 1, "partially_received": 0, "awaiting_settlement": 1,
-                                 "fully_received": 0, "cancelled": 0, "replaced": 0}
+    assert report["summary"] == {"all": 2, "running": 1, "replaced": 0, "partially_received": 0,
+                                 "replaced_partially_received": 0, "awaiting_settlement": 1, "received": 0,
+                                 "replaced_received": 0, "cancelled": 0}
     assert found == ["running"] and report["total_orders"] == 1
 
 

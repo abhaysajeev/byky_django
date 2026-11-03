@@ -38,6 +38,7 @@ from apps.rental.models import (
     PaymentKind,
     full_number,
 )
+from core import money
 from core.ids import uuid7
 from core.timezones import business_date_for, zone_for
 
@@ -142,6 +143,8 @@ ORDER_ERRORS = {
     "invalid_time": (400, "That time is before the vehicle's start time.", False),
     "items_still_out": (409, "Every vehicle must be returned before the order is settled.", False),
     "amount_mismatch": (400, "The amounts do not add up.", False),
+    # The bill's round-off does not follow the company's money settings (CR1).
+    "rounding_mismatch": (400, "The round-off does not follow the money settings.", False),
     "balance_not_settled": (409, "The bill is not paid in full.", False),
     "unknown_card_claim": (404, "That card-discount request is not on this order.", False),
     "card_discount_revoked": (409, "That card-discount approval was revoked. Bill without it.", False),
@@ -392,6 +395,43 @@ def blocked_customers(company):
     blocked before the block was stamped come last, by name."""
     return (Customer.objects.filter(company=company, is_blocked=True).select_related("blocked_by")
             .order_by(F("blocked_at").desc(nulls_last=True), "first_name", "last_name", "pk"))
+
+
+class BlockRefused(Exception):
+    def __init__(self, message, field=""):
+        super().__init__(message)
+        self.message, self.field = message, field
+
+
+def log_block_change(customer, user, reason, now=None):
+    """One CustomerBlockLog row for the change just made to `customer`."""
+    from apps.rental.models import CustomerBlockAction, CustomerBlockLog
+
+    CustomerBlockLog.objects.create(
+        customer=customer, company_id=customer.company_id, reason=reason[:255], at=now or timezone.now(),
+        action=CustomerBlockAction.BLOCK if customer.is_blocked else CustomerBlockAction.UNBLOCK,
+        created_by=user, modified_by=user,
+    )
+
+
+def set_customer_blocked(customer, blocked, reason, user, now=None):
+    """Block or unblock from the Blocked Customers dashboard: a reason both
+    ways (owner, 3 Nov 2026), the current state stamped, the change logged."""
+    reason = (reason or "").strip()
+    if bool(customer.is_blocked) == bool(blocked):
+        raise BlockRefused("This customer is already blocked." if blocked else "This customer is not blocked.")
+    if not reason:
+        raise BlockRefused("Give a reason.", "Reason")
+    now = now or timezone.now()
+    with transaction.atomic():
+        was_blocked = customer.is_blocked
+        customer.is_blocked = bool(blocked)
+        customer.block_reason = reason[:255] if blocked else ""
+        stamp_block(customer, was_blocked, user, now=now)
+        customer.modified_by = user
+        customer.save()
+        log_block_change(customer, user, reason, now=now)
+    return customer
 
 
 def stamp_block(customer, was_blocked, user, now=None):
@@ -908,6 +948,13 @@ def settle_order(session, values, request_data, reply_for):
                 f"net_amount must be subtotal - discount_amount + rounding_adjustment = {expected_net} "
                 f"(VAT is included in the fares, not added).",
             )
+        # The company's round-off (Configurations, CR1): checked once its
+        # money settings are saved; before that the bill is taken as sent.
+        setting = money.money_for(order.company, order.branch)
+        if setting is not money.DEFAULT:
+            problem = money.check_round_off(values["net_amount"], values["rounding_adjustment"], setting)
+            if problem:
+                raise OrderRefused("rounding_mismatch", problem)
 
         approval = order_requests.check_at_settle(order, values)
         if not card:

@@ -78,6 +78,8 @@ PAGES = [
     ("company.branch", "company", "Branch", "company-branch-list", CRUD_PRINT_APPROVE, 5, False),
     ("company.branch_working_time", "company", "Branch Working Time",
      "company-branch-working-time-edit", ["create", "read", "update"], 6, False),
+    # Report day start and money per country (owner, 3 Nov 2026 -- CR1).
+    ("company.configurations", "company", "Configurations", "company-configurations", ["read", "update"], 7, False),
     ("company.privileges", "company", "Privileges", "company-privileges", ["read", "update"], 9, False),
     # Retired: both edited data that already lives on Branch.
     ("company.branch_address", "company", "Station Address Mapping", "", CRUD, 90, True),
@@ -151,6 +153,10 @@ PAGES = [
     # approve = approve, reject or revoke an operator's request (web and manager app).
     ("rental.request", "rental", "Requests", "rental-request-list", ["read", "approve"], 2, False),
     ("rental.customer", "rental", "Customer", "rental-customer-list", CRUD_PRINT, 2, False),
+    # Who is blocked now and every block / unblock (owner, 3 Nov 2026); Block
+    # and Unblock themselves need Customer's Update.
+    ("rental.blocked_customer", "rental", "Blocked Customers", "rental-blocked-customer-list",
+     ["read", "print"], 2, False),
     ("rental.payment_mode", "rental", "Payment Mode", "rental-payment-mode-list", CRUD_PRINT, 3, False),
     ("rental.privileges", "rental", "Privileges", "rental-privileges", ["read", "update"], 9, False),
     ("discount.card_type", "discount", "Card Type", "discount-card-type-list", CRUD_PRINT, 1, False),

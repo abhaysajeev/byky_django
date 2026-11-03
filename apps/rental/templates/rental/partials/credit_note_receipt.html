@@ -1,4 +1,5 @@
 {% load static %}
+{% load money %}
 <div class="bill">
   <div class="bill-head">
     <div class="bill-head-text">
@@ -28,7 +29,7 @@
   </div>
   <div class="bill-row2">
     <div class="col-a"><span class="bill-kv-label">Issued By</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">{{ issued_by }}</span></div>
-    <div class="col-b"><span class="bill-kv-label">Inv Net</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ invoice.net_amount }}</span></div>
+    <div class="col-b"><span class="bill-kv-label">Inv Net</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ invoice.net_amount|money }}</span></div>
   </div>
   {% if note.reason %}
   <div class="bill-row2">
@@ -39,14 +40,14 @@
   <hr class="bill-rule" />
 
   <div class="bill-row2">
-    <div class="col-a"><span class="bill-kv-label">Taxable Amt</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ note.taxable_amount }}</span></div>
-    <div class="col-b"><span class="bill-kv-label">VAT @{{ note.tax_percentage|floatformat:1 }}% incl.</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ note.tax_amount }}</span></div>
+    <div class="col-a"><span class="bill-kv-label">Taxable Amt</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ note.taxable_amount|money }}</span></div>
+    <div class="col-b"><span class="bill-kv-label">VAT @{{ note.tax_percentage|floatformat:1 }}% incl.</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ note.tax_amount|money }}</span></div>
   </div>
 
   <hr class="bill-rule" />
 
   <div class="bill-net">
     <span>CREDIT TOTAL :</span>
-    <span>AED {{ note.net_amount }}</span>
+    <span>AED {{ note.net_amount|money }}</span>
   </div>
 </div>

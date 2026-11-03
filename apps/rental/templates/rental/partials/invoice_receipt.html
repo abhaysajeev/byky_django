@@ -1,4 +1,5 @@
 {% load static %}
+{% load money %}
 <div class="bill">
   <div class="bill-head">
     <div class="bill-head-text">
@@ -63,24 +64,24 @@
   </table>
 
   <div class="bill-row2" style="margin-top:2mm">
-    <div class="col-a"><span class="bill-kv-label">{{ bill.discount_label }}</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ bill.discount_amount }}{% if bill.discount_percentage %} ({{ bill.discount_percentage }}%){% endif %}</span></div>
-    <div class="col-b"><span class="bill-kv-label">Taxable Amt</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ bill.taxable_amount }}</span></div>
+    <div class="col-a"><span class="bill-kv-label">{{ bill.discount_label }}</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ bill.discount_amount|money }}{% if bill.discount_percentage %} ({{ bill.discount_percentage }}%){% endif %}</span></div>
+    <div class="col-b"><span class="bill-kv-label">Taxable Amt</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ bill.taxable_amount|money }}</span></div>
   </div>
   <div class="bill-row2">
-    <div class="col-a"><span class="bill-kv-label">Rounded Off</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ bill.rounding }}</span></div>
-    <div class="col-b"><span class="bill-kv-label">VAT @{{ bill.tax_percentage|floatformat:1 }}% incl.</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ bill.tax_amount }}</span></div>
+    <div class="col-a"><span class="bill-kv-label">Rounded Off</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ bill.rounding|money }}</span></div>
+    <div class="col-b"><span class="bill-kv-label">VAT @{{ bill.tax_percentage|floatformat:1 }}% incl.</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ bill.tax_amount|money }}</span></div>
   </div>
 
   <hr class="bill-rule" />
 
   <div class="bill-net">
     <span>NET TOTAL :</span>
-    <span>AED {{ bill.net_amount }}</span>
+    <span>AED {{ bill.net_amount|money }}</span>
   </div>
   {% if bill.credit_note.status == "approved" %}
   <div class="bill-row2">
     <div class="col-a"><span class="bill-kv-label">Credit Note</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">{{ bill.credit_note.label }}</span></div>
-    <div class="col-b"><span class="bill-kv-label">Credited</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ bill.credit_note.net_amount }}</span></div>
+    <div class="col-b"><span class="bill-kv-label">Credited</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ bill.credit_note.net_amount|money }}</span></div>
   </div>
   {% endif %}
 
@@ -96,7 +97,7 @@
       <div class="col-b"><span class="bill-kv-label">ID No</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">{{ bill.id_no }}</span></div>
     </div>
     <div class="bill-row2">
-      <div class="col-a"><span class="bill-kv-label">Balance</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ bill.balance }}</span></div>
+      <div class="col-a"><span class="bill-kv-label">Balance</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ bill.balance|money }}</span></div>
       <div class="col-b"><span class="bill-kv-label">Time</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">{{ bill.time }}</span></div>
     </div>
   </div>

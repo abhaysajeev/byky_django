@@ -903,6 +903,7 @@ textarea.scr-drawer-input { height: auto; min-height: 72px; padding: 10px 13px; 
    calm blue -- never primary red, which means "main action" here. */
 .scr-badge-mandatory { background: #fdeced; color: #c2141a; }
 .scr-badge-anytime { background: #e8f1fd; color: #1d5fb8; }
+.scr-badge-replaced { background: #f1ecfd; color: #5b3fb8; }
 .scr-rel-muted { color: #a9a6c4; }
 .scr-rel-all { font-weight: 600; color: #1a1640; }
 .scr-rel-note { display: inline-block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
@@ -1297,6 +1298,11 @@ textarea.scr-mon-json { display: block; width: 100%; min-height: 420px; resize: 
 .scr-live-badge.is-active { background: #e9f8f0; color: #14764a; }
 .scr-live-badge.is-completed { background: #f4f3f9; color: #6b6790; }
 .scr-live-badge.is-cancelled { background: #fdeced; color: #c2141a; }
+/* The display status (apps/rental/order_status.py TONES), 3 Nov 2026. */
+.scr-live-badge.is-running { background: #e8f1fd; color: #1d5fb8; }
+.scr-live-badge.is-replaced { background: #f1ecfd; color: #5b3fb8; }
+.scr-live-badge.is-partial, .scr-live-badge.is-awaiting { background: #fdf3e3; color: #8a5300; }
+.scr-live-badge.is-received { background: #e9f8f0; color: #14764a; }
 
 /* A new row grows in; a changed one glows once. */
 .scr-live-row.is-new td { animation: liveGlow 2.4s ease-out; }

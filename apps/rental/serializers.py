@@ -18,6 +18,7 @@ from apps.rental.models import (
     TestRideStatus,
     full_number,
 )
+from apps.rental.order_status import VALUES as ORDER_DISPLAY_STATUSES
 from core.api import (
     REQUIRED,
     date_field,
@@ -708,10 +709,8 @@ class BranchOrdersRequest(DateRangeRequest):
     vehicle_type_id = whole_number_field(min_value=1, required=False, allow_null=True)
     vehicle_id = whole_number_field(min_value=1, required=False, allow_null=True)
     order_status = serializers.ChoiceField(
-        choices=["all", "running", "partially_received", "awaiting_settlement", "fully_received", "cancelled"],
-        required=False, default="all",
-        error_messages={"invalid_choice": "must be one of: all, running, partially_received, "
-                                          "awaiting_settlement, fully_received, cancelled"},
+        choices=["all", *ORDER_DISPLAY_STATUSES], required=False, default="all",
+        error_messages={"invalid_choice": "must be one of: " + ", ".join(["all", *ORDER_DISPLAY_STATUSES])},
     )
     page = whole_number_field(min_value=1, required=False, default=1)
 

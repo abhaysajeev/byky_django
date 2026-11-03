@@ -1,5 +1,6 @@
 {% extends layout_path %}
 {% load static %}
+{% load money %}
 
 {% block title %}Requests - Rental{% endblock title %}
 
@@ -86,7 +87,7 @@ amount), rejected or revoked. The manager app decides the same requests.
             <td><div class="scr-co-name">{{ r.customer|default:"—" }}</div><div class="scr-contact-sub">{{ r.mobile }}</div></td>
             <td class="scr-state">{{ r.station }}</td>
             <td class="scr-state">{{ r.reason|default:"—"|truncatechars:60 }}</td>
-            <td class="scr-state">{{ r.rule|default:"—" }}{% if r.applied_amount is not None %}<div class="scr-contact-sub">Applied AED {{ r.applied_amount }}</div>{% endif %}</td>
+            <td class="scr-state">{{ r.rule|default:"—" }}{% if r.applied_amount is not None %}<div class="scr-contact-sub">Applied AED {{ r.applied_amount|money }}</div>{% endif %}</td>
             <td>{% include "rental/partials/request_status.html" with status=r.status %}</td>
             <td>
               <div class="scr-row-actions">

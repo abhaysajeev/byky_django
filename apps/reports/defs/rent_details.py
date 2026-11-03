@@ -24,6 +24,7 @@ Rules agreed with the owner (29 Oct 2026):
 from django.db.models import Count, DecimalField, Exists, F, OuterRef, Prefetch, Q, Subquery, Sum
 from django.db.models.functions import Coalesce
 
+from apps.rental import order_status
 from apps.rental.models import (
     CreditNote,
     CreditNoteStatus,
@@ -34,7 +35,7 @@ from apps.rental.models import (
     Payment,
     PaymentKind,
 )
-from apps.rental.reports import AWAITING, CANCELLED, PARTIAL, RECEIVED, RUNNING, _with_status
+from apps.rental.reports import _with_status
 from apps.rental.scoping import orders_for
 from apps.reports import common
 from apps.reports.base import (
@@ -55,8 +56,7 @@ from apps.reports.base import (
 
 PAY = {"cash": "Paid By Cash", "card": "Paid By Card", "tap": "Paid By Tap & Pay", "upi": "Paid By UPI",
        "other": "Paid By Other"}
-STATUS_LABELS = {RUNNING: "Running", PARTIAL: "Partially Received", AWAITING: "Partially Received",
-                 RECEIVED: "Received", CANCELLED: "Cancelled"}
+STATUS_LABELS = order_status.LABELS
 LINE_LABELS = {OrderItemStatus.ACTIVE: "Running", OrderItemStatus.RETURNED: "Received",
                OrderItemStatus.REPLACED: "Replaced", OrderItemStatus.REMOVED: "Removed",
                OrderItemStatus.CANCELLED: "Cancelled"}
@@ -78,8 +78,8 @@ class RentDetails(Report):
     page_code = "reports.rent_details"
     filters = ("state", "branch", "cashier", "category", "vehicle_type", "customer", "phone", "order_no",
                "vehicle_no", "status")
-    statuses = (("running", "Running"), ("partially_received", "Partially Received"), ("received", "Received"),
-                ("replaced", "Replaced"), ("cancelled", "Cancelled"), ("complimentary", "Complimentary"),
+    # The eight order statuses (owner, 3 Nov 2026), then three bill filters.
+    statuses = (*order_status.CHOICES, ("complimentary", "Complimentary"),
                 ("direct_rent", "Direct Rent"), ("discounted", "Discounted"))
     unit = ("order", "orders")
     empty = "No orders were booked in this range."
@@ -95,11 +95,7 @@ class RentDetails(Report):
         status = f.get("status")
         if status:
             qs = qs.filter({
-                "running": Q(app_status=RUNNING),
-                "partially_received": Q(app_status__in=(PARTIAL, AWAITING)),
-                "received": Q(app_status=RECEIVED),
-                "cancelled": Q(app_status=CANCELLED),
-                "replaced": Q(has_replaced=True),
+                **{value: Q(app_status=value) for value in order_status.VALUES},
                 "complimentary": Q(invoice__discount_source=DiscountSource.COMPLIMENTARY),
                 "direct_rent": Q(is_direct_bill=True),
                 "discounted": Q(invoice__discount_source__in=(DiscountSource.CARD, DiscountSource.MANAGER)),

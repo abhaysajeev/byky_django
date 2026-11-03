@@ -18,8 +18,12 @@ LOGIN = "/api/v1/operator/auth/login"
 
 
 def login(client):
-    return call(client, LOGIN, {"username": "OPR001", "password": orders.fare_api.PASSWORD,
-                                "installation_id": "till-1"}).json()["data"]
+    """Signs in, then reads POST /device/settings -- where the station block
+    lives since 3 Nov 2026."""
+    tokens = call(client, LOGIN, {"username": "OPR001", "password": orders.fare_api.PASSWORD,
+                                  "installation_id": "till-1"}).json()["data"]["tokens"]
+    settings = call(client, "/api/v1/operator/device/settings", None, token=tokens["access"]).json()["data"]
+    return {**settings, "tokens": tokens}
 
 
 def now_text(world):

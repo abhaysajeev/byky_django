@@ -16,7 +16,7 @@ from django.utils import timezone
 
 from apps.company.scoping import branches_for
 from apps.devices import scoping, services
-from apps.devices.models import DeviceSettings, PrintType, RoundOffMode
+from apps.devices.models import DeviceSettings, PrintType
 from core.enums import ApprovalStatus, Channel, UserScope
 from core.models import User
 
@@ -53,8 +53,6 @@ def form(branch=None, **extra):
         "receipt_copies": "1",
         "print_type": PrintType.LANDSCAPE,
         "print_logo": True,
-        "round_off_mode": RoundOffMode.UPWARD,
-        "round_off_step": "0.25",
         "customer_test_minutes": "5",
         "staff_test_minutes": "5",
     }
@@ -99,13 +97,13 @@ def test_every_problem_is_reported_at_once(rows, stations, admin):
     with pytest.raises(services.Invalid) as refused:
         services.save_settings(rows, stations, user=admin, data={
             "settings_code": "", "order_no_prefix": "toolong!", "paper_feed": "44",
-            "receipt_copies": "0", "customer_test_minutes": "0", "round_off_step": "0.30",
+            "receipt_copies": "0", "customer_test_minutes": "0",
         })
     fields = {e["field"] for e in refused.value.errors}
     assert fields == {
         "Station", "Settings Code", "Order No Starting Characters", "Header 1", "Header 2",
         "Footer 1", "Paper Feed", "No of Receipt Copy", "Customer Test Time Slot",
-        "Staff Test Time Slot", "Round Off Limit",
+        "Staff Test Time Slot",
     }
 
 
