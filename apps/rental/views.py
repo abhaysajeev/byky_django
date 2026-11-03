@@ -7,8 +7,9 @@ import uuid
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
-from django.db.models import Count, Q, Sum
+from django.db.models import CharField, Count, Q, Sum, Value
 from django.http import Http404, JsonResponse
 from django.shortcuts import render
 from django.urls import reverse
@@ -18,6 +19,8 @@ from django.views import View
 from apps.company import writes as company_writes
 from apps.company.models import PaymentMode, State
 from apps.company.scoping import branches_for, companies_for, payment_modes_for
+from apps.discount import scoping as card_scoping
+from apps.discount.models import CardDiscountClaim, ClaimStatus
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
@@ -831,10 +834,72 @@ def rule_label(req):
     return f"AED {req.discount_value}"
 
 
+# Card-discount requests (apps/discount) are listed here too, like the other
+# kinds (owner, 3 Nov 2026). UI only: their detail page and their approve /
+# reject / revoke stay the card-discount ones, under the Card Discount Approval
+# permission -- each row follows its own kind's permission.
+CARD_KIND, CARD_KIND_LABEL = "card_discount", "Card discount"
+CARD_TABS = {
+    "pending": (ClaimStatus.PENDING,),
+    "approved": (ClaimStatus.APPROVED, ClaimStatus.REDEEMED),      # used at settle: badge "Used"
+    "rejected": (ClaimStatus.REJECTED,),
+    "revoked": (ClaimStatus.REVOKED,),
+    "closed": (ClaimStatus.CANCELLED,),                             # cancelled by the settle: "Closed"
+}
+CARD_BADGE = {ClaimStatus.REDEEMED: "used", ClaimStatus.CANCELLED: "closed"}
+
+
+def may_see_requests(user):
+    return has_permission(user, "rental.request", "read")
+
+
+def may_see_card_requests(user):
+    return has_permission(user, "discount.approval", "read")
+
+
+def _card_requests(request, zone):
+    """The card-discount requests the same filters match (only those needing a
+    manager), or none when the user cannot see them or another kind is asked."""
+    params, user = request.GET, request.user
+    kind = params.get("kind")
+    if not may_see_card_requests(user) or (kind and kind != CARD_KIND):
+        return CardDiscountClaim.objects.none()
+    rows = (card_scoping.claims_for(user).filter(requires_approval=True)
+            .select_related("order", "branch", "requested_by"))
+    text = params.get("q", "").strip()
+    if text:
+        rows = rows.filter(Q(order__order_no__icontains=text) | Q(customer_name__icontains=text)
+                           | Q(mobile_full__icontains=text))
+    if params.get("branch", "").isdigit():
+        rows = rows.filter(branch_id=int(params["branch"]))
+    start, end = _date_param(params.get("from")), _date_param(params.get("to"))
+    if start:
+        rows = rows.filter(requested_at__gte=_day_bounds(start, zone)[0])
+    if end:
+        rows = rows.filter(requested_at__lt=_day_bounds(end, zone)[1])
+    return rows
+
+
+def _card_row(claim, zone):
+    return {
+        "requested_at": claim.requested_at.astimezone(zone), "kind": CARD_KIND_LABEL,
+        "order_no": claim.order.order_no, "order_url": reverse("rental-order-detail", args=[claim.order_id]),
+        "customer": claim.customer_name, "mobile": claim.mobile_full,
+        "station": claim.branch.name if claim.branch_id else "",
+        "requested_by": claim.requested_by.display_name if claim.requested_by_id else "",
+        "reason": claim.request_remarks, "rule": f"{claim.discount_percent.quantize(Decimal('0.01'))}%",
+        "applied_amount": claim.discount_amount if claim.status == ClaimStatus.REDEEMED else None,
+        "status": CARD_BADGE.get(claim.status, claim.status),
+        "detail_url": reverse("discount-approval-detail", args=[claim.pk]),
+    }
+
+
 def _requests(request, zone):
     """The requests the list's filters match, every state -- the tab picks the
     state, so its counts come from the same filters."""
     params = request.GET
+    if not may_see_requests(request.user) or params.get("kind") == CARD_KIND:
+        return scoping.requests_for(request.user).none()
     rows = scoping.requests_for(request.user).select_related("order", "branch", "requested_by")
     text = params.get("q", "").strip()
     if text:
@@ -853,8 +918,19 @@ def _requests(request, zone):
 
 
 class RequestListView(RentalScreenView):
+    """Operator requests and card-discount requests in one list. Opens for
+    either permission; each kind's rows only for its own."""
+
     template_name = "rental/request_list.html"
     page_code = "rental.request"
+
+    def dispatch(self, request, *args, **kwargs):
+        user = getattr(request, "user", None)
+        if user and not may_see_requests(user):
+            if not may_see_card_requests(user):
+                raise PermissionDenied("You do not have permission for this screen.")
+            self.page_code = "discount.approval"        # a card-only approver
+        return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -865,11 +941,21 @@ class RequestListView(RentalScreenView):
         if tab not in tabs:
             tab = "pending"
         rows = _requests(self.request, zone)
+        cards = _card_requests(self.request, zone)
         by_status = dict(rows.order_by().values_list("status").annotate(n=Count("pk")))
-        # Waiting ones oldest first -- the longest wait is answered first.
-        ordering = "requested_at" if tab == "pending" else "-requested_at"
-        page = Paginator(rows.filter(status__in=tabs[tab][1]).order_by(ordering),
-                         REQUESTS_PER_PAGE).get_page(params.get("page"))
+        card_status = dict(cards.order_by().values_list("status").annotate(n=Count("pk")))
+        # One list across both kinds, newest first -- or, on Pending, oldest
+        # first: the longest wait is answered first. Paged as one UNION of
+        # (id, time, kind), then each page's rows are loaded from their table.
+        tagged = (rows.filter(status__in=tabs[tab][1]).order_by()
+                  .values_list("pk", "requested_at", Value("request", output_field=CharField()))
+                  .union(cards.filter(status__in=CARD_TABS[tab]).order_by()
+                         .values_list("pk", "requested_at", Value("card", output_field=CharField())), all=True))
+        tagged = tagged.order_by("requested_at" if tab == "pending" else "-requested_at")
+        page = Paginator(tagged, REQUESTS_PER_PAGE).get_page(params.get("page"))
+        wanted = list(page.object_list)
+        loaded = {pk: req for pk, req in rows.in_bulk([pk for pk, _, src in wanted if src == "request"]).items()}
+        loaded.update(cards.in_bulk([pk for pk, _, src in wanted if src == "card"]))
         filters = params.copy()
         for key in ("page", "tab"):
             filters.pop(key, None)
@@ -877,28 +963,35 @@ class RequestListView(RentalScreenView):
         query["tab"] = tab
         context.update({
             "tab": tab, "tab_label": tabs[tab][0],
-            "tabs": [{"value": value, "label": label, "count": sum(by_status.get(s, 0) for s in states)}
+            "tabs": [{"value": value, "label": label,
+                      "count": sum(by_status.get(s, 0) for s in states)
+                      + sum(card_status.get(s, 0) for s in CARD_TABS[value])}
                      for value, label, states in REQUEST_TABS],
             "filter_query": filters.urlencode(),
             "rows": [
-                {
-                    "requested_at": req.requested_at.astimezone(zone), "kind": req.get_kind_display(),
-                    "order_no": req.order.order_no, "order_url": reverse("rental-order-detail", args=[req.order_id]),
-                    "customer": req.order.customer_name, "mobile": req.order.customer_mobile,
-                    "station": req.branch.name,
-                    "requested_by": req.requested_by.display_name if req.requested_by_id else "",
-                    "reason": req.reason, "rule": rule_label(req), "applied_amount": req.applied_amount,
-                    "status": req.status,
-                    "detail_url": reverse("rental-request-detail", args=[req.pk]),
-                }
-                for req in page.object_list
+                _card_row(loaded[pk], zone) if src == "card" else _request_row(loaded[pk], zone)
+                for pk, _, src in wanted if pk in loaded
             ],
             "page": page, "query": query.urlencode(), "params": params,
             "filtered": any(params.get(k) for k in ("q", "kind", "branch", "from", "to")),
             "branches": list(branches_for(user).filter(is_active=True).order_by("name").values("id", "name")),
-            "kinds": OrderRequestKind.choices,
+            "kinds": ((list(OrderRequestKind.choices) if may_see_requests(user) else [])
+                      + ([(CARD_KIND, CARD_KIND_LABEL)] if may_see_card_requests(user) else [])),
         })
         return context
+
+
+def _request_row(req, zone):
+    return {
+        "requested_at": req.requested_at.astimezone(zone), "kind": req.get_kind_display(),
+        "order_no": req.order.order_no, "order_url": reverse("rental-order-detail", args=[req.order_id]),
+        "customer": req.order.customer_name, "mobile": req.order.customer_mobile,
+        "station": req.branch.name,
+        "requested_by": req.requested_by.display_name if req.requested_by_id else "",
+        "reason": req.reason, "rule": rule_label(req), "applied_amount": req.applied_amount,
+        "status": req.status,
+        "detail_url": reverse("rental-request-detail", args=[req.pk]),
+    }
 
 
 class RequestDetailView(RentalScreenView):

@@ -12,6 +12,7 @@ import datetime
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
 from django.http import Http404, StreamingHttpResponse
+from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils import timezone
 
@@ -299,8 +300,15 @@ def _claim_row(claim, zone):
 
 
 class ApprovalListView(DiscountScreenView):
+    """Card-discount requests are listed in Requests now (owner, 3 Nov 2026):
+    this URL -- and the sidebar entry a card-only approver still has -- opens
+    Requests filtered to them. The rendering below stays for reference only."""
+
     template_name = "discount/approval_list.html"
     page_code = "discount.approval"
+
+    def get(self, request, *args, **kwargs):
+        return redirect(f"{reverse('rental-request-list')}?kind=card_discount")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -342,7 +350,10 @@ class ApprovalDetailView(DiscountScreenView):
                 customer_id=claim.customer_id, card_discount_id=claim.card_discount_id,
                 status=ClaimStatus.REDEEMED).count(),
             "usage": claim.card_discount.usage_label,
-            "list_url": reverse("discount-approval-list"),
+            # Card-discount requests are listed in Requests (owner, 3 Nov 2026).
+            "list_url": f"{reverse('rental-request-list')}?kind=card_discount",
+            "back_tab": {ClaimStatus.REDEEMED: "approved", ClaimStatus.CANCELLED: "closed"}.get(
+                claim.status, claim.status),
             "approve_url": reverse("discount-approval-approve", args=[claim.pk]),
             "reject_url": reverse("discount-approval-reject", args=[claim.pk]),
             "revoke_url": reverse("discount-approval-revoke", args=[claim.pk]),

@@ -200,5 +200,11 @@ SYSTEM_ONLY = {
     "monitoring.error_log",
 }
 
+# A page listed inside another page: left out of the sidebar for anyone who
+# can open that other page (it still grants its own actions). Card-discount
+# requests are listed in Requests (owner, 3 Nov 2026); a card-only approver
+# keeps the Card Discount Approval entry, which now opens Requests.
+MENU_FOLDED_INTO = {"discount.approval": "rental.request"}
+
 # page code -> the URL name its sidebar entry links to.
 MENU_URL = {row[0]: row[3] for row in PAGES}
