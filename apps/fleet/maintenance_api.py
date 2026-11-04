@@ -624,10 +624,12 @@ class AssetCheckCreateView(_AppView):
         tags=["Operator Asset Checks"],
         summary="Check an asset: photo, condition, remarks",
         description="""
-Record a check of an asset of this station (from `assets`): upload the photo
-first (`photos`, purpose `asset_check`) -- **required** -- then send its
-`photo_id`, the `status` (`active` / `needs_inspection`), optional `remarks`
-(at most 500 characters) and `checked_at`. `sync_id` is this call's id (UUIDv7)
+Record a check of an asset of this station (from `assets`): the `status`
+(`active` / `needs_inspection`), `checked_at`, and optionally a photo and
+`remarks` (at most 500 characters). For a photo, upload it first (`photos`,
+purpose `asset_check`) and send its `photo_id`; without one, leave `photo_id`
+out or send null -- the check then has `photo_id` null (and, in the manager
+app, null `photo_url` / `photo_thumb_url`). `sync_id` is this call's id (UUIDv7)
 and becomes the check's id: a resend is answered `duplicate`.
 
 Recorded only -- nothing to approve, nobody is notified. The asset's condition
@@ -637,7 +639,7 @@ their photos in the manager app; the back office on the web.
         request=envelope_request("AssetCheckCreateEnvelope", AssetCheckCreateRequest),
         responses=envelope_responses(
             (200, "ok", "Checked.", _CHECK_ROW), (200, "duplicate", "Already checked.", _CHECK_ROW),
-            (400, "invalid_request", "photo_id is required.", {"errors": {"photo_id": "is required"}}),
+            (400, "invalid_request", "status is required.", {"errors": {"status": "is required"}}),
             (404, "unknown_asset", "No asset with that id.", {}),
             (400, "asset_not_at_station", "That asset is not at this station.", {}),
             (409, "sync_id_conflict", "That sync_id is already used.", {}),
