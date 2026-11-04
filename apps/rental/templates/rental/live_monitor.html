@@ -67,7 +67,7 @@ no separate route.
       <div data-kpi="running"><dt>Running orders</dt><dd data-kpi-val>{{ initial.kpis.running }}</dd></div>
       <div data-kpi="today"><dt>Orders {% if is_today %}today{% else %}that day{% endif %}</dt><dd data-kpi-val>{{ initial.kpis.today }}</dd></div>
       <div data-kpi="cancelled"><dt>Cancelled orders</dt><dd data-kpi-val>{{ initial.kpis.cancelled }}</dd></div>
-      <div data-kpi="collected" class="is-money"><dt>Bill amount collected</dt><dd><small>AED</small><span data-kpi-val>{{ initial.kpis.collected }}</span></dd></div>
+      <div data-kpi="collected" class="is-money" title="Excludes cancelled orders"><dt>Bill amount collected</dt><dd><small>AED</small><span data-kpi-val>{{ initial.kpis.collected }}</span></dd></div>
     </dl>
 
     <form class="scr-toolbar scr-live-toolbar" data-live-filters>
