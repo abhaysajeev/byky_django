@@ -567,7 +567,8 @@ class AssetCheck(TimeStampedModel):
     asset = models.ForeignKey("fleet.Asset", on_delete=models.PROTECT, related_name="checks")
     status = models.CharField(max_length=20, choices=AssetCheckStatus.choices)
     remarks = models.TextField(blank=True)
-    photo = models.ForeignKey("photos.Photo", on_delete=models.PROTECT, related_name="+")
+    # Optional (owner, 4 Nov 2026 -- it was required).
+    photo = models.ForeignKey("photos.Photo", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
     device = models.ForeignKey("devices.Device", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
     checked_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
     checked_at = models.DateTimeField()              # tablet time
