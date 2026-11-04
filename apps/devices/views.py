@@ -348,9 +348,6 @@ class DeviceMappingView(DeviceScreenView):
         context.update({
             "devices": rows,
             "unmapped_devices_list": unmapped,
-            # Force logout, for a lost tablet whose user cannot log out:
-            # system admins only.
-            "may_force_logout": bool(getattr(user, "sees_every_company", False)),
             "remap_stations": list(
                 branches_for(user).filter(is_active=True).order_by("name").values("id", "name")
             ),
@@ -556,15 +553,12 @@ class DeviceCloseMappingView(MappingActionView):
 
 class DeviceForceLogoutView(MappingActionView):
     """Sign whoever is on a device out -- a lost or broken tablet whose user
-    cannot log out, so Re-map can go ahead. System admins only."""
+    cannot log out, so Re-map can go ahead. Any role with Device Mapping
+    update (owner, 4 Nov 2026 -- was system admins only); `devices` is the
+    user's own scope, so a company admin reaches only their company's tablets."""
 
     permission = "update"
     done = "Signed out. The device can be re-mapped now."
-
-    def post(self, request, pk, *args, **kwargs):
-        if not getattr(request.user, "sees_every_company", False):
-            return self.refused()
-        return super().post(request, pk, *args, **kwargs)
 
     def act(self, devices, pk, data):
         return services.force_logout(devices, pk, user=self.request.user)
