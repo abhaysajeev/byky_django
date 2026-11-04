@@ -19,5 +19,6 @@ urlpatterns = [
     path("attendance/team", api.TeamAttendanceView.as_view(), name="api-app-attendance-team"),
     path("duty/my", duty_api.MyRosterView.as_view(), name="api-app-duty-my"),
     path("duty/team", duty_api.TeamRosterView.as_view(), name="api-app-duty-team"),
+    path("duty/branch", duty_api.BranchRosterView.as_view(), name="api-app-duty-branch"),
     path("employees", employee_api.EmployeesView.as_view(), name="api-app-employees"),
 ]
