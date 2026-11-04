@@ -261,6 +261,9 @@ button.scr-tile.is-active { border-color: #cc0000; box-shadow: 0 0 0 3px rgba(20
 .scr-co-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .scr-co-city { font-size: 11px; color: #9490bb; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .scr-code { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11.5px; color: #4b4770; background: #f4f3f9; padding: 4px 8px; border-radius: 6px; white-space: nowrap; }
+/* A long id (Platform ID) wraps inside its cell instead of widening the table. */
+.scr-cell-wrap { max-width: 130px; white-space: normal; }
+.scr-cell-wrap .scr-code { display: inline-block; white-space: normal; word-break: break-all; line-height: 1.45; }
 .scr-state { font-size: 12.5px; color: #4b4770; white-space: nowrap; }
 
 /* A grid cell that opens the shared "view records" modal (#scr-records-modal,
