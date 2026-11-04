@@ -112,6 +112,7 @@ def _device_row(device):
         "name": device.name,
         "model": device.device_model,
         "platform": device.get_platform_display(),
+        "platform_id": device.platform_id,
         "channel": device.get_channel_display(),
         "channel_value": device.channel,
         "status": device.status,
@@ -301,8 +302,9 @@ class DeviceMappingView(DeviceScreenView):
                 "transaction_letter": mapping.transaction_letter if mapping else "",
                 "order_prefix": services.bill_prefix_for(mapping.branch) if mapping else "",
                 "transaction_prefix": services.transaction_no_prefix(mapping.branch, mapping) if mapping else "",
+                # Not a column any more (owner, 4 Nov 2026); the Re-map and
+                # Close modals still read it.
                 "from_date": mapping.from_date if mapping else None,
-                "app_version": session.app_version if session else "",
                 "last_login": session.logged_in_at if session else None,
                 "employee": (
                     session.user.display_name or session.user.username

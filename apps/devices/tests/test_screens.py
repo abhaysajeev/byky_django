@@ -59,11 +59,17 @@ def test_an_approved_device_shows_its_station_and_reads_idle(signed_in, approved
     assert "Corniche-POS1" in content
     assert "Corniche 1" in content
     assert "Idle" in content
+    # Platform ID is a grid column (owner, 4 Nov 2026); App Version and
+    # Mapped Since are not.
+    assert "fed25f408ca56786" in content
+    assert "<th>Platform ID</th>" in content
+    assert "<th>App Version</th>" not in content and "<th>Mapped Since</th>" not in content
 
 
 def test_an_open_session_makes_a_device_read_in_use(signed_in, approved_device, company, branch):
-    """App Version, Last Login, Employee and Status all come from the session,
-    which is what the legacy grid computed too."""
+    """Last Login, Employee and Status all come from the session, which is what
+    the legacy grid computed too. App Version is no longer a column (owner,
+    4 Nov 2026)."""
     operator = User.objects.create_user(
         "op.erator", "Byky#2026", display_name="Ahmed R", company=company,
         allowed_channels=[Channel.OPERATOR],
@@ -77,7 +83,7 @@ def test_an_open_session_makes_a_device_read_in_use(signed_in, approved_device, 
 
     assert "In use" in content
     assert "Ahmed R" in content
-    assert "1.12.80" in content
+    assert "1.12.80" not in content
 
 
 def test_a_closed_session_leaves_the_device_idle(signed_in, approved_device, company, branch):

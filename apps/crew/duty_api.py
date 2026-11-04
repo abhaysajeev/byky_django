@@ -1,9 +1,11 @@
 """The duty roster APIs -- read-only; views only translate HTTP, the rules are
 in apps/crew/duty.py.
 
-POST /api/v1/employee/duty/my             my days (upcoming, or a past range)
+POST /api/v1/{employee|operator}/duty/my  my days (upcoming, or -- employee
+                                          only -- a past range)
 POST /api/v1/{manager|employee}/duty/team the team's days, by the Team
                                           Attendance hierarchy
+POST /api/v1/operator/duty/branch         the device's station's days
 """
 
 from django.core.paginator import Paginator
@@ -12,9 +14,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
 from apps.crew import duty, services
-from apps.crew.serializers import MyRosterRequest, TeamRosterRequest
+from apps.crew.serializers import MyRosterRequest, OperatorRosterRequest, TeamRosterRequest
 from apps.portal.authentication import AppJWTAuthentication
-from core.api import envelope, other_app, request_parts
+from core.api import envelope, other_app, request_parts, session_station
 from core.enums import Channel
 from core.schema import SERVER_ERROR, envelope_request, envelope_responses
 from core.timezones import zone_for
@@ -57,22 +59,31 @@ class _RosterView(APIView):
         if refused:
             return refused
         _, request_data = request_parts(request)
-        form = self.form_class(data=request_data)
+        form = self.form_for(app)(data=request_data)
         form.is_valid(raise_exception=True)
         return self.perform(request, app, form.validated_data, request.user.employee)
 
+    def form_for(self, app):
+        return self.form_class
+
 
 class MyRosterView(_RosterView):
-    """POST /api/v1/employee/duty/my"""
+    """POST /api/v1/{employee|operator}/duty/my"""
 
+    apps = (Channel.EMPLOYEE, Channel.OPERATOR)
     form_class = MyRosterRequest
 
     @extend_schema(
-        tags=["Employee Duty Roster"], summary="My duty roster",
+        tags=["Operator Duty Roster", "Employee Duty Roster"], summary="My duty roster",
         description="""
 The signed-in employee's own days. **My Duty Roster**: send nothing -- today
 and the next six days. **Previous Duty Rosters**: `from_date` + `to_date`
 (both or neither, at most 31 days); approved leave shows as `On Leave`.
+
+**Operator app**: no `request_data` -- always the signed-in operator's own
+days, **today and the next six** (counted from today, not the roster week;
+"today" is the company's business day). Dates sent are ignored. The login's
+`roster` block has the same day shape, for the current week as at login.
 """ + _DAY_RULES,
         request=envelope_request("MyRosterEnvelope", MyRosterRequest, request_data_required=False),
         responses=envelope_responses(
@@ -87,6 +98,9 @@ and the next six days. **Previous Duty Rosters**: `from_date` + `to_date`
     )
     def post(self, request, app):
         return super().post(request, app)
+
+    def form_for(self, app):
+        return OperatorRosterRequest if app == Channel.OPERATOR else self.form_class
 
     def perform(self, request, app, values, employee):
         if "from_date" in values:
@@ -190,4 +204,65 @@ scope, for the pickers.
                 for e in people
             ],
             "page": page.number, "pages": page.paginator.num_pages, "total": page.paginator.count,
+        })
+
+
+def _employee_json(employee):
+    return {"employee_code": employee.employee_code, "name": employee.full_name,
+            "designation": employee.designation.title, "category": employee.designation.roster_category}
+
+
+class BranchRosterView(_RosterView):
+    """POST /api/v1/operator/duty/branch"""
+
+    apps = (Channel.OPERATOR,)
+    form_class = OperatorRosterRequest
+
+    @extend_schema(
+        tags=["Operator Duty Roster"], summary="This station's duty roster",
+        description="""
+The roster of **the station this device is mapped to** (from the session --
+the device's mapping at login; never a station the app sends). No
+`request_data`.
+
+**Days** -- today and the next six (counted from today, not the roster week;
+"today" is the company's business day).
+
+**Who is listed** -- every active cashier and labour with at least one
+**Working** day at this station in those seven days, by name. Each has all
+seven days, so a day at another station names it, and week off and leave
+show as such. No paging.
+""" + _DAY_RULES,
+        request=envelope_request("BranchRosterEnvelope", OperatorRosterRequest, request_data_required=False),
+        responses=envelope_responses(
+            (200, "ok", "Station duty roster.", {
+                "from_date": "2026-10-15", "to_date": "2026-10-21",
+                "branch": {"branch_id": 12, "code": "CPG1", "name": "Creek Park Gate 1"},
+                "employees": [{"employee": {"employee_code": "BYKY014", "name": "Anil Kumar",
+                                            "designation": "Cashier", "category": "cashier"},
+                               "days": [_DAY, _LEAVE_DAY, _NOT_SET]}],
+            }),
+            (401, "not_authenticated", "Sign in first.", {}),
+            (403, "wrong_channel", "Not allowed on this app.", {}),
+            (409, "device_not_mapped", "This device has no station.", {}),
+            (409, "branch_inactive", "This station is closed.", {}),
+            SERVER_ERROR,
+        ),
+    )
+    def post(self, request, app):
+        return super().post(request, app)
+
+    def perform(self, request, app, values, employee):
+        branch, refused = session_station(request)
+        if refused:
+            return refused
+        company = branch.company
+        from_date, to_date = duty.upcoming(company)
+        staff, _ = duty.team_roster(company, {branch.pk}, from_date, to_date)
+        people = list(staff)
+        days = duty.days_by_employee([e.pk for e in people], from_date, to_date, zone_for(company))
+        return envelope("ok", "Station duty roster.", {
+            "from_date": from_date.isoformat(), "to_date": to_date.isoformat(),
+            "branch": {"branch_id": branch.pk, "code": branch.short_code, "name": branch.name},
+            "employees": [{"employee": _employee_json(e), "days": days[e.pk]} for e in people],
         })
