@@ -197,10 +197,15 @@ def row(order, zone):
 
 def kpis(user, params, day, zone):
     """Legacy's totals: running vehicles, running orders, orders, cancelled,
-    amount collected -- for the chosen stations, both tabs together."""
+    amount collected -- for the chosen stations, both tabs together.
+
+    Amount collected leaves out every payment and refund of a cancelled order
+    (owner, 4 Nov 2026): display only -- nothing else reads this figure; the
+    reports and collections still count the money actually taken."""
     orders = _scope(user, params)
     start, end = day_bounds(day, zone)
-    payments = Payment.objects.filter(order__in=orders, paid_at__gte=start, paid_at__lt=end)
+    payments = (Payment.objects.filter(order__in=orders, paid_at__gte=start, paid_at__lt=end)
+                .exclude(order__status=OrderStatus.CANCELLED))
     taken = payments.exclude(kind=PaymentKind.REFUND).aggregate(t=Sum("amount"))["t"] or ZERO
     refunded = payments.filter(kind=PaymentKind.REFUND).aggregate(t=Sum("amount"))["t"] or ZERO
     booked = orders.filter(booked_at__gte=start, booked_at__lt=end)
