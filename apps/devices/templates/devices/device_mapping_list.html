@@ -101,10 +101,9 @@
             <th>Device ID</th>
             <th>Device Name</th>
             <th>Model</th>
+            <th>Platform ID</th>
             <th>Station</th>
             <th>Transaction Prefix</th>
-            <th>App Version</th>
-            <th>Mapped Since</th>
             <th>Last Login</th>
             <th>Employee</th>
             <th style="text-align:center">Status</th>
@@ -113,14 +112,13 @@
         </thead>
         <tbody>
           {% for d in devices %}
-          <tr class="scr-row" data-search="{{ d.name|lower }} {{ d.registration_id }} {{ d.station|lower }}" data-station="{{ d.station }}" data-online="{% if d.online %}yes{% else %}no{% endif %}" data-pk="{{ d.pk }}">
+          <tr class="scr-row" data-search="{{ d.name|lower }} {{ d.registration_id }} {{ d.station|lower }} {{ d.platform_id|lower }}" data-station="{{ d.station }}" data-online="{% if d.online %}yes{% else %}no{% endif %}" data-pk="{{ d.pk }}">
             <td><span class="scr-code">{{ d.registration_id }}</span></td>
             <td style="font-weight:600">{{ d.name|default:"—" }}</td>
             <td class="scr-contact">{{ d.model|default:"—" }}</td>
+            <td class="scr-cell-wrap">{% if d.platform_id %}<span class="scr-code">{{ d.platform_id }}</span>{% else %}—{% endif %}</td>
             <td class="scr-contact">{{ d.station|default:"—" }}</td>
             <td><span class="scr-code">{{ d.transaction_prefix|default:"—" }}</span></td>
-            <td class="scr-contact">{{ d.app_version|default:"—" }}</td>
-            <td class="scr-contact">{{ d.from_date|date:"d M Y, H:i"|default:"—" }}</td>
             <td class="scr-contact">{{ d.last_login|date:"d M Y H:i"|default:"—" }}</td>
             <td class="scr-contact">{{ d.employee|default:"—" }}</td>
             <td style="text-align:center">
@@ -175,7 +173,7 @@
           </tr>
           {% empty %}
           <tr>
-            <td colspan="11" style="padding:0">
+            <td colspan="10" style="padding:0">
               <div class="scr-empty">
                 <span class="scr-empty-ico">
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"></rect><path d="M11 18h2"></path></svg>

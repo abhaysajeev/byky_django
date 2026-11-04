@@ -234,6 +234,12 @@ class MyRosterRequest(serializers.Serializer):
         return values
 
 
+class OperatorRosterRequest(serializers.Serializer):
+    """Operator app duty/my and duty/branch: nothing to send (owner, 4 Nov
+    2026). The employee is the token's, the station the session's, and the
+    days always today and the next six -- anything sent is ignored."""
+
+
 class TeamRosterRequest(MyRosterRequest):
     """Manager app and employee-app supervisors: the team's days. No dates:
     the current roster week."""
