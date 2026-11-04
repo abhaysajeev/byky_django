@@ -80,6 +80,7 @@ needs inspection), optional remarks. Read only -- just recorded
           {% for s in rows %}
           <tr>
             <td>
+              {% if s.thumb %}
               <button type="button" class="scr-photo-thumb scr-share-thumb" data-share-open
                       data-full="{{ s.full }}" data-remarks="{{ s.asset }} · {{ s.status_label }}{% if s.remarks %} — {{ s.remarks }}{% endif %}" data-station="{{ s.station }} · {{ s.emirate }}"
                       data-shared="{{ s.checked_at|date:'d M Y, H:i' }}{% if s.checked_by %} · {{ s.checked_by }}{% endif %}{% if s.tablet %} · Tablet {{ s.tablet }}{% endif %}"
@@ -87,6 +88,9 @@ needs inspection), optional remarks. Read only -- just recorded
                       aria-label="View photo">
                 <img src="{{ s.thumb }}" alt="Asset photo" loading="lazy" />
               </button>
+              {% else %}
+              <span class="scr-contact-sub">No photo</span>
+              {% endif %}
             </td>
             <td><div class="scr-co-name">{{ s.asset }}</div><div class="scr-contact-sub">{{ s.asset_type }}</div></td>
             <td>{% if s.status == "needs_inspection" %}<span class="scr-badge scr-badge-pending"><i></i>Needs inspection</span>{% else %}<span class="scr-badge scr-badge-active"><i></i>Active</span>{% endif %}</td>
@@ -95,9 +99,11 @@ needs inspection), optional remarks. Read only -- just recorded
             <td><div class="scr-co-name">{{ s.checked_at|date:"d M Y, H:i" }}</div><div class="scr-contact-sub">{{ s.checked_by|default:"—" }}{% if s.tablet %} · Tablet {{ s.tablet }}{% endif %}</div></td>
             <td>
               <div class="scr-row-actions">
+                {% if s.thumb %}
                 <button type="button" class="scr-icon-btn" data-share-open-row title="View" aria-label="View photo">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12"></path><circle cx="12" cy="12" r="3"></circle></svg>
                 </button>
+                {% endif %}
               </div>
             </td>
           </tr>
