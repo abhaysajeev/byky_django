@@ -1,7 +1,8 @@
 """The duty roster as the apps read it (apps/crew/duty.py) -- read-only.
 
-POST /api/v1/employee/duty/my
+POST /api/v1/{employee|operator}/duty/my
 POST /api/v1/{manager|employee}/duty/team   by the Team Attendance hierarchy
+POST /api/v1/operator/duty/branch           the device's station
 """
 
 import datetime
@@ -255,3 +256,91 @@ def test_the_login_roster_uses_the_same_day_shape(world, crew):
     assert week["week_start"] <= "2026-08-30" <= week["week_end"]
     day = next(d for d in week["days"] if d["date"] == "2026-08-30")
     assert (day["status"], day["state"], day["shift1_ends_next_day"]) == ("Working", "Abu Dhabi", True)
+
+
+# -- operator app: duty/my and duty/branch (owner, 4 Nov 2026) ---------------------------
+#
+# Nothing is sent: the employee is the token's, the station the session's (till-1 is
+# mapped to AUH01), the days always today and the next six. The operator fixture signs
+# in before any roster row exists, so the login's own roster gate never refuses it.
+
+
+def _upcoming(world):
+    today, last = duty.upcoming(world["company"])
+    return today, last, [today + datetime.timedelta(days=n) for n in range(7)]
+
+
+def test_operator_my_roster_is_today_and_the_next_six_days(client, world, operator):
+    today, last, days = _upcoming(world)
+    working(world["operator"], world["auh1"], days[2])
+
+    data = call(client, "/api/v1/operator/duty/my", {}, token=operator).json()["data"]
+
+    assert (data["from_date"], data["to_date"]) == (today.isoformat(), last.isoformat())
+    assert [d["date"] for d in data["days"]] == [d.isoformat() for d in days]
+    assert (data["days"][2]["status"], data["days"][2]["branch"]) == ("Working", "Creek Park 1")
+
+
+def test_operator_my_roster_ignores_dates_sent(client, world, operator):
+    today, _, _ = _upcoming(world)
+
+    body = call(client, "/api/v1/operator/duty/my", {**RANGE, "to_date": "not a date"}, token=operator).json()
+
+    assert body["code"] == "ok", body
+    assert (body["data"]["from_date"], len(body["data"]["days"])) == (today.isoformat(), 7)
+
+
+def test_operator_branch_roster_lists_whoever_works_at_this_station(client, world, operator):
+    today, last, days = _upcoming(world)
+    cashier = world["staff"].designation
+    cashier.roster_category = RosterCategory.CASHIER
+    cashier.save(update_fields=["roster_category"])
+    labour = Designation.objects.create(company=world["company"], code="LAB", title="Labour",
+                                        roster_category=RosterCategory.LABOUR)
+
+    def person(code, first, designation):
+        return Employee.objects.create(company=world["company"], employee_code=code, first_name=first,
+                                       last_name="K", designation=designation)
+
+    bilal, chen, dina = person("EMP002", "Bilal", cashier), person("EMP003", "Chen", labour), person(
+        "EMP004", "Dina", cashier)
+    working(world["staff"], world["auh1"], days[0])                  # Anil: here today
+    working(world["staff"], world["auh2"], days[1])                  # ...the other station tomorrow
+    working(chen, world["auh1"], days[6])                            # Chen: here on the last day
+    working(bilal, world["auh2"], days[0])                           # Bilal: the other station only
+    working(dina, world["auh1"], last + datetime.timedelta(days=1))  # Dina: here, after the 7 days
+
+    # A station sent by the app is ignored: the session's station is the one.
+    body = call(client, "/api/v1/operator/duty/branch", {"branch_id": world["auh2"].pk}, token=operator).json()
+
+    assert body["code"] == "ok", body
+    data = body["data"]
+    assert (data["from_date"], data["to_date"]) == (today.isoformat(), last.isoformat())
+    assert data["branch"] == {"branch_id": world["auh1"].pk, "code": "AUH01", "name": "Creek Park 1"}
+    assert codes(data) == ["EMP001", "EMP003"]
+    anil = data["employees"][0]
+    assert anil["employee"] == {"employee_code": "EMP001", "name": world["staff"].full_name,
+                                "designation": "Cashier", "category": "cashier"}
+    assert len(anil["days"]) == 7
+    assert [(d["status"], d["branch"]) for d in anil["days"][:3]] == [
+        ("Working", "Creek Park 1"), ("Working", "Creek Park 2"), (None, None)]
+
+
+def test_operator_branch_roster_of_an_unmapped_session_is_refused(client, world, operator):
+    from apps.portal.session_models import AppSession
+
+    AppSession.objects.filter(device__installation_id="till-1", logged_out_at__isnull=True).update(branch=None)
+
+    response = call(client, "/api/v1/operator/duty/branch", {}, token=operator)
+
+    assert (response.status_code, response.json()["code"]) == (409, "device_not_mapped")
+
+
+@pytest.mark.parametrize("url, who", [
+    ("/api/v1/manager/duty/branch", "manager"), ("/api/v1/employee/duty/branch", "staff"),
+    ("/api/v1/operator/duty/branch", "manager"), ("/api/v1/operator/duty/my", "manager"),
+])
+def test_duty_branch_is_the_operator_apps_only(client, world, operator, manager, staff_app, url, who):
+    response = call(client, url, {}, token={"manager": manager, "staff": staff_app}[who])
+
+    assert (response.status_code, response.json()["code"]) == (403, "wrong_channel")
