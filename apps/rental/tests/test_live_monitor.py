@@ -140,6 +140,25 @@ def test_kpis_count_the_day(client_in, world, shop):
     assert rows(client_in)["kpis"] == {"vehicles": 2, "running": 1, "today": 2, "cancelled": 1, "collected": "40.000"}
 
 
+def test_amount_collected_leaves_out_a_cancelled_orders_payments_and_refunds(client_in, world, shop):
+    """Owner, 4 Nov 2026: a cancelled order's money is not summed at all --
+    its deposit, and a refund of it, are both ignored (never negative)."""
+    kept = make_order(world, shop, "K-3", lines=())
+    Payment.objects.create(id=uuid7(), order=kept, kind=PaymentKind.ADVANCE, mode=shop["cash"],
+                           amount=Decimal("30"), paid_at=timezone.now())
+    dropped = make_order(world, shop, "K-4", lines=())
+    Payment.objects.create(id=uuid7(), order=dropped, kind=PaymentKind.ADVANCE, mode=shop["cash"],
+                           amount=Decimal("50"), paid_at=timezone.now())
+    assert rows(client_in)["kpis"]["collected"] == "80.000"          # both still running
+
+    Order.objects.filter(pk=dropped.pk).update(status=OrderStatus.CANCELLED, cancelled_at=timezone.now())
+    assert rows(client_in)["kpis"]["collected"] == "30.000"
+
+    Payment.objects.create(id=uuid7(), order=dropped, kind=PaymentKind.REFUND, mode=shop["cash"],
+                           amount=Decimal("50"), paid_at=timezone.now())
+    assert rows(client_in)["kpis"]["collected"] == "30.000"          # the refund is ignored too
+
+
 # -- The push -----------------------------------------------------------------------------
 
 

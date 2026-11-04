@@ -164,16 +164,17 @@ class IssueTypeCreateRequest(serializers.Serializer):
 
 
 class AssetCheckCreateRequest(serializers.Serializer):
-    """The tablet checks an asset of its station: photo (uploaded first,
-    purpose asset_check) and condition; remarks optional. `sync_id` is this
-    call's id and becomes the check's id."""
+    """The tablet checks an asset of its station: its condition; a photo
+    (uploaded first, purpose asset_check) and remarks optional (the photo was
+    required until 4 Nov 2026). `sync_id` is this call's id and becomes the
+    check's id."""
 
     sync_id = uuid7_field()
     asset_id = whole_number_field(min_value=1)
     status = serializers.ChoiceField(
         choices=AssetCheckStatus.values,
         error_messages={**REQUIRED, "invalid_choice": "must be active or needs_inspection"})
-    photo_id = serializers.UUIDField(error_messages={**REQUIRED, "invalid": "must be a UUID"})
+    photo_id = serializers.UUIDField(required=False, allow_null=True, error_messages={"invalid": "must be a UUID"})
     remarks = serializers.CharField(max_length=500, required=False, allow_blank=True, trim_whitespace=True,
                                     error_messages={"max_length": "must be at most 500 characters"})
     checked_at = datetime_field()

@@ -1,6 +1,7 @@
 """Asset checks (apps/fleet/asset_checks.py): the operator app inspects a
-station asset with a photo; it is only recorded. The manager app and the web
-view them with photos (owner, 27 Oct 2026)."""
+station asset, optionally with a photo (required until 4 Nov 2026); it is only
+recorded. The manager app and the web view them with photos (owner, 27 Oct
+2026)."""
 
 from apps.fleet.models import AssetCheck
 from apps.fleet.tests import test_image_shares as shares
@@ -54,14 +55,35 @@ def test_remarks_are_optional(client, world, token, assets):
     assert AssetCheck.objects.get().remarks == ""
 
 
-def test_the_photo_is_required_and_must_be_an_asset_check_photo(client, world, token, assets):
+def test_a_photo_sent_must_be_an_asset_check_photo(client, world, token, assets):
     data = check_data(client, token, assets["cam"])
-    assert call(client, CHECK, {k: v for k, v in data.items() if k != "photo_id"}, token=token).json()["code"] \
-        == "invalid_request"
     share = uploaded(client, token, purpose="image_share")
     assert call(client, CHECK, {**data, "photo_id": share}, token=token).json()["code"] == "unknown_photo"
+    assert call(client, CHECK, {**data, "photo_id": "not-a-uuid"}, token=token).json()["code"] == "invalid_request"
     assert call(client, CHECK, {**data, "status": "broken"}, token=token).json()["code"] == "invalid_request"
     assert AssetCheck.objects.count() == 0
+
+
+def test_the_photo_is_optional_everywhere(client, world, token, manager, assets):
+    """Owner, 4 Nov 2026 -- it was required. Left out or null: the check is
+    recorded, its photo_id and photo URLs are null, and the web shows No photo."""
+    data = check_data(client, token, assets["cam"])
+    del data["photo_id"]
+    row = call(client, CHECK, data, token=token).json()
+    assert row["code"] == "ok", row
+    assert row["data"]["photo_id"] is None
+    assert call(client, CHECK, check_data(client, token, assets["cam"], photo_id=None), token=token).json()[
+        "code"] == "ok"
+    assert AssetCheck.objects.filter(photo__isnull=True).count() == 2
+
+    seen = call(client, LIST.format("manager"), {}, token=manager).json()["data"]["checks"][0]
+    assert (seen["photo_id"], seen["photo_url"], seen["photo_thumb_url"]) == (None, None, None)
+    one = call(client, DETAIL, {"asset_check_id": row["data"]["asset_check_id"]}, token=manager).json()["data"]
+    assert one["photo_url"] is None
+
+    page = shares.web_client(world).get("/fleet/asset-check/list/")
+    assert page.status_code == 200 and page.context["rows"][0]["thumb"] == ""
+    assert "No photo" in page.content.decode()
 
 
 def test_only_this_stations_assets(client, world, token, assets):

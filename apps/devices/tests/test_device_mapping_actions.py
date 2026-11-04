@@ -334,7 +334,7 @@ def test_remap_and_close_are_greyed_and_say_who_while_logged_in(signed_in, compa
     html = signed_in.get("/devices/mapping/").content.decode()
 
     assert html.count('disabled title="op.x is logged in — they must log out first"') == 2
-    assert 'data-mapping-action="force-logout"' not in html          # a company admin: no Force logout
+    assert f'data-mapping-action="force-logout" data-pk="{device.pk}"' in html   # Force logout instead
     assert ".scr-menu-item:disabled" in open("static/css/byky-screen.css").read()
 
 
@@ -348,12 +348,57 @@ def system_admin(client, db):
     return client
 
 
-def test_force_logout_is_for_system_admins_only(client, signed_in, company, branch):
+# Force logout: any role with Device Mapping update (owner, 4 Nov 2026 -- it was system
+# admins only), within that user's own company.
+
+
+def test_a_company_administrator_sees_and_uses_force_logout(signed_in, company, branch):
     device = tablet(company)
     mapped(device, branch)
     session = _signed_in(company, device, branch)
 
-    assert post(signed_in, f"/devices/mapping/{device.pk}/force-logout/").status_code == 403
+    html = signed_in.get("/devices/mapping/").content.decode()
+    assert f'data-mapping-action="force-logout" data-pk="{device.pk}"' in html
+
+    response = post(signed_in, f"/devices/mapping/{device.pk}/force-logout/")
+
+    assert response.status_code == 200 and response.json()["ok"], response.content
+    session.refresh_from_db()
+    assert session.logout_reason == LogoutReason.FORCED
+
+
+def test_force_logout_needs_device_mapping_update(company, branch):
+    from django.test import Client
+
+    from apps.portal.models import RolePermission
+
+    role = Role.objects.create(company=company, name="Viewer")
+    grant_all(role)
+    RolePermission.objects.filter(role=role, page__code="devices.device_mapping").update(can_update=False)
+    User.objects.create_user("viewer.x", "Byky#2026", company=company, role=role, allowed_channels=[Channel.WEB])
+    viewer = Client()
+    viewer.post("/login/", {"username": "viewer.x", "password": "Byky#2026"})
+    device = tablet(company)
+    mapped(device, branch)
+    session = _signed_in(company, device, branch)
+
+    assert 'data-mapping-action="force-logout"' not in viewer.get("/devices/mapping/").content.decode()
+    assert post(viewer, f"/devices/mapping/{device.pk}/force-logout/").status_code == 403
+    session.refresh_from_db()
+    assert session.logged_out_at is None
+
+
+def test_force_logout_never_reaches_another_companys_tablet(signed_in, company):
+    from apps.company.models import Company
+
+    other = Company.objects.create(short_code="OTH", name="Other", country=company.country, state=company.state,
+                                   phone_number="+9710000001", email="ops@other.test")
+    device = tablet(other, "tab-other")
+    session = _signed_in(other, device, None, "op.other")
+
+    response = post(signed_in, f"/devices/mapping/{device.pk}/force-logout/")
+
+    assert not (response.status_code == 200 and response.json().get("ok")), response.content
     session.refresh_from_db()
     assert session.logged_out_at is None
 
