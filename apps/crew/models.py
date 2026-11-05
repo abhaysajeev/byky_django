@@ -653,6 +653,11 @@ class DutyRoster(TimeStampedModel):
     )
     date = models.DateField()
     day_type = models.CharField(max_length=16, choices=DutyRosterDayType.choices)
+    # What this Working day is spent as (owner, 5 Nov 2026): a Cashier may work
+    # a day as labour and the reverse. Empty on rows from before it, and on
+    # non-Working days; an empty Working day reads as the employee's
+    # designation (duty.role_of).
+    role = models.CharField(max_length=10, choices=RosterCategory.choices, blank=True, default="")
 
     branch = models.ForeignKey(
         "company.Branch", null=True, blank=True,

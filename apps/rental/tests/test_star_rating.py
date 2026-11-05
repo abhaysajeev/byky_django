@@ -79,6 +79,66 @@ def test_the_rating_appears_in_the_customer_and_invoice_replies(client, world, t
     assert api._customer_json(Customer(company=world["company"], star_rating=None))["star_rating"] is None
 
 
+# -- A 1-star rating blocks the customer (owner, 5 Nov 2026) -------------------------------
+
+
+def _blocks(customer):
+    from apps.rental.models import CustomerBlockLog
+
+    return list(CustomerBlockLog.objects.filter(customer=customer).values_list("action", "reason"))
+
+
+def test_one_star_blocks_with_the_rating_remarks(client, world, token, shop, returned):
+    body = settle(client, token, bill(returned, shop, star_rating="1", rating_remarks="  Rude, damaged the bike "))
+
+    assert body["code"] == "ok", body
+    ahmed = Customer.objects.get(pk=shop["ahmed"].pk)
+    assert (ahmed.is_blocked, ahmed.block_reason) == (True, "Rude, damaged the bike")
+    assert ahmed.blocked_at == datetime.datetime(2026, 10, 2, 13, 13, 30, tzinfo=datetime.UTC)   # the settle time
+    assert ahmed.blocked_by is not None
+    assert _blocks(ahmed) == [("block", "Rude, damaged the bike")]
+
+
+@pytest.mark.parametrize("remarks", [None, "", "   ", "absent"])
+def test_one_star_without_remarks_names_the_invoice(client, world, token, shop, returned, remarks):
+    request_data = bill(returned, shop, star_rating="1.0")
+    if remarks != "absent":
+        request_data["rating_remarks"] = remarks
+
+    assert settle(client, token, request_data)["code"] == "ok"
+    ahmed = Customer.objects.get(pk=shop["ahmed"].pk)
+    assert ahmed.block_reason == f"1 star rated for Invoice {Invoice.objects.get().invoice_no}"
+    assert ahmed.is_blocked
+
+
+@pytest.mark.parametrize("rating", ["1.5", "2", "5"])
+def test_above_one_star_does_not_block(client, world, token, shop, returned, rating):
+    assert settle(client, token, bill(returned, shop, star_rating=rating))["code"] == "ok"
+    ahmed = Customer.objects.get(pk=shop["ahmed"].pk)
+    assert not ahmed.is_blocked and _blocks(ahmed) == []
+
+
+def test_an_already_blocked_customer_is_left_as_is(client, world, token, shop, returned):
+    Customer.objects.filter(pk=shop["ahmed"].pk).update(is_blocked=True, block_reason="Unpaid balance")
+
+    assert settle(client, token, bill(returned, shop, star_rating="1", rating_remarks="Rude"))["code"] == "ok"
+    ahmed = Customer.objects.get(pk=shop["ahmed"].pk)
+    assert ahmed.block_reason == "Unpaid balance" and _blocks(ahmed) == []
+
+
+def test_a_resent_one_star_settle_blocks_once(client, world, token, shop, returned):
+    request_data = bill(returned, shop, star_rating="1")
+    assert settle(client, token, request_data)["code"] == "ok"
+    assert settle(client, token, request_data)["code"] == "duplicate"
+
+    assert len(_blocks(Customer.objects.get(pk=shop["ahmed"].pk))) == 1
+
+
+def test_a_long_remark_is_cut_to_the_block_reason_length(client, world, token, shop, returned):
+    assert settle(client, token, bill(returned, shop, star_rating="1", rating_remarks="x" * 400))["code"] == "ok"
+    assert Customer.objects.get(pk=shop["ahmed"].pk).block_reason == "x" * 255
+
+
 def test_it_is_in_the_api_docs(client, db):
     schema = client.get("/api/schema/").content.decode()
 
