@@ -180,6 +180,8 @@
     var record = {
       employee_label: emp.name + ' — ' + dayLabel(dateIso),
       day_type: rec ? (DAY_TYPE_VALUE[rec.status] || 'working') : 'working',
+      // The day's own role, else the employee's designation (owner, 5 Nov 2026).
+      category: ((rec && rec.role) || emp.role || '').toLowerCase(),
       branch: rec && rec.branch ? (branchNameToId[rec.branch] || '') : '',
       shift1_start_hhmm: (rec && rec.shift1_start) || '',
       shift1_end_hhmm: (rec && rec.shift1_end) || '',
@@ -210,6 +212,7 @@
         employee: editDayContext.employeeId,
         date: editDayContext.dateIso,
         day_type: dayType,
+        role: working ? (val('category') || null) : null,
         branch: working ? (val('branch') || null) : null,
         shift1_start: working ? (val('shift1_start_hhmm') || null) : null,
         shift1_end: working ? (val('shift1_end_hhmm') || null) : null,
@@ -253,8 +256,12 @@
     host.innerHTML = '';
     week.days.forEach(function (day) {
       var working = workingOnDay(branchName, day);
-      var cashiers = working.filter(function (w) { return w.emp.role === 'Cashier'; });
-      var labour = working.filter(function (w) { return w.emp.role !== 'Cashier'; });
+      // By what the day is worked as (owner, 5 Nov 2026): a Cashier rostered
+      // as labour that day sits under Labour. Days saved before roles were
+      // carry the designation's (services.roster_payload).
+      var dayRole = function (w) { return (w.rec && w.rec.role) || w.emp.role; };
+      var cashiers = working.filter(function (w) { return dayRole(w) === 'Cashier'; });
+      var labour = working.filter(function (w) { return dayRole(w) !== 'Cashier'; });
       var d = new Date(day + 'T00:00:00');
 
       var card = document.createElement('div');
@@ -347,10 +354,9 @@
         var dateIso = addBtn.dataset.wkDay;
         addToDayContext = { branchId: branchNameToId[branchName] || '', branchName: branchName, dateIso: dateIso };
         addToDayDrawer.__bykyFill('add', null);
-        // Pre-set to whichever button was clicked -- Role also narrows the
-        // Employee combo below it (drawer.html's combo_filter_field), so
-        // clicking +Cashier only ever offers Cashiers to pick from, editable
-        // if that was the wrong button.
+        // Pre-set to whichever button was clicked, editable, and saved as
+        // the day's role. The Employee combo lists every Cashier and Labour
+        // employee, whatever the Role (owner, 5 Nov 2026).
         var categorySelect = addToDayDrawer.querySelector('[data-field="category"]');
         if (categorySelect) {
           categorySelect.value = (addBtn.dataset.wkAdd || '').toLowerCase();
@@ -424,6 +430,8 @@
         shift1_end: addShift1End ? addShift1End.value || null : null,
         shift2_start: hasShift2 && addShift2Start ? addShift2Start.value || null : null,
         shift2_end: hasShift2 && addShift2End ? addShift2End.value || null : null,
+        // The Role picked is the day's role (owner, 5 Nov 2026).
+        role: (addToDayDrawer.querySelector('[data-field="category"]') || {}).value || null,
         // Add to Day only ever introduces someone new to a day -- Edit Day
         // is the one place a day is meant to change. Without this,
         // re-picking someone already on the roster that day silently

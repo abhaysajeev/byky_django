@@ -1007,6 +1007,8 @@ def settle_order(session, values, request_data, reply_for):
         issue_invoice(order, billed, session, at=values["settled_at"], discount_source=source,
                       star_rating=values.get("star_rating"), rating_remarks=values.get("rating_remarks", ""))
         rate_customer(order.customer_id, values.get("star_rating"), values["settled_at"])
+        block_for_low_rating(order.customer_id, values.get("star_rating"), values.get("rating_remarks"),
+                             order.order_no, session.user, values["settled_at"])
         event = {
             "action": OrderAction.SETTLE, "happened_at": values["settled_at"],
             "device": session.device, "user": session.user,
@@ -1065,6 +1067,29 @@ def rate_customer(customer_id, star_rating, rated_at):
     Customer.objects.filter(
         Q(star_rating_at__isnull=True) | Q(star_rating_at__lte=rated_at), pk=customer_id,
     ).update(star_rating=star_rating, star_rating_at=rated_at)
+
+
+BLOCKING_RATING = Decimal("1")
+
+
+def block_for_low_rating(customer_id, star_rating, rating_remarks, invoice_no, user, at):
+    """A 1-star settle blocks the customer (owner, 5 Nov 2026), exactly as a
+    block from the Blocked Customers dashboard: stamped, logged, on the
+    dashboard and in the history. The reason is the settle's rating remarks,
+    or "1 star rated for Invoice <no>" when it sent none. Already blocked:
+    left as it is, no second log row. A late (parked) settle still blocks --
+    the rating is an event, whatever came after it."""
+    if star_rating is None or Decimal(star_rating) > BLOCKING_RATING:
+        return
+    customer = Customer.objects.select_for_update().filter(pk=customer_id).first()
+    if customer is None or customer.is_blocked:
+        return
+    reason = ((rating_remarks or "").strip() or f"1 star rated for Invoice {invoice_no}")[:255]
+    customer.is_blocked, customer.block_reason = True, reason
+    stamp_block(customer, False, user, now=at)
+    customer.modified_by = user
+    customer.save()
+    log_block_change(customer, user, reason, now=at)
 
 
 def issue_invoice(order, billed_items, session, *, at, discount_source="", star_rating=None, rating_remarks=""):
