@@ -84,6 +84,13 @@ class Device(TimeStampedModel):
     name = models.CharField(max_length=120, blank=True)
     channel = models.CharField(max_length=16, choices=Channel.choices)
 
+    # Branch-Device Config (owner, 5 Nov 2026): at a multi-device branch some
+    # tablets only rent, others only receive. Advisory -- the operator app
+    # reads them (device/config) and acts on them; the server refuses nothing
+    # because of them. The device's own, so they follow it to another branch.
+    for_rent = models.BooleanField(default=True)
+    for_receive = models.BooleanField(default=True)
+
     # There is no branch column here on purpose. Which station a device trades
     # at, and since when, is DeviceMapping's whole job -- the open row is the
     # current station. Keeping a copy here would mean two writers for one fact,

@@ -18,6 +18,7 @@ from apps.company.models import BranchWorkingTime, WeekDay
 from apps.devices import services
 from apps.devices.serializers import (
     DeviceBranchRequest,
+    DeviceConfigRequest,
     DeviceSettingsRequest,
     RegistrationRequest,
     UpdateCheckRequest,
@@ -300,6 +301,64 @@ builds that send it, and is ignored.
 
 The station and tablet are the signed-in session's own, never sent.
 """
+
+
+_CONFIG_SAMPLE = {
+    "device_registration_id": 1022, "name": "Zabeel-POS2",
+    "branch": {"branch_id": 3, "code": "ZBP1", "name": "Zabeel Park 1", "is_multi_device": True},
+    "config": {"for_rent": True, "for_receive": False},
+}
+
+
+class DeviceConfigView(APIView):
+    """POST /api/v1/operator/device/config -- this tablet's Branch-Device Config."""
+
+    authentication_classes = [AppJWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Operator Device"],
+        summary="This tablet's configuration (For Rent / For Receive)",
+        description="""
+What this tablet is set up for on the web's **Devices → Branch-Device Config**
+(owner, 5 Nov 2026): at a branch with several tablets, some may only take
+rentals and others only receive vehicles back.
+
+No `request_data` -- the tablet and its branch are the session's.
+
+* `config.for_rent` -- this tablet takes rentals (book, add vehicles).
+* `config.for_receive` -- this tablet receives vehicles back (return, settle).
+
+Both are **true** until set otherwise. They are **advisory**: the app decides
+what to show and allow, and the server refuses no call because of them. Read
+them after login and again whenever the app refreshes its setup -- a change on
+the web takes effect from the next call. `config` is an object so further
+settings can be added beside these two.
+""",
+        request=envelope_request("DeviceConfigEnvelope", DeviceConfigRequest, request_data_required=False),
+        responses=envelope_responses(
+            (200, "ok", "Device config.", _CONFIG_SAMPLE),
+            (401, "not_authenticated", "Sign in first.", {}),
+            (403, "wrong_channel", "Not allowed on this app.", {}),
+            (409, "device_not_mapped", "This device has no station.", {}),
+            (409, "branch_inactive", "This station is closed.", {}),
+            SERVER_ERROR,
+        ),
+    )
+    def post(self, request, app):
+        if app != Channel.OPERATOR or request.auth.channel != Channel.OPERATOR:
+            return envelope("wrong_channel", "Not allowed on this app.", http_status=403)
+        branch, refused = session_station(request)
+        if refused:
+            return refused
+        device = request.auth.device
+        return envelope("ok", "Device config.", {
+            "device_registration_id": device.device_registration_id,
+            "name": device.name,
+            "branch": {"branch_id": branch.pk, "code": branch.short_code, "name": branch.name,
+                       "is_multi_device": branch.is_multi_device},
+            "config": {"for_rent": device.for_rent, "for_receive": device.for_receive},
+        })
 
 
 class DeviceSettingsView(APIView):
