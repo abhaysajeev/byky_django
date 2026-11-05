@@ -44,6 +44,10 @@ class RegistrationRequest(serializers.Serializer):
     device_model = text_field(120, required=False, allow_blank=True, allow_null=True)
 
 
+class DeviceConfigRequest(serializers.Serializer):
+    """POST /device/config: nothing to send -- the tablet is the session's."""
+
+
 class DeviceSettingsRequest(serializers.Serializer):
     """POST /device/settings. `since` is when the tablet last synced its
     settings, company time: the logo is sent again only if it changed since."""
