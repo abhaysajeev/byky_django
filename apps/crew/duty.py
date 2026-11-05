@@ -53,14 +53,23 @@ def _ends_next_day(start, end, zone):
     return timezone.localtime(end, zone).date() > timezone.localtime(start, zone).date()
 
 
+def role_of(row):
+    """The role a roster day is worked as (owner, 5 Nov 2026): `cashier` or
+    `labour` on a Working day -- its own, or the employee's designation for a
+    day saved before roles were -- else None."""
+    if row is None or row.day_type != DutyRosterDayType.WORKING:
+        return None
+    return row.role or row.employee.designation.roster_category or None
+
+
 def day_json(row, day, zone):
     """One roster day, the same shape everywhere (login, duty/my, duty/team).
     No row: status null -- not set, never a defaulted Working."""
     if row is None:
         return {
-            "date": day.isoformat(), "status": None, "branch_id": None, "branch": None, "branch_code": None,
-            "state": None, "shift1_start": None, "shift1_end": None, "shift1_ends_next_day": None,
-            "shift2_start": None, "shift2_end": None, "shift2_ends_next_day": None,
+            "date": day.isoformat(), "status": None, "role": None, "branch_id": None, "branch": None,
+            "branch_code": None, "state": None, "shift1_start": None, "shift1_end": None,
+            "shift1_ends_next_day": None, "shift2_start": None, "shift2_end": None, "shift2_ends_next_day": None,
             "leave_type": None, "leave_reference": None,
         }
     branch = row.branch if row.branch_id else None
@@ -69,6 +78,8 @@ def day_json(row, day, zone):
     return {
         "date": day.isoformat(),
         "status": row.get_day_type_display(),
+        # cashier / labour on a Working day (the day's own role), else null.
+        "role": role_of(row),
         # The station's database id, for the app's QR code.
         "branch_id": row.branch_id,
         "branch": branch.name if branch else None,
@@ -88,7 +99,8 @@ def day_json(row, day, zone):
 def _rows(employee_ids, from_date, to_date):
     return (DutyRoster.objects
             .filter(employee_id__in=employee_ids, date__range=(from_date, to_date))
-            .select_related("branch__company", "branch__location__state", "leave_request__leave_type"))
+            .select_related("branch__company", "branch__location__state", "leave_request__leave_type",
+                            "employee__designation"))
 
 
 def days_by_employee(employee_ids, from_date, to_date, zone):

@@ -276,7 +276,7 @@ def _mark_roster(row, user):
     replaced = working_days_in(row)
     days = DutyRoster.objects.filter(employee_id=row.employee_id, date__range=(row.from_date, row.to_date))
     held = set(days.values_list("date", flat=True))
-    days.update(day_type=DutyRosterDayType.ON_LEAVE, branch=None, shift1_start=None, shift1_end=None,
+    days.update(day_type=DutyRosterDayType.ON_LEAVE, role="", branch=None, shift1_start=None, shift1_end=None,
                 shift2_start=None, shift2_end=None, remarks="", leave_request=row, modified_by=user,
                 modified_on=timezone.now())
     DutyRoster.objects.bulk_create([

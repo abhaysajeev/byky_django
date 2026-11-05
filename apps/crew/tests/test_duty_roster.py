@@ -657,3 +657,111 @@ def test_the_screen_renders_its_two_tabs_and_kpi_tiles(client_in, cashier, world
     assert "Roster-eligible staff" in body and "On duty today" in body
     assert "Bulk Import (Excel)" in body
     assert "roster-branches-data" in body
+
+
+# -- The day's role (owner, 5 Nov 2026) ----------------------------------------
+#
+# A Cashier may work a day as labour and the reverse. Add to Day's / Edit Day's
+# Role is saved on the day; rows from before it stay empty and read as the
+# employee's designation.
+
+ROLE_DAY = datetime.date(2026, 11, 12)
+ASSIGN = "/crew/duty-roster/assign-day/"
+
+
+def _assign(client, employee, world, **extra):
+    return post(client, ASSIGN, {
+        "employee": employee.pk, "date": ROLE_DAY.isoformat(), "day_type": "working",
+        "branch": world["branch"].pk, "shift1_start": "08:00", "shift1_end": "16:00", **extra,
+    })
+
+
+def _working_week_day(world, start="08:00", end="16:00"):
+    return [one_day(ROLE_DAY, day_type="working", branch=world["branch"].pk, shift1_start=start, shift1_end=end)]
+
+
+def test_add_to_day_saves_the_role_picked(client_in, cashier, world):
+    from apps.crew import duty
+
+    response = _assign(client_in, cashier, world, role="labour", require_new=True)
+
+    assert response.json()["ok"] is True, response.content
+    row = DutyRoster.objects.get(employee=cashier, date=ROLE_DAY)
+    assert row.role == "labour" and duty.role_of(row) == "labour"
+
+
+def test_edit_day_changes_the_role(client_in, cashier, world):
+    _assign(client_in, cashier, world, role="labour", require_new=True)
+    assert _assign(client_in, cashier, world, role="cashier").json()["ok"] is True
+
+    assert DutyRoster.objects.get(employee=cashier, date=ROLE_DAY).role == "cashier"
+
+
+def test_a_role_that_is_not_cashier_or_labour_is_refused(client_in, cashier, world):
+    response = _assign(client_in, cashier, world, role="manager")
+
+    assert response.status_code == 400 and "Role" in response.json()["errors"][0]["field"]
+    assert not DutyRoster.objects.exists()
+
+
+def test_no_role_sent_gives_a_new_day_the_designation(cashier, world):
+    services.save_week(cashier, _working_week_day(world), user=None, branches_qs=Branch.objects.all())
+
+    assert DutyRoster.objects.get(employee=cashier, date=ROLE_DAY).role == "cashier"
+
+
+def test_no_role_sent_keeps_a_saved_role(client_in, cashier, world):
+    _assign(client_in, cashier, world, role="labour", require_new=True)
+    services.save_week(cashier, _working_week_day(world, "09:00", "17:00"), user=None,
+                       branches_qs=Branch.objects.all())
+
+    row = DutyRoster.objects.get(employee=cashier, date=ROLE_DAY)
+    assert row.role == "labour"
+    assert timezone.localtime(row.shift1_start).strftime("%H:%M") == "09:00"
+
+
+def test_the_import_defaults_a_new_day_to_the_designation(cashier, world):
+    written, _ = services.import_rows(
+        [{"employee_code": cashier.employee_code, "date": ROLE_DAY.isoformat(), "day_type": "working",
+          "branch": world["branch"].pk, "shift1_start": "08:00", "shift1_end": "16:00"}],
+        user=None, employees_qs=Employee.objects.all(), branches_qs=Branch.objects.all())
+
+    assert written == 1 and DutyRoster.objects.get(employee=cashier, date=ROLE_DAY).role == "cashier"
+
+
+def test_a_non_working_day_carries_no_role(client_in, cashier, world):
+    from apps.crew import duty
+
+    _assign(client_in, cashier, world, role="labour", require_new=True)
+    week_off = {"employee": cashier.pk, "date": ROLE_DAY.isoformat(), "day_type": "week_off"}
+    assert post(client_in, ASSIGN, week_off).json()["ok"] is True
+
+    row = DutyRoster.objects.get(employee=cashier, date=ROLE_DAY)
+    assert row.role == "" and duty.role_of(row) is None
+
+
+def test_a_row_saved_before_roles_reads_as_the_designation(cashier, world):
+    from apps.crew import duty
+
+    row = working_day(cashier, world["branch"], ROLE_DAY)          # no role, as rows from before 5 Nov 2026
+
+    assert row.role == "" and duty.role_of(row) == "cashier"
+
+
+def test_the_week_view_shows_the_days_role(cashier, world, user):
+    today = timezone.localdate()
+    working_day(cashier, world["branch"], today)
+    DutyRoster.objects.filter(employee=cashier, date=today).update(role="labour")
+
+    payload = services.roster_payload(user, today.year, today.month)
+
+    assert payload["matrix"][cashier.employee_code][today.isoformat()]["role"] == "Labour"
+    employee = next(e for e in payload["employees"] if e["emp_no"] == cashier.employee_code)
+    assert employee["role"] == "Cashier"                           # the designation, unchanged
+
+
+def test_the_add_to_day_employee_list_is_not_narrowed_by_role(client_in, cashier, world):
+    body = client_in.get("/crew/duty-roster/").content.decode()
+
+    assert 'data-combo-filter-field="category"' not in body
+    assert 'data-field="category"' in body                         # Add to Day and Edit Day keep a Role

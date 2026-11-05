@@ -758,14 +758,24 @@ def save_week(employee, days, *, user, branches_qs):
         if clear:
             DutyRoster.objects.filter(employee=employee, date__in=clear).delete()
         for fields in clean:
-            row, _ = DutyRoster.objects.update_or_create(
-                employee=employee, date=fields["date"],
-                defaults={**fields, "modified_by": user},
-            )
+            row, _ = _save_day(employee, fields, user)
             written.append(row)
         # One push for the save, if any of its days is today or later (owner, 30 Oct 2026).
         employee_push.roster_updated(employee, clear + [fields["date"] for fields in clean])
     return written
+
+
+def _save_day(employee, fields, user):
+    """Upsert one checked day. A role sent is saved; none sent leaves an
+    existing day's role as it is and gives a new Working day the employee's
+    designation (owner, 5 Nov 2026)."""
+    defaults = {**fields, "modified_by": user}
+    create_defaults = dict(defaults)
+    if fields["day_type"] == DutyRosterDayType.WORKING and not fields.get("role"):
+        create_defaults["role"] = employee.designation.roster_category
+    return DutyRoster.objects.update_or_create(
+        employee=employee, date=fields["date"], defaults=defaults, create_defaults=create_defaults,
+    )
 
 
 def _iso_date(value):
@@ -802,10 +812,20 @@ def _check_day(entry, *, branches_qs):
     fields = {"date": on_date, "day_type": day_type}
 
     if day_type != DutyRosterDayType.WORKING:
-        fields.update(branch=None, shift1_start=None, shift1_end=None,
+        fields.update(role="", branch=None, shift1_start=None, shift1_end=None,
                       shift2_start=None, shift2_end=None,
                       remarks=(entry.get("remarks") or "")[:200])
         return errors, fields
+
+    # The day's role (owner, 5 Nov 2026), from Add to Day / Edit Day. Not sent
+    # (the week form, the import): a new day takes the designation's, an
+    # existing one keeps its own -- _save_day.
+    role = entry.get("role")
+    if role:
+        if role not in RosterCategory.values:
+            errors.append({"field": f"{label} — Role", "message": "Choose Cashier or Labour."})
+            return errors, {}
+        fields["role"] = role
 
     branch = branches_qs.filter(pk=entry.get("branch")).select_related("company").first()
     if branch is None:
@@ -1006,16 +1026,21 @@ def roster_payload(user, year, month):
     rows = (
         DutyRoster.objects
         .filter(employee__in=employees, date__range=(weeks[0][0], weeks[-1][-1]))
-        .select_related("branch__company", "leave_request__leave_type")
+        .select_related("branch__company", "leave_request__leave_type", "employee__designation")
     )
+    from apps.crew import duty  # duty imports this module
     matrix = {}
     for row in rows:
         # The branch's own zone, not Django's global default -- the same
         # convention _check_day saves with (see _hhmm), so a shift typed as
         # "08:00" reads back as "08:00", not shifted by the UTC offset.
         zone = zone_for(row.branch.company) if row.branch_id else None
+        role = duty.role_of(row)
         matrix.setdefault(row.employee.employee_code, {})[row.date.isoformat()] = {
             "status": row.get_day_type_display(),
+            # The day's role as the screen labels it (Cashier / Labour), so a
+            # Cashier rostered as labour that day sits under Labour.
+            "role": RosterCategory(role).label if role else None,
             "branch": row.branch.name if row.branch_id else None,
             "shift1_start": _hhmm(row.shift1_start, zone),
             "shift1_end": _hhmm(row.shift1_end, zone),
@@ -1112,9 +1137,7 @@ def assign_day(employee, entry, *, branches_qs, user, require_new=False):
                            f"entry for {fields['date']:%d %b}{where}. Edit that day instead "
                            f"of adding a new one.",
             }])
-    row, _ = DutyRoster.objects.update_or_create(
-        employee=employee, date=fields["date"], defaults={**fields, "modified_by": user},
-    )
+    row, _ = _save_day(employee, fields, user)
     employee_push.roster_updated(employee, [fields["date"]])
     return row
 
@@ -1165,9 +1188,7 @@ def import_rows(rows, *, user, employees_qs, branches_qs):
             results.append({"row": i, "employee_code": code, "ok": False,
                             "message": errors[0]["message"]})
             continue
-        DutyRoster.objects.update_or_create(
-            employee=employee, date=fields["date"], defaults={**fields, "modified_by": user},
-        )
+        _save_day(employee, fields, user)
         written += 1
         changed.setdefault(employee, []).append(fields["date"])
         results.append({"row": i, "employee_code": code, "ok": True, "message": "Saved."})
