@@ -1,0 +1,103 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Branch-Device Config - Device Management{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-branch-device-config.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+{% comment %}
+Branch-Device Config (owner, 5 Nov 2026): at a multi-device branch, For Rent /
+For Receive per operator tablet. The branch only picks which tablets are
+listed; the settings are each device's own and advisory -- the operator app
+reads them (device/config), the server refuses nothing because of them.
+{% endcomment %}
+<div class="scr" data-branch-device-config data-save-url="{{ save_url }}">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Device Management</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Branch-Device Config</b>
+      </div>
+      <h1 class="scr-title">Branch-Device Config</h1>
+      <p class="scr-sub">At a branch with several tablets, choose which tablets take rentals and which receive vehicles back.</p>
+    </div>
+  </div>
+
+  <div class="scr-card">
+    <div class="scr-toolbar">
+      {% if config_branches %}
+      <select class="scr-input" id="config-branch-select" aria-label="Branch" data-branch-select>
+        {% for b in config_branches %}<option value="{{ b.id }}"{% if b.id == chosen_branch %} selected{% endif %}>{{ b.name }}</option>{% endfor %}
+      </select>
+      {% endif %}
+      <span class="scr-toolbar-count">{{ devices|length }} device{{ devices|length|pluralize }}</span>
+    </div>
+
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Device ID</th>
+            <th>Device Name</th>
+            <th>Model</th>
+            <th>Transaction Letter</th>
+            <th>Status</th>
+            <th style="text-align:center">For Rent</th>
+            <th style="text-align:center">For Receive</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in devices %}
+          <tr class="scr-row" data-pk="{{ d.pk }}" data-name="{{ d.name|default:d.registration_id }}">
+            <td><span class="scr-code">{{ d.registration_id }}</span></td>
+            <td style="font-weight:600">{{ d.name|default:"—" }}</td>
+            <td class="scr-contact">{{ d.model|default:"—" }}</td>
+            <td><span class="scr-code">{{ d.transaction_letter|default:"—" }}</span></td>
+            <td>
+              {% if d.status == "blocked" %}<span class="scr-badge scr-badge-inactive"><i></i>Blocked</span>
+              {% else %}<span class="scr-badge scr-badge-active"><i></i>{{ d.status_label }}</span>{% endif %}
+            </td>
+            {% for flag, on in d.flags %}
+            <td style="text-align:center">
+              <button type="button" class="scr-toggle{% if on %} is-on{% endif %}" role="switch"
+                      aria-checked="{% if on %}true{% else %}false{% endif %}" data-flag="{{ flag }}"
+                      aria-label="{% if flag == 'for_rent' %}For Rent{% else %}For Receive{% endif %} — {{ d.name|default:d.registration_id }}"
+                      {% if not perm.update %}disabled title="You can view these settings but not change them"{% endif %}><i></i></button>
+            </td>
+            {% endfor %}
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="7" style="padding:0">
+              <div class="scr-empty">
+                <div>
+                  {% if config_branches %}
+                  <div class="scr-empty-title">No devices mapped to this branch</div>
+                  <p class="scr-empty-sub">Map operator tablets to this branch in Device Mapping, and they appear here.</p>
+                  {% else %}
+                  <div class="scr-empty-title">No multi-device branches</div>
+                  <p class="scr-empty-sub">These settings are for branches with more than one tablet. Mark a branch as multi-device to configure its tablets here.</p>
+                  {% endif %}
+                </div>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}

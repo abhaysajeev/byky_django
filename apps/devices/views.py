@@ -384,6 +384,49 @@ class DeviceMappingView(DeviceScreenView):
         return context
 
 
+class BranchDeviceConfigView(DeviceScreenView):
+    """Branch-Device Config (owner, 5 Nov 2026): at a multi-device branch, For
+    Rent / For Receive per operator tablet. The branch only filters the list;
+    the settings are the device's own (Device.for_rent / for_receive) and are
+    advisory -- the app reads them through device/config."""
+
+    template_name = "devices/branch_device_config.html"
+    page_code = "devices.branch_device_config"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        branches = list(
+            branches_for(user).filter(is_active=True, is_multi_device=True).order_by("name").values("id", "name")
+        )
+        chosen = _int(self.request.GET.get("branch"))
+        if chosen not in {b["id"] for b in branches}:
+            chosen = branches[0]["id"] if branches else None
+
+        devices = []
+        if chosen is not None:
+            mappings = (
+                scoping.mappings_for(user)
+                .filter(branch_id=chosen, to_date__isnull=True, device__channel=Channel.OPERATOR)
+                .select_related("device")
+                .order_by("device__name", "device__device_registration_id")
+            )
+            devices = [
+                {**_device_row(m.device), "transaction_letter": m.transaction_letter,
+                 # In column order, for the two switches.
+                 "flags": [("for_rent", m.device.for_rent), ("for_receive", m.device.for_receive)]}
+                for m in mappings
+            ]
+
+        context.update({
+            "config_branches": branches,
+            "chosen_branch": chosen,
+            "devices": devices,
+            "save_url": reverse("devices-branch-device-config-save", args=[0]),
+        })
+        return context
+
+
 class DevicePrivilegeView(PrivilegeScreenView):
     """Device Management's copy of the shared privilege grid."""
 
@@ -1240,3 +1283,36 @@ class SettingsDeactivateView(SettingsWriteView):
             })
 
         return self.run("update", act)
+
+
+# --- Branch-Device Config ------------------------------------------------------
+
+
+def _flag(data, key, current):
+    """A posted switch: true/false (or "1"/"0", "true"/"false"); left out keeps
+    the device's current value."""
+    if key not in data:
+        return current
+    value = data[key]
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return bool(value)
+
+
+class BranchDeviceConfigSaveView(DeviceActionView):
+    """POST {for_rent, for_receive} for one operator tablet. Any combination is
+    saved: the flags are advisory, the app decides what each means."""
+
+    page_code = "devices.branch_device_config"
+    permission = "update"
+    done = "{device} saved."
+
+    def act(self, devices, pk, data):
+        device = devices.filter(pk=pk, channel=Channel.OPERATOR).first()
+        if device is None:
+            raise services.DeviceActionError("No such operator device.")
+        device.for_rent = _flag(data, "for_rent", device.for_rent)
+        device.for_receive = _flag(data, "for_receive", device.for_receive)
+        device.modified_by = self.request.user
+        device.save(update_fields=["for_rent", "for_receive", "modified_by", "modified_on"])
+        return device.name or device.device_registration_id
