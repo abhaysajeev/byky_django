@@ -268,6 +268,12 @@ DUTY_ROSTER_EDIT_DAY = {
                     "options_from": "roster_day_types", "option_key": "name",
                 },
                 {
+                    # The day's role (owner, 5 Nov 2026), prefilled with what
+                    # the day is worked as -- the same field as Add to Day's.
+                    "id": "category", "label": "Role", "kind": "select",
+                    "options_from": "roster_categories_list", "option_key": "name", "show_if": "day_type:working",
+                },
+                {
                     "id": "branch", "label": "Branch", "kind": "select",
                     "options_from": "branches_list", "option_key": "name", "show_if": "day_type:working",
                 },
@@ -300,18 +306,16 @@ DUTY_ROSTER_ADD_TO_DAY = {
             "fields": [
                 {
                     # Pre-set by the JS to whichever of +Cashier/+Labour was
-                    # clicked, and editable -- it exists to narrow the
-                    # Employee combo below (combo_filter_*), not to be
-                    # posted: a Cashier/Labour split is a fact about the
-                    # employee's own designation, already enforced server
-                    # side (assign_day), not a value this drawer writes.
+                    # clicked, editable, and saved as the day's role (owner,
+                    # 5 Nov 2026): a Cashier may work a day as labour and the
+                    # reverse. It no longer narrows the Employee list.
                     "id": "category", "label": "Role", "kind": "select", "required": True,
                     "options_from": "roster_categories_list", "option_key": "name",
                 },
                 {
+                    # Every Cashier and Labour employee, whichever Role is picked.
                     "id": "employee_key", "label": "Employee", "kind": "combo", "required": True,
                     "combo_source": "roster-employees-data", "combo_key": "name", "combo_sub": "emp_no",
-                    "combo_filter_field": "category", "combo_filter_key": "role",
                     "placeholder": "Search employee by name or code...",
                 },
                 # Filled by the JS from whichever day-card's +Cashier/+Labour
