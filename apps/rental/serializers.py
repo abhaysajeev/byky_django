@@ -413,7 +413,8 @@ class OrderSettleRequest(serializers.Serializer):
     )
     # What the customer said with the rating (owner, 29 Oct 2026) -- kept on
     # the order's invoice, not on the customer.
-    rating_remarks = text_field(max_length=500, required=False, allow_blank=True)
+    # null is "none given" too (owner, 5 Nov 2026), as leaving it out.
+    rating_remarks = text_field(max_length=500, required=False, allow_blank=True, allow_null=True)
 
     def validate_payments(self, payments):
         if _repeated(payment["sync_id"] for payment in payments):

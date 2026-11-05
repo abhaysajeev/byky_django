@@ -1156,10 +1156,14 @@ with at most one decimal (`4.5`, `5`, `2.5`); leave it out or send null when
 none was given. Stored on the invoice and returned as the customer's
 `star_rating` until a later settle rates them again. A settle that arrives late
 (parked offline) never replaces a rating from a later `settled_at`.
+**A rating of 1 blocks the customer** (as a block from the Blocked Customers
+screen): the reason is `rating_remarks`, or "1 star rated for Invoice
+<order_no>" when none is sent. An already-blocked customer is left as is.
 
 **`rating_remarks`** (optional, up to 500 characters) -- what the customer said
 with the rating. Kept on this order's invoice only (not on the customer), and
-returned as the order's and the invoice's `rating_remarks`.
+returned as the order's and the invoice's `rating_remarks`. On a 1-star
+rating it is also the block reason (its first 255 characters).
 """ + _FLOW + """
 """ + _error_table(*_SETTLE_ERRORS)
 

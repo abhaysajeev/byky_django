@@ -100,7 +100,9 @@ def test_a_day_carries_station_shift_and_overnight(client, world, manager, crew)
     anil = listed(client, manager)["employees"][0]["days"]
 
     assert anil[0] == {
-        "date": "2026-08-30", "status": "Working", "branch_id": world["auh1"].pk, "branch": "Creek Park 1",
+        # role: no role saved on this row (as before 5 Nov 2026), so the designation's.
+        "date": "2026-08-30", "status": "Working", "role": "cashier", "branch_id": world["auh1"].pk,
+        "branch": "Creek Park 1",
         "branch_code": "AUH01", "state": "Abu Dhabi", "shift1_start": "15:00", "shift1_end": "02:00",
         "shift1_ends_next_day": True, "shift2_start": None, "shift2_end": None, "shift2_ends_next_day": None,
         "leave_type": None, "leave_reference": None,
