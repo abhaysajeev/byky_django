@@ -172,7 +172,9 @@ def test_the_approved_tab_shows_login_status_and_no_station(signed_in, approved_
 def test_a_logged_in_device_reads_logged_in_and_offers_force_logout(signed_in, approved_device, company, branch):
     _session(approved_device, company, branch, "op.erator")
     tab = _approved_tab(signed_in.get("/devices/approval/").content.decode())
-    assert "Logged in" in tab and "Op.Erator" in tab
+    assert "Logged in" in tab
+    # no name line under the badge (owner, 7 Nov 2026) -- only its hover tooltip
+    assert '<div class="scr-contact-sub">Op.Erator</div>' not in tab and 'title="Op.Erator"' in tab
     assert 'data-device-action="logout"' in tab
 
 
