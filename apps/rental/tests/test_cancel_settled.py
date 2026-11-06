@@ -267,6 +267,16 @@ def test_the_web_button_is_for_system_administrators_only(client, two, admin, we
     ok = client.post(f"/rental/order/{first.pk}/cancel-invoice/", {"reason": "Settled by mistake"},
                      content_type="application/json").json()
     assert ok["ok"] is True
-    page = client.get(f"/rental/order/{first.pk}/").content
-    assert b"VOID" in page and b"Cancel invoice" not in page
-    assert client.get(f"/rental/invoice/{Invoice.objects.get(order=first).pk}/receipt/").status_code == 404
+    invoice = Invoice.objects.get(order=first)
+    banner = f"Invoice {invoice.invoice_no} was cancelled</b> on "
+    # One line only (owner, 7 Nov 2026): who and when -- no reason, no explanation, no "VOID".
+    page = client.get(f"/rental/order/{first.pk}/").content.decode()
+    assert banner in page and "by Root</div>" in page and "Cancel invoice" not in page
+    assert '<span class="scr-void-tag">Cancelled</span>' in page
+    assert "VOID" not in page and "counts nowhere" not in page
+    detail = client.get(f"/rental/invoice/{invoice.pk}/").content.decode()
+    assert banner in detail and "by Root</div>" in detail
+    assert "VOID" not in detail and "counts nowhere" not in detail and "Settled by mistake" not in detail
+    listing = client.get("/rental/invoice/list/").content.decode()
+    assert '<span class="scr-void-tag">Cancelled</span>' in listing and "VOID" not in listing
+    assert client.get(f"/rental/invoice/{invoice.pk}/receipt/").status_code == 404
