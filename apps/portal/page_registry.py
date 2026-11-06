@@ -188,6 +188,10 @@ PAGES = [
      ["read", "print"], 8, False),
     ("reports.vehicle_details", "reports", "Vehicle Details", "reports-vehicle-details", ["read", "print"], 9, False),
     ("reports.asset_details", "reports", "Asset Details", "reports-asset-details", ["read", "print"], 10, False),
+    # Settled bills a system administrator cancelled (owner, 6 Nov 2026): the one
+    # place their money is shown -- it counts nowhere else.
+    ("reports.cancelled_invoices", "reports", "Cancelled Invoices", "reports-cancelled-invoices",
+     ["read", "print"], 11, False),
     # Which roles see which reports (owner, 3 Nov 2026: company admins use custom roles).
     ("reports.privileges", "reports", "Privileges", "reports-privileges", ["read", "update"], 99, False),
 

@@ -32,6 +32,7 @@ from apps.notifications.models import Action
 from apps.photos import services as photo_services
 from apps.photos.models import PhotoPurpose
 from apps.rental import station_sync
+from apps.rental.counted import counted
 from apps.rental.models import (
     REQUEST_LIVE,
     Customer,
@@ -305,10 +306,11 @@ def card_usage(company, full_number):
 
     redeemed = {discount.pk: [] for discount in discounts}
     if discounts:
+        # a use on a cancelled order is given back (apps/rental/counted.py)
         claims = (
-            CardDiscountClaim.objects
-            .filter(customer=customer, status=ClaimStatus.REDEEMED, card_discount_id__in=list(redeemed),
-                    redeemed_at__gte=day_start(min(d.valid_from for d in discounts)))
+            counted(CardDiscountClaim.objects
+                    .filter(customer=customer, status=ClaimStatus.REDEEMED, card_discount_id__in=list(redeemed),
+                            redeemed_at__gte=day_start(min(d.valid_from for d in discounts))))
             .order_by("redeemed_at")
             .values_list("card_discount_id", "redeemed_at")
         )
