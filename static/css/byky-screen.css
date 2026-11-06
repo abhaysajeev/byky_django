@@ -1289,6 +1289,13 @@ textarea.scr-mon-json { display: block; width: 100%; min-height: 420px; resize: 
 .scr-live-late { color: #c2141a; font-weight: 600; }
 .scr-live .scr-live-row a.scr-live-no { color: #1a1640; font-weight: 700; text-decoration: none; white-space: nowrap; }
 .scr-live .scr-live-row a.scr-live-no:hover { color: #c2141a; }
+/* ORDER and STATION wrap onto the next line instead of ending in an ellipsis
+   (owner, 7 Nov 2026). The order number is one long token, so it may break
+   anywhere. Open/Close By and Customer keep their ellipsis. */
+.scr-live .scr-live-row a.scr-live-no,
+.scr-live-table td.c-no .scr-live-q,
+.scr-live-table td.c-station .scr-live-p,
+.scr-live-table td.c-station .scr-live-q { white-space: normal; overflow-wrap: anywhere; text-overflow: clip; }
 .scr-live-group td { background: #fbfaff; color: #9490bb; font-size: calc(11px * var(--live-s)); font-weight: 600; padding: 8px 16px; border-bottom: 1px solid #f0eff7; }
 .scr-live-group b { color: #4b4770; margin-right: 6px; }
 .scr-live-veh-row td { background: #fcfbff; padding: 10px 14px 14px 18px; }

@@ -48,10 +48,10 @@
       <div><div class="scr-tile-val">{{ counts.total }}</div><div class="scr-tile-lab">Registered devices</div></div>
     </div>
     <div class="scr-tile">
-      <div><div class="scr-tile-val">{{ counts.online }}</div><div class="scr-tile-lab">In use now</div></div>
+      <div><div class="scr-tile-val">{{ counts.online }}</div><div class="scr-tile-lab">Logged in</div></div>
     </div>
     <div class="scr-tile">
-      <div><div class="scr-tile-val">{{ counts.offline }}</div><div class="scr-tile-lab">Idle</div></div>
+      <div><div class="scr-tile-val">{{ counts.offline }}</div><div class="scr-tile-lab">Logged out</div></div>
     </div>
     <div class="scr-tile">
       <div><div class="scr-tile-val">{{ counts.stations }}</div><div class="scr-tile-lab">Stations covered</div></div>
@@ -86,8 +86,8 @@
         </button>
         <div class="scr-filter-menu" hidden>
           <button type="button" class="scr-filter-opt is-active" data-value="">All status</button>
-          <button type="button" class="scr-filter-opt" data-value="yes">In use</button>
-          <button type="button" class="scr-filter-opt" data-value="no">Idle</button>
+          <button type="button" class="scr-filter-opt" data-value="yes">Logged in</button>
+          <button type="button" class="scr-filter-opt" data-value="no">Logged out</button>
         </div>
       </div>
 
@@ -123,8 +123,8 @@
             <td class="scr-contact">{{ d.employee|default:"—" }}</td>
             <td style="text-align:center">
               {% if d.blocked %}<span class="scr-badge scr-badge-pending"><i></i>Blocked</span>
-              {% elif d.online %}<span class="scr-badge scr-badge-approved"><i></i>In use</span>
-              {% else %}<span class="scr-badge scr-badge-inactive"><i></i>Idle</span>{% endif %}
+              {% elif d.online %}<span class="scr-badge scr-badge-active"><i></i>Logged in</span>
+              {% else %}<span class="scr-badge scr-badge-inactive"><i></i>Logged out</span>{% endif %}
             </td>
             <td>
               <div class="scr-row-actions">
