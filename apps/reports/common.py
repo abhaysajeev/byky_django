@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from django.db.models import Q, Sum
 
 from apps.rental import order_status as display
+from apps.rental.counted import counted
 from apps.rental.models import (
     CreditNote,
     CreditNoteStatus,
@@ -92,9 +93,10 @@ def bucket(mode_name):
 
 
 def payments_by_order(order_ids):
-    """{order_id: {bucket: amount}} -- advance and settlement, less refunds."""
+    """{order_id: {bucket: amount}} -- advance and settlement, less refunds.
+    A cancelled order's payments count nowhere (apps/rental/counted.py)."""
     out = defaultdict(lambda: dict.fromkeys(PAY_KEYS, ZERO))
-    rows = (Payment.objects.filter(order_id__in=list(order_ids))
+    rows = (counted(Payment.objects.filter(order_id__in=list(order_ids)))
             .values("order_id", "mode__name", "kind").annotate(total=Sum("amount")).order_by())
     for row in rows:
         sign = -1 if row["kind"] == PaymentKind.REFUND else 1
@@ -105,7 +107,7 @@ def payments_by_order(order_ids):
 def references_by_order(order_ids):
     """{order_id: "ref1, ref2"} -- the payments' reference numbers."""
     out = defaultdict(list)
-    for order_id, ref in (Payment.objects.filter(order_id__in=list(order_ids)).exclude(reference_no="")
+    for order_id, ref in (counted(Payment.objects.filter(order_id__in=list(order_ids))).exclude(reference_no="")
                           .order_by("paid_at").values_list("order_id", "reference_no")):
         if ref not in out[order_id]:
             out[order_id].append(ref)
@@ -126,8 +128,8 @@ def pay_cells(paid):
 
 
 def credit_notes_by_order(order_ids):
-    """{order_id: approved credit notes' total}."""
-    return dict(CreditNote.objects.filter(order_id__in=list(order_ids), status=CreditNoteStatus.APPROVED)
+    """{order_id: approved credit notes' total} -- none for a cancelled order."""
+    return dict(counted(CreditNote.objects.filter(order_id__in=list(order_ids), status=CreditNoteStatus.APPROVED))
                 .values("order_id").annotate(total=Sum("net_amount")).order_by().values_list("order_id", "total"))
 
 

@@ -28,6 +28,7 @@ from apps.company.scoping import branches_for
 from apps.crew.models import Attendance, PunchType
 from apps.devices.models import DeviceMapping, DeviceStatus
 from apps.rental import scoping as rental_scoping
+from apps.rental.counted import counted
 from apps.rental.models import OrderItem, OrderItemStatus
 from core import money
 from core.timezones import zone_for
@@ -133,7 +134,7 @@ def branch_live(user, now=None):
     )
     billed = {
         row["branch_id"]: row
-        for row in rental_scoping.invoices_for(user)
+        for row in counted(rental_scoping.invoices_for(user))      # voided bills count nowhere
         .filter(_since_each_start("issued_at", "branch_id", days))
         .values("branch_id").annotate(n=Count("id"), total=Sum("net_amount"))
     }
@@ -204,7 +205,8 @@ def monthly_sales(user, now=None):
     else:
         prev_cut = _midnight(first, zone)
 
-    invoices = rental_scoping.invoices_for(user).filter(issued_at__gte=_midnight(prev_first, zone))
+    # voided bills count nowhere (apps/rental/counted.py)
+    invoices = counted(rental_scoping.invoices_for(user)).filter(issued_at__gte=_midnight(prev_first, zone))
     totals = invoices.aggregate(
         current=Sum("net_amount", filter=Q(issued_at__gte=_midnight(first, zone))),
         previous=Sum("net_amount", filter=Q(issued_at__lt=prev_cut)),

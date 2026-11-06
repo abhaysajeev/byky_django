@@ -411,7 +411,7 @@ class OrderDetailView(RentalScreenView):
         items = list(order.items.select_related("vehicle__vehicle_type").order_by("start_time", "created_on"))
         replaced_by = {item.replaced_item_id: item for item in items if item.replaced_item_id}
         items_out = sum(1 for item in items if order_status.is_out(item))
-        invoice = Invoice.objects.filter(order=order).select_related("issued_by").first()
+        invoice = Invoice.objects.filter(order=order).select_related("issued_by", "voided_by").first()
         claim = order.discount_claim
 
         def local(moment):
@@ -453,7 +453,15 @@ class OrderDetailView(RentalScreenView):
             "invoice": {
                 "invoice_no": invoice.invoice_no, "issued_at": local(invoice.issued_at),
                 "issued_by": invoice.issued_by.display_name, "net_amount": invoice.net_amount,
+                # cancelled after settle (requests.cancel_settled): kept, marked void
+                "is_void": invoice.is_void, "voided_at": local(invoice.voided_at),
+                "voided_by": invoice.voided_by.display_name if invoice.voided_by_id else "",
+                "void_reason": invoice.void_reason,
             } if invoice else None,
+            # A system administrator may cancel a settled order's invoice (owner, 6 Nov 2026).
+            "can_cancel_invoice": (getattr(user, "sees_every_company", False) and invoice is not None
+                                   and not invoice.is_void and order.status == OrderStatus.COMPLETED),
+            "cancel_invoice_url": reverse("rental-invoice-cancel", args=[order.pk]),
             "history": [
                 {
                     "label": _ACTION_LABEL.get(event.action, event.action), "at": local(event.happened_at),
@@ -602,7 +610,7 @@ def _receipt(invoice, zone):
 def _invoices_for_receipt(user):
     return scoping.invoices_for(user).select_related(
         "order__customer", "order__created_by", "order__device", "order__branch", "branch__location__state",
-        "device", "issued_by",
+        "device", "issued_by", "voided_by",
     )
 
 
@@ -643,6 +651,8 @@ class InvoiceListView(RentalScreenView):
                     "station": invoice.branch_name, "tablet": invoice.device.device_registration_id,
                     "issued_by": invoice.issued_by.display_name,
                     "net_amount": invoice.net_amount, "tax_amount": invoice.tax_amount,
+                    # cancelled after settle: listed with a VOID tag, not printable
+                    "is_void": invoice.is_void,
                     "receipt_url": reverse("rental-invoice-receipt", args=[invoice.pk]),
                     "detail_url": reverse("rental-invoice-detail", args=[invoice.pk]),
                 }
@@ -664,6 +674,8 @@ class InvoiceReceiptView(PagePermissionMixin, View):
         invoice = _invoices_for_receipt(request.user).filter(pk=pk).first()
         if invoice is None:
             raise Http404("No such invoice.")
+        if invoice.is_void:                    # cancelled: kept for the record, never printed again
+            raise Http404("This invoice was cancelled.")
         bill = _receipt(invoice, zone_for(getattr(request.user, "company", None)))
         return render(request, "rental/partials/invoice_receipt.html", {"bill": bill})
 
@@ -682,8 +694,11 @@ class InvoiceDetailView(RentalScreenView):
             "bill": bill,
             "list_url": reverse("rental-invoice-list"),
             "order_url": reverse("rental-order-detail", args=[invoice.order_id]),
-            "can_issue_credit_note": bill["credit_note"] is None
+            "can_issue_credit_note": bill["credit_note"] is None and not invoice.is_void
             and has_permission(self.request.user, "rental.credit_note", "create"),
+            "void": {"at": invoice.voided_at.astimezone(zone_for(getattr(self.request.user, "company", None))),
+                     "by": invoice.voided_by.display_name if invoice.voided_by_id else "",
+                     "reason": invoice.void_reason} if invoice.is_void else None,
             "issue_credit_note_url": reverse("rental-credit-note-issue", args=[invoice.pk]),
             "issue_max": invoice.order.net_amount,
             "issue_tax_percentage": invoice.tax_percentage,

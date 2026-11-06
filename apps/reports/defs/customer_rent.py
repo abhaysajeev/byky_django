@@ -14,6 +14,7 @@ from collections import defaultdict
 
 from django.db.models import Count
 
+from apps.rental.counted import counted
 from apps.rental.models import CreditNoteStatus
 from apps.rental.scoping import credit_notes_for, invoices_for
 from apps.reports import common
@@ -39,7 +40,8 @@ class CustomerWiseRent(Report):
         f = ctx.f
         groups = defaultdict(lambda: {"count": 0, "vehicles": 0, "bill": ZERO, "tax": ZERO, "discount": ZERO})
         customers = {}
-        invoices = self._narrow(invoices_for(ctx.user).filter(issued_at__gte=f.since, issued_at__lt=f.until), f)
+        # a cancelled order's bill and credit notes count nowhere (apps/rental/counted.py)
+        invoices = self._narrow(counted(invoices_for(ctx.user)).filter(issued_at__gte=f.since, issued_at__lt=f.until), f)
         for inv in invoices.select_related("order__customer").annotate(n_items=Count("items")):
             customer = inv.order.customer
             customers[customer.pk] = customer
@@ -49,7 +51,7 @@ class CustomerWiseRent(Report):
             g["bill"] += inv.net_amount - inv.tax_amount
             g["tax"] += inv.tax_amount
             g["discount"] += inv.discount_amount
-        notes = self._narrow(credit_notes_for(ctx.user).filter(
+        notes = self._narrow(counted(credit_notes_for(ctx.user)).filter(
             status=CreditNoteStatus.APPROVED, decided_at__gte=f.since, decided_at__lt=f.until), f)
         for note in notes.select_related("order__customer").annotate(n_items=Count("invoice__items")):
             customer = note.order.customer

@@ -1,5 +1,6 @@
 """The reports, in the order the sidebar lists them."""
 
+from apps.reports.defs.cancelled_invoices import CancelledInvoices
 from apps.reports.defs.card_discount import CardDiscountDetails
 from apps.reports.defs.consolidated import Consolidated
 from apps.reports.defs.credit_note import CreditNoteDetails
@@ -12,6 +13,7 @@ from apps.reports.defs.replacement import ReplacementDetails
 
 REPORTS = [
     RentSummary(), Consolidated(), RentDetails(), ReplacementDetails(), CardDiscountDetails(),
-    CreditNoteDetails(), CustomerWiseRent(), CustomerWiseCard(), VehicleDetails(), AssetDetails(),
+    CreditNoteDetails(), CancelledInvoices(), CustomerWiseRent(), CustomerWiseCard(), VehicleDetails(),
+    AssetDetails(),
 ]
 BY_SLUG = {report.slug: report for report in REPORTS}

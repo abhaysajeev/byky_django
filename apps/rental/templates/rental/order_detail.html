@@ -12,11 +12,11 @@
 {% block page_js %}
 {{ block.super }}
 <script src="{% static 'js/byky-screen.js' %}"></script>
-{% if can_cancel %}<script src="{% static 'js/byky-order-cancel.js' %}"></script>{% endif %}
+{% if can_cancel or can_cancel_invoice %}<script src="{% static 'js/byky-order-cancel.js' %}"></script>{% endif %}
 {% endblock page_js %}
 
 {% block content %}
-<div class="scr"{% if can_cancel %} data-order-cancel data-url="{{ cancel_url }}"{% endif %}>
+<div class="scr"{% if can_cancel %} data-order-cancel data-url="{{ cancel_url }}"{% elif can_cancel_invoice %} data-order-cancel data-url="{{ cancel_invoice_url }}"{% endif %}>
 
   <div class="scr-head">
     <div>
@@ -31,9 +31,16 @@
     </div>
     <div class="scr-head-actions">
       {% if can_cancel %}<button type="button" class="scr-btn-danger" data-scr-modal-open="order-cancel">Cancel order</button>{% endif %}
+      {% if can_cancel_invoice %}<button type="button" class="scr-btn-danger" data-scr-modal-open="order-cancel">Cancel invoice</button>{% endif %}
       <a href="{{ list_url }}" class="scr-btn-secondary">Back</a>
     </div>
   </div>
+
+  {% if invoice.is_void %}
+  <div class="scr-banner scr-banner-void" role="status">
+    <div class="scr-banner-text"><b>Invoice {{ invoice.invoice_no }} was cancelled</b> on {{ invoice.voided_at|date:"d M Y, H:i" }} by {{ invoice.voided_by|default:"—" }} — {{ invoice.void_reason }}. Its money is kept here for the record but counts nowhere: not in reports, collections, the dashboard or the apps.</div>
+  </div>
+  {% endif %}
 
   <div class="scr-mon-grid">
     <div class="scr-card">
@@ -86,7 +93,7 @@
           <div class="scr-detail-row"><span class="scr-detail-label">Payment</span><span class="scr-detail-value">{{ order.get_payment_status_display|default:"—" }}</span></div>
           {% for r in requests %}<div class="scr-detail-row"><span class="scr-detail-label">{{ r.kind }} Request</span><span class="scr-detail-value"><a class="scr-link-blue" href="{{ r.url }}">{{ r.label|default:r.kind }}</a> · {{ r.status_label }}{% if r.applied_amount is not None %} · applied AED {{ r.applied_amount|money }}{% endif %}</span></div>{% endfor %}
           {% if invoice %}
-          <div class="scr-detail-row"><span class="scr-detail-label">Invoice</span><span class="scr-detail-value">{{ invoice.invoice_no }} · {{ invoice.issued_at|date:"d M Y, H:i" }} · {{ invoice.issued_by }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Invoice</span><span class="scr-detail-value">{{ invoice.invoice_no }} · {{ invoice.issued_at|date:"d M Y, H:i" }} · {{ invoice.issued_by }}{% if invoice.is_void %} <span class="scr-void-tag">VOID</span>{% endif %}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Rating</span><span class="scr-detail-value scr-mon-wrap">{% if invoice.star_rating %}★ {{ invoice.star_rating }} / 5{% else %}—{% endif %}{% if invoice.rating_remarks %} · “{{ invoice.rating_remarks }}”{% endif %}</span></div>
           {% if credit_note %}<div class="scr-detail-row"><span class="scr-detail-label">Credit Note</span><span class="scr-detail-value"><a class="scr-link-blue" href="{{ credit_note.url }}">{{ credit_note.label }}</a>{% if credit_note.net_amount is not None %} · AED {{ credit_note.net_amount|money }}{% endif %} · {{ credit_note.status_label }}</span></div>{% endif %}
           {% endif %}
@@ -133,7 +140,7 @@
   </div>
 
   <div class="scr-card" style="margin-top:20px">
-    <div class="scr-form-head"><div class="scr-form-title-row"><h2 class="scr-form-title">Payments</h2></div></div>
+    <div class="scr-form-head"><div class="scr-form-title-row"><h2 class="scr-form-title">Payments</h2>{% if invoice.is_void %} <span class="scr-void-tag">Not counted — invoice cancelled</span>{% endif %}</div></div>
     <div class="scr-table-scroll scr-sb">
       <table>
         <thead>
@@ -190,6 +197,35 @@
     </div>
   </div>
 </div>
+{% if can_cancel_invoice %}
+{% comment %}
+A system administrator cancels this SETTLED order's invoice, and with it the
+order (requests.cancel_settled). Same JS as Cancel order: it posts the reason.
+{% endcomment %}
+<div class="scr-modal-veil" data-scr-modal-veil="order-cancel" hidden></div>
+<div class="scr-modal" data-scr-modal="order-cancel" hidden>
+  <div class="scr-modal-head">
+    <div>
+      <div class="scr-modal-title">Cancel invoice {{ invoice.invoice_no }}?</div>
+      <p class="scr-modal-sub">The invoice is marked void and the order cancelled. Its payments (AED {{ order.paid_amount|money }}) stay on record but count nowhere from now on — not in any report, collection, the dashboard or the apps, including past days' totals. Use this only when the money is handed back to the customer. This cannot be undone.</p>
+    </div>
+    <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+    </button>
+  </div>
+  <div class="scr-modal-body">
+    <div class="scr-field">
+      <label class="scr-label" for="order-cancel-reason">Reason<span class="scr-required">*</span></label>
+      <textarea id="order-cancel-reason" class="scr-input scr-textarea" rows="3" maxlength="255" data-cancel-reason></textarea>
+    </div>
+  </div>
+  <div class="scr-modal-foot" style="justify-content:flex-end">
+    <button type="button" class="scr-btn-secondary" data-scr-modal-close>Keep invoice</button>
+    <button type="button" class="scr-btn-danger" data-cancel-go>Cancel invoice</button>
+  </div>
+</div>
+{% include "byky/partials/message_modal.html" %}
+{% endif %}
 {% if can_cancel %}
 {% comment %}
 Cancel this running order straight from here, with a reason -- recorded as a

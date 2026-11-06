@@ -9,6 +9,7 @@ urlpatterns = [
     path("test-ride/list/", views.TestRideListView.as_view(), name="rental-test-ride-list"),
     path("order/<uuid:pk>/", views.OrderDetailView.as_view(), name="rental-order-detail"),
     path("order/<uuid:pk>/cancel/", writes.OrderCancel.as_view(), name="rental-order-cancel"),
+    path("order/<uuid:pk>/cancel-invoice/", writes.InvoiceCancel.as_view(), name="rental-invoice-cancel"),
     path("invoice/list/", views.InvoiceListView.as_view(), name="rental-invoice-list"),
     path("invoice/<uuid:pk>/", views.InvoiceDetailView.as_view(), name="rental-invoice-detail"),
     path("invoice/<uuid:pk>/receipt/", views.InvoiceReceiptView.as_view(), name="rental-invoice-receipt"),
