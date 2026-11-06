@@ -270,7 +270,8 @@ DUTY_ROSTER_EDIT_DAY = {
                 {
                     # The day's role (owner, 5 Nov 2026), prefilled with what
                     # the day is worked as -- the same field as Add to Day's.
-                    "id": "category", "label": "Role", "kind": "select",
+                    # Required on a Working day (owner, 7 Nov 2026).
+                    "id": "category", "label": "Role", "kind": "select", "required": True,
                     "options_from": "roster_categories_list", "option_key": "name", "show_if": "day_type:working",
                 },
                 {

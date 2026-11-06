@@ -21,7 +21,7 @@ from django.db.models import Count, Q
 from django.utils import timezone
 
 from apps.crew import services
-from apps.crew.models import DutyRoster, DutyRosterDayType, Employee, RosterCategory
+from apps.crew.models import DutyRoster, DutyRosterDayType, Employee
 from core.timezones import business_date_for, zone_for
 
 ROSTER_MAX_DAYS = 31
@@ -120,16 +120,21 @@ def team_roster(company, branch_ids, from_date, to_date, *, state_id=None, branc
     """(employees queryset, counts) -- who the team view lists, by name, and
     how many of their days in the range hold each status.
 
-    `branch_ids` is the caller's scope (None: the whole company). With no
-    station scope and no station / emirate filter, every active cashier and
-    labour is listed, rostered or not; otherwise those with a Working day in
-    the range at a station in scope.
+    `branch_ids` is the caller's scope (None: the whole company). Anyone with
+    a roster day in the range is listed, whatever their designation (owner,
+    7 Nov 2026 -- it was every Cashier and Labour, rostered or not); with a
+    station scope or a station / emirate filter, those with a Working day in
+    the range at a station in scope. `category` (cashier / labour) is the
+    day's role: those with a Working day in the range worked as it -- a day
+    saved before roles reads as the designation.
     """
     ids = services._narrowed(company, branch_ids, state_id, branch_id)
-    staff = Employee.objects.filter(company=company, is_active=True,
-                                    designation__roster_category__in=RosterCategory.values)
+    in_range = DutyRoster.objects.filter(date__range=(from_date, to_date))
+    staff = Employee.objects.filter(company=company, is_active=True, pk__in=in_range.values("employee_id"))
     if category:
-        staff = staff.filter(designation__roster_category=category)
+        as_role = in_range.filter(day_type=DutyRosterDayType.WORKING).filter(
+            Q(role=category) | Q(role="", employee__designation__roster_category=category))
+        staff = staff.filter(pk__in=as_role.values("employee_id"))
     if ids is not None:
         working_here = DutyRoster.objects.filter(
             date__range=(from_date, to_date), day_type=DutyRosterDayType.WORKING, branch_id__in=ids,
