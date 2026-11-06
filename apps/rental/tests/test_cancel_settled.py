@@ -229,6 +229,19 @@ def test_the_cancelled_invoices_report_shows_what_was_handed_back(web, two, admi
         two[0].order_no, "110.000", "110.000", "100.000", "10.000", "Operator settled by mistake")
 
 
+def test_the_tablet_sees_the_invoice_cancelled_in_the_order(client, token, two, admin):
+    first, second = two
+    cancel_settled(admin, first.pk, "Settled by mistake")
+    body = call(client, "/api/v1/operator/orders/detail", {"sync_id": str(first.pk)}, token=token).json()
+    assert body["code"] == "ok", body
+    invoice = body["data"]["invoice"]
+    assert (body["data"]["status"], invoice["status"], invoice["cancel_reason"]) == (
+        "cancelled", "cancelled", "Settled by mistake")
+    assert invoice["cancelled_at"] is not None
+    other = call(client, "/api/v1/operator/orders/detail", {"sync_id": str(second.pk)}, token=token).json()
+    assert (other["data"]["invoice"]["status"], other["data"]["invoice"]["cancelled_at"]) == ("issued", None)
+
+
 def test_waiting_requests_are_closed_and_an_approved_reprint_revoked(two, admin):
     first, _ = two
     from core.ids import uuid7
