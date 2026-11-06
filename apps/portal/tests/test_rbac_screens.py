@@ -303,6 +303,66 @@ def test_privilege_writes_refuse_a_role_without_update(visitor, clerk):
     assert RolePermission.objects.filter(role=clerk).count() == 0
 
 
+# --- The User drawer's Employee: only those without a login (owner, 7 Nov 2026) --
+
+
+def _employee(company, code, first):
+    from apps.crew.models import Designation, Employee
+    designation, _ = Designation.objects.get_or_create(company=company, code="CSH", defaults={"title": "Cashier"})
+    return Employee.objects.create(company=company, employee_code=code, first_name=first, last_name="T",
+                                   designation=designation)
+
+
+def test_the_employee_search_marks_who_already_has_a_login(admin, company):
+    free = _employee(company, "EMP001", "Free")
+    taken = _employee(company, "EMP002", "Taken")
+    holder = User.objects.create_user("emp002", PASSWORD, display_name="Taken", company=company, employee=taken)
+
+    page = admin.get("/portal/user/list/")
+    listed = {e["code"]: e for e in page.context["employees_list"]}
+
+    assert listed["EMP001"]["user_id"] is None and listed["EMP001"]["id"] == free.pk
+    assert listed["EMP002"]["user_id"] == holder.pk
+    html = page.content.decode()
+    assert 'data-combo-taken="user_id"' in html and 'data-combo-value="id"' in html
+    assert 'id="user-employees-data"' in html
+
+
+def test_a_new_user_cannot_take_an_employee_who_has_a_login(admin, company):
+    role = Role.objects.create(company=company, name="Clerk")
+    taken = _employee(company, "EMP002", "Taken")
+    User.objects.create_user("emp002", PASSWORD, display_name="Taken", company=company, employee=taken)
+
+    response = post_json(admin, "/portal/user/save/", {
+        "username": "x", "display_name": "Second", "role": role.pk, "employee": taken.pk,
+        "password": PASSWORD, "allowed_channels": ["web"], "is_active": True,
+    })
+
+    assert response.status_code == 400
+    assert "already has a login" in response.content.decode()
+    assert not User.objects.filter(display_name="Second").exists()
+
+
+def test_a_free_employee_can_be_linked_and_edit_keeps_its_own(admin, company):
+    role = Role.objects.create(company=company, name="Clerk")
+    free = _employee(company, "EMP001", "Free")
+    created = post_json(admin, "/portal/user/save/", {
+        "username": "x", "display_name": "Free T", "role": role.pk, "employee": free.pk,
+        "password": PASSWORD, "allowed_channels": ["web"], "is_active": True,
+    })
+    assert created.status_code == 200, created.content
+    user = User.objects.get(employee=free)
+
+    edited = post_json(admin, "/portal/user/save/", {
+        "pk": user.pk, "username": user.username, "display_name": "Free T (edited)", "role": role.pk,
+        "employee": free.pk, "allowed_channels": ["web"], "is_active": True,
+    })
+
+    assert edited.status_code == 200, edited.content
+    user.refresh_from_db()
+    assert user.employee_id == free.pk and user.display_name == "Free T (edited)"
+
+
 def test_another_companys_role_cannot_be_given_privileges(admin, db):
     other = Company.objects.create(
         short_code="OTHR", name="Other", country=Country.objects.first(),

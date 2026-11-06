@@ -10,4 +10,5 @@ urlpatterns = [
     path("device/registration", api.RegistrationView.as_view(), name="api-device-registration"),
     path("device/settings", api.DeviceSettingsView.as_view(), name="api-device-settings"),
     path("device/branch", api.DeviceBranchView.as_view(), name="api-device-branch"),
+    path("device/config", api.DeviceConfigView.as_view(), name="api-device-config"),
 ]

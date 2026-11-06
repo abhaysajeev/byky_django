@@ -20,6 +20,7 @@ from apps.fare.models import Fare, Package
 from apps.fleet import service_requests
 from apps.fleet.models import Vehicle
 from apps.rental import live, station_sync, test_rides
+from apps.rental.counted import counted
 from apps.rental.models import (
     MONEY_IN,
     Customer,
@@ -180,6 +181,9 @@ ORDER_ERRORS = {
     "order_reprint_approved": (409, "An order receipt reprint is already approved for this order -- print it "
                                     "first.", False),
     "unknown_invoice": (404, "No invoice for that order or number at this station.", False),
+    # A system administrator cancelled the invoice (requests.cancel_settled): it
+    # is kept for the record but is not printed again.
+    "invoice_void": (409, "This invoice was cancelled -- it cannot be printed.", False),
     "cancel_request_pending": (409, "A cancel request is already waiting for this order.", False),
     "cancel_approved": (409, "This order's cancel is already approved.", False),
     "cancel_requested": (409, "A cancel request is waiting for a manager's decision -- the order cannot be "
@@ -373,7 +377,8 @@ def recent_invoices(branch, limit=RECENT_INVOICES):
     """The station's newest invoices, from any of its tablets -- newest by when
     they were issued (the settle time on the tablet), so one uploaded late from
     offline sits where it happened, not where it arrived."""
-    return list(_invoices().filter(branch=branch).order_by("-issued_at", "-created_on")[:limit])
+    # a cancelled order's (voided) invoice is not offered for reprint (counted.py)
+    return list(counted(_invoices().filter(branch=branch)).order_by("-issued_at", "-created_on")[:limit])
 
 
 def invoice_at_station(branch, *, order_id=None, invoice_no=None):
@@ -386,7 +391,7 @@ def invoice_at_station(branch, *, order_id=None, invoice_no=None):
 def customer_invoices(customer, limit=RECENT_INVOICES):
     """(how many invoices the customer has, their newest `limit`) -- across
     every station of the customer's company."""
-    invoices = _invoices().filter(order__customer=customer)
+    invoices = counted(_invoices().filter(order__customer=customer))      # voided bills not counted
     return invoices.count(), list(invoices.order_by("-issued_at", "-created_on")[:limit])
 
 
@@ -882,6 +887,11 @@ def record_payments(session, values, request_data, reply_for):
         kind = values["kind"]
         if order.status not in _PAYMENT_ALLOWED[kind]:
             raise OrderRefused("order_closed", f"No {kind} can be taken on a {order.status} order.")
+        # Its invoice was cancelled after settle (requests.cancel_settled): the
+        # money was handed back outside the system and counts nowhere -- nothing
+        # more moves on it.
+        if order.status == OrderStatus.CANCELLED and Invoice.objects.filter(order=order).exists():
+            raise OrderRefused("order_closed", "This order's invoice was cancelled -- no payment can be recorded.")
         entries = [{**payment, "kind": kind} for payment in values["payments"]]
         _record_payments(session, order, entries, _payment_modes(order.company, entries))
         order.refresh_from_db()

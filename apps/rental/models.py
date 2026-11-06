@@ -571,6 +571,17 @@ class Invoice(TimeStampedModel):
     star_rating = models.DecimalField(max_digits=2, decimal_places=1, null=True, blank=True)
     # What the customer said with it -- the order's, not the customer's (owner, 29 Oct 2026).
     rating_remarks = models.TextField(blank=True)
+    # Cancelled by a system administrator after settle (requests.cancel_settled,
+    # owner 6 Nov 2026): kept, never deleted, its number never reused -- marked
+    # void with who, when and why. Its order is then cancelled, and its money
+    # counts nowhere (counted.py).
+    voided_at = models.DateTimeField(null=True, blank=True)
+    voided_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    void_reason = models.CharField(max_length=255, blank=True)
+
+    @property
+    def is_void(self):
+        return self.voided_at is not None
 
     class Meta:
         db_table = "invoice"
@@ -580,6 +591,12 @@ class Invoice(TimeStampedModel):
             models.CheckConstraint(
                 condition=models.Q(star_rating__isnull=True) | models.Q(star_rating__gte=1, star_rating__lte=5),
                 name="invoice_star_rating_1_to_5",
+            ),
+            # void: all three, or none
+            models.CheckConstraint(
+                condition=models.Q(voided_at__isnull=True, voided_by__isnull=True, void_reason="")
+                | (models.Q(voided_at__isnull=False, voided_by__isnull=False) & ~models.Q(void_reason="")),
+                name="invoice_void_fields_together",
             ),
         ]
         indexes = [models.Index(fields=["branch", "issued_at"])]

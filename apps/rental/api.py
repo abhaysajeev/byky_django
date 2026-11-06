@@ -28,7 +28,7 @@ from apps.devices.models import BillKind
 from apps.portal.authentication import AppJWTAuthentication
 from apps.rental import credit_notes, order_status, services
 from apps.rental import requests as order_requests
-from apps.rental.models import DecisionChannel, Invoice
+from apps.rental.models import DecisionChannel, Invoice, OrderStatus
 from apps.rental.serializers import (
     CreditNoteCancelRequest,
     CreditNoteRequest,
@@ -104,6 +104,7 @@ _INVOICE_SAMPLE = {
     "payments": [{"mode": "Cash", "kind": "advance", "amount": "60.000", "reference_no": ""},
                  {"mode": "Card", "kind": "settlement", "amount": "50.000", "reference_no": "448812"}],
     "star_rating": "4.5", "rating_remarks": "Bikes were clean, quick service",
+    "status": "issued", "cancelled_at": None, "cancel_reason": None,
 }
 
 
@@ -350,6 +351,18 @@ def invoice_json(invoice, zone):
         "payments": invoice.payments,
         "star_rating": _rating(invoice.star_rating),
         "rating_remarks": invoice.rating_remarks or None,
+        **_invoice_status(invoice, zone),
+    }
+
+
+def _invoice_status(invoice, zone):
+    """`issued`, or `cancelled` once a system administrator cancelled it after
+    settle (requests.cancel_settled) -- kept for the record, its money counted
+    nowhere -- with when and why."""
+    return {
+        "status": "cancelled" if invoice.is_void else "issued",
+        "cancelled_at": _local(invoice.voided_at, zone),
+        "cancel_reason": invoice.void_reason or None,
     }
 
 
@@ -483,7 +496,7 @@ def _order_body(order, zone, items, payments, invoice):
         ],
         "invoice": {
             "invoice_no": invoice.invoice_no, "issued_at": _local(invoice.issued_at, zone),
-            "net_amount": _money(invoice.net_amount),
+            "net_amount": _money(invoice.net_amount), **_invoice_status(invoice, zone),
         } if invoice else None,
         # The customer's rating at settle and what they said; null while running.
         "star_rating": _rating(invoice.star_rating) if invoice else None,
@@ -598,7 +611,8 @@ _SETTLED_SAMPLE = {
          "payment_mode": {"id": 2, "name": "Card"}, "amount": "4.50", "reference_no": "4421",
          "reference_date": "2026-10-02", "paid_at": "2026-10-02 17:13:30"},
     ],
-    "invoice": {"invoice_no": "DUBPP60182000231", "issued_at": "2026-10-02 17:13:30", "net_amount": "104.50"},
+    "invoice": {"invoice_no": "DUBPP60182000231", "issued_at": "2026-10-02 17:13:30", "net_amount": "104.50",
+                "status": "issued", "cancelled_at": None, "cancel_reason": None},
 }
 
 _BOOK_ERRORS = (
@@ -936,7 +950,7 @@ class InvoiceDetailView(_OperatorView):
             (200, "ok", "Invoice.", _INVOICE_SAMPLE),
             (400, "invalid_request", "order_id or invoice_no is required.",
              {"errors": {"order_id": "or invoice_no is required"}}),
-            *_error_rows("unknown_invoice"),
+            *_error_rows("unknown_invoice", "invoice_void"),
             *_COMMON,
         ),
     )
@@ -953,6 +967,8 @@ class InvoiceDetailView(_OperatorView):
                                               invoice_no=values.get("invoice_no"))
         if invoice is None:
             return _refused(services.OrderRefused("unknown_invoice"))
+        if invoice.order.status == OrderStatus.CANCELLED:       # cancelled after settle: void
+            return _refused(services.OrderRefused("invoice_void"))
         return envelope("ok", "Invoice.", invoice_json(invoice, zone_for(branch.company)))
 
 
@@ -1792,7 +1808,7 @@ _REQUEST_CREATE_ERRORS = (
     "card_discount_requested", "cancel_request_pending", "cancel_approved",
 )
 _REQUEST_USED_ERRORS = (
-    "order_not_synced", "sync_id_conflict", "unknown_request", "request_not_approved", "request_used",
+    "order_not_synced", "sync_id_conflict", "unknown_request", "request_not_approved", "request_used", "invoice_void",
 )
 _REQUEST_WITHDRAW_ERRORS = ("order_not_synced", "sync_id_conflict", "unknown_request", "request_closed")
 
@@ -2252,7 +2268,7 @@ both days included, either may be left out) for when they were asked.
 Each row carries the order: customer, advance paid so far, and every vehicle
 out or back with the minutes run so far (`minutes_run`; for one still out, up
 to now) -- plus `details`, `null` for an order request (an invoice `reprint` carries its
-`invoice_no` and `invoice_net_amount`) and, for the others:
+`invoice_no`, `invoice_net_amount` and `invoice_void` -- true once its invoice was cancelled, the amount then null) and, for the others:
 a credit note's `credit_note_no`, `invoice_no`, `invoice_net_amount`, issued
 `net_amount` / `tax_amount`; a card discount's card type, grade, number,
 **the card photo** (`card_photo_thumb_url` / `card_photo_url`, paths on this

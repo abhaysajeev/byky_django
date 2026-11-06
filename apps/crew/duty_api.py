@@ -126,8 +126,9 @@ class TeamRosterView(_RosterView):
     @extend_schema(
         tags=["Manager Duty Roster", "Employee Duty Roster"], summary="The team's duty roster",
         description="""
-The cashiers' and labour's rosters (no one else is rostered), **grouped per
-employee**, by the Team Attendance hierarchy:
+The rosters of everyone rostered -- any employee may work a day as a cashier
+or as labour, whatever their designation (each day's `role` says which) --
+**grouped per employee**, by the Team Attendance hierarchy:
 
 * **manager** app -- the whole company;
 * **employee** app -- the designation's **Team Scope** (login
@@ -136,14 +137,17 @@ employee**, by the Team Attendance hierarchy:
   list); `own` -- refused `no_team_scope`.
 
 **Who is listed** -- the whole company with no station or emirate filter:
-every active cashier and labour, **rostered or not** (their days read not
-set). A Branch Supervisor, or any station / emirate filter: everyone with a
-**Working day in the range at a station in scope** -- with **every** day of
-the range, days at other stations (named), week off and leave included.
+every active employee **with a roster day in the range**, whatever their
+designation. A Branch Supervisor, or any station / emirate filter: everyone
+with a **Working day in the range at a station in scope** -- with **every**
+day of the range, days at other stations (named), week off and leave
+included. `employee.category` is the designation's own (null for one that is
+neither cashier nor labour).
 
 `request_data`, all optional: `from_date` + `to_date` (both or neither; the
 current roster week by default; at most 31 days), `state_id`, `branch_id`,
-`category` (`cashier` / `labour`), `search` (name or code), `page` (50
+`category` (`cashier` / `labour` -- those with a Working day in the range
+worked **as** it, by the day's role), `search` (name or code), `page` (50
 employees a page, by name). `counts` -- the listed employees' days in the
 range per status (`working`, `week_off`, `sick_leave`, `casual_leave`,
 `on_leave`, `not_set`), across every page. `branches` -- the stations in
@@ -203,7 +207,7 @@ scope, for the pickers.
             "counts": counts,
             "employees": [
                 {"employee": {"employee_code": e.employee_code, "name": e.full_name,
-                              "designation": e.designation.title, "category": e.designation.roster_category},
+                              "designation": e.designation.title, "category": e.designation.roster_category or None},
                  "days": days[e.pk]}
                 for e in people
             ],
@@ -213,7 +217,7 @@ scope, for the pickers.
 
 def _employee_json(employee):
     return {"employee_code": employee.employee_code, "name": employee.full_name,
-            "designation": employee.designation.title, "category": employee.designation.roster_category}
+            "designation": employee.designation.title, "category": employee.designation.roster_category or None}
 
 
 class BranchRosterView(_RosterView):

@@ -855,8 +855,9 @@ def _nobody_signed_in(device, now):
 
 def force_logout(devices_qs, pk, *, user, now=None):
     """Sign whoever is on this device out -- for a lost or broken tablet whose
-    user cannot log out. System admins only (the view checks). Returns how
-    many sessions were closed."""
+    user cannot log out. Any app (operator, manager, employee). Who may: the
+    views check -- Device Mapping update (operator tablets) or Device Approval
+    update (any approved device). Returns how many sessions were closed."""
     now = now or timezone.now()
     with transaction.atomic():
         device = _locked(devices_qs, pk)

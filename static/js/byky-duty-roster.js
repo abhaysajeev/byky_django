@@ -54,6 +54,13 @@
     ['', 'Not set'], ['working', 'Working'], ['week_off', 'Week Off'],
     ['sick_leave', 'Sick Leave'], ['casual_leave', 'Casual Leave'],
   ];
+  // The day's role: anyone rostered works a Working day as one of these
+  // (owner, 7 Nov 2026); required, so the empty first option is a prompt.
+  var ROLE_OPTIONS = [['', 'Role…'], ['cashier', 'Cashier'], ['labour', 'Labour']];
+  function roleValue(text) {
+    var v = String(text == null ? '' : text).trim().toLowerCase();
+    return v === 'cashier' || v === 'labour' ? v : '';
+  }
   // Set only by an approved leave request (apps/crew/leave.py): shown, never
   // offered in a dropdown, and locked -- the server refuses any change.
   var ON_LEAVE = 'On Leave';
@@ -588,6 +595,9 @@
       var working = dayType === 'working';
       var branchId = rec && rec.branch ? (branchNameToId[rec.branch] || '') : '';
       var hasShift2 = !!(rec && rec.shift2_start);
+      // The day's role (owner, 7 Nov 2026): required on a Working day, never
+      // guessed -- the saved one, else empty so it must be picked.
+      var role = rec && rec.status === 'Working' && rec.role ? rec.role.toLowerCase() : '';
 
       return '<div class="scr-wk-day-card" style="min-width:0" data-emp-day="' + day + '"' + (rec ? ' data-was-set' : '') + '>' +
         '<div class="scr-wk-day-head">' + d.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'short' }) + '</div>' +
@@ -595,6 +605,9 @@
         DAY_TYPE_OPTIONS.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === dayType ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
         '</select>' +
         '<div data-emp-day-working' + (working ? '' : ' hidden') + '>' +
+        '<select class="byky-input byky-select" data-emp-day-role aria-label="Role" style="margin-bottom:6px">' +
+        ROLE_OPTIONS.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === role ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
+        '</select>' +
         '<select class="byky-input byky-select" data-emp-day-branch style="margin-bottom:6px">' + branchOptionsHtml.replace('value="' + branchId + '"', 'value="' + branchId + '" selected') + '</select>' +
         '<label class="byky-help" style="display:block; margin-bottom:2px">Shift 1</label>' +
         '<input type="time" class="byky-input" data-emp-day-shift1-start value="' + ((rec && rec.shift1_start) || '') + '" style="margin-bottom:6px" />' +
@@ -669,6 +682,7 @@
         days.push({
           date: card.dataset.empDay,
           day_type: dayType,
+          role: working ? (card.querySelector('[data-emp-day-role]').value || null) : null,
           branch: working ? (card.querySelector('[data-emp-day-branch]').value || null) : null,
           shift1_start: working ? (card.querySelector('[data-emp-day-shift1-start]').value || null) : null,
           shift1_end: working ? (card.querySelector('[data-emp-day-shift1-end]').value || null) : null,
@@ -714,7 +728,9 @@
       var today = R.today;
       return sample.map(function (e) {
         var rec = (R.matrix[e.emp_no] || {})[today];
-        return [e.emp_no, e.name, today, (rec && rec.status) || 'Working', (rec && rec.branch) || (ALL_BRANCHES[0] || {}).name || '',
+        // Columns: Code, Name, Date, Day Type, Role, Branch, Shift1 Start/End, Shift2 Start/End, Remarks.
+        return [e.emp_no, e.name, today, (rec && rec.status) || 'Working', (rec && rec.role) || 'Cashier',
+          (rec && rec.branch) || (ALL_BRANCHES[0] || {}).name || '',
           (rec && rec.shift1_start) || '09:00', (rec && rec.shift1_end) || '18:00', (rec && rec.shift2_start) || '', (rec && rec.shift2_end) || '', ''];
       });
     }
@@ -737,7 +753,7 @@
           var monthMatrix = R.matrix[e.emp_no] || {};
           Object.keys(monthMatrix).forEach(function (day) {
             var rec = monthMatrix[day];
-            rows.push([e.emp_no, e.name, day, rec.status, rec.branch || '', rec.shift1_start || '', rec.shift1_end || '', rec.shift2_start || '', rec.shift2_end || '', '']);
+            rows.push([e.emp_no, e.name, day, rec.status, rec.role || '', rec.branch || '', rec.shift1_start || '', rec.shift1_end || '', rec.shift2_start || '', rec.shift2_end || '', '']);
           });
         });
         if (!rows.length) { Crud.toast('Nothing rostered yet this month.'); return; }
@@ -783,8 +799,9 @@
       var code = String(r[0] || '').trim();
       var emp = empByNo[code];
       if (!emp) return { ok: false, text: 'Unknown employee code' };
-      var branchName = String(r[4] || '').trim();
+      var branchName = String(r[5] || '').trim();
       var dayType = DAY_TYPE_VALUE[String(r[3] || '').trim()] || String(r[3] || '').trim();
+      if (dayType === 'working' && !roleValue(r[4])) return { ok: false, text: 'Choose Cashier or Labour' };
       if (dayType === 'working' && branchName && !branchNameToId[branchName]) return { ok: false, text: 'Unknown branch' };
       return { ok: true, text: 'Ready' };
     }
@@ -793,7 +810,7 @@
       if (!previewBody) return;
       previewBody.innerHTML = parsedRows.map(function (r, i) {
         var status = rowStatus(r);
-        return '<tr data-import-row="' + i + '"><td>' + (i + 1) + '</td><td>' + (r[1] || r[0] || '') + '</td><td>' + normalizeDate(r[2]) + '</td><td>' + r[3] + '</td><td>' + (r[4] || '') + '</td>' +
+        return '<tr data-import-row="' + i + '"><td>' + (i + 1) + '</td><td>' + (r[1] || r[0] || '') + '</td><td>' + normalizeDate(r[2]) + '</td><td>' + r[3] + '</td><td>' + (r[4] || '') + '</td><td>' + (r[5] || '') + '</td>' +
           '<td data-import-result><span class="scr-badge ' + (status.ok ? 'scr-badge-pending' : 'scr-badge-rejected') + '"><i></i>' + status.text + '</span></td></tr>';
       }).join('');
       if (previewWrap) previewWrap.hidden = parsedRows.length === 0;
@@ -810,16 +827,18 @@
     if (cancelBtn) cancelBtn.addEventListener('click', resetImport);
 
     function applyImport() {
+      // Columns: Code, Name, Date, Day Type, Role, Branch, Shift1 Start/End, Shift2 Start/End, Remarks.
       var rows = parsedRows.map(function (r) {
-        var branchName = String(r[4] || '').trim();
+        var branchName = String(r[5] || '').trim();
         return {
           employee_code: String(r[0] || '').trim(),
           date: normalizeDate(r[2]),
           day_type: DAY_TYPE_VALUE[String(r[3] || '').trim()] || String(r[3] || '').trim(),
+          role: roleValue(r[4]) || null,
           branch: branchNameToId[branchName] || branchName || null,
-          shift1_start: r[5] || null, shift1_end: r[6] || null,
-          shift2_start: r[7] || null, shift2_end: r[8] || null,
-          remarks: r[9] || '',
+          shift1_start: r[6] || null, shift1_end: r[7] || null,
+          shift2_start: r[8] || null, shift2_end: r[9] || null,
+          remarks: r[10] || '',
         };
       });
 

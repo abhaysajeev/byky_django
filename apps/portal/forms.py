@@ -15,6 +15,7 @@ Two rules are specific to this module:
 """
 
 from django import forms
+from django.db.models import Q
 
 from apps.company.forms import ScopedModelForm
 from apps.portal.models import Role
@@ -72,7 +73,13 @@ class UserForm(ScopedModelForm):
         if self.user is not None:
             from apps.crew.scoping import employees_for
 
-            self.fields["employee"].queryset = employees_for(self.user).filter(is_active=True)
+            # Only employees without a login -- and this user's own employee on
+            # edit (owner, 7 Nov 2026). User.employee is one-to-one, so the
+            # database refuses a second login for one employee anyway.
+            self.fields["employee"].queryset = employees_for(self.user).filter(is_active=True).filter(
+                Q(user__isnull=True) | Q(pk=self.instance.employee_id))
+            self.fields["employee"].error_messages["invalid_choice"] = (
+                "That employee already has a login -- pick another, or edit their existing user.")
 
         # A password is set once, on create, and afterwards only by Reset
         # password. It is never shown, and an empty box on edit means "leave it".

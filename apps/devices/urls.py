@@ -24,6 +24,9 @@ urlpatterns = [
     path("releases/", views.AppReleaseView.as_view(), name="devices-app-release"),
     path("release-mapping/", views.AppMappingView.as_view(), name="devices-app-mapping"),
     path("settings/", views.DeviceSettingsView.as_view(), name="devices-device-settings"),
+    path("branch-device-config/", views.BranchDeviceConfigView.as_view(), name="devices-branch-device-config"),
+    path("branch-device-config/<int:pk>/save/", views.BranchDeviceConfigSaveView.as_view(),
+         name="devices-branch-device-config-save"),
     path(
         "privileges/",
         views.DevicePrivilegeView.as_view(),
@@ -37,6 +40,7 @@ urlpatterns = [
     path("approval/<int:pk>/block/", views.DeviceBlockView.as_view(), name="devices-device-block"),
     path("approval/<int:pk>/unblock/", views.DeviceUnblockView.as_view(), name="devices-device-unblock"),
     path("approval/<int:pk>/rename/", views.DeviceRenameView.as_view(), name="devices-device-rename"),
+    path("approval/<int:pk>/logout/", views.DeviceLogoutView.as_view(), name="devices-device-logout"),
 
     # Device Mapping: Add (drawer), Re-map and Close mapping.
     path("mapping/save/", views.DeviceMapSaveView.as_view(), name="devices-mapping-save"),

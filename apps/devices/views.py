@@ -133,7 +133,7 @@ def _action_context(user):
         ),
         "action_urls": {
             action: reverse(f"devices-device-{action}", args=[0])
-            for action in ("approve", "reconnect", "reject", "block", "unblock", "rename")
+            for action in ("approve", "reconnect", "reject", "block", "unblock", "rename", "logout")
         },
     }
 
@@ -165,6 +165,9 @@ class DeviceApprovalView(DeviceScreenView):
             .select_related("branch")
         }
         stations = {pk: branch.name for pk, branch in open_mappings.items()}
+        # Who is logged in now -- an open, unexpired session (owner, 7 Nov 2026):
+        # the Approved tab's Login status and its Force logout.
+        signed_in = services.live_sessions([d.pk for d in devices])
 
         queues = {"pending": [], "approved": [], "blocked": []}
         for device in devices:
@@ -175,6 +178,10 @@ class DeviceApprovalView(DeviceScreenView):
                 "registered_on": device.created_on,
                 "last_seen_at": device.last_seen_at,
                 "branch": stations.get(device.pk, ""),
+                "signed_in": (
+                    (signed_in[device.pk].display_name or signed_in[device.pk].username)
+                    if device.pk in signed_in else ""
+                ),
                 "detail_url": reverse(
                     "devices-device-approval-detail",
                     args=[device.device_registration_id],
@@ -283,7 +290,7 @@ class DeviceMappingView(DeviceScreenView):
             .filter(device_id__in=device_ids, to_date__isnull=True)
             .select_related("branch")
         }
-        latest_sessions, in_use = _latest_sessions(user, device_ids)
+        latest_sessions, _ = _latest_sessions(user, device_ids)
         signed_in = services.live_sessions(device_ids)
 
         # The device or its mapping, whichever changed last, puts it on top.
@@ -292,7 +299,9 @@ class DeviceMappingView(DeviceScreenView):
         for device in devices:
             mapping = open_mappings.get(device.pk)
             session = latest_sessions.get(device.pk)
-            online = device.pk in in_use
+            # Logged in / Logged out (owner, 7 Nov 2026; was In use / Idle):
+            # an open, unexpired session -- the same as Force logout acts on.
+            online = device.pk in signed_in
             blocked = device.status == DeviceStatus.BLOCKED
             row = _device_row(device)
             row.update({
@@ -380,6 +389,49 @@ class DeviceMappingView(DeviceScreenView):
                 }
                 for b in branches_for(user).filter(is_active=True)
             ],
+        })
+        return context
+
+
+class BranchDeviceConfigView(DeviceScreenView):
+    """Branch-Device Config (owner, 5 Nov 2026): at a multi-device branch, For
+    Rent / For Receive per operator tablet. The branch only filters the list;
+    the settings are the device's own (Device.for_rent / for_receive) and are
+    advisory -- the app reads them through device/config."""
+
+    template_name = "devices/branch_device_config.html"
+    page_code = "devices.branch_device_config"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        branches = list(
+            branches_for(user).filter(is_active=True, is_multi_device=True).order_by("name").values("id", "name")
+        )
+        chosen = _int(self.request.GET.get("branch"))
+        if chosen not in {b["id"] for b in branches}:
+            chosen = branches[0]["id"] if branches else None
+
+        devices = []
+        if chosen is not None:
+            mappings = (
+                scoping.mappings_for(user)
+                .filter(branch_id=chosen, to_date__isnull=True, device__channel=Channel.OPERATOR)
+                .select_related("device")
+                .order_by("device__name", "device__device_registration_id")
+            )
+            devices = [
+                {**_device_row(m.device), "transaction_letter": m.transaction_letter,
+                 # In column order, for the two switches.
+                 "flags": [("for_rent", m.device.for_rent), ("for_receive", m.device.for_receive)]}
+                for m in mappings
+            ]
+
+        context.update({
+            "config_branches": branches,
+            "chosen_branch": chosen,
+            "devices": devices,
+            "save_url": reverse("devices-branch-device-config-save", args=[0]),
         })
         return context
 
@@ -492,6 +544,18 @@ class DeviceUnblockView(DeviceActionView):
 
     def act(self, devices, pk, data):
         return services.unblock_device(devices, pk, user=self.request.user, reason=_reason(data))
+
+
+class DeviceLogoutView(DeviceActionView):
+    """Force logout from Device Approval's Approved tab (owner, 7 Nov 2026):
+    any app -- operator, manager, employee. Whoever has Device Approval update;
+    `devices` is the user's own scope."""
+
+    permission = "update"
+    done = "Signed out. They must log in again."
+
+    def act(self, devices, pk, data):
+        return services.force_logout(devices, pk, user=self.request.user)
 
 
 # --- Device Mapping writes ------------------------------------------------------
@@ -1240,3 +1304,36 @@ class SettingsDeactivateView(SettingsWriteView):
             })
 
         return self.run("update", act)
+
+
+# --- Branch-Device Config ------------------------------------------------------
+
+
+def _flag(data, key, current):
+    """A posted switch: true/false (or "1"/"0", "true"/"false"); left out keeps
+    the device's current value."""
+    if key not in data:
+        return current
+    value = data[key]
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return bool(value)
+
+
+class BranchDeviceConfigSaveView(DeviceActionView):
+    """POST {for_rent, for_receive} for one operator tablet. Any combination is
+    saved: the flags are advisory, the app decides what each means."""
+
+    page_code = "devices.branch_device_config"
+    permission = "update"
+    done = "{device} saved."
+
+    def act(self, devices, pk, data):
+        device = devices.filter(pk=pk, channel=Channel.OPERATOR).first()
+        if device is None:
+            raise services.DeviceActionError("No such operator device.")
+        device.for_rent = _flag(data, "for_rent", device.for_rent)
+        device.for_receive = _flag(data, "for_receive", device.for_receive)
+        device.modified_by = self.request.user
+        device.save(update_fields=["for_rent", "for_receive", "modified_by", "modified_on"])
+        return device.name or device.device_registration_id

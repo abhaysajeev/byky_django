@@ -117,6 +117,10 @@ PAGES = [
     # copied the prefix, and receipts printed under it are still out there.
     ("devices.device_settings", "devices", "Device Settings", "devices-device-settings",
      ["create", "read", "update", "print"], 5, False),
+    # Per-device settings at a multi-device branch -- For Rent / For Receive
+    # (owner, 5 Nov 2026). Rows are never created or deleted here.
+    ("devices.branch_device_config", "devices", "Branch-Device Config", "devices-branch-device-config",
+     ["read", "update"], 6, False),
     ("devices.privileges", "devices", "Privileges", "devices-privileges", ["read", "update"], 9, False),
 
     ("fleet.brand", "fleet", "Brand", "fleet-brand-list", CRUD_PRINT, 1, False),
@@ -184,6 +188,10 @@ PAGES = [
      ["read", "print"], 8, False),
     ("reports.vehicle_details", "reports", "Vehicle Details", "reports-vehicle-details", ["read", "print"], 9, False),
     ("reports.asset_details", "reports", "Asset Details", "reports-asset-details", ["read", "print"], 10, False),
+    # Settled bills a system administrator cancelled (owner, 6 Nov 2026): the one
+    # place their money is shown -- it counts nowhere else.
+    ("reports.cancelled_invoices", "reports", "Cancelled Invoices", "reports-cancelled-invoices",
+     ["read", "print"], 11, False),
     # Which roles see which reports (owner, 3 Nov 2026: company admins use custom roles).
     ("reports.privileges", "reports", "Privileges", "reports-privileges", ["read", "update"], 99, False),
 

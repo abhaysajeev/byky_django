@@ -170,6 +170,16 @@
         line: 'Staff can log in on it again at its station.',
         go: 'Unblock', danger: false, reason: true, alt: false
       };
+    },
+    // Force logout (owner, 7 Nov 2026): any app -- a lost phone, a tablet
+    // nobody can log out of. The device stays approved.
+    logout: function (d) {
+      return {
+        title: 'Force logout on ' + label(d) + '?',
+        sub: (d.signedIn || 'Someone') + ' is logged in.',
+        line: 'They are signed out now and must log in again. The device stays approved.',
+        go: 'Force logout', danger: true, reason: false, alt: false
+      };
     }
   };
 
@@ -307,7 +317,7 @@
     var d = {
       pk: btn.dataset.pk, number: btn.dataset.number, name: btn.dataset.name,
       channel: btn.dataset.channel, model: btn.dataset.model,
-      since: btn.dataset.since, reinstall: btn.dataset.reinstall
+      since: btn.dataset.since, reinstall: btn.dataset.reinstall, signedIn: btn.dataset.signedIn
     };
     var menu = btn.closest('.scr-menu');
     if (menu) menu.hidden = true;
