@@ -8,6 +8,7 @@ bill's vehicles. Actual Collection is the bill's net less the credit note.
 
 from django.db.models import Exists, OuterRef, Prefetch
 
+from apps.rental.counted import counted
 from apps.rental.models import CreditNoteStatus, OrderItem
 from apps.rental.scoping import credit_notes_for
 from apps.reports import common
@@ -39,8 +40,9 @@ class CreditNoteDetails(Report):
 
     def build(self, ctx, page=None, per_page=None):
         f = ctx.f
-        notes = credit_notes_for(ctx.user).filter(status=CreditNoteStatus.APPROVED, decided_at__gte=f.since,
-                                                  decided_at__lt=f.until)
+        # a cancelled order's credit notes count nowhere (apps/rental/counted.py)
+        notes = counted(credit_notes_for(ctx.user)).filter(status=CreditNoteStatus.APPROVED,
+                                                           decided_at__gte=f.since, decided_at__lt=f.until)
         notes = common.customer(common.cashier(common.place(notes, f), f), f)
         if f.get("credit_note_no"):
             notes = notes.filter(credit_note_no__icontains=f.get("credit_note_no"))

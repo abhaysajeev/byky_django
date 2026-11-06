@@ -200,14 +200,25 @@ def _issue(note, net, user, remark, now, channel=DecisionChannel.WEB):
     note.decided_channel, note.modified_by = channel, user
 
 
+def _refuse_if_void(order):
+    """No credit note on a cancelled order: its invoice is void and its money
+    counts nowhere (requests.cancel_settled, counted.py)."""
+    if order.status == OrderStatus.CANCELLED:
+        raise CreditNoteRefused("This order was cancelled -- its invoice is void.", "invoice_void", 409)
+
+
 def approve(user, note_id, company_ids, net_amount, remark="", channel=DecisionChannel.WEB):
     """Issue a waiting request with the amount the approver typed -- on the
     web, or in the manager app (`channel`); the same rules either way."""
     with transaction.atomic():
-        note = (CreditNote.objects.select_for_update().select_related("order", "invoice")
-                .filter(pk=note_id, company_id__in=company_ids).first())
-        if note is None:
+        found = CreditNote.objects.filter(pk=note_id, company_id__in=company_ids).values_list("order_id", flat=True)
+        if not found:
             raise CreditNoteRefused("No such credit note request.", "unknown_credit_note", 404)
+        # The order first, then the note -- the order requests.cancel_settled
+        # locks them in, so the two never deadlock.
+        order = Order.objects.select_for_update().get(pk=found[0])
+        _refuse_if_void(order)
+        note = CreditNote.objects.select_for_update().select_related("order", "invoice").get(pk=note_id)
         if note.status != CreditNoteStatus.PENDING:
             raise CreditNoteRefused(f"This request is already {note.get_status_display().lower()}.",
                                     "credit_note_decided", 409)
@@ -245,6 +256,7 @@ def issue_directly(user, invoice_id, company_ids, net_amount, reason=""):
             if invoice is None:
                 raise CreditNoteRefused("No such invoice.")
             order = Order.objects.select_for_update().get(pk=invoice.order_id)
+            _refuse_if_void(order)
             live = _live(order)
             if live is not None:
                 raise CreditNoteRefused(
