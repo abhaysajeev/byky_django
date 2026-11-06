@@ -133,7 +133,7 @@ def _action_context(user):
         ),
         "action_urls": {
             action: reverse(f"devices-device-{action}", args=[0])
-            for action in ("approve", "reconnect", "reject", "block", "unblock", "rename")
+            for action in ("approve", "reconnect", "reject", "block", "unblock", "rename", "logout")
         },
     }
 
@@ -165,6 +165,9 @@ class DeviceApprovalView(DeviceScreenView):
             .select_related("branch")
         }
         stations = {pk: branch.name for pk, branch in open_mappings.items()}
+        # Who is logged in now -- an open, unexpired session (owner, 7 Nov 2026):
+        # the Approved tab's Login status and its Force logout.
+        signed_in = services.live_sessions([d.pk for d in devices])
 
         queues = {"pending": [], "approved": [], "blocked": []}
         for device in devices:
@@ -175,6 +178,10 @@ class DeviceApprovalView(DeviceScreenView):
                 "registered_on": device.created_on,
                 "last_seen_at": device.last_seen_at,
                 "branch": stations.get(device.pk, ""),
+                "signed_in": (
+                    (signed_in[device.pk].display_name or signed_in[device.pk].username)
+                    if device.pk in signed_in else ""
+                ),
                 "detail_url": reverse(
                     "devices-device-approval-detail",
                     args=[device.device_registration_id],
@@ -283,7 +290,7 @@ class DeviceMappingView(DeviceScreenView):
             .filter(device_id__in=device_ids, to_date__isnull=True)
             .select_related("branch")
         }
-        latest_sessions, in_use = _latest_sessions(user, device_ids)
+        latest_sessions, _ = _latest_sessions(user, device_ids)
         signed_in = services.live_sessions(device_ids)
 
         # The device or its mapping, whichever changed last, puts it on top.
@@ -292,7 +299,9 @@ class DeviceMappingView(DeviceScreenView):
         for device in devices:
             mapping = open_mappings.get(device.pk)
             session = latest_sessions.get(device.pk)
-            online = device.pk in in_use
+            # Logged in / Logged out (owner, 7 Nov 2026; was In use / Idle):
+            # an open, unexpired session -- the same as Force logout acts on.
+            online = device.pk in signed_in
             blocked = device.status == DeviceStatus.BLOCKED
             row = _device_row(device)
             row.update({
@@ -535,6 +544,18 @@ class DeviceUnblockView(DeviceActionView):
 
     def act(self, devices, pk, data):
         return services.unblock_device(devices, pk, user=self.request.user, reason=_reason(data))
+
+
+class DeviceLogoutView(DeviceActionView):
+    """Force logout from Device Approval's Approved tab (owner, 7 Nov 2026):
+    any app -- operator, manager, employee. Whoever has Device Approval update;
+    `devices` is the user's own scope."""
+
+    permission = "update"
+    done = "Signed out. They must log in again."
+
+    def act(self, devices, pk, data):
+        return services.force_logout(devices, pk, user=self.request.user)
 
 
 # --- Device Mapping writes ------------------------------------------------------

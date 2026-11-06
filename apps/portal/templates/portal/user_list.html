@@ -163,6 +163,7 @@
   </div>
 </div>
 
+{{ employees_list|json_script:"user-employees-data" }}
 {% include "byky/partials/drawer.html" with save_url=save_url_user spec=drawer_user module_label="System · Users" %}
 {% include "byky/partials/confirm_modal.html" %}
 {% include "byky/partials/message_modal.html" %}
