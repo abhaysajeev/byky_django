@@ -300,7 +300,7 @@ def sign_in_operator(username, password, installation_id, *, ip_address=None, us
             status=409,
         )
 
-    # The duty roster (owner, 28 Oct 2026): a Cashier / Labour employee signs
+    # The duty roster (owner, 28 Oct 2026; every operator login since 7 Nov): one signs
     # in only when today's roster has them Working at this station, within
     # their shift. Imported locally, as devices is above.
     from apps.crew.services import operator_roster_refusal

@@ -1,8 +1,11 @@
 """Operator login and the duty roster (apps/crew/services.py::
-operator_roster_refusal, owner 28 Oct 2026): a Cashier / Labour employee signs
-in on a station tablet only when today's roster has them Working at that
-station, inside their shift -- exact times. Every operator login also returns
-the employee's roster for the current week."""
+operator_roster_refusal, owner 28 Oct 2026): an employee signs in on a station
+tablet only when today's roster has them Working at that station, inside their
+shift -- exact times. Every operator login is checked, whatever the designation
+(owner, 7 Nov 2026 -- it was Cashier / Labour only). Every operator login also
+returns the employee's roster for the current week.
+
+The check is off in other apps' tests (conftest.py); this module turns it on."""
 
 import datetime
 
@@ -20,6 +23,8 @@ world, employee, app_user, device = login_api.world, login_api.employee, login_a
 fresh_throttle, _login = login_api.fresh_throttle, login_api._login
 
 HOUR = datetime.timedelta(hours=1)
+
+pytestmark = pytest.mark.roster_gate
 
 
 @pytest.fixture
@@ -87,8 +92,13 @@ def test_outside_the_shift(client, world, rostered, app_user, device):
     assert (code, message) == ("outside_shift_hours", "Your shift today is 00:00-00:01.")
 
 
-def test_a_designation_not_on_the_roster_is_not_checked(client, world, employee, app_user, device):
-    assert employee.designation.roster_category == ""
+def test_every_designation_is_checked(client, world, employee, app_user, device):
+    """A manager, supervisor or admin on a tablet is checked too (owner, 7 Nov 2026)."""
+    assert employee.designation.roster_category == ""          # neither cashier nor labour
+    assert refused(client, app_user, device) == ("duty_roster_not_found", "Duty Roster not found today.")
+
+    now = timezone.now()
+    roster(employee, world["branch"], now - HOUR, now + HOUR)
     assert _login(client, app_user, device).json()["code"] == "ok"
 
 
@@ -115,13 +125,19 @@ def test_the_login_returns_the_weeks_roster_like_the_employee_login(client, worl
         assert days[off.isoformat()]["status"] == "Week Off"
 
 
-def test_a_designation_not_on_the_roster_still_gets_the_week_all_unset(client, world, employee, app_user, device):
+def test_any_designation_rostered_today_gets_the_week_with_only_today_set(client, world, employee, app_user,
+                                                                         device):
+    now = timezone.now()
+    today = business_date_for(world["company"], now)
+    roster(employee, world["branch"], now - HOUR, now + HOUR)
+
     body = _login(client, app_user, device).json()
 
     assert body["code"] == "ok"
     sent = body["data"]["roster"]
     assert [day["date"] for day in sent["days"]] == [day.isoformat() for day in duty.current_week(world["company"])]
-    assert {day["status"] for day in sent["days"]} == {None}
+    assert {day["date"]: day["status"] for day in sent["days"]}[today.isoformat()] == "Working"
+    assert {day["status"] for day in sent["days"] if day["date"] != today.isoformat()} <= {None}
 
 
 # -- The rule itself, at fixed times -----------------------------------------------------

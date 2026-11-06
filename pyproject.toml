@@ -20,4 +20,7 @@ markers = [
     # once and are re-run only when it changes -- pricing.py, or the order the
     # device fares API sends things in:  pytest -m exhaustive
     "exhaustive: brute-force proof, skipped by default; run with -m exhaustive",
+    # The operator login's duty-roster check runs only in tests marked with
+    # this (conftest.py: operator_roster_gate_off).
+    "roster_gate: run the operator login's duty-roster check in this test",
 ]
