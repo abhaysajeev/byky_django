@@ -47,7 +47,7 @@
   </div>
   {% if void %}
   <div class="scr-banner scr-banner-void" role="status">
-    <div class="scr-banner-text"><b>VOID — this invoice was cancelled</b> on {{ void.at|date:"d M Y, H:i" }} by {{ void.by|default:"—" }}: {{ void.reason }}. It is kept for the record, cannot be printed or credited, and its money counts nowhere.</div>
+    <div class="scr-banner-text"><b>Invoice {{ bill.invoice_no }} was cancelled</b> on {{ void.at|date:"d M Y, H:i" }} by {{ void.by|default:"—" }}</div>
   </div>
   {% endif %}
 
