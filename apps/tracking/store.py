@@ -7,6 +7,7 @@ statement it can run visible in one file.
 """
 
 import asyncio
+from zoneinfo import ZoneInfo
 
 import psycopg
 from django.conf import settings
@@ -37,6 +38,41 @@ VALUES (%s, %s, %s, %s, %s, %s)
 """
 
 
+# Which reads of an upload are new: the dedupe key decides (E8: readers re-send).
+NEW_KEYS = """
+INSERT INTO tracking_reading_key (reader_id, port, tag, reader_time, received_at)
+SELECT %(r)s, k.port, k.tag, k.reader_time, %(now)s
+FROM unnest(%(ports)s::smallint[], %(tags)s::varchar[], %(times)s::timestamptz[]) AS k(port, tag, reader_time)
+ON CONFLICT DO NOTHING
+RETURNING port, tag, reader_time
+"""
+
+INSERT_READS = """
+INSERT INTO tracking_reading (reader_id, port, tag, reader_time, received_at, rssi, entry, staying, low_battery)
+SELECT %(r)s, x.port, x.tag, x.reader_time, %(now)s, x.rssi, x.entry, x.staying, x.low_battery
+FROM unnest(%(ports)s::smallint[], %(tags)s::varchar[], %(times)s::timestamptz[], %(rssi)s::smallint[],
+            %(entry)s::boolean[], %(staying)s::boolean[], %(lowbat)s::boolean[])
+     AS x(port, tag, reader_time, rssi, entry, staying, low_battery)
+"""
+
+# Last seen moves only for new reads, and not for a batch older than what we
+# have by more than 2 minutes (a late or replayed upload -- design §5).
+LAST_SEEN = """
+INSERT INTO tracking_tag_last_seen AS t (tag, reader_id, port, seen_at, reader_time, rssi, rssi_avg, low_battery)
+SELECT x.tag, %(r)s, x.port, %(now)s, x.reader_time, x.rssi, x.rssi, x.low_battery
+FROM unnest(%(tags)s::varchar[], %(ports)s::smallint[], %(times)s::timestamptz[], %(rssi)s::smallint[],
+            %(lowbat)s::boolean[]) AS x(tag, port, reader_time, rssi, low_battery)
+ON CONFLICT (tag) DO UPDATE SET
+    reader_id = EXCLUDED.reader_id, port = EXCLUDED.port, seen_at = EXCLUDED.seen_at,
+    reader_time = EXCLUDED.reader_time, rssi = EXCLUDED.rssi, low_battery = EXCLUDED.low_battery,
+    rssi_avg = CASE WHEN t.reader_id = EXCLUDED.reader_id
+                    THEN %(alpha)s * EXCLUDED.rssi + (1 - %(alpha)s) * t.rssi_avg
+                    ELSE EXCLUDED.rssi END
+WHERE EXCLUDED.reader_time IS NULL OR t.reader_time IS NULL
+   OR EXCLUDED.reader_time >= t.reader_time - interval '2 minutes'
+"""
+
+
 def dsn():
     """TRACKING_DB_URL, or the app's own database (dev, tests)."""
     if settings.TRACKING_DB_URL:
@@ -47,8 +83,10 @@ def dsn():
 
 
 class Store:
-    def __init__(self, conninfo=None, size=3, max_pending=50):
+    def __init__(self, conninfo=None, size=3, max_pending=50, reader_tz="Asia/Dubai", ewma_alpha=0.3):
         self.conninfo = conninfo or dsn()
+        self.reader_tz = reader_tz
+        self.ewma_alpha = ewma_alpha
         self.size = size
         self.max_pending = max_pending
         self._pool = None
@@ -139,4 +177,53 @@ class Store:
         await self.run(go)
 
     async def save_reads(self, frame, reads, now):
-        raise NotImplementedError("write mode arrives with slice 5")
+        """Store one upload in ONE transaction; returns how many reads were new.
+        The gateway ACKs only after this returns -- if it raises, nothing was
+        committed and the reader sends the batch again (design §3)."""
+        tz = ZoneInfo(self.reader_tz)
+        rows = []
+        for r in reads:
+            at = r.reader_time.replace(tzinfo=tz) if r.reader_time else None
+            rows.append((r.port, r.tag, at, r.rssi, r.entry, r.staying, r.low_battery))
+
+        async def go(conn):
+            async with conn.transaction():
+                found = await (await conn.execute(
+                    "SELECT id FROM tracking_reader WHERE device_id = %s", [frame.device_id])).fetchone()
+                if found is None:
+                    return 0
+                reader_id = found[0]
+                keyed = [row for row in rows if row[2] is not None]
+                new_keys = set()
+                if keyed:
+                    cur = await conn.execute(NEW_KEYS, {
+                        "r": reader_id, "now": now, "ports": [r[0] for r in keyed],
+                        "tags": [r[1] for r in keyed], "times": [r[2] for r in keyed]})
+                    new_keys = {(port, tag, at) for port, tag, at in await cur.fetchall()}
+                # a read with no usable reader clock cannot be deduped; it counts as new
+                # (and a read repeated inside one upload is kept once)
+                fresh, taken = [], set()
+                for r in rows:
+                    key = (r[0], r[1], r[2])
+                    if r[2] is None or (key in new_keys and key not in taken):
+                        fresh.append(r)
+                        taken.add(key)
+                if not fresh:
+                    return 0
+                await conn.execute(INSERT_READS, {
+                    "r": reader_id, "now": now, "ports": [r[0] for r in fresh], "tags": [r[1] for r in fresh],
+                    "times": [r[2] for r in fresh], "rssi": [r[3] for r in fresh], "entry": [r[4] for r in fresh],
+                    "staying": [r[5] for r in fresh], "lowbat": [r[6] for r in fresh]})
+                # per tag, the strongest new read stands for the batch (the strongest
+                # antenna is the presence feature, design §6)
+                best = {}
+                for r in fresh:
+                    if r[1] not in best or r[3] > best[r[1]][3]:
+                        best[r[1]] = r
+                b = list(best.values())
+                await conn.execute(LAST_SEEN, {
+                    "r": reader_id, "now": now, "tags": [r[1] for r in b], "ports": [r[0] for r in b],
+                    "times": [r[2] for r in b], "rssi": [r[3] for r in b], "lowbat": [r[6] for r in b],
+                    "alpha": self.ewma_alpha})
+                return len(fresh)
+        return await self.run(go)
