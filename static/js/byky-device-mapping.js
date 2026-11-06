@@ -20,9 +20,12 @@
 
   function crud() { return window.BykyCrud || {}; }
 
+  // The action URLs carry the device as 0 (.../mapping/0/remap/); swap in the
+  // real one. The last part may hold a hyphen -- force-logout/ did not match
+  // [a-z]+, so Force logout posted to device 0 ("That device was not found").
   function urlFor(kind, pk) {
     var key = { remap: 'urlRemap', close: 'urlClose', letter: 'urlLetter', force: 'urlForceLogout' }[kind];
-    return root.dataset[key].replace(/\/0\/([a-z]+)\/$/, '/' + pk + '/$1/');
+    return root.dataset[key].replace(/\/0\/([a-z-]+)\/$/, '/' + pk + '/$1/');
   }
 
   var flags = {};
