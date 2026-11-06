@@ -419,3 +419,24 @@ FCM_CREDENTIALS_FILE = os.environ.get("FCM_CREDENTIALS_FILE", "")
 PUSH_TTL_SECONDS = 12 * 3600       # Google drops an alert the phone has not received by then
 PUSH_MAX_ATTEMPTS = 5              # on Firebase being busy or down
 PUSH_KEEP_DAYS = 90
+
+# -- Antenna Tracking (apps/tracking, design/07-tracking.md) -----------------------------
+# Off unless the environment turns it on: the gateway then refuses readers and
+# the engine idles, so a deploy with these unset changes nothing.
+TRACKING_ENABLED = env_bool("TRACKING_ENABLED", False)
+# capture = store every frame as received and ACK (P0); write = store the reads.
+TRACKING_MODE = os.environ.get("TRACKING_MODE", "capture")
+TRACKING_PORT = int(os.environ.get("TRACKING_PORT", 5100))          # inside the container
+TRACKING_HEALTH_PORT = int(os.environ.get("TRACKING_HEALTH_PORT", 8100))
+# The gateway's own role (deploy/tracking-role.sql); unset = the app's database user.
+TRACKING_DB_URL = os.environ.get("TRACKING_DB_URL", "")
+# What a register reply tells the reader to connect to (legacy SocketIPAddress/Port).
+TRACKING_SERVER_IP = os.environ.get("TRACKING_SERVER_IP", "")
+TRACKING_SERVER_PORT = int(os.environ.get("TRACKING_SERVER_PORT", 0) or 0)
+# The clock sent to readers: the stations' local time (the legacy shifted by -90 min).
+TRACKING_READER_TZ = os.environ.get("TRACKING_READER_TZ", "Asia/Dubai")
+TRACKING_IDLE_SECONDS = int(os.environ.get("TRACKING_IDLE_SECONDS", 600))  # no frame for this long: close
+TRACKING_MAX_PER_IP = int(os.environ.get("TRACKING_MAX_PER_IP", 5))
+TRACKING_MAX_CONNECTIONS = int(os.environ.get("TRACKING_MAX_CONNECTIONS", 200))
+TRACKING_MAX_PENDING = 50          # unknown readers kept as pending; beyond this, not stored
+TRACKING_DB_POOL = 3
