@@ -184,7 +184,7 @@
               <td><span class="scr-code">{{ d.registration_id }}</span></td>
               <td style="font-weight:600">{{ d.name|default:"—" }}</td>
               <td class="scr-contact">{{ d.model|default:"—" }}</td>
-              <td>{% if d.signed_in %}<span class="scr-badge scr-badge-active" title="{{ d.signed_in }}"><i></i>Logged in</span><div class="scr-contact-sub">{{ d.signed_in }}</div>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Logged out</span>{% endif %}</td>
+              <td>{% if d.signed_in %}<span class="scr-badge scr-badge-active" title="{{ d.signed_in }}"><i></i>Logged in</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Logged out</span>{% endif %}</td>
               <td class="scr-contact">{{ d.last_seen_at|date:"d M Y H:i"|default:"—" }}</td>
               <td data-status-cell><span class="scr-badge scr-badge-approved"><i></i>{{ d.status_label }}</span></td>
               <td>
