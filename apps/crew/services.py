@@ -587,14 +587,11 @@ class Invalid(Exception):
 
 
 def roster_eligible_employees(user, *, search=""):
-    """Employees the duty roster's pickers may offer: a Cashier or Labour
-    designation, this user's own company. Every other designation is not a
-    roster concept -- it never appears here, by client decision."""
-    rows = scoped_to(
-        Employee.objects.filter(designation__roster_category__in=RosterCategory.values)
-        .select_related("designation"),
-        user,
-    )
+    """Employees the duty roster's pickers may offer: anyone of this user's
+    own company, whatever their designation (owner, 7 Nov 2026 -- any
+    employee may work a rostered day as a cashier or as labour; the day's
+    Role says which)."""
+    rows = scoped_to(Employee.objects.select_related("designation"), user)
     search = (search or "").strip()
     if search:
         rows = rows.filter(
@@ -725,14 +722,9 @@ def save_week(employee, days, *, user, branches_qs):
     {"date", "day_type": "not_set"} is cleared; a day not sent is left as it
     is, so the form may set one day and leave the rest. One transaction, every
     day's problems collected before anything is written -- a half-saved week
-    is worse than none. Approved-leave days are refused either way.
+    is worse than none. Approved-leave days are refused either way. Anyone may
+    be rostered; each Working day names its role (owner, 7 Nov 2026).
     """
-    if employee.designation.roster_category not in RosterCategory.values:
-        raise Invalid([{
-            "field": "Employee",
-            "message": f"{employee} is not a Cashier or Labour and cannot be rostered.",
-        }])
-
     errors = []
     clean = []
     clear = []                  # days set back to "Not set": their rows go
@@ -766,15 +758,10 @@ def save_week(employee, days, *, user, branches_qs):
 
 
 def _save_day(employee, fields, user):
-    """Upsert one checked day. A role sent is saved; none sent leaves an
-    existing day's role as it is and gives a new Working day the employee's
-    designation (owner, 5 Nov 2026)."""
-    defaults = {**fields, "modified_by": user}
-    create_defaults = dict(defaults)
-    if fields["day_type"] == DutyRosterDayType.WORKING and not fields.get("role"):
-        create_defaults["role"] = employee.designation.roster_category
+    """Upsert one checked day. A Working day always carries its role (owner,
+    7 Nov 2026 -- _check_day requires it); any other day carries none."""
     return DutyRoster.objects.update_or_create(
-        employee=employee, date=fields["date"], defaults=defaults, create_defaults=create_defaults,
+        employee=employee, date=fields["date"], defaults={**fields, "modified_by": user},
     )
 
 
@@ -817,15 +804,14 @@ def _check_day(entry, *, branches_qs):
                       remarks=(entry.get("remarks") or "")[:200])
         return errors, fields
 
-    # The day's role (owner, 5 Nov 2026), from Add to Day / Edit Day. Not sent
-    # (the week form, the import): a new day takes the designation's, an
-    # existing one keeps its own -- _save_day.
-    role = entry.get("role")
-    if role:
-        if role not in RosterCategory.values:
-            errors.append({"field": f"{label} — Role", "message": "Choose Cashier or Labour."})
-            return errors, {}
-        fields["role"] = role
+    # The day's role, required on every Working day (owner, 7 Nov 2026): anyone
+    # may be rostered, and the day says whether they work it as a cashier or as
+    # labour. "Cashier" / "Labour" (the import's text) count too.
+    role = str(entry.get("role") or "").strip().lower()
+    if role not in RosterCategory.values:
+        errors.append({"field": f"{label} — Role", "message": "Choose Cashier or Labour."})
+        return errors, {}
+    fields["role"] = role
 
     branch = branches_qs.filter(pk=entry.get("branch")).select_related("company").first()
     if branch is None:
@@ -950,15 +936,16 @@ def _in_shift(row, now):
 
 def operator_roster_refusal(employee, branch, now=None):
     """Why this employee may not sign in on a tablet at `branch` now, or None
-    (owner, 28 Oct 2026). Only a rostered designation (Cashier / Labour) is
-    checked: today's duty roster -- the company's business day -- must have
+    (owner, 28 Oct 2026). Every operator login is checked, whatever the
+    designation -- managers and admins too (owner, 7 Nov 2026; it was Cashier /
+    Labour only): today's duty roster -- the company's business day -- must have
     them Working at this station, and now must fall inside shift 1 or shift 2,
     exact times. Yesterday's Working row counts too when its shift runs past
     midnight and covers now. Returns (code, message).
 
     New: legacy had no duty roster (Service_Operator_Login took the station
     from the device mapping alone)."""
-    if employee is None or employee.designation.roster_category not in RosterCategory.values:
+    if employee is None:
         return None
     now = now or timezone.now()
     company = employee.company
@@ -1117,8 +1104,6 @@ def assign_day(employee, entry, *, branches_qs, user, require_new=False):
     employee from the Employee combo replaced their existing branch/shift
     with no warning that anything had been there.
     """
-    if employee.designation.roster_category not in RosterCategory.values:
-        raise Invalid([{"field": "Employee", "message": f"{employee} is not a Cashier or Labour."}])
     errors, fields = _check_day(entry, branches_qs=branches_qs)
     if errors:
         raise Invalid(errors)
@@ -1157,20 +1142,17 @@ def remove_day(employee, on_date, *, user):
 
 def import_rows(rows, *, user, employees_qs, branches_qs):
     """Bulk Import's Apply: `rows` are
-    [{"employee_code", "date", "day_type", "branch", "shift1_start",
+    [{"employee_code", "date", "day_type", "role", "branch", "shift1_start",
       "shift1_end", "shift2_start", "shift2_end"}, ...] -- the mockup's own
-    column shape, `employee_code` the join key. Every row is judged on its
-    own: one bad row does not block the rest, and the caller gets back which
-    rows landed and which didn't, never a silent partial apply.
+    column shape plus the day's Role (owner, 7 Nov 2026), `employee_code` the
+    join key. Any employee of the company may be rostered. Every row is judged
+    on its own: one bad row does not block the rest, and the caller gets back
+    which rows landed and which didn't, never a silent partial apply.
 
     Returns (written_count, row_results) where row_results is
     [{"row", "employee_code", "ok", "message"}, ...] in the order given.
     """
-    by_code = {
-        e.employee_code: e
-        for e in employees_qs.filter(designation__roster_category__in=RosterCategory.values)
-        .select_related("designation")
-    }
+    by_code = {e.employee_code: e for e in employees_qs.select_related("designation")}
     written = 0
     results = []
     changed = {}                # employee -> dates: one push per employee for the import
@@ -1179,7 +1161,7 @@ def import_rows(rows, *, user, employees_qs, branches_qs):
         employee = by_code.get(code)
         if employee is None:
             results.append({"row": i, "employee_code": code, "ok": False,
-                            "message": "No Cashier or Labour employee with that code."})
+                            "message": "No employee with that code."})
             continue
         errors, fields = _check_day(entry, branches_qs=branches_qs)
         if not errors:
