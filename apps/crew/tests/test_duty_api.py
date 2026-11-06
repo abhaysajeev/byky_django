@@ -81,19 +81,17 @@ def crew(world):
 # -- duty/team: manager app ------------------------------------------------------------
 
 
-def test_the_manager_sees_every_cashier_and_labour_rostered_or_not(client, world, manager, crew):
+def test_the_manager_sees_everyone_rostered_in_the_range(client, world, manager, crew):
+    """Owner, 7 Nov 2026: anyone with a roster day in the range -- it was every
+    Cashier and Labour, rostered or not. Chen (labour) and the operator (a
+    cashier) have nothing rostered, so they are not listed."""
     data = listed(client, manager)
 
-    # The operator is a cashier too; the manager is not rostered staff.
-    assert codes(data) == ["EMP001", "EMP002", "EMP003", "OPR001"]
+    assert codes(data) == ["EMP001", "EMP002"]
     assert data["counts"] == {"working": 3, "week_off": 1, "sick_leave": 0, "casual_leave": 0, "on_leave": 0,
-                              "not_set": 8}
+                              "not_set": 2}
     assert (data["scope"], data["from_date"], data["to_date"], data["total"]) == ("company", "2026-08-30",
-                                                                                   "2026-09-01", 4)
-    chen = data["employees"][2]
-    assert chen["employee"] == {"employee_code": "EMP003", "name": "Chen K", "designation": "Labour",
-                                "category": "labour"}
-    assert [d["status"] for d in chen["days"]] == [None, None, None]
+                                                                                   "2026-09-01", 2)
 
 
 def test_a_day_carries_station_shift_and_overnight(client, world, manager, crew):
@@ -113,7 +111,8 @@ def test_a_day_carries_station_shift_and_overnight(client, world, manager, crew)
 
 @pytest.mark.parametrize("request_data, expected", [
     ({"branch_id": "auh2"}, ["EMP001", "EMP002"]),
-    ({"category": "labour"}, ["EMP003"]),
+    ({"category": "labour"}, []),                     # by the day's role: no Labour day in the range
+    ({"category": "cashier"}, ["EMP001", "EMP002"]),  # rows from before roles read as the designation
     ({"search": "bil"}, ["EMP002"]),
     ({"state_id": "state"}, ["EMP001", "EMP002"]),
 ])
@@ -128,17 +127,18 @@ def test_filters(client, world, manager, crew, request_data, expected):
 
 
 def test_the_list_is_paged_by_employee(client, world, manager, crew, monkeypatch):
-    monkeypatch.setattr(duty, "PAGE_SIZE", 2)
+    monkeypatch.setattr(duty, "PAGE_SIZE", 1)
 
     first, second = listed(client, manager), listed(client, manager, page=2)
 
     assert (codes(first), codes(second), second["pages"], second["counts"]["not_set"]) == (
-        ["EMP001", "EMP002"], ["EMP003", "OPR001"], 2, 8)
+        ["EMP001"], ["EMP002"], 2, 2)
 
 
 def test_the_current_week_by_default(client, world, manager, crew):
-    data = call(client, "/api/v1/manager/duty/team", {}, token=manager).json()["data"]
     week = duty.current_week(world["company"])
+    working(world["staff"], world["auh1"], week[0])          # someone rostered this week, so listed
+    data = call(client, "/api/v1/manager/duty/team", {}, token=manager).json()["data"]
 
     assert (data["from_date"], data["to_date"]) == (week[0].isoformat(), week[-1].isoformat())
     assert len(data["employees"][0]["days"]) == len(week)
@@ -187,7 +187,26 @@ def test_whole_company_scope_in_the_employee_app(client, world, supervisor, supe
     supervisor_designation.team_scope = "company"
     supervisor_designation.save(update_fields=["team_scope"])
 
-    assert codes(listed(client, supervisor, "employee")) == ["EMP001", "EMP002", "EMP003", "OPR001"]
+    assert codes(listed(client, supervisor, "employee")) == ["EMP001", "EMP002"]      # those rostered
+
+
+def test_any_designation_rostered_is_listed_with_the_days_role(client, world, manager, crew):
+    """Owner, 7 Nov 2026: a Driver (neither cashier nor labour) rostered as
+    labour is listed; `category` is null (the designation's), the day's
+    `role` labour, and the labour filter finds them by it."""
+    driver = Designation.objects.create(company=world["company"], code="DRV", title="Driver")
+    dina = Employee.objects.create(company=world["company"], employee_code="EMP004", first_name="Dina",
+                                   last_name="K", designation=driver)
+    working(dina, world["auh2"], D1)
+    DutyRoster.objects.filter(employee=dina).update(role="labour")
+
+    data = listed(client, manager)
+    row = next(e for e in data["employees"] if e["employee"]["employee_code"] == "EMP004")
+
+    assert row["employee"] == {"employee_code": "EMP004", "name": "Dina K", "designation": "Driver",
+                               "category": None}
+    assert [(d["status"], d["role"]) for d in row["days"]] == [(None, None), ("Working", "labour"), (None, None)]
+    assert codes(listed(client, manager, category="labour")) == ["EMP004"]
 
 
 def test_own_scope_is_refused(client, world, staff_app):

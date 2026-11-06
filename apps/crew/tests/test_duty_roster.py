@@ -258,7 +258,7 @@ def one_day(date, **extra):
 def test_saving_a_week_writes_one_row_per_working_day(cashier, world):
 
     days = [
-        one_day(datetime.date(2026, 9, 20), day_type="working", branch=world["branch"].pk,
+        one_day(datetime.date(2026, 9, 20), day_type="working", role="cashier", branch=world["branch"].pk,
                 shift1_start="08:00", shift1_end="17:00"),
         one_day(datetime.date(2026, 9, 21), day_type="week_off"),
     ]
@@ -271,7 +271,7 @@ def test_saving_a_week_writes_one_row_per_working_day(cashier, world):
 
 
 def test_saving_twice_updates_rather_than_duplicating(cashier, world):
-    days = [one_day(datetime.date(2026, 9, 20), day_type="working", branch=world["branch"].pk,
+    days = [one_day(datetime.date(2026, 9, 20), day_type="working", role="cashier", branch=world["branch"].pk,
                     shift1_start="08:00", shift1_end="17:00")]
     services.save_week(cashier, days, user=None, branches_qs=Branch.objects.all())
     days[0]["shift1_start"] = "09:00"
@@ -292,7 +292,7 @@ def test_a_week_may_set_one_day_and_leave_the_rest(cashier, world):
 
 
 def test_not_set_clears_a_saved_day_and_keeps_the_others(cashier, world):
-    working = one_day(datetime.date(2026, 9, 20), day_type="working", branch=world["branch"].pk,
+    working = one_day(datetime.date(2026, 9, 20), day_type="working", role="cashier", branch=world["branch"].pk,
                       shift1_start="08:00", shift1_end="17:00")
     services.save_week(cashier, [working, one_day(datetime.date(2026, 9, 21))], user=None,
                        branches_qs=Branch.objects.all())
@@ -312,16 +312,19 @@ def test_not_set_needs_a_date(cashier, world):
 
 
 def test_a_working_day_with_no_branch_is_refused_by_name(cashier, world):
-    days = [one_day(datetime.date(2026, 9, 20), day_type="working")]
+    days = [one_day(datetime.date(2026, 9, 20), day_type="working", role="cashier")]
     with pytest.raises(services.Invalid) as refused:
         services.save_week(cashier, days, user=None, branches_qs=Branch.objects.all())
     assert "Branch" in refused.value.errors[0]["field"]
 
 
-def test_a_non_roster_designation_is_refused(supervisor, world):
-    days = [one_day(datetime.date(2026, 9, 20))]
-    with pytest.raises(services.Invalid, match="not a Cashier or Labour"):
-        services.save_week(supervisor, days, user=None, branches_qs=Branch.objects.all())
+def test_any_designation_may_be_rostered(supervisor, world):
+    """Owner, 7 Nov 2026: anyone may work a rostered day as a cashier or labour."""
+    days = [one_day(datetime.date(2026, 9, 20), day_type="working", role="labour", branch=world["branch"].pk,
+                    shift1_start="08:00", shift1_end="16:00")]
+    services.save_week(supervisor, days, user=None, branches_qs=Branch.objects.all())
+
+    assert DutyRoster.objects.get(employee=supervisor, date=datetime.date(2026, 9, 20)).role == "labour"
 
 
 def test_an_end_before_start_becomes_an_overnight_shift(cashier, world):
@@ -329,7 +332,7 @@ def test_an_end_before_start_becomes_an_overnight_shift(cashier, world):
     has no date of its own), so "end before start" reads as an overnight
     shift, not a typo -- business-logic.md section 2.1 does not restrict this
     to Shift 2."""
-    days = [one_day("2026-09-20", day_type="working", branch=world["branch"].pk,
+    days = [one_day("2026-09-20", day_type="working", role="cashier", branch=world["branch"].pk,
                     shift1_start="17:00", shift1_end="08:00")]
 
     written = services.save_week(cashier, days, user=None, branches_qs=Branch.objects.all())
@@ -340,7 +343,7 @@ def test_an_end_before_start_becomes_an_overnight_shift(cashier, world):
 
 
 def test_a_missing_shift_time_is_refused_by_name(cashier, world):
-    days = [one_day("2026-09-20", day_type="working", branch=world["branch"].pk,
+    days = [one_day("2026-09-20", day_type="working", role="cashier", branch=world["branch"].pk,
                     shift1_start="08:00")]  # no shift1_end
     with pytest.raises(services.Invalid, match="Shift 1"):
         services.save_week(cashier, days, user=None, branches_qs=Branch.objects.all())
@@ -374,14 +377,14 @@ def test_today_assignment_is_none_with_no_roster_row(cashier):
 def test_the_screen_renders_on_an_empty_roster(client_in):
     response = client_in.get("/crew/duty-roster/")
     assert response.status_code == 200
-    assert b"No Cashier or Labour employees" in response.content
+    assert b"No employees yet. Add employees in Crew" in response.content
 
 
-def test_the_screen_lists_eligible_employees_and_hides_the_ineligible(client_in, cashier, supervisor):
-    response = client_in.get("/crew/duty-roster/")
-    body = response.content.decode()
+def test_the_screen_lists_every_employee(client_in, cashier, supervisor):
+    """Owner, 7 Nov 2026: any designation may be rostered, so all are offered."""
+    body = client_in.get("/crew/duty-roster/").content.decode()
     assert cashier.full_name in body
-    assert supervisor.employee_code not in body
+    assert supervisor.employee_code in body
 
 
 def test_branch_shifts_endpoint_returns_the_real_working_time(client_in, world, working_time):
@@ -395,7 +398,7 @@ def test_branch_shifts_endpoint_returns_the_real_working_time(client_in, world, 
 def test_save_week_endpoint_writes_through(client_in, cashier, world):
     response = post(client_in, "/crew/duty-roster/save-week/", {
         "employee": cashier.pk,
-        "days": [one_day("2026-09-20", day_type="working", branch=world["branch"].pk,
+        "days": [one_day("2026-09-20", day_type="working", role="cashier", branch=world["branch"].pk,
                           shift1_start="08:00", shift1_end="17:00")],
     })
     assert response.json()["ok"] is True
@@ -438,11 +441,10 @@ def test_roster_payload_employees_carry_no_branch_field(cashier, world, user):
     assert "branch" not in emp
 
 
-def test_roster_payload_excludes_non_roster_designations(cashier, supervisor, world, user):
+def test_roster_payload_includes_every_designation(cashier, supervisor, world, user):
     payload = services.roster_payload(user, 2026, 9)
     codes = [e["emp_no"] for e in payload["employees"]]
-    assert cashier.employee_code in codes
-    assert supervisor.employee_code not in codes
+    assert cashier.employee_code in codes and supervisor.employee_code in codes
 
 
 def test_roster_payload_matrix_shows_the_branch_local_time_not_utc(cashier, world, user):
@@ -479,7 +481,7 @@ def test_roster_counts_ignores_a_day_with_no_row(cashier, user):
 
 def test_assign_day_creates_a_working_row(cashier, world):
     row = services.assign_day(
-        cashier, {"date": "2026-09-20", "day_type": "working", "branch": world["branch"].pk,
+        cashier, {"date": "2026-09-20", "day_type": "working", "role": "cashier", "branch": world["branch"].pk,
                   "shift1_start": "08:00", "shift1_end": "17:00"},
         branches_qs=Branch.objects.all(), user=None,
     )
@@ -489,7 +491,7 @@ def test_assign_day_creates_a_working_row(cashier, world):
 
 def test_assign_day_updates_rather_than_duplicates(cashier, world):
     services.assign_day(
-        cashier, {"date": "2026-09-20", "day_type": "working", "branch": world["branch"].pk,
+        cashier, {"date": "2026-09-20", "day_type": "working", "role": "cashier", "branch": world["branch"].pk,
                   "shift1_start": "08:00", "shift1_end": "17:00"},
         branches_qs=Branch.objects.all(), user=None,
     )
@@ -507,7 +509,7 @@ def test_assign_day_require_new_refuses_an_already_mapped_employee(cashier, worl
     working_day(cashier, world["branch"], datetime.date(2026, 9, 20), start="08:00", end="17:00")
     with pytest.raises(services.Invalid, match="already has a Working entry"):
         services.assign_day(
-            cashier, {"date": "2026-09-20", "day_type": "working", "branch": world["other_branch"].pk,
+            cashier, {"date": "2026-09-20", "day_type": "working", "role": "cashier", "branch": world["other_branch"].pk,
                       "shift1_start": "09:00", "shift1_end": "18:00"},
             branches_qs=Branch.objects.all(), user=None, require_new=True,
         )
@@ -518,7 +520,7 @@ def test_assign_day_require_new_refuses_an_already_mapped_employee(cashier, worl
 
 def test_assign_day_require_new_allows_a_first_assignment(cashier, world):
     row = services.assign_day(
-        cashier, {"date": "2026-09-20", "day_type": "working", "branch": world["branch"].pk,
+        cashier, {"date": "2026-09-20", "day_type": "working", "role": "cashier", "branch": world["branch"].pk,
                   "shift1_start": "08:00", "shift1_end": "17:00"},
         branches_qs=Branch.objects.all(), user=None, require_new=True,
     )
@@ -553,17 +555,17 @@ def test_remove_day_on_an_unset_day_reports_nothing_removed(cashier):
 
 def test_import_rows_mixed_batch(cashier, world):
     rows = [
-        {"employee_code": cashier.employee_code, "date": "2026-09-20", "day_type": "working",
+        {"employee_code": cashier.employee_code, "date": "2026-09-20", "day_type": "working", "role": "cashier",
          "branch": world["branch"].pk, "shift1_start": "08:00", "shift1_end": "17:00"},
-        {"employee_code": "NOPE", "date": "2026-09-20", "day_type": "working"},
-        {"employee_code": cashier.employee_code, "date": "2026-09-21", "day_type": "working"},  # no branch
+        {"employee_code": "NOPE", "date": "2026-09-20", "day_type": "working", "role": "cashier"},
+        {"employee_code": cashier.employee_code, "date": "2026-09-21", "day_type": "working", "role": "cashier"},  # no branch
     ]
     written, results = services.import_rows(
         rows, user=None, employees_qs=Employee.objects.all(), branches_qs=Branch.objects.all(),
     )
     assert written == 1
     assert results[0]["ok"] is True
-    assert results[1]["ok"] is False and "No Cashier or Labour" in results[1]["message"]
+    assert results[1]["ok"] is False and results[1]["message"] == "No employee with that code."
     assert results[2]["ok"] is False
     assert DutyRoster.objects.filter(employee=cashier).count() == 1
 
@@ -573,7 +575,7 @@ def test_import_rows_mixed_batch(cashier, world):
 
 def test_assign_day_endpoint_writes_through(client_in, cashier, world):
     response = post(client_in, "/crew/duty-roster/assign-day/", {
-        "employee": cashier.pk, "date": "2026-09-20", "day_type": "working",
+        "employee": cashier.pk, "date": "2026-09-20", "day_type": "working", "role": "cashier",
         "branch": world["branch"].pk, "shift1_start": "08:00", "shift1_end": "17:00",
     })
     assert response.json()["ok"] is True
@@ -584,7 +586,7 @@ def test_assign_day_endpoint_echoes_the_branch_local_time_not_utc(client_in, cas
     """Same regression as roster_payload's: the response's "day" block must
     echo back what was typed, not the raw UTC the field is stored in."""
     response = post(client_in, "/crew/duty-roster/assign-day/", {
-        "employee": cashier.pk, "date": "2026-09-20", "day_type": "working",
+        "employee": cashier.pk, "date": "2026-09-20", "day_type": "working", "role": "cashier",
         "branch": world["branch"].pk, "shift1_start": "08:00", "shift1_end": "17:00",
     })
     day = response.json()["day"]
@@ -595,7 +597,7 @@ def test_assign_day_endpoint_echoes_the_branch_local_time_not_utc(client_in, cas
 def test_assign_day_endpoint_require_new_refuses_a_double_booking(client_in, cashier, world):
     working_day(cashier, world["branch"], datetime.date(2026, 9, 20))
     response = post(client_in, "/crew/duty-roster/assign-day/", {
-        "employee": cashier.pk, "date": "2026-09-20", "day_type": "working",
+        "employee": cashier.pk, "date": "2026-09-20", "day_type": "working", "role": "cashier",
         "branch": world["other_branch"].pk, "shift1_start": "09:00", "shift1_end": "18:00",
         "require_new": True,
     })
@@ -618,9 +620,9 @@ def test_remove_day_endpoint_deletes(client_in, cashier, world):
 def test_import_endpoint_reports_per_row_results(client_in, cashier, world):
     response = post(client_in, "/crew/duty-roster/import/", {
         "rows": [
-            {"employee_code": cashier.employee_code, "date": "2026-09-20", "day_type": "working",
+            {"employee_code": cashier.employee_code, "date": "2026-09-20", "day_type": "working", "role": "cashier",
              "branch": world["branch"].pk, "shift1_start": "08:00", "shift1_end": "17:00"},
-            {"employee_code": "NOPE", "date": "2026-09-20", "day_type": "working"},
+            {"employee_code": "NOPE", "date": "2026-09-20", "day_type": "working", "role": "cashier"},
         ],
     })
     body = response.json()
@@ -671,13 +673,13 @@ ASSIGN = "/crew/duty-roster/assign-day/"
 
 def _assign(client, employee, world, **extra):
     return post(client, ASSIGN, {
-        "employee": employee.pk, "date": ROLE_DAY.isoformat(), "day_type": "working",
+        "employee": employee.pk, "date": ROLE_DAY.isoformat(), "day_type": "working", "role": "cashier",
         "branch": world["branch"].pk, "shift1_start": "08:00", "shift1_end": "16:00", **extra,
     })
 
 
 def _working_week_day(world, start="08:00", end="16:00"):
-    return [one_day(ROLE_DAY, day_type="working", branch=world["branch"].pk, shift1_start=start, shift1_end=end)]
+    return [one_day(ROLE_DAY, day_type="working", role="cashier", branch=world["branch"].pk, shift1_start=start, shift1_end=end)]
 
 
 def test_add_to_day_saves_the_role_picked(client_in, cashier, world):
@@ -704,29 +706,52 @@ def test_a_role_that_is_not_cashier_or_labour_is_refused(client_in, cashier, wor
     assert not DutyRoster.objects.exists()
 
 
-def test_no_role_sent_gives_a_new_day_the_designation(cashier, world):
-    services.save_week(cashier, _working_week_day(world), user=None, branches_qs=Branch.objects.all())
-
-    assert DutyRoster.objects.get(employee=cashier, date=ROLE_DAY).role == "cashier"
+# -- Role required on every Working day (owner, 7 Nov 2026) --------------------
 
 
-def test_no_role_sent_keeps_a_saved_role(client_in, cashier, world):
+def _no_role(entry):
+    return {key: value for key, value in entry.items() if key != "role"}
+
+
+def test_add_to_day_without_a_role_is_refused(client_in, cashier, world):
+    response = post(client_in, ASSIGN, {
+        "employee": cashier.pk, "date": ROLE_DAY.isoformat(), "day_type": "working",
+        "branch": world["branch"].pk, "shift1_start": "08:00", "shift1_end": "16:00", "require_new": True,
+    })
+
+    assert response.status_code == 400
+    assert response.json()["errors"][0] == {"field": "12 Nov — Role", "message": "Choose Cashier or Labour."}
+    assert not DutyRoster.objects.exists()
+
+
+def test_the_week_form_without_a_role_is_refused(cashier, world):
+    with pytest.raises(services.Invalid, match="Choose Cashier or Labour"):
+        services.save_week(cashier, [_no_role(_working_week_day(world)[0])], user=None,
+                           branches_qs=Branch.objects.all())
+    assert not DutyRoster.objects.exists()
+
+
+def test_the_week_form_saves_the_role_sent(client_in, cashier, world):
     _assign(client_in, cashier, world, role="labour", require_new=True)
-    services.save_week(cashier, _working_week_day(world, "09:00", "17:00"), user=None,
-                       branches_qs=Branch.objects.all())
+    day = {**_working_week_day(world, "09:00", "17:00")[0], "role": "cashier"}
+    services.save_week(cashier, [day], user=None, branches_qs=Branch.objects.all())
 
     row = DutyRoster.objects.get(employee=cashier, date=ROLE_DAY)
-    assert row.role == "labour"
+    assert row.role == "cashier"
     assert timezone.localtime(row.shift1_start).strftime("%H:%M") == "09:00"
 
 
-def test_the_import_defaults_a_new_day_to_the_designation(cashier, world):
-    written, _ = services.import_rows(
-        [{"employee_code": cashier.employee_code, "date": ROLE_DAY.isoformat(), "day_type": "working",
-          "branch": world["branch"].pk, "shift1_start": "08:00", "shift1_end": "16:00"}],
+def test_the_import_needs_a_role_and_reads_its_text(supervisor, world):
+    base = {"employee_code": supervisor.employee_code, "day_type": "working",
+            "branch": world["branch"].pk, "shift1_start": "08:00", "shift1_end": "16:00"}
+    written, results = services.import_rows(
+        [{**base, "date": "2026-11-12", "role": "Labour"},          # the sheet's text
+         {**base, "date": "2026-11-13"}],                          # no role
         user=None, employees_qs=Employee.objects.all(), branches_qs=Branch.objects.all())
 
-    assert written == 1 and DutyRoster.objects.get(employee=cashier, date=ROLE_DAY).role == "cashier"
+    assert written == 1
+    assert DutyRoster.objects.get(employee=supervisor, date=ROLE_DAY).role == "labour"
+    assert (results[1]["ok"], results[1]["message"]) == (False, "Choose Cashier or Labour.")
 
 
 def test_a_non_working_day_carries_no_role(client_in, cashier, world):

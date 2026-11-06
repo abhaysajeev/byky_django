@@ -804,7 +804,8 @@ class DutyRosterListView(CrewScreenView):
             "roster_json": payload,
             "roster_week_labels": [w["label"] for w in payload["weeks"]],
             "import_columns": [
-                "Employee Code", "Employee Name", "Date", "Day Type", "Branch",
+                # Role: the day's, required on a Working row (owner, 7 Nov 2026).
+                "Employee Code", "Employee Name", "Date", "Day Type", "Role", "Branch",
                 "Shift1 Start", "Shift1 End", "Shift2 Start", "Shift2 End", "Remarks",
             ],
             # On Leave is set only by an approved leave request, never picked.

@@ -22,6 +22,23 @@ def plain_static_storage(settings):
 
 
 @pytest.fixture(autouse=True)
+def operator_roster_gate_off(request, monkeypatch):
+    """Leave the operator login's duty-roster check out of tests not about it.
+
+    Since 7 Nov 2026 every operator login must be rostered at the tablet's
+    branch inside the shift (apps.crew.services.operator_roster_refusal).
+    Tests across the apps sign an operator in only to reach what they test;
+    before, their test users were not Cashier / Labour, so the check skipped
+    them. The check's own tests opt back in with @pytest.mark.roster_gate
+    (apps/portal/tests/test_operator_login_roster.py). auth.py imports the
+    function at call time, so patching the module attribute is enough.
+    """
+    if request.node.get_closest_marker("roster_gate"):
+        return
+    monkeypatch.setattr("apps.crew.services.operator_roster_refusal", lambda *args, **kwargs: None)
+
+
+@pytest.fixture(autouse=True)
 def fast_password_hashing(settings):
     """Hash passwords cheaply in tests.
 
