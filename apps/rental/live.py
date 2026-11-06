@@ -116,11 +116,13 @@ def _closed_by(events):
 
 
 def _last(order, events, zone):
+    # A cancel writes no order event (requests.cancel_order / cancel_settled):
+    # the status comes first, or an order cancelled after settle reads "Settled".
+    if order.status == OrderStatus.CANCELLED:
+        return "Cancelled", order.cancelled_at or order.modified_on
     if events:
         event = events[-1]
         return _ACTION_LABEL.get(event.action, event.action), event.happened_at
-    if order.status == OrderStatus.CANCELLED:
-        return "Cancelled", order.cancelled_at or order.modified_on
     return "Booked", order.booked_at
 
 
@@ -148,8 +150,11 @@ def row(order, zone):
     last_label, last_at = _last(order, events, zone)
     ends = [i.expected_end_time for i in active]
     booked, start = _local(order.booked_at, zone), _local(order.start_time, zone)
-    closed_at = order.completed_at or order.cancelled_at
+    cancelled = order.status == OrderStatus.CANCELLED
+    closed_at = order.cancelled_at if cancelled else order.completed_at
     shown = order_status.display_status(order, items)
+    # A cancelled order's money counts nowhere (owner, 6 Nov 2026; counted.py).
+    live = not cancelled
     return {
         "id": str(order.pk),
         "order_no": order.order_no,
@@ -177,14 +182,14 @@ def row(order, zone):
         # The legacy grid's amounts (DMSGetAllStatusTrackingDetailsForPartialView_New):
         # collected, fare, deposit; once settled the bill (net less VAT), VAT,
         # discount and net. Owner, 28 Oct 2026.
-        "collected": _money(order.paid_amount),
-        "fare": _money(money.fare(order)) if order.status != OrderStatus.CANCELLED else None,
-        "deposit": _money(money.deposit(order)),
+        "collected": _money(order.paid_amount) if live else None,
+        "fare": _money(money.fare(order)) if live else None,
+        "deposit": _money(money.deposit(order)) if live else None,
         "bill": (_money(order.net_amount - (order.tax_amount or ZERO))
-                 if order.net_amount is not None else None),
-        "net": _money(order.net_amount),
-        "tax": _money(order.tax_amount),
-        "discount": _money(order.discount_amount) if order.discount_amount is not None else None,
+                 if live and order.net_amount is not None else None),
+        "net": _money(order.net_amount) if live else None,
+        "tax": _money(order.tax_amount) if live else None,
+        "discount": _money(order.discount_amount) if live and order.discount_amount is not None else None,
         "last": last_label,
         "last_at": last_at.isoformat() if last_at else None,
         "direct": order.is_direct_bill,
@@ -200,8 +205,8 @@ def kpis(user, params, day, zone):
     amount collected -- for the chosen stations, both tabs together.
 
     Amount collected leaves out every payment and refund of a cancelled order
-    (owner, 4 Nov 2026): display only -- nothing else reads this figure; the
-    reports and collections still count the money actually taken."""
+    (owner, 4 Nov 2026) -- as every report and collection now does: a
+    cancelled order's money counts nowhere (owner, 6 Nov 2026; counted.py)."""
     orders = _scope(user, params)
     start, end = day_bounds(day, zone)
     payments = (Payment.objects.filter(order__in=orders, paid_at__gte=start, paid_at__lt=end)

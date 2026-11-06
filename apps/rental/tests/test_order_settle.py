@@ -104,7 +104,8 @@ def test_the_design_example_settles_redeems_and_invoices(client, world, token, s
                                 "discount_percentage": "5.00", "discount_amount": "5.500"}
     assert (data["paid_amount"], data["balance_due"]) == ("104.500", "0.000")
     assert data["invoice"] == {"invoice_no": returned["order_no"], "issued_at": "2026-10-02 17:13:30",
-                               "net_amount": "104.500"}
+                               "net_amount": "104.500", "status": "issued", "cancelled_at": None,
+                               "cancel_reason": None}
 
     approved.refresh_from_db()
     assert (approved.status, approved.bill_amount, approved.discount_amount, approved.net_amount) == (

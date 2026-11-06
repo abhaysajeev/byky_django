@@ -25,6 +25,7 @@ from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
 from apps.rental import order_status
+from apps.rental.counted import counted
 from apps.rental.models import OrderItemStatus, OrderStatus
 from core.ordering import recent_first
 from core.timezones import zone_for
@@ -347,9 +348,9 @@ class ApprovalDetailView(DiscountScreenView):
         context.update({
             "claim": _claim_row(claim, zone),
             "history": [_claim_row(c, zone) for c in history],
-            "redeemed_count": scoping.claims_for(user).filter(
+            "redeemed_count": counted(scoping.claims_for(user).filter(
                 customer_id=claim.customer_id, card_discount_id=claim.card_discount_id,
-                status=ClaimStatus.REDEEMED).count(),
+                status=ClaimStatus.REDEEMED)).count(),
             "usage": claim.card_discount.usage_label,
             # Card-discount requests are listed in Requests (owner, 3 Nov 2026).
             "list_url": f"{reverse('rental-request-list')}?kind=card_discount",
@@ -381,7 +382,8 @@ def _redemptions(request):
     list and its export, so an export is exactly what the screen shows."""
     params = request.GET
     zone = zone_for(getattr(request.user, "company", None))
-    claims = (scoping.claims_for(request.user).filter(status=ClaimStatus.REDEEMED)
+    # a redemption on a cancelled order was given back (apps/rental/counted.py)
+    claims = (counted(scoping.claims_for(request.user).filter(status=ClaimStatus.REDEEMED))
               .select_related("card_type", "card_grade", "branch", "requested_by", "decided_by", "order"))
     text = params.get("q", "").strip()
     if text:
