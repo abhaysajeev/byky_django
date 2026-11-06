@@ -38,6 +38,7 @@ from apps.notifications import services as notifications
 from apps.notifications.models import Action
 from apps.photos import services as photo_services
 from apps.rental import live, order_status, station_sync
+from apps.rental.counted import counts
 from apps.rental.models import (
     REQUEST_LIVE,
     DecisionChannel,
@@ -246,6 +247,8 @@ def mark_used(session, values, request_data):
             raise OrderRefused("request_used")
         if req.status != OrderRequestStatus.APPROVED:
             raise OrderRefused("request_not_approved")
+        if order.status == OrderStatus.CANCELLED:     # its invoice was cancelled: not printed again
+            raise OrderRefused("invoice_void")
         req.status, req.used_at, req.modified_by = OrderRequestStatus.USED, values["used_at"], session.user
         req.save()
         station_sync.request_changed(req, "used", device=session.device)
@@ -534,6 +537,90 @@ def cancel_directly(user, order_id, company_ids, reason):
     return req
 
 
+VOID_REASON_MAX = 255
+
+
+def cancel_settled(user, order_id, reason):
+    """A system administrator cancels a SETTLED order's invoice, and with it the
+    order (owner, 6 Nov 2026: an operator settled by mistake; the money is handed
+    back to the customer outside the system).
+
+    In one transaction, the order locked:
+      - the order becomes Cancelled (completed_at is kept, for history);
+      - its invoice is kept and marked void -- who, when, why; its number stays
+        and is never reused;
+      - one APPROVED cancel request records it (the same shape as cancel_directly),
+        so it shows in the order's history and in Requests;
+      - waiting requests on the order are closed; an approved reprint not used
+        yet is revoked; a waiting credit note request is rejected;
+      - the payments are left exactly as they are, and count nowhere from now on
+        (counted.py) -- as the card-discount use does not.
+    Refused: not a system administrator; not settled; already void; an approved
+    credit note (that money is already given back -- sort it out first); no reason.
+
+    The legacy did this from Order Reconciliation (Cancel_Order) by switching the
+    payments off, with no reason, user or void mark (137 orders, 2021-2023).
+    """
+    from apps.discount.services import cancel_unused_for_order
+    from apps.rental.models import CreditNote, CreditNoteStatus, Invoice
+    from core.ids import uuid7
+
+    if not getattr(user, "sees_every_company", False):
+        raise RequestRefused("not_allowed", "Only a system administrator can cancel an invoice.", 403)
+    reason = (reason or "").strip()
+    if not reason:
+        raise RequestRefused("invalid_request", "Give the reason for cancelling the invoice.", 400)
+    if len(reason) > VOID_REASON_MAX:
+        raise RequestRefused("invalid_request", f"The reason is at most {VOID_REASON_MAX} characters.", 400)
+    with transaction.atomic():
+        order = Order.objects.select_for_update().filter(pk=order_id).first()
+        if order is None:
+            raise RequestRefused("unknown_order", "No such order.", 404)
+        invoice = Invoice.objects.select_for_update().filter(order=order).first()
+        if order.status != OrderStatus.COMPLETED or invoice is None:
+            raise RequestRefused("order_not_settled", "Only a settled order's invoice can be cancelled.")
+        if invoice.is_void:
+            raise RequestRefused("invoice_void", "This invoice is already cancelled.")
+        notes = CreditNote.objects.select_for_update().filter(order=order)
+        if notes.filter(status=CreditNoteStatus.APPROVED).exists():
+            raise RequestRefused("credit_note_approved",
+                                 "This invoice has an approved credit note -- that money is already given back. "
+                                 "Sort the credit note out before cancelling the invoice.")
+        now = timezone.now()
+        req = OrderRequest.objects.create(
+            id=uuid7(), kind=OrderRequestKind.CANCEL, company_id=order.company_id, branch_id=order.branch_id,
+            order=order, status=OrderRequestStatus.APPROVED, device=None, requested_by=user, requested_at=now,
+            reason=reason, decided_by=user, decided_channel=DecisionChannel.WEB, decided_at=now,
+            decision_note="Invoice cancelled after settle", created_by=user, modified_by=user,
+        )
+        order.status, order.cancelled_at, order.modified_by = OrderStatus.CANCELLED, now, user
+        order.save(update_fields=["status", "cancelled_at", "modified_by", "modified_on"])
+        invoice.voided_at, invoice.voided_by, invoice.void_reason = now, user, reason
+        invoice.modified_by = user
+        invoice.save(update_fields=["voided_at", "voided_by", "void_reason", "modified_by", "modified_on"])
+
+        waiting = order.requests.filter(status=OrderRequestStatus.PENDING).exclude(pk=req.pk)
+        closing = list(waiting.select_related("branch"))
+        waiting.update(status=OrderRequestStatus.CLOSED, closed_at=now, modified_on=now)
+        notifications.notify_all(closing, Action.CLOSED)
+        reprints = list(order.requests.filter(kind__in=REPRINT_KINDS, status=OrderRequestStatus.APPROVED))
+        for reprint in reprints:
+            reprint.status, reprint.revoked_at, reprint.modified_by = OrderRequestStatus.REVOKED, now, user
+            reprint.decision_note = "Invoice cancelled"
+            reprint.save(update_fields=["status", "revoked_at", "modified_by", "decision_note", "modified_on"])
+            station_sync.request_changed(reprint, Action.REVOKED)
+        for note in notes.filter(status=CreditNoteStatus.PENDING):
+            note.status, note.decided_by, note.decided_at = CreditNoteStatus.REJECTED, user, now
+            note.decision_remark, note.decided_channel, note.modified_by = "Order cancelled", DecisionChannel.WEB, user
+            note.save()
+            notifications.notify(note, Action.REJECTED)
+            station_sync.request_changed(note, Action.REJECTED)
+        cancel_unused_for_order(order, now=now)
+        live.order_changed(order)
+        station_sync.order_changed(order, station_sync.CANCEL)
+    return req
+
+
 def reject(user, request_id, company_ids, channel, note=""):
     with transaction.atomic():
         _, req = _locked(request_id, company_ids)
@@ -606,6 +693,13 @@ def _billing(order, zone):
     tax_amount, bill_amount, closed_by and closed_at are null."""
     from apps.rental import money
 
+    if not counts(order):
+        # A cancelled order's money counts nowhere (owner, 6 Nov 2026;
+        # counted.py): zeros, not nulls, so the app's number fields still work.
+        zero = _money(Decimal("0"))
+        return {"fare_amount": zero, "deposit_amount": zero, "amount_received": zero, "amount_refunded": zero,
+                "tax_percentage": None, "tax_amount": None, "bill_amount": None, "closed_by": None,
+                "closed_at": None}
     invoice = getattr(order, "invoice", None) if order.status == OrderStatus.COMPLETED else None
     if invoice is not None:
         tax_percentage = invoice.tax_percentage
@@ -635,8 +729,8 @@ def _order_block(order, zone, now):
         **_display(order),
         "customer_name": order.customer_name, "customer_mobile": order.customer_mobile,
         "booked_at": _local(order.booked_at, zone),
-        "advance_paid": str(order.paid_amount),
-        "net_amount": _money(order.net_amount),
+        "advance_paid": str(order.paid_amount) if counts(order) else _money(Decimal("0")),
+        "net_amount": _money(order.net_amount) if counts(order) else None,
         **_billing(order, zone),
         "vehicles": _lines(order, zone, now),
     }
@@ -671,10 +765,13 @@ def request_details(req):
     reprint is for; nothing for the other kinds (the row carries the order)."""
     if req.kind != OrderRequestKind.REPRINT:
         return None
-    invoice = Invoice.objects.filter(order_id=req.order_id).only("invoice_no", "net_amount").first()
+    invoice = (Invoice.objects.filter(order_id=req.order_id).select_related("order")
+               .only("invoice_no", "net_amount", "order__status").first())
     if invoice is None:
         return None
-    return {"invoice_no": invoice.invoice_no, "invoice_net_amount": _money(invoice.net_amount)}
+    void = not counts(invoice.order)          # its order was cancelled after settle
+    return {"invoice_no": invoice.invoice_no, "invoice_net_amount": None if void else _money(invoice.net_amount),
+            "invoice_void": void}
 
 
 def _company_sources(company_ids, kind, state_id, branch_id):

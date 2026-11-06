@@ -26,6 +26,8 @@ from django.utils import timezone
 from apps.company.models import Branch, State
 from apps.fleet.models import Category, Vehicle, VehicleType
 from apps.rental import order_status
+from apps.rental.counted import counted
+from apps.rental.counted import counts as money_counts
 from apps.rental.models import (
     CreditNote,
     CreditNoteStatus,
@@ -135,11 +137,12 @@ def vehicles(company_ids, vehicle_type_id=None, search="", page=1):
 def _collections_by_branch(company_ids, start, end, zone):
     """{branch_id: (orders, net, credit_notes)} for invoices issued in the range."""
     since, until = day_bounds(start, end, zone)
-    invoices = Invoice.objects.filter(company_id__in=company_ids, issued_at__gte=since, issued_at__lt=until)
+    # a cancelled order's (voided) bill and its credit notes count nowhere (counted.py)
+    invoices = counted(Invoice.objects.filter(company_id__in=company_ids, issued_at__gte=since, issued_at__lt=until))
     sold = {row["branch_id"]: row for row in invoices.values("branch_id").annotate(
         orders=Count("id"), net=Sum("net_amount")).order_by()}
     credited = dict(
-        CreditNote.objects.filter(status=CreditNoteStatus.APPROVED, invoice__in=invoices)
+        counted(CreditNote.objects.filter(status=CreditNoteStatus.APPROVED, invoice__in=invoices))
         .values("branch_id").annotate(total=Sum("net_amount")).order_by().values_list("branch_id", "total")
     )
     return {branch_id: (row["orders"], row["net"] or ZERO, credited.get(branch_id) or ZERO)
@@ -189,9 +192,9 @@ def _payments_by_branch(company_ids, start, end, zone):
     mode is a name per company (company.PaymentMode), so card and cash are the
     modes whose name contains "card" / "cash" (owner, 29 Oct 2026)."""
     since, until = day_bounds(start, end, zone)
-    payments = (Payment.objects
+    payments = (counted(Payment.objects                                   # cancelled: counts nowhere
                 .filter(order__invoice__company_id__in=company_ids, order__invoice__issued_at__gte=since,
-                        order__invoice__issued_at__lt=until)
+                        order__invoice__issued_at__lt=until))
                 .values("order__invoice__branch_id", "mode__name", "kind").annotate(total=Sum("amount")).order_by())
     figures = {}
     for row in payments:
@@ -213,8 +216,8 @@ def _share_by_branch(company_ids, start, end, zone, category_id, vehicle_type_id
     billed lines: replaced and removed vehicles are not on the bill. The type
     is the vehicle's current one -- the bill line keeps only its name."""
     since, until = day_bounds(start, end, zone)
-    lines = InvoiceItem.objects.filter(invoice__company_id__in=company_ids, invoice__issued_at__gte=since,
-                                       invoice__issued_at__lt=until)
+    lines = counted(InvoiceItem.objects.filter(invoice__company_id__in=company_ids, invoice__issued_at__gte=since,
+                                               invoice__issued_at__lt=until), "invoice__order")
     if category_id:
         lines = lines.filter(order_item__vehicle__vehicle_type__category_id=category_id)
     if vehicle_type_id:
@@ -371,6 +374,11 @@ def _order_json(order, zone, now):
     note = next((n for n in order.credit_notes.all() if n.status in (CreditNoteStatus.PENDING,
                                                                        CreditNoteStatus.APPROVED)), None)
     invoice = getattr(order, "invoice", None)
+    # A cancelled order's money counts nowhere (owner, 6 Nov 2026; counted.py):
+    # 0, not null, so the app's number fields keep working; no payments, no credit note.
+    live = money_counts(order)
+    if not live:
+        amount, note = ZERO, None
     return {
         "order_id": str(order.pk),
         "order_no": order.order_no,
@@ -383,8 +391,9 @@ def _order_json(order, zone, now):
         "duration_minutes": max(int((end - order.start_time).total_seconds() // 60), 0) if end else None,
         "order_status": order.app_status, "order_status_label": order_status.label(order.app_status),
         "amount": _money(amount),
-        "advance_paid": _money(order.paid_amount),
+        "advance_paid": _money(order.paid_amount if live else ZERO),
         "invoice_no": invoice.invoice_no if invoice else None,
+        "invoice_void": invoice is not None and not live,      # a settled order whose invoice was cancelled
         "credit_note": {"credit_note_no": note.credit_note_no or None, "status": note.status,
                         "net_amount": money.fmt(note.net_amount)}
         if note else None,
@@ -400,7 +409,7 @@ def _order_json(order, zone, now):
         "payments": [
             {"mode": p.mode.name, "kind": p.kind, "amount": money.fmt(p.amount), "reference_no": p.reference_no,
              "paid_at": _local(p.paid_at, zone)}
-            for p in sorted(order.payments.all(), key=lambda p: (p.paid_at, p.created_on))
+            for p in sorted(order.payments.all(), key=lambda p: (p.paid_at, p.created_on)) if live
         ],
     }
 

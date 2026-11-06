@@ -22,6 +22,7 @@ from apps.rental.models import (
     OrderRequest,
     OrderRequestKind,
     OrderRequestStatus,
+    OrderStatus,
 )
 from apps.rental.requests import PAGE_SIZE, _local, _money, _name, card_photo_fields
 from core.timezones import zone_for
@@ -73,7 +74,9 @@ def credit_note_json(note, zone):
         "order": {"order_id": str(order.pk), "order_no": order.order_no,
                   "customer_name": order.customer_name, "customer_mobile": order.customer_mobile,
                   "net_amount": _money(order.net_amount)},
-        "invoice": {"invoice_no": note.invoice.invoice_no, "net_amount": _money(note.invoice.net_amount)},
+        # the order was cancelled after settle: its invoice is void (requests.cancel_settled)
+        "invoice": {"invoice_no": note.invoice.invoice_no, "net_amount": _money(note.invoice.net_amount),
+                    "void": order.status == OrderStatus.CANCELLED},
         "branch_id": note.branch_id, "station": note.branch.name,
         "requested_by": _name(note.requested_by), "requested_at": _local(note.requested_at, zone),
         "reason": note.reason,

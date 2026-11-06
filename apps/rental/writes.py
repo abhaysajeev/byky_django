@@ -173,6 +173,22 @@ class OrderCancel(_RequestWrite):
         return JsonResponse({"ok": True, "message": "Order cancelled."})
 
 
+class InvoiceCancel(_RequestWrite):
+    """Cancel a SETTLED order's invoice, and with it the order -- system
+    administrators only (owner, 6 Nov 2026; requests.cancel_settled)."""
+
+    def post(self, request, pk):
+        if not getattr(request.user, "sees_every_company", False):
+            return self.refused()
+        reason = str(_payload(request).get("reason") or "")
+        try:
+            order_requests.cancel_settled(request.user, pk, reason)
+        except order_requests.RequestRefused as refused:
+            return JsonResponse({"ok": False, "code": "invalid", "errors": [{"field": "", "message": refused.message}]},
+                                status=400)
+        return JsonResponse({"ok": True, "message": "Invoice cancelled. Its money no longer counts anywhere."})
+
+
 class RequestReject(_RequestWrite):
     def post(self, request, pk):
         return self.answer(lambda data: order_requests.reject(

@@ -600,6 +600,10 @@ textarea.scr-drawer-input { height: auto; min-height: 72px; padding: 10px 13px; 
 }
 .scr-banner[hidden] { display: none; }
 .scr-banner-success { background: #e9f8f0; border-color: #c4e9d5; color: #14764a; }
+/* A cancelled (void) invoice: kept for the record, its money counted nowhere. */
+.scr-banner-void { background: #fdecec; border-color: #f5c6c6; color: #a61b1b; margin-bottom: 14px; }
+.scr-void-tag { display: inline-block; padding: 1px 7px; border-radius: 999px; background: #fdecec;
+  color: #a61b1b; font-size: 11px; font-weight: 600; letter-spacing: .02em; vertical-align: middle; }
 .scr-banner-icon { display: grid; place-items: center; flex: 0 0 auto; color: #1f9d63; }
 .scr-banner-text { flex: 1 1 auto; min-width: 0; }
 .scr-banner-close {

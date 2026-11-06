@@ -12,6 +12,7 @@ no meaning summed per station (Rent Details lists them per order).
 
 from collections import defaultdict
 
+from apps.rental.counted import counted
 from apps.rental.scoping import invoices_for
 from apps.reports import common
 from apps.reports.base import (
@@ -45,7 +46,8 @@ class RentSummary(Report):
 
     def build(self, ctx, page=None, per_page=None):
         f = ctx.f
-        invoices = common.place(invoices_for(ctx.user).filter(issued_at__gte=f.since, issued_at__lt=f.until), f)
+        # a cancelled order's (voided) invoice counts nowhere -- apps/rental/counted.py
+        invoices = common.place(counted(invoices_for(ctx.user)).filter(issued_at__gte=f.since, issued_at__lt=f.until), f)
         invoices = list(invoices.select_related("branch__location__state")
                         .only("id", "order_id", "issued_at", "net_amount", "branch__name",
                               "branch__location__state__name"))
