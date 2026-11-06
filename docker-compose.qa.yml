@@ -200,6 +200,40 @@ services:
     mem_limit: 256m
     restart: unless-stopped
 
+  # Antenna Tracking: the TCP gateway the stations' RFID readers connect to
+  # (apps/tracking/gateway.py, design/07-tracking.md). Its own process and
+  # limits, so nothing it does reaches web, the apps or Celery. Off unless .env
+  # sets TRACKING_ENABLED=1: it then opens only its health port and waits.
+  # The reader port is published only when .env says where, e.g.
+  # TRACKING_PUBLISH=5101:5100 (default: a random port on localhost only).
+  # A published port bypasses ufw -- the gateway's allow-list, frame and
+  # connection limits are what guard it.
+  rfid-gateway:
+    image: ${COMPOSE_PROJECT:-byky_f_qa}-app
+    command: python manage.py run_rfid_gateway
+    environment:
+      <<: *celery_env
+      TRACKING_ENABLED: ${TRACKING_ENABLED:-0}
+      TRACKING_MODE: ${TRACKING_MODE:-capture}
+      TRACKING_PORT: "5100"
+      TRACKING_DB_URL: ${TRACKING_DB_URL:-}
+      TRACKING_SERVER_IP: ${TRACKING_SERVER_IP:-}
+      TRACKING_SERVER_PORT: ${TRACKING_SERVER_PORT:-0}
+    ports:
+      - "${TRACKING_PUBLISH:-127.0.0.1::5100}"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8100/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    mem_limit: 256m
+    cpus: 0.5
+    restart: unless-stopped
+
   proxy:
     image: nginx:1.30-alpine
     volumes:

@@ -1,6 +1,6 @@
 """tracking_reading's daily partitions (apps/tracking/partitions.py)."""
 
-from datetime import date, datetime, timedelta, timezone as dt_tz
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from django.db import connection
@@ -31,14 +31,14 @@ def test_migration_makes_today_and_three_days_ahead():
 
 def test_a_row_lands_in_its_utc_day():
     today = timezone.now().date()
-    at = datetime(today.year, today.month, today.day, 23, 59, 59, tzinfo=dt_tz.utc)
+    at = datetime(today.year, today.month, today.day, 23, 59, 59, tzinfo=UTC)
     with connection.cursor() as cursor:
         _insert(cursor, at)
         assert _home(cursor, at) == partitions.name_for(today)
 
 
 def test_out_of_range_rows_land_in_default():
-    at = datetime(2001, 1, 1, tzinfo=dt_tz.utc)
+    at = datetime(2001, 1, 1, tzinfo=UTC)
     with connection.cursor() as cursor:
         _insert(cursor, at)
         assert _home(cursor, at) == partitions.DEFAULT
