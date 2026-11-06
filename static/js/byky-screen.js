@@ -1001,6 +1001,18 @@
       var sourceEl = document.getElementById(wrap.dataset.comboSource);
       var key = wrap.dataset.comboKey || 'name';
       var subKey = wrap.dataset.comboSub || '';
+      // data-combo-value (f.combo_value): the record field the hidden input
+      // holds -- e.g. an id, where the form needs a primary key. Unset, it is
+      // the display key, as before (Duty Roster keeps a name).
+      var valKey = wrap.dataset.comboValue || key;
+      // data-combo-taken (f.combo_taken): a record field naming who already
+      // holds the record (e.g. an employee's user_id). Such records are left
+      // out -- except the one held by the record being edited (the drawer's
+      // pk), so Edit still shows its own choice.
+      var takenKey = wrap.dataset.comboTaken || '';
+      var pkField = takenKey
+        ? (wrap.closest('[data-byky-drawer]') || document).querySelector('[data-field="pk"]')
+        : null;
       var records = [];
       try { records = sourceEl ? JSON.parse(sourceEl.textContent) : []; } catch (err) { records = []; }
 
@@ -1016,10 +1028,16 @@
         ? (wrap.closest('[data-byky-drawer]') || document).querySelector('[data-field="' + filterFieldId + '"]')
         : null;
 
+      function free(rec) {
+        if (!takenKey || rec[takenKey] == null || rec[takenKey] === '') return true;
+        return pkField && pkField.value !== '' && String(rec[takenKey]) === String(pkField.value);
+      }
+
       function poolRecords() {
         var want = filterControl && filterControl.value;
-        if (!want) return records;
-        return records.filter(function (rec) {
+        var pool = takenKey ? records.filter(free) : records;
+        if (!want) return pool;
+        return pool.filter(function (rec) {
           return String(rec[filterKey] || '').toLowerCase() === want.toLowerCase();
         });
       }
@@ -1066,7 +1084,7 @@
           }
           row.addEventListener('mousedown', function (e) {
             e.preventDefault();
-            if (hidden) hidden.value = rec[key] || '';
+            if (hidden) hidden.value = rec[valKey] == null ? '' : String(rec[valKey]);
             input.value = label(rec);
             list.hidden = true;
             hidden && hidden.dispatchEvent(new Event('change', { bubbles: true }));
@@ -1092,7 +1110,9 @@
       });
 
       wrap.__bykyComboSync = function () {
-        var rec = hidden && hidden.value ? records.filter(function (r) { return (r[key] || '') === hidden.value; })[0] : null;
+        var rec = hidden && hidden.value ? records.filter(function (r) {
+          return (r[valKey] == null ? '' : String(r[valKey])) === hidden.value;
+        })[0] : null;
         input.value = rec ? label(rec) : '';
       };
     });

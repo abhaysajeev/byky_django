@@ -26,6 +26,10 @@ kind "combo"     type-to-filter single-select over a richer record list than a
                  f.combo_filter_field/f.combo_filter_key narrow its records to
                  those matching another field's current value (Duty Roster's
                  Employee combo, filtered by the Role select above it)
+                 f.combo_value: the record field posted (e.g. "id"); default
+                 the combo_key. f.combo_taken: a record field naming who holds
+                 the record (e.g. "user_id") -- those are left out, except the
+                 one held by the record being edited (User drawer's Employee)
 kind "datetime"  like "date" but with a time-of-day component
 kind "time"      a bare native time picker, value always "HH:MM" -- for a time
                  that stands alone (Duty Roster's shift times), not paired
@@ -239,7 +243,7 @@ field.readonly       always read-only -- a value this screen displays but
               whichever Role (Cashier/Labour) is chosen above it. Optional;
               omitted, the combo lists every record, as before.
               {% endcomment %}
-              <div class="scr-combo" data-scr-combo="{{ f.id }}" data-combo-source="{{ f.combo_source }}" data-combo-key="{{ f.combo_key|default:'name' }}" data-combo-sub="{{ f.combo_sub|default:'' }}"{% if f.combo_filter_field %} data-combo-filter-field="{{ f.combo_filter_field }}" data-combo-filter-key="{{ f.combo_filter_key|default:'role' }}"{% endif %}>
+              <div class="scr-combo" data-scr-combo="{{ f.id }}" data-combo-source="{{ f.combo_source }}" data-combo-key="{{ f.combo_key|default:'name' }}" data-combo-sub="{{ f.combo_sub|default:'' }}"{% if f.combo_value %} data-combo-value="{{ f.combo_value }}"{% endif %}{% if f.combo_taken %} data-combo-taken="{{ f.combo_taken }}"{% endif %}{% if f.combo_filter_field %} data-combo-filter-field="{{ f.combo_filter_field }}" data-combo-filter-key="{{ f.combo_filter_key|default:'role' }}"{% endif %}>
                 <input type="text" class="byky-input scr-combo-input" placeholder="{{ f.placeholder|default:'Search...' }}" autocomplete="off" />
                 <div class="scr-combo-list" hidden></div>
                 <input type="hidden" id="{{ f.id }}" data-field="{{ f.id }}" />
