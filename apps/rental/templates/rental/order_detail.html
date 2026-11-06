@@ -38,7 +38,7 @@
 
   {% if invoice.is_void %}
   <div class="scr-banner scr-banner-void" role="status">
-    <div class="scr-banner-text"><b>Invoice {{ invoice.invoice_no }} was cancelled</b> on {{ invoice.voided_at|date:"d M Y, H:i" }} by {{ invoice.voided_by|default:"—" }} — {{ invoice.void_reason }}. Its money is kept here for the record but counts nowhere: not in reports, collections, the dashboard or the apps.</div>
+    <div class="scr-banner-text"><b>Invoice {{ invoice.invoice_no }} was cancelled</b> on {{ invoice.voided_at|date:"d M Y, H:i" }} by {{ invoice.voided_by|default:"—" }}</div>
   </div>
   {% endif %}
 
@@ -93,7 +93,7 @@
           <div class="scr-detail-row"><span class="scr-detail-label">Payment</span><span class="scr-detail-value">{{ order.get_payment_status_display|default:"—" }}</span></div>
           {% for r in requests %}<div class="scr-detail-row"><span class="scr-detail-label">{{ r.kind }} Request</span><span class="scr-detail-value"><a class="scr-link-blue" href="{{ r.url }}">{{ r.label|default:r.kind }}</a> · {{ r.status_label }}{% if r.applied_amount is not None %} · applied AED {{ r.applied_amount|money }}{% endif %}</span></div>{% endfor %}
           {% if invoice %}
-          <div class="scr-detail-row"><span class="scr-detail-label">Invoice</span><span class="scr-detail-value">{{ invoice.invoice_no }} · {{ invoice.issued_at|date:"d M Y, H:i" }} · {{ invoice.issued_by }}{% if invoice.is_void %} <span class="scr-void-tag">VOID</span>{% endif %}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Invoice</span><span class="scr-detail-value">{{ invoice.invoice_no }} · {{ invoice.issued_at|date:"d M Y, H:i" }} · {{ invoice.issued_by }}{% if invoice.is_void %} <span class="scr-void-tag">Cancelled</span>{% endif %}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Rating</span><span class="scr-detail-value scr-mon-wrap">{% if invoice.star_rating %}★ {{ invoice.star_rating }} / 5{% else %}—{% endif %}{% if invoice.rating_remarks %} · “{{ invoice.rating_remarks }}”{% endif %}</span></div>
           {% if credit_note %}<div class="scr-detail-row"><span class="scr-detail-label">Credit Note</span><span class="scr-detail-value"><a class="scr-link-blue" href="{{ credit_note.url }}">{{ credit_note.label }}</a>{% if credit_note.net_amount is not None %} · AED {{ credit_note.net_amount|money }}{% endif %} · {{ credit_note.status_label }}</span></div>{% endif %}
           {% endif %}
