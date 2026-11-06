@@ -2268,7 +2268,7 @@ both days included, either may be left out) for when they were asked.
 Each row carries the order: customer, advance paid so far, and every vehicle
 out or back with the minutes run so far (`minutes_run`; for one still out, up
 to now) -- plus `details`, `null` for an order request (an invoice `reprint` carries its
-`invoice_no` and `invoice_net_amount`) and, for the others:
+`invoice_no`, `invoice_net_amount` and `invoice_void` -- true once its invoice was cancelled, the amount then null) and, for the others:
 a credit note's `credit_note_no`, `invoice_no`, `invoice_net_amount`, issued
 `net_amount` / `tax_amount`; a card discount's card type, grade, number,
 **the card photo** (`card_photo_thumb_url` / `card_photo_url`, paths on this

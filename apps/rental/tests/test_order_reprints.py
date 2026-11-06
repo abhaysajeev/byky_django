@@ -97,7 +97,7 @@ def test_an_invoice_reprint_row_carries_its_invoice(client, token, shop, manager
     for url, who in ((OPERATOR_LIST, token), (MANAGER_LIST, manager)):
         rows = {r["request_sync_id"]: r for r in call(client, url, {}, token=who).json()["data"]["requests"]}
         assert rows[invoice_reprint]["details"] == {"invoice_no": booked["order_no"],
-                                                     "invoice_net_amount": "110.000"}, url
+                                                     "invoice_net_amount": "110.000", "invoice_void": False}, url
         assert rows[receipt_reprint]["details"] is None, url
 
     counts = call(client, COUNTS, token=manager).json()["data"]
