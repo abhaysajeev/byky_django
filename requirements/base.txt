@@ -22,6 +22,11 @@ openpyxl==3.1.5
 # (config/celery.py). Redis is the broker; no result backend is kept.
 celery==5.4.0
 redis==5.2.1
+# Celery's message library, pinned (7 Nov 2026): unpinned, the image build took
+# kombu 5.7.0, which refuses redis-py older than 6.1 -- the worker and beat
+# crashed on start and no push, preview or sweep ran. 5.6.2 is the version the
+# working images had; move it only together with redis.
+kombu==5.6.2
 # Push notifications to the apps, FCM HTTP v1 (apps/notifications/sender.py).
 firebase-admin==7.6.0
 # Live updates to the browser over websockets (core/realtime.py, config/asgi.py):
