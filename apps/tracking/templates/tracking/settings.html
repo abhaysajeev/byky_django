@@ -1,0 +1,49 @@
+{% extends "tracking/_base.html" %}
+
+{% block screen_title %}Tracking Settings{% endblock %}
+{% block crumb %}Tracking Settings{% endblock %}
+{% block heading %}Tracking Settings{% endblock %}
+{% block sub %}Times are in seconds, from 30 to 3600. A blank box in a station's row uses the company default. Changes apply within 30 seconds.{% endblock %}
+
+{% block actions %}
+{% if perm.update and chosen_company %}<button type="button" class="scr-btn-primary" data-settings-save>Save</button>{% endif %}
+{% endblock %}
+
+{% block body %}
+{% if chosen_company %}
+<div class="scr-card" data-tracking-settings data-save-url="{{ save_url }}">
+  <div class="scr-toolbar">
+    {% if companies|length > 1 %}
+    <select class="scr-input" name="company" aria-label="Company" data-tracking-filter>
+      {% for c in companies %}<option value="{{ c.id }}"{% if c.id == chosen_company %} selected{% endif %}>{{ c.name }}</option>{% endfor %}
+    </select>
+    {% endif %}
+    <label class="scr-label" for="retention" style="margin:0">Keep raw readings (days)</label>
+    <input class="scr-input" id="retention" name="retention_days" type="number" min="1" max="14" value="{{ default.retention_days }}" {% if not perm.update %}disabled{% endif %}>
+  </div>
+  <div class="scr-table-scroll scr-sb">
+    <table>
+      <thead><tr><th>Station</th><th style="text-align:center">Alerts</th><th>Alert after</th><th>Missing after</th><th>Reader offline after</th></tr></thead>
+      <tbody>
+        <tr class="scr-row" data-default-row>
+          <td style="font-weight:600">Company default</td>
+          <td style="text-align:center">—</td>
+          <td><input class="scr-input" name="alert_after_s" type="number" min="30" max="3600" value="{{ default.alert_after_s }}" aria-label="Company default alert after" {% if not perm.update %}disabled{% endif %}></td>
+          <td><input class="scr-input" name="missing_after_s" type="number" min="30" max="3600" value="{{ default.missing_after_s }}" aria-label="Company default missing after" {% if not perm.update %}disabled{% endif %}></td>
+          <td><input class="scr-input" name="offline_after_s" type="number" min="30" max="3600" value="{{ default.offline_after_s }}" aria-label="Company default reader offline after" {% if not perm.update %}disabled{% endif %}></td>
+        </tr>
+        {% for row in rows %}
+        <tr class="scr-row" data-branch-row="{{ row.branch.pk }}">
+          <td>{{ row.branch.name }}</td>
+          <td style="text-align:center"><button type="button" class="scr-toggle{% if row.own.alerts_on %} is-on{% endif %}" role="switch" aria-checked="{% if row.own.alerts_on %}true{% else %}false{% endif %}" aria-label="Alerts — {{ row.branch.name }}" data-alerts-switch {% if not perm.update %}disabled{% endif %}><i></i></button></td>
+          <td><input class="scr-input" name="alert_after_s" type="number" min="30" max="3600" value="{{ row.own.alert_after_s|default_if_none:'' }}" placeholder="{{ default.alert_after_s }}" aria-label="{{ row.branch.name }} alert after" {% if not perm.update %}disabled{% endif %}></td>
+          <td><input class="scr-input" name="missing_after_s" type="number" min="30" max="3600" value="{{ row.own.missing_after_s|default_if_none:'' }}" placeholder="{{ default.missing_after_s }}" aria-label="{{ row.branch.name }} missing after" {% if not perm.update %}disabled{% endif %}></td>
+          <td><input class="scr-input" name="offline_after_s" type="number" min="30" max="3600" value="{{ row.own.offline_after_s|default_if_none:'' }}" placeholder="{{ default.offline_after_s }}" aria-label="{{ row.branch.name }} reader offline after" {% if not perm.update %}disabled{% endif %}></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

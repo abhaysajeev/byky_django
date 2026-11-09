@@ -1,24 +1,18 @@
 /**
  * BYKY navbar alerts.
  *
- * Demonstrates the alerting behaviour the FSD specifies (3.19 Inventory System
- * Alerts, 10.2 System Security Alert Dispatch): an alert arrives, a tone
- * sounds, a strip appears beside the bell with the title and one line of
- * detail, and the bell's badge counts what is unread. Opening the bell shows
- * the full list; any row opens the FSD screen that owns that alert type.
+ * An alert arrives, a tone sounds, a strip appears beside the bell with the
+ * title and one line of detail, and the bell's badge counts what is unread.
+ * Opening the bell shows the full list; a row opens Missing & Alerts.
  *
- * The wireframe has no live telemetry, so arrivals are replayed from a
- * server-rendered pool (#byky-alert-feed, built by apps/byky_core/alerts.py)
- * on a fixed interval. Alert types and severities are the FSD's own; the
- * stations and vehicles they name are real client records.
- *
- * Nothing here persists: a reload starts the run again.
+ * The source is Antenna Tracking (design 07 section 7.1). What a user may see
+ * and has read is decided by the server; a user without the privilege gets no
+ * configuration and this script stops at once.
  */
 
 'use strict';
 
 (function () {
-  var INTERVAL_MS = 165000; // one alert every 2m 45s
   var STRIP_MS = 9000;      // how long the strip stays up
   var MAX_ROWS = 12;        // most recent alerts kept in the dropdown
   var MUTE_KEY = 'byky-alerts-muted';
@@ -31,16 +25,18 @@
   var clearBtn = document.getElementById('byky-alert-clear');
   if (!node || !strip || !badge || !list) return;
 
-  var feed = [];
+  // The real source: Antenna Tracking's feed, present only for a user who may
+  // read Missing & Alerts (design 07 section 7.1).
+  var config = null;
+  var configNode = document.getElementById('byky-tracking-bell');
   try {
-    feed = JSON.parse(node.textContent) || [];
+    config = configNode ? JSON.parse(configNode.textContent) : null;
   } catch (e) {
-    return;
+    config = null;
   }
-  if (!feed.length) return;
+  if (!config) return;
 
   var unread = 0;
-  var cursor = 0;
   var stripTimer = null;
 
   /* ── sound ────────────────────────────────────────────────────────
@@ -170,10 +166,17 @@
 
   function addRow(alert) {
     if (empty) empty.hidden = true;
+    var known = list.querySelector('[data-alert-id="' + alert.id + '"]');
+    if (known) {
+      known.classList.toggle('is-read', !!alert.is_read);
+      return;
+    }
 
     var row = document.createElement('a');
     row.className = 'byky-alert-row is-' + alert.severity;
     row.href = alert.url;
+    row.dataset.alertId = alert.id;
+    if (alert.is_read) row.classList.add('is-read');
 
     var dot = document.createElement('span');
     dot.className = 'byky-alert-row-dot';
@@ -187,7 +190,7 @@
     var title = document.createElement('b');
     title.textContent = alert.title;
     var when = document.createElement('time');
-    when.textContent = timeLabel(new Date());
+    when.textContent = timeLabel(new Date(alert.at));
     head.appendChild(title);
     head.appendChild(when);
 
@@ -199,7 +202,11 @@
     body.appendChild(detail);
     row.appendChild(body);
 
-    list.insertBefore(row, list.firstChild);
+    // newest first, whichever order they arrive in
+    var after = Array.prototype.find.call(list.querySelectorAll('.byky-alert-row'), function (r) {
+      return Number(r.dataset.alertId) < alert.id;
+    });
+    list.insertBefore(row, after || null);
 
     var rows = list.querySelectorAll('.byky-alert-row');
     for (var i = MAX_ROWS; i < rows.length; i++) rows[i].remove();
@@ -212,42 +219,59 @@
     document.querySelector('.byky-bell').classList.toggle('has-unread', n > 0);
   }
 
+  function csrf() {
+    var match = document.cookie.match(new RegExp('(?:^|; )' + (config.csrf_cookie || 'csrftoken') + '=([^;]*)'));
+    return match ? decodeURIComponent(match[1]) : '';
+  }
+
   if (clearBtn) {
     clearBtn.addEventListener('click', function () {
       setUnread(0);
       list.querySelectorAll('.byky-alert-row').forEach(function (r) {
         r.classList.add('is-read');
       });
+      fetch(config.read_url, { method: 'POST', headers: { 'X-CSRFToken': csrf() }, credentials: 'same-origin' });
     });
   }
 
-  // Opening the bell is acknowledgement enough to stop the badge nagging.
-  var bell = document.querySelector('.byky-bell');
-  if (bell) bell.addEventListener('click', function () { setUnread(0); });
+  /* -- the real feed: asked for on load, on a socket's "look again", and every
+     60 s in case the socket is down. The first answer never rings. ---------- */
+  var newest = null;
+  var asking = false;
 
-  /* ── the replay loop ─────────────────────────────────────────────── */
-  function raise() {
-    var alert = feed[cursor % feed.length];
-    cursor++;
+  function ask() {
+    if (asking) return;
+    asking = true;
+    fetch(config.feed_url, { credentials: 'same-origin' }).then(function (r) {
+      return r.ok ? r.json() : null;
+    }).then(function (data) {
+      asking = false;
+      if (!data) return;
+      data.items.slice().reverse().forEach(addRow);
+      setUnread(data.unread);
+      var top = data.items.length ? data.items[0] : null;
+      if (top && newest !== null && top.id > newest && !top.is_read) {
+        try { ping(top.severity); } catch (e) { /* the alert still shows */ }
+        showStrip(top);
+      }
+      newest = top ? Math.max(top.id, newest || 0) : (newest || 0);
+    }).catch(function () { asking = false; });
+  }
 
-    // Sound first, then the visuals. All of it runs in one synchronous tick,
-    // so the two land together; starting the tone before the DOM work just
-    // keeps the audio off the far side of a layout pass. Guarded so a failed
-    // ping can never cost the notification itself.
+  function listen(delay) {
     try {
-      ping(alert.severity);
-    } catch (e) {
-      /* audio unavailable -- the alert still shows */
-    }
-
-    addRow(alert);
-    setUnread(unread + 1);
-    showStrip(alert);
+      var socket = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/tracking/');
+      socket.onmessage = function (e) {
+        var message = JSON.parse(e.data);
+        if (message.alert) ask();
+      };
+      socket.onopen = function () { delay = 2000; };
+      socket.onclose = function () { setTimeout(function () { listen(Math.min(delay * 2, 60000)); }, delay); };
+    } catch (e) { /* the 60 s poll carries on */ }
   }
 
   setUnread(0);
-  // First alert lands shortly after load so the behaviour is visible without
-  // waiting out a full interval.
-  setTimeout(raise, 4000);
-  setInterval(raise, INTERVAL_MS);
+  ask();
+  listen(2000);
+  setInterval(ask, 60000);
 })();
