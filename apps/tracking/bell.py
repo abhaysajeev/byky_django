@@ -8,6 +8,7 @@ import datetime
 
 from django.conf import settings
 from django.urls import reverse
+from django.utils import timezone
 
 from apps.company.scoping import branches_for, companies_for
 from apps.portal.services import has_permission
@@ -56,7 +57,8 @@ def _item(event, read_at):
         target += f"&vehicle={event.vehicle_id}"
     return {"id": event.pk, "title": title, "subject": " · ".join(x for x in (vehicle, branch) if x),
             "detail": " · ".join(x for x in (vehicle, branch, why) if x), "severity": severity,
-            "at": event.at.isoformat(), "url": target, "is_read": event.at <= read_at}
+            "at": event.at.isoformat(), "time": timezone.localtime(event.at).strftime("%H:%M"), "url": target,
+            "is_read": event.at <= read_at}
 
 
 def feed(user):

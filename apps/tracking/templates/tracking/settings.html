@@ -14,12 +14,12 @@
 <div class="scr-card" data-tracking-settings data-save-url="{{ save_url }}">
   <div class="scr-toolbar">
     {% if companies|length > 1 %}
-    <select class="scr-input" name="company" aria-label="Company" data-tracking-filter>
+    <select class="scr-input" name="company" aria-label="Company" data-tracking-filter style="flex:0 0 auto;width:220px">
       {% for c in companies %}<option value="{{ c.id }}"{% if c.id == chosen_company %} selected{% endif %}>{{ c.name }}</option>{% endfor %}
     </select>
     {% endif %}
     <label class="scr-label" for="retention" style="margin:0">Keep raw readings (days)</label>
-    <input class="scr-input" id="retention" name="retention_days" type="number" min="1" max="14" value="{{ default.retention_days }}" {% if not perm.update %}disabled{% endif %}>
+    <input class="scr-input" id="retention" name="retention_days" type="number" min="1" max="14" value="{{ default.retention_days }}" style="flex:0 0 auto;width:90px" {% if not perm.update %}disabled{% endif %}>
   </div>
   <div class="scr-table-scroll scr-sb">
     <table>

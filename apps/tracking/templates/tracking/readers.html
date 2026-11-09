@@ -41,12 +41,12 @@
             <button type="button" class="scr-toggle{% if r.enabled %} is-on{% endif %}" role="switch" aria-checked="{% if r.enabled %}true{% else %}false{% endif %}" aria-label="Reader on — {{ r.device_id }}" data-tracking-toggle data-url="{% url 'tracking-reader-enabled' r.pk %}" {% if not perm.update %}disabled{% endif %}><i></i></button>
             {% else %}—{% endif %}
           </td>
-          <td class="scr-row-actions">
+          <td><div class="scr-row-actions" style="opacity:1">
             {% if r.status == "pending" and perm.approve %}<button type="button" class="scr-btn-primary scr-btn-small" data-modal-open="reader-approve" data-url="{% url 'tracking-reader-approve' r.pk %}" data-fill-device="{{ r.device_id }}" data-fill-name="{{ r.name }}">Approve</button>{% endif %}
             {% if r.status == "approved" and perm.update %}<button type="button" class="scr-btn-secondary scr-btn-small" data-modal-open="reader-edit" data-url="{% url 'tracking-reader-edit' r.pk %}" data-fill-device="{{ r.device_id }}" data-fill-name="{{ r.name }}" data-fill-branch="{{ row.branch.pk|default:'' }}">Edit</button>{% endif %}
             {% if r.status != "blocked" and perm.approve %}<button type="button" class="scr-btn-danger scr-btn-small" data-post="{% url 'tracking-reader-block' r.pk %}" data-confirm="Block reader {{ r.device_id }}? Its connections will be closed.">Block</button>{% endif %}
             {% if r.status == "blocked" and perm.approve %}<button type="button" class="scr-btn-secondary scr-btn-small" data-post="{% url 'tracking-reader-unblock' r.pk %}">Unblock</button>{% endif %}
-          </td>
+          </div></td>
         </tr>
         {% endwith %}
         {% empty %}
@@ -67,9 +67,9 @@
   <form data-tracking-form data-url="{% url 'tracking-reader-add' %}">
     <div class="scr-modal-head"><div class="scr-modal-title">Add reader</div></div>
     <div class="scr-modal-body">
-      <div class="scr-field"><label class="scr-label" for="add-device">Device ID</label><input class="scr-input" id="add-device" name="device_id" maxlength="16" required style="width:100%"></div>
-      <div class="scr-field"><label class="scr-label" for="add-name">Name</label><input class="scr-input" id="add-name" name="name" maxlength="100" style="width:100%"></div>
-      <div class="scr-field"><label class="scr-label" for="add-company">Company</label>
+      <div class="scr-field" style="margin-bottom:14px"><label class="scr-label" for="add-device">Device ID</label><input class="scr-input" id="add-device" name="device_id" maxlength="16" required style="width:100%"></div>
+      <div class="scr-field" style="margin-bottom:14px"><label class="scr-label" for="add-name">Name</label><input class="scr-input" id="add-name" name="name" maxlength="100" style="width:100%"></div>
+      <div class="scr-field" style="margin-bottom:14px"><label class="scr-label" for="add-company">Company</label>
         <select class="scr-input" id="add-company" name="company" required style="width:100%">{% for c in companies %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></div>
     </div>
     <div class="scr-modal-foot" style="justify-content:flex-end;gap:8px">
@@ -84,8 +84,8 @@
   <form data-tracking-form>
     <div class="scr-modal-head"><div><div class="scr-modal-title">Approve reader</div><p class="scr-modal-sub" data-show="device"></p></div></div>
     <div class="scr-modal-body">
-      <div class="scr-field"><label class="scr-label" for="app-name">Name</label><input class="scr-input" id="app-name" name="name" maxlength="100" style="width:100%"></div>
-      <div class="scr-field"><label class="scr-label" for="app-branch">Station</label>
+      <div class="scr-field" style="margin-bottom:14px"><label class="scr-label" for="app-name">Name</label><input class="scr-input" id="app-name" name="name" maxlength="100" style="width:100%"></div>
+      <div class="scr-field" style="margin-bottom:14px"><label class="scr-label" for="app-branch">Station</label>
         <select class="scr-input" id="app-branch" name="branch" required style="width:100%"><option value="">Choose a station</option>{% for b in all_branches %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}</select></div>
     </div>
     <div class="scr-modal-foot" style="justify-content:flex-end;gap:8px">
@@ -100,8 +100,8 @@
   <form data-tracking-form>
     <div class="scr-modal-head"><div><div class="scr-modal-title">Edit reader</div><p class="scr-modal-sub" data-show="device"></p></div></div>
     <div class="scr-modal-body">
-      <div class="scr-field"><label class="scr-label" for="edit-name">Name</label><input class="scr-input" id="edit-name" name="name" maxlength="100" style="width:100%"></div>
-      <div class="scr-field"><label class="scr-label" for="edit-branch">Station</label>
+      <div class="scr-field" style="margin-bottom:14px"><label class="scr-label" for="edit-name">Name</label><input class="scr-input" id="edit-name" name="name" maxlength="100" style="width:100%"></div>
+      <div class="scr-field" style="margin-bottom:14px"><label class="scr-label" for="edit-branch">Station</label>
         <select class="scr-input" id="edit-branch" name="branch" required style="width:100%">{% for b in all_branches %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}</select></div>
     </div>
     <div class="scr-modal-foot" style="justify-content:flex-end;gap:8px">
