@@ -1,0 +1,127 @@
+{% extends "tracking/_base.html" %}
+
+{% block screen_title %}Antennas &amp; Calibration{% endblock %}
+{% block crumb %}Antennas &amp; Calibration{% endblock %}
+{% block heading %}Antennas &amp; Calibration{% endblock %}
+{% block sub %}Each antenna's limits decide inside from outside. With no limits, any read counts as present.{% endblock %}
+
+{% block body %}
+{% if not reader %}
+<div class="scr-card"><div class="scr-empty"><div>
+  <div class="scr-empty-title">No approved readers</div>
+  <p class="scr-empty-sub">Approve a reader on the Readers page first.</p>
+</div></div></div>
+{% else %}
+<div class="scr-card">
+  <div class="scr-toolbar">
+    <select class="scr-input" name="reader" aria-label="Reader" data-tracking-filter>
+      {% for r in readers %}<option value="{{ r.pk }}"{% if r.pk == reader.pk %} selected{% endif %}>{{ r.name|default:r.device_id }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="scr-table-scroll scr-sb">
+    <table>
+      <thead><tr><th>Port</th><th>Direction</th><th>Enter (dBm)</th><th>Leave (dBm)</th><th>Baseline (dBm)</th><th>Warning</th></tr></thead>
+      <tbody>
+        {% for a in antennas %}
+        <tr class="scr-row">
+          <td style="font-weight:600">{{ a.port }}</td>
+          <td><select class="scr-input" aria-label="Direction of port {{ a.port }}" data-tracking-direction data-port="{{ a.port }}" data-url="{% url 'tracking-antenna-direction' reader.pk %}" {% if not perm.update %}disabled{% endif %}>
+            <option value="">—</option>
+            {% for value, label in directions %}<option value="{{ value }}"{% if a.direction == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select></td>
+          <td>{{ a.enter_rssi|default_if_none:"Not set" }}</td>
+          <td>{{ a.leave_rssi|default_if_none:"Not set" }}</td>
+          <td>{{ a.baseline_rssi|default_if_none:"—" }}</td>
+          <td class="scr-contact">{{ a.drift_note|default:"—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="scr-card">
+  <div class="scr-toolbar"><b>Calibration</b></div>
+  <div class="scr-form-body">
+  {% if not session %}
+    {% if perm.update %}
+    <form data-tracking-form data-url="{% url 'tracking-calibration' reader.pk 'start' %}">
+      <div class="scr-field"><label class="scr-label" for="cal-method">Method</label>
+        <select class="scr-input" id="cal-method" name="method">{% for value, label in methods %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
+      <div class="scr-field"><label class="scr-label" for="cal-tags">Calibration bikes' tags</label>
+        <input class="scr-input" id="cal-tags" name="tags" required placeholder="170732EA 1707365C" style="width:100%"></div>
+      <button type="submit" class="scr-btn-primary">Start session</button>
+    </form>
+    {% else %}<p class="scr-sub">No session in progress.</p>{% endif %}
+
+  {% elif session.status == "open" %}
+    <p class="scr-sub">{{ session.get_method_display }} · bikes {{ session.tags|join:", " }} · started {{ session.started_at|date:"d M H:i" }}. Stop about 2 minutes at each point.</p>
+    {% if perm.update %}
+    <form data-tracking-form data-url="{% url 'tracking-calibration' reader.pk 'point' %}" class="scr-toolbar">
+      <input class="scr-input" name="label" required placeholder="Point name, e.g. Corner NE" aria-label="Point name">
+      <select class="scr-input" name="zone" aria-label="Zone">{% for value, label in zones %}<option value="{{ value }}"{% if value == "boundary" %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+      <input class="scr-input" name="variant" placeholder="Variation (optional)" aria-label="Variation">
+      <button type="submit" class="scr-btn-primary">Next point</button>
+    </form>
+    {% endif %}
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead><tr><th>#</th><th>Point</th><th>Zone</th><th>Variation</th><th>Started</th><th>Reads</th></tr></thead>
+        <tbody>
+          {% for p in points %}
+          <tr class="scr-row"><td>{{ p.seq }}</td><td style="font-weight:600">{{ p.label }}</td><td>{{ p.zone }}</td><td class="scr-contact">{{ p.variant|default:"—" }}</td><td class="scr-contact">{{ p.started_at|date:"H:i:s" }}{% if not p.ended_at %} (now){% endif %}</td><td>{{ p.reads }}</td></tr>
+          {% empty %}<tr><td colspan="6" class="scr-contact">No points yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if perm.update %}
+    <div class="scr-form-actions" style="margin-top:12px;display:flex;gap:8px">
+      <button type="button" class="scr-btn-primary" data-post="{% url 'tracking-calibration' reader.pk 'finish' %}" data-confirm="Finish this session and work out the limits?">Finish</button>
+      <button type="button" class="scr-btn-danger" data-post="{% url 'tracking-calibration' reader.pk 'discard' %}" data-confirm="Discard this session?">Discard</button>
+    </div>
+    {% endif %}
+
+  {% else %}
+    <p class="scr-sub">Proposed limits from the session of {{ session.started_at|date:"d M H:i" }}. Nothing changes until they are approved.</p>
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead><tr><th>Port</th><th>Enter</th><th>Leave</th><th>Note</th></tr></thead>
+        <tbody>
+          {% for port, p in session.result.ports.items %}
+          <tr class="scr-row"><td style="font-weight:600">{{ port }}</td><td>{{ p.enter_rssi|default_if_none:"None" }}</td><td>{{ p.leave_rssi|default_if_none:"None" }}</td><td class="scr-contact">{{ p.note|default:"—" }}{% if p.source == "pooled" %} (from the other antennas){% endif %}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="scr-table-scroll scr-sb" style="margin-top:12px">
+      <table>
+        <thead><tr><th>#</th><th>Point</th><th>Zone</th><th>Reads</th><th>Strongest port</th></tr></thead>
+        <tbody>
+          {% for p in session.result.points %}
+          <tr class="scr-row"><td>{{ p.seq }}</td><td>{{ p.label }}</td><td>{{ p.zone }}</td><td>{{ p.reads }}</td><td>{{ p.strongest|default_if_none:"—" }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="scr-form-actions" style="margin-top:12px;display:flex;gap:8px">
+      {% if perm.approve and session.result.can_approve %}<button type="button" class="scr-btn-primary" data-post="{% url 'tracking-calibration' reader.pk 'approve' %}" data-confirm="Approve these limits for this reader?">Approve limits</button>{% endif %}
+      {% if perm.update %}<button type="button" class="scr-btn-danger" data-post="{% url 'tracking-calibration' reader.pk 'discard' %}" data-confirm="Discard this session?">Discard</button>{% endif %}
+    </div>
+  {% endif %}
+  </div>
+</div>
+
+{% if history %}
+<div class="scr-card">
+  <div class="scr-toolbar"><b>Earlier sessions</b></div>
+  <div class="scr-table-scroll scr-sb">
+    <table>
+      <thead><tr><th>Started</th><th>Method</th><th>Status</th><th>Check after approval</th></tr></thead>
+      <tbody>{% for s in history %}<tr class="scr-row"><td class="scr-contact">{{ s.started_at|date:"d M Y H:i" }}</td><td>{{ s.get_method_display }}</td><td>{{ s.get_status_display }}</td><td class="scr-contact">{{ s.check_result|default:"—" }}</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

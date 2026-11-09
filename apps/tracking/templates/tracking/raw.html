@@ -1,0 +1,42 @@
+{% extends "tracking/_base.html" %}
+
+{% block screen_title %}Raw Readings{% endblock %}
+{% block crumb %}Raw Readings{% endblock %}
+{% block heading %}Raw Readings{% endblock %}
+{% block sub %}What the readers sent, for debugging and calibration. At most 24 hours per search.{% endblock %}
+
+{% block body %}
+<div class="scr-card">
+  <div class="scr-toolbar">
+    <select class="scr-input" name="reader" aria-label="Reader" data-tracking-filter>
+      <option value="">All readers</option>
+      {% for r in readers %}<option value="{{ r.pk }}"{% if r.pk == chosen_reader %} selected{% endif %}>{{ r.name|default:r.device_id }}</option>{% endfor %}
+    </select>
+    <input class="scr-input" name="tag" value="{{ tag }}" maxlength="8" placeholder="Tag" aria-label="Tag" data-tracking-filter>
+    <input class="scr-input" type="datetime-local" name="from" value="{{ from }}" aria-label="From" data-tracking-filter>
+    <input class="scr-input" type="datetime-local" name="to" value="{{ to }}" aria-label="To" data-tracking-filter>
+  </div>
+  {% if too_long %}<div class="scr-banner"><span class="scr-banner-text">A search covers at most 24 hours, so the start was moved.</span></div>{% endif %}
+  <div class="scr-table-scroll scr-sb">
+    <table>
+      <thead><tr><th>Received</th><th>Reader</th><th>Port</th><th>Tag</th><th>RSSI</th><th>Reader clock</th><th>Staying</th><th>Entry</th><th>Low battery</th></tr></thead>
+      <tbody>
+        {% for row in page.object_list %}
+        <tr class="scr-row">
+          <td class="scr-contact">{{ row.received_at|date:"d M H:i:s" }}</td>
+          <td>{{ row.reader_name }}</td><td>{{ row.port }}</td><td><span class="scr-code">{{ row.tag }}</span></td><td>{{ row.rssi }}</td>
+          <td class="scr-contact">{{ row.reader_time|date:"d M H:i:s"|default:"—" }}</td>
+          <td>{{ row.staying|yesno:"Yes,No" }}</td><td>{{ row.entry|yesno:"Yes,No" }}</td><td>{{ row.low_battery|yesno:"Yes,No" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="9" style="padding:0"><div class="scr-empty"><div>
+          <div class="scr-empty-title">No readings in this period</div>
+          <p class="scr-empty-sub">Raw readings are kept for the days set in Tracking Settings.</p>
+        </div></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "byky/partials/server_pager.html" %}
+</div>
+{% endblock %}

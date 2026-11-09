@@ -234,6 +234,27 @@ services:
     cpus: 0.5
     restart: unless-stopped
 
+  # The presence engine (apps/tracking): its own container, not Celery.
+  tracking-engine:
+    image: ${COMPOSE_PROJECT:-byky_f_qa}-app
+    command: python manage.py run_tracking_engine
+    environment:
+      <<: *celery_env
+      TRACKING_ENABLED: ${TRACKING_ENABLED:-0}
+      TRACKING_MODE: ${TRACKING_MODE:-capture}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "find /tmp/tracking-engine.alive -mmin -3 | grep -q ."]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
+    mem_limit: 256m
+    cpus: 0.5
+    restart: unless-stopped
+
   proxy:
     image: nginx:1.30-alpine
     volumes:

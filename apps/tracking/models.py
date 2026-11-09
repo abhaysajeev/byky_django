@@ -48,6 +48,9 @@ class Reader(TimeStampedModel):
     last_data_at = models.DateTimeField(null=True, blank=True)
     # measured from its heartbeats (P0); the engine's offline rule uses settings
     heartbeat_seconds = models.PositiveIntegerField(null=True, blank=True)
+    # the engine's own view, so reader offline / online is an event only on a change
+    online = models.BooleanField(db_default=False)
+    online_changed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "tracking_reader"
@@ -90,6 +93,7 @@ class Antenna(TimeStampedModel):
     baseline_rssi = models.SmallIntegerField(null=True, blank=True)  # parked median at approval (drift check)
     calibration = models.ForeignKey("tracking.Calibration", null=True, blank=True, on_delete=models.SET_NULL,
                                     related_name="+")
+    drift_note = models.CharField(max_length=200, blank=True)   # the daily drift check's warning (design §6)
 
     class Meta:
         db_table = "tracking_antenna"
@@ -270,6 +274,9 @@ class VehiclePresence(models.Model):
     last_seen_at = models.DateTimeField(null=True)
     heard_by_branch = models.ForeignKey("company.Branch", null=True, on_delete=models.SET_NULL, related_name="+")
     low_battery = models.BooleanField(default=False)
+    # where a tag's silence is counted from when that is later than last_seen_at:
+    # the moment it stopped being excused (back from rent, reader back online)
+    clock_from = models.DateTimeField(null=True)
 
     class Meta:
         db_table = "tracking_vehicle_presence"
@@ -327,9 +334,6 @@ class TrackingSettings(models.Model):
     retention_days = models.PositiveSmallIntegerField(default=3)
     allowance_in_db = models.PositiveSmallIntegerField(default=3)
     allowance_out_db = models.PositiveSmallIntegerField(default=3)
-    alerts_all_branches = models.BooleanField(default=True)
-    alert_branches = models.ManyToManyField("company.Branch", blank=True, related_name="+",
-                                            db_table="tracking_settings_alert_branches")
     modified_on = models.DateTimeField(auto_now=True)
     modified_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
 
@@ -344,6 +348,25 @@ class TrackingSettings(models.Model):
 
     def __str__(self):
         return f"Tracking settings of {self.company_id}"
+
+
+class BranchTrackingSettings(models.Model):
+    """One station's row of Tracking Settings (owner, 9 Nov 2026): alerts on or
+    off, and optional timings. A blank timing is the company default."""
+
+    branch = models.OneToOneField("company.Branch", primary_key=True, on_delete=models.CASCADE, related_name="+")
+    alerts_on = models.BooleanField(default=False)
+    alert_after_s = models.PositiveIntegerField(null=True, blank=True)
+    missing_after_s = models.PositiveIntegerField(null=True, blank=True)
+    offline_after_s = models.PositiveIntegerField(null=True, blank=True)
+    modified_on = models.DateTimeField(auto_now=True)
+    modified_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+
+    class Meta:
+        db_table = "tracking_branch_settings"
+
+    def __str__(self):
+        return f"Tracking settings of branch {self.branch_id}"
 
 
 class AlertRead(models.Model):

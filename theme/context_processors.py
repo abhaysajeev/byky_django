@@ -22,6 +22,9 @@ def sidebar_menu(request):
 
 
 def alert_feed(request):
-    """The navbar's bell. Empty until an alerts source exists; byky-alerts.js
-    returns early on an empty feed."""
-    return {"alert_feed": []}
+    """The navbar's bell: Antenna Tracking's feed, for a user who may read
+    Missing & Alerts (design 07 section 7.1). Everyone else's stays empty, and
+    byky-alerts.js returns early."""
+    from apps.tracking.bell import bell_for  # the theme must not load apps at import
+
+    return {"alert_feed": [], "tracking_bell": bell_for(getattr(request, "user", None))}
