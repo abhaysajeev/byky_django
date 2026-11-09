@@ -28,6 +28,9 @@ from apps.tracking.models import (
 
 UPKEEP_LOCK = engine.LOCK_KEY + 1
 RAW_FRAME_DAYS = 14
+# Longer than store.CLOCK_TOO_OLD: a read we still accept must still be a known duplicate.
+KEY_DAYS = 4
+CALIBRATION_OPEN_HOURS = 2
 PRUNE_BATCH = 10_000
 MAX_PRUNE_BATCHES = 50          # 500k per hour at most; the next hour takes the rest
 LOW_DISK_SHARE = 0.10
@@ -52,18 +55,27 @@ def hourly(now=None):
     with transaction.atomic(), connection.cursor() as cursor:
         if not _locked(cursor):
             return None
+        # A slow query on the readings must not make partition changes wait,
+        # with every gateway insert then queued behind them.
+        cursor.execute("SET LOCAL lock_timeout = '2s'")
+        repaired = partitions.repair_default(cursor)
         made = partitions.ensure(cursor, today)
         dropped = partitions.drop_older(cursor, today, keep)
         stray = partitions.default_rows(cursor)
-    pruned = prune_keys(now - datetime.timedelta(days=keep))
+    pruned = prune_keys(now - datetime.timedelta(days=KEY_DAYS))
+    expired = Calibration.objects.filter(
+        status=CalibrationStatus.OPEN, started_at__lt=now - datetime.timedelta(hours=CALIBRATION_OPEN_HOURS),
+    ).update(status=CalibrationStatus.DISCARDED)
     RawFrame.objects.filter(received_at__lt=now - datetime.timedelta(days=RAW_FRAME_DAYS)).delete()
     if stray:
         ops.event("default_partition_not_empty", rows=stray)
     disk = shutil.disk_usage("/")
     if disk.free / disk.total < LOW_DISK_SHARE:
         ops.event("disk_low", free_gb=round(disk.free / 2**30, 1))
-    ops.event("engine_upkeep", made=[str(d) for d in made], dropped=[str(d) for d in dropped], keys_pruned=pruned)
-    return {"made": made, "dropped": dropped, "pruned": pruned, "default_rows": stray}
+    ops.event("engine_upkeep", made=[str(d) for d in made], dropped=[str(d) for d in dropped], keys_pruned=pruned,
+              repaired=[str(d) for d in repaired], calibrations_expired=expired)
+    return {"made": made, "dropped": dropped, "pruned": pruned, "default_rows": stray, "repaired": repaired,
+            "calibrations_expired": expired}
 
 
 def prune_keys(before):

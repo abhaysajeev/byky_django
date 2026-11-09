@@ -58,6 +58,7 @@ def approve(device=DEVICE, enabled=True, company=None):
     from apps.company.models import Company
     company = company or Company.objects.first()
     Reader.objects.update_or_create(device_id=device, defaults={
+        "keep_raw": True,
         "status": ReaderStatus.APPROVED, "enabled": enabled, "company": company})
 
 
@@ -101,9 +102,18 @@ def test_bad_crc_closes_and_is_kept_as_a_bad_frame(world):
     approve(company=world["company"])
     broken = bytearray(tag_frame())
     broken[35] ^= 0xFF
-    assert run([bytes(broken), heartbeat_frame()]) == [None, None]
-    raw = RawFrame.objects.get()
-    assert not raw.crc_ok and "CRC" in raw.note
+    replies = run([heartbeat_frame(), bytes(broken)])
+    assert replies[0] is not None and replies[1] is None
+    raw = RawFrame.objects.get(crc_ok=False)
+    assert "CRC" in raw.note
+
+
+def test_a_bad_first_frame_from_an_unknown_sender_stores_nothing(world):
+    approve(company=world["company"])
+    broken = bytearray(tag_frame())
+    broken[35] ^= 0xFF
+    assert run([bytes(broken)]) == [None]
+    assert not RawFrame.objects.exists()
 
 
 def test_garbage_header_closes_without_reading_further():

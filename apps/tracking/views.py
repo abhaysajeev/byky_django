@@ -9,7 +9,9 @@ database, from the query string, like the logs.
 import datetime
 from urllib.parse import urlencode
 
+from django.conf import settings
 from django.core.paginator import Paginator
+from django.db import DatabaseError, connection, transaction
 from django.db.models import Count, Q
 from django.http import Http404, JsonResponse
 from django.urls import reverse
@@ -22,22 +24,21 @@ from apps.company.scoping import branches_for, companies_for
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
-from apps.tracking import bell, calibration, services
+from apps.tracking import bell, calibration, engine, services
 from apps.tracking.models import (
     Antenna,
     BranchTrackingSettings,
     Calibration,
-    CalibrationMethod,
     CalibrationStatus,
     Direction,
     EventKind,
-    PointZone,
     PresenceEvent,
     PresenceState,
     Reader,
     ReaderAssignment,
     ReaderStatus,
     Reading,
+    TagLastSeen,
     TrackingSettings,
     VehiclePresence,
 )
@@ -46,15 +47,17 @@ from theme.views import ThemedTemplateView
 ACTIONS = ("create", "read", "update", "approve")
 PER_PAGE = 100
 MAX_RAW_HOURS = 24
-ALERT_STATES = (PresenceState.MISSING, PresenceState.ALERT)
-STATE_ORDER = (PresenceState.MISSING, PresenceState.ALERT, PresenceState.UNKNOWN, PresenceState.PRESENT,
+RAW_QUERY_TIMEOUT = "5s"
+ALERT_STATES = (PresenceState.MISSING,)
+STATE_ORDER = (PresenceState.MISSING, PresenceState.UNKNOWN, PresenceState.PRESENT,
                PresenceState.ON_RENT, PresenceState.ON_TEST, PresenceState.IN_SERVICE)
 BADGE = {PresenceState.PRESENT: "scr-badge-active", PresenceState.ON_RENT: "scr-badge-approved",
          PresenceState.ON_TEST: "scr-badge-approved", PresenceState.IN_SERVICE: "scr-badge-pending",
-         PresenceState.ALERT: "scr-badge-pending", PresenceState.MISSING: "scr-badge-rejected",
+         PresenceState.MISSING: "scr-badge-missing",
          PresenceState.UNKNOWN: "scr-badge-inactive"}
 REASON_LABEL = {"test_overdue": "Test ride overdue", "not_seen": "Not heard", "weak_signal": "Signal below limit",
-                "edge": "At the edge", "reader_offline": "Reader offline", "no_reader": "No reader"}
+                "reader_offline": "Reader offline", "no_reader": "No reader",
+                "no_new_reads": "Reader hears no tags", "calibrating": "Calibrating"}
 
 
 def _int(value):
@@ -64,12 +67,23 @@ def _int(value):
         return None
 
 
+def _vehicle_type(vehicle):
+    return vehicle.vehicle_type.vehicle_type_name
+
+
 def readers_for(user):
     """Approved readers of the user's companies. A pending reader has no company
     yet, so only a user who sees every company sees it."""
     mine = Q(company__in=companies_for(user))
     return Reader.objects.filter(mine | Q(company__isnull=True)) if user.sees_every_company \
         else Reader.objects.filter(mine)
+
+
+def events_for(user):
+    """The same scope for History and for acknowledging: a reader-level event
+    can have no branch."""
+    return PresenceEvent.objects.filter(company__in=companies_for(user)).filter(
+        Q(branch__in=branches_for(user)) | Q(branch__isnull=True))
 
 
 class TrackingScreenView(PagePermissionMixin, ThemedTemplateView):
@@ -99,13 +113,10 @@ class StatusView(TrackingScreenView):
         scope = rows.filter(branch_id=chosen) if chosen else rows
         totals = dict(scope.order_by().values_list("state").annotate(n=Count("pk")))
         names = dict(PresenceState.choices)
-        context["tiles"] = [{"label": names[s], "value": totals.get(s, 0), "badge": BADGE[s]} for s in STATE_ORDER]
+        context["tiles"] = [{"label": names[s], "value": totals.get(s, 0), "key": str(s.value)} for s in STATE_ORDER]
 
         if chosen:
-            vehicles = scope.select_related("vehicle", "heard_by_branch").order_by("state", "vehicle__vehicle_code")
-            rank = {state: n for n, state in enumerate(STATE_ORDER)}
-            context["vehicles"] = sorted(
-                [self._vehicle(v) for v in vehicles], key=lambda row: (rank[row["state"]], row["code"]))
+            context["vehicles"] = self._vehicles(scope, chosen)
         else:
             counts = {}
             for branch_id, state, n in rows.order_by().values_list("branch_id", "state").annotate(n=Count("pk")):
@@ -117,12 +128,24 @@ class StatusView(TrackingScreenView):
         context["chosen_branch"] = chosen
         return context
 
-    @staticmethod
-    def _vehicle(v):
-        return {"code": v.vehicle.vehicle_code, "name": v.vehicle.vehicle_name, "state": v.state,
-                "state_label": v.get_state_display(), "badge": BADGE[v.state],
-                "reason": REASON_LABEL.get(v.reason, ""), "since": v.since, "last_seen": v.last_seen_at,
-                "heard_at": v.heard_by_branch.name if v.heard_by_branch_id else "", "low_battery": v.low_battery}
+    def _vehicles(self, scope, branch_id):
+        presences = list(scope.select_related("vehicle__vehicle_type", "heard_by_branch"))
+        tags = {p.pk: engine.tag_of(p.vehicle.rfid_epc) for p in presences}
+        fresh = {t.tag: t for t in TagLastSeen.objects.filter(tag__in=set(tags.values()))}
+        own_readers = set(ReaderAssignment.objects.filter(branch_id=branch_id, to_at__isnull=True)
+                          .values_list("reader_id", flat=True))
+        rank = {state: n for n, state in enumerate(STATE_ORDER)}
+        rows = []
+        for p in presences:
+            # the engine stores last-heard only every few minutes; the tag's row is exact
+            last = fresh.get(tags[p.pk])
+            heard = last.seen_at if last is not None and last.reader_id in own_readers else p.last_seen_at
+            rows.append({"name": p.vehicle.vehicle_name, "type": _vehicle_type(p.vehicle), "state": p.state,
+                         "state_label": p.get_state_display(), "badge": BADGE[p.state],
+                         "reason": REASON_LABEL.get(p.reason, ""), "since": p.since, "last_seen": heard,
+                         "heard_at": p.heard_by_branch.name if p.heard_by_branch_id else "",
+                         "low_battery": p.low_battery})
+        return sorted(rows, key=lambda row: (rank[row["state"]], row["name"]))
 
 
 # -- Missing & Alerts -----------------------------------------------------------------------
@@ -154,15 +177,14 @@ class AlertsView(TrackingScreenView):
             if branch:
                 rows = rows.filter(branch_id=branch)
             context["current"] = [
-                {"code": r.vehicle.vehicle_code, "name": r.vehicle.vehicle_name, "branch": r.branch.name,
+                {"name": r.vehicle.vehicle_name, "type": _vehicle_type(r.vehicle), "branch": r.branch.name,
                  "state_label": r.get_state_display(), "badge": BADGE[r.state], "reason": REASON_LABEL.get(r.reason, ""),
                  "since": r.since, "last_seen": r.last_seen_at, "low_battery": r.low_battery,
                  "heard_at": r.heard_by_branch.name if r.heard_by_branch_id else "", "vehicle_id": r.pk}
-                for r in rows.select_related("vehicle", "branch", "heard_by_branch").order_by("-since")[:500]]
+                for r in rows.select_related("vehicle__vehicle_type", "branch", "heard_by_branch").order_by("-since")[:500]]
             return context
 
-        events = PresenceEvent.objects.filter(company__in=companies_for(user)).filter(
-            Q(branch__in=branches_for(user)) | Q(branch__isnull=True))
+        events = events_for(user)
         if branch:
             events = events.filter(branch_id=branch)
         vehicle = _int(params.get("vehicle"))
@@ -175,12 +197,16 @@ class AlertsView(TrackingScreenView):
         if end:
             events = events.filter(at__lt=datetime.datetime.combine(end + datetime.timedelta(days=1),
                                                                     datetime.time.min, zone))
-        page = Paginator(events.select_related("vehicle", "branch", "reader", "acknowledged_by").order_by("-at", "-pk"),
-                         PER_PAGE).get_page(params.get("page"))
+        page = Paginator(events.select_related("vehicle__vehicle_type", "branch", "reader", "acknowledged_by")
+                         .order_by("-at", "-pk"), PER_PAGE).get_page(params.get("page"))
         for event in page.object_list:
             event.what = self._what(event)
-            event.subject = (event.vehicle.vehicle_code if event.vehicle_id
-                             else (event.reader.name or event.reader.device_id if event.reader_id else "—"))
+            if event.vehicle_id:
+                event.subject, event.subject_sub = event.vehicle.vehicle_name, _vehicle_type(event.vehicle)
+            elif event.reader_id:
+                event.subject, event.subject_sub = event.reader.name or event.reader.device_id, "Reader"
+            else:
+                event.subject, event.subject_sub = "—", ""
         query = {k: v for k, v in params.items() if k != "page" and v}
         context.update({"page": page, "query": urlencode(query), "from": params.get("from", ""),
                         "to": params.get("to", ""), "vehicle_filter": vehicle})
@@ -201,7 +227,7 @@ class AcknowledgeView(writes.WriteView):
     def post(self, request, pk):
         if not self.may("update"):
             return self.refused()
-        event = PresenceEvent.objects.filter(pk=pk, company__in=companies_for(request.user)).first()
+        event = events_for(request.user).filter(pk=pk).first()
         if event is None:
             raise Http404
         event.acknowledged_by, event.acknowledged_at = request.user, timezone.now()
@@ -215,6 +241,8 @@ class AcknowledgeView(writes.WriteView):
 
 class BellFeedView(View):
     def get(self, request):
+        if not settings.TRACKING_ENABLED:
+            return JsonResponse({"unread": 0, "items": []})
         if not has_permission(request.user, bell.PAGE, "read"):
             return JsonResponse({"unread": 0, "items": []}, status=403)
         return JsonResponse(bell.feed(request.user))
@@ -241,23 +269,26 @@ class ReadersView(TrackingScreenView):
         readers = list(readers_for(user).select_related("company").order_by("status", "name", "device_id"))
         open_now = {a.reader_id: a for a in ReaderAssignment.objects.filter(
             reader__in=readers, to_at__isnull=True).select_related("branch")}
+        timings = engine.timings_by_branch({a.branch_id for a in open_now.values()})
         now = timezone.now()
         rows = []
         for r in readers:
-            times = [t for t in (r.last_heartbeat_at, r.last_data_at) if t]
             at = open_now.get(r.pk)
-            rows.append({"r": r, "branch": at.branch if at else None, "last": max(times) if times else None,
-                         "age": int((now - max(times)).total_seconds()) if times else None})
+            offline_after = timings[at.branch_id].offline if at else engine.COMPANY_DEFAULT.offline
+            contact = engine._contact(r)
+            rows.append({"r": r, "branch": at.branch if at else None,
+                         # worked out here, not read from Reader.online: the engine only runs in write mode
+                         "online": contact is not None and (now - contact).total_seconds() < offline_after,
+                         "heartbeat_age": _age(r.last_heartbeat_at, now), "data_age": _age(r.last_data_at, now)})
         context["rows"] = rows
         context["counts"] = {s: sum(1 for x in readers if x.status == s) for s in ReaderStatus.values}
-        context["companies"] = list(companies_for(user).filter(is_active=True).values("id", "name"))
         context["all_branches"] = list(branches_for(user).filter(is_active=True).order_by("name")
                                        .values("id", "name", "company_id"))
         return context
 
 
-def _company(user, value):
-    return companies_for(user).filter(pk=_int(value)).first()
+def _age(moment, now):
+    return int((now - moment).total_seconds()) if moment else None
 
 
 def _branch(user, value):
@@ -268,14 +299,14 @@ class ReaderActionView(writes.WriteView):
     """POST one action on one reader; JSON {ok, message | errors}, like Devices."""
 
     page_code = "tracking.readers"
-    permission = "update"
+    permissions = ("update",)
     done = "Saved."
 
     def act(self, reader, data):
         raise NotImplementedError
 
     def post(self, request, pk=None):
-        if not self.may(self.permission):
+        if not all(self.may(action) for action in self.permissions):
             return self.refused()
         reader = None
         if pk is not None:
@@ -291,18 +322,37 @@ class ReaderActionView(writes.WriteView):
 
 
 class ReaderAddView(ReaderActionView):
-    permission = "create"
-    done = "Reader added. It starts working once approved."
+    """Add Reader's Save: it approves too, so it needs both rights."""
+
+    permissions = ("create", "approve")
+    done = "Reader saved and switched on."
 
     def act(self, reader, data):
-        company = _company(self.request.user, data.get("company"))
-        if company is None:
-            raise services.TrackingError("Choose a company.", "Company")
-        services.add_reader(data.get("device_id"), company=company, name=data.get("name", ""), user=self.request.user)
+        user = self.request.user
+        branch = _branch(user, data.get("branch"))
+        if branch is None:
+            raise services.TrackingError("Choose the station this reader stands at.", "Station")
+        services.save_new_reader(data.get("device_id"), branch=branch, name=data.get("name", ""), user=user)
+
+
+class ReaderTestView(View):
+    """Test connection (read-only). We cannot dial a reader, it calls us over
+    4G, so this reports what we have heard from that device id."""
+
+    def get(self, request):
+        if not has_permission(request.user, "tracking.readers", "read"):
+            return JsonResponse({"ok": False}, status=403)
+        device_id = (request.GET.get("device_id") or "").strip()
+        reader = Reader.objects.filter(device_id=device_id).first() if device_id else None
+        # a device id typed in may be a pending reader, with no company yet
+        if reader is not None and reader.company_id and not companies_for(request.user).filter(
+                pk=reader.company_id).exists():
+            reader = None
+        return JsonResponse({"ok": True, **services.connection_report(reader)})
 
 
 class ReaderApproveView(ReaderActionView):
-    permission = "approve"
+    permissions = ("approve",)
     done = "Reader approved and switched on."
 
     def act(self, reader, data):
@@ -333,8 +383,15 @@ class ReaderToggleView(ReaderActionView):
         services.set_enabled(reader, bool(data.get("enabled")), user=self.request.user)
 
 
+class ReaderKeepRawView(ReaderActionView):
+    done = "Saved."
+
+    def act(self, reader, data):
+        services.set_keep_raw(reader, bool(data.get("enabled")), user=self.request.user)
+
+
 class ReaderBlockView(ReaderActionView):
-    permission = "approve"
+    permissions = ("approve",)
     done = "Reader blocked."
 
     def act(self, reader, data):
@@ -342,7 +399,7 @@ class ReaderBlockView(ReaderActionView):
 
 
 class ReaderUnblockView(ReaderActionView):
-    permission = "approve"
+    permissions = ("approve",)
     done = "Reader unblocked. It is pending approval again."
 
     def act(self, reader, data):
@@ -362,21 +419,21 @@ class AntennasView(TrackingScreenView):
                        .order_by("name", "device_id"))
         chosen = next((r for r in readers if r.pk == _int(self.request.GET.get("reader"))), None) \
             or (readers[0] if readers else None)
-        context.update({"readers": readers, "reader": chosen, "directions": Direction.choices,
-                        "methods": CalibrationMethod.choices, "zones": PointZone.choices})
+        context.update({"readers": readers, "reader": chosen, "directions": Direction.choices})
         if chosen is None:
             return context
         have = {a.port: a for a in Antenna.objects.filter(reader=chosen)}
-        context["antennas"] = [have.get(port) or Antenna(reader=chosen, port=port) for port in services.PORTS]
+        antennas = [have.get(port) or Antenna(reader=chosen, port=port) for port in services.PORTS]
         sessions = list(Calibration.objects.filter(reader=chosen).order_by("-started_at")[:6])
         active = next((s for s in sessions if s.status in calibration.OPEN_STATES), None)
-        context.update({"session": active, "history": [s for s in sessions if s is not active][:5]})
+        context.update({"antennas": antennas, "has_limits": any(a.enter_rssi is not None for a in antennas),
+                        "session": active, "history": [s for s in sessions if s is not active][:5]})
         if active and active.status == CalibrationStatus.OPEN:
-            context["points"] = [
-                {"seq": p.seq, "label": p.label, "zone": p.get_zone_display(), "variant": p.variant,
-                 "started_at": p.started_at, "ended_at": p.ended_at,
-                 "reads": sum(len(values) for values in by_port.values())}
-                for p, by_port in calibration.point_samples(active)]
+            context["progress"] = calibration.progress(active)
+        elif active is None:
+            context["bike_options"] = [
+                {"id": v.pk, "name": v.vehicle_name, "tag": engine.tag_of(v.rfid_epc)}
+                for v in calibration.choosable(chosen)]
         return context
 
 
@@ -388,13 +445,26 @@ class AntennaDirectionView(ReaderActionView):
         services.set_direction(reader, _int(data.get("port")), data.get("direction", ""))
 
 
+class CalibrationStatusView(View):
+    """What the screen polls while the bikes are parked."""
+
+    def get(self, request, pk):
+        if not has_permission(request.user, "tracking.antennas", "read"):
+            return JsonResponse({"ok": False}, status=403)
+        reader = readers_for(request.user).filter(pk=pk).first()
+        session = reader and Calibration.objects.filter(reader=reader, status=CalibrationStatus.OPEN).first()
+        if not session:
+            return JsonResponse({"ok": False, "closed": True})
+        return JsonResponse({"ok": True, **calibration.progress(session)})
+
+
 class CalibrationView(writes.WriteView):
-    """Start, next point, finish, approve, discard: one reader's session."""
+    """Start, finish, approve, discard, clear limits: one reader's calibration."""
 
     page_code = "tracking.antennas"
 
     def post(self, request, pk, action):
-        need = "approve" if action == "approve" else "update"
+        need = "approve" if action in ("approve", "clear") else "update"
         if not self.may(need):
             return self.refused()
         reader = readers_for(request.user).filter(pk=pk, status=ReaderStatus.APPROVED).first()
@@ -410,17 +480,17 @@ class CalibrationView(writes.WriteView):
 
     def _do(self, action, reader, data):
         if action == "start":
-            calibration.start(reader, data.get("method"), data.get("tags"), user=self.request.user)
-            return "Session started. Add the first point."
+            calibration.start(reader, data.get("vehicles") or [], user=self.request.user)
+            return "Listening. Keep the bikes parked on the boundary."
+        if action == "clear":
+            calibration.clear_limits(reader)
+            return "Limits cleared. Any read now counts as present."
         session = Calibration.objects.filter(reader=reader, status__in=calibration.OPEN_STATES).first()
         if session is None:
             raise calibration.CalibrationError("No session is open for this reader.")
-        if action == "point":
-            calibration.next_point(session, data.get("label"), data.get("zone"), variant=data.get("variant", ""))
-            return "Recording at this point."
         if action == "finish":
             calibration.finish(session)
-            return "Session finished. Review the proposed limits."
+            return "Finished. Review the proposed limits."
         if action == "approve":
             calibration.approve(session, user=self.request.user)
             return "Limits approved. A daily check runs for the next 3 days."
@@ -444,6 +514,9 @@ def _moment(value):
 
 
 class RawView(TrackingScreenView):
+    """Prev / Next only: counting a day of readings on every page load would be
+    the most expensive thing this screen does, for a number nobody needs."""
+
     template_name = "tracking/raw.html"
     page_code = "tracking.raw"
 
@@ -451,9 +524,8 @@ class RawView(TrackingScreenView):
         context = super().get_context_data(**kwargs)
         params = self.request.GET
         readers = list(readers_for(self.request.user).order_by("name", "device_id"))
-        reader = _int(params.get("reader"))
-        if reader not in {r.pk for r in readers}:
-            reader = None
+        chosen = next((r for r in readers if r.pk == _int(params.get("reader"))), None) \
+            or (readers[0] if readers else None)
         tag = (params.get("tag") or "").strip().upper()[:8]
         now = timezone.localtime()
         end = _moment(params.get("to")) or now
@@ -462,19 +534,29 @@ class RawView(TrackingScreenView):
         if too_long:
             start = end - datetime.timedelta(hours=MAX_RAW_HOURS)
 
-        rows = Reading.objects.filter(reader_id__in=[reader] if reader else [r.pk for r in readers],
-                                      received_at__gte=start, received_at__lte=end)
-        if tag:
-            rows = rows.filter(tag=tag.rjust(8, "0"))
-        page = Paginator(rows.order_by("-received_at"), PER_PAGE).get_page(params.get("page"))
-        names = {r.pk: r.name or r.device_id for r in readers}
-        for row in page.object_list:
-            row.reader_name = names.get(row.reader_id, "")
+        page_no = max(_int(params.get("page")) or 1, 1)
+        rows, timed_out = [], False
+        if chosen is not None:
+            offset = (page_no - 1) * PER_PAGE
+            try:
+                with transaction.atomic():
+                    with connection.cursor() as cursor:
+                        cursor.execute(f"SET LOCAL statement_timeout = '{RAW_QUERY_TIMEOUT}'")
+                    found = Reading.objects.filter(reader_id=chosen.pk, received_at__gte=start, received_at__lte=end)
+                    if tag:
+                        found = found.filter(tag=tag.rjust(8, "0"))
+                    rows = list(found.order_by("-received_at")[offset:offset + PER_PAGE + 1])
+            except DatabaseError:
+                timed_out = True
+        has_next = len(rows) > PER_PAGE
         query = {k: v for k, v in params.items() if k != "page" and v}
-        context.update({"readers": readers, "chosen_reader": reader, "tag": tag, "page": page,
-                        "query": urlencode(query), "too_long": too_long,
-                        "from": timezone.localtime(start).strftime("%Y-%m-%dT%H:%M"),
-                        "to": timezone.localtime(end).strftime("%Y-%m-%dT%H:%M")})
+        context.update({
+            "readers": readers, "chosen_reader": chosen, "tag": tag, "rows": rows[:PER_PAGE], "too_long": too_long,
+            "timed_out": timed_out, "page_no": page_no,
+            "prev_query": urlencode({**query, "page": page_no - 1}) if page_no > 1 else "",
+            "next_query": urlencode({**query, "page": page_no + 1}) if has_next else "",
+            "from": timezone.localtime(start).strftime("%Y-%m-%dT%H:%M"),
+            "to": timezone.localtime(end).strftime("%Y-%m-%dT%H:%M")})
         return context
 
 
@@ -499,6 +581,7 @@ class SettingsView(TrackingScreenView):
         branches = list(branches_for(user).filter(company_id=chosen, is_active=True).order_by("name"))
         own = {s.branch_id: s for s in BranchTrackingSettings.objects.filter(branch__in=branches)}
         context.update({"default": settings_row, "save_url": reverse("tracking-settings-save", args=[chosen]),
+                        "min_offline": services.MIN_OFFLINE_SECONDS,
                         "rows": [{"branch": b, "own": own.get(b.pk)} for b in branches]})
         return context
 

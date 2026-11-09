@@ -13,6 +13,8 @@ from apps.tracking import engine, store
 from apps.tracking.models import (
     Antenna,
     BranchTrackingSettings,
+    Calibration,
+    CalibrationStatus,
     EventKind,
     PresenceEvent,
     PresenceState,
@@ -137,13 +139,12 @@ def test_reader_offline_is_unknown_not_missing(station):
     assert (row.state, row.reason) == (P.UNKNOWN, engine.READER_OFFLINE)
 
 
-def test_unseen_goes_alert_then_missing(station):
+def test_unseen_goes_straight_to_missing(station):
     tick(station, 0)
     heard(station, 0)
     tick(station, 30)
 
-    assert tick(station, 149).state == P.PRESENT
-    assert tick(station, 150).state == P.ALERT
+    assert tick(station, 299).state == P.PRESENT
     row = tick(station, 300)
     assert (row.state, row.reason) == (P.MISSING, engine.NOT_SEEN)
 
@@ -161,7 +162,7 @@ def test_a_4g_drop_alerts_nobody(station):
     assert tick(station, 200, talking=False).state == P.PRESENT
     assert tick(station, 299, talking=False).state == P.PRESENT
     assert tick(station, 331, talking=False).state == P.UNKNOWN
-    assert not PresenceEvent.objects.filter(to_state__in=[P.ALERT, P.MISSING]).exists()
+    assert not PresenceEvent.objects.filter(to_state=P.MISSING).exists()
 
 
 def test_back_from_rent_is_not_flagged_for_having_been_away(station, monkeypatch):
@@ -175,8 +176,8 @@ def test_back_from_rent_is_not_flagged_for_having_been_away(station, monkeypatch
     rented.clear()
 
     assert tick(station, 7200).state == P.PRESENT
-    assert tick(station, 7349).state == P.PRESENT
-    assert tick(station, 7350).state == P.ALERT  # and the clock does run from its return
+    assert tick(station, 7499).state == P.PRESENT
+    assert tick(station, 7500).state == P.MISSING  # and the clock does run from its return
 
 
 def test_reader_back_online_restarts_the_clock(station):
@@ -197,30 +198,59 @@ def test_a_replayed_seen_at_changes_nothing_while_absent(station):
 
 # -- calibrated limits and hysteresis --------------------------------------------------------
 
-def test_below_leave_is_alert_then_missing_after_that_long(station):
+def test_below_leave_shows_present_until_it_has_lasted_the_missing_time(station):
     tick(station, 0)
     limits(station)
     heard(station, 30, avg=-70)
-    row = tick(station, 30)
-    assert (row.state, row.reason) == (P.ALERT, engine.WEAK_SIGNAL)
+    assert tick(station, 30).state == P.PRESENT
 
     heard(station, 200, avg=-70)
-    assert tick(station, 200).state == P.ALERT
+    assert tick(station, 200).state == P.PRESENT
     heard(station, 330, avg=-70)
     row = tick(station, 330)
     assert (row.state, row.reason) == (P.MISSING, engine.WEAK_SIGNAL)
+
+
+def test_a_signal_that_recovers_resets_the_weak_timer(station):
+    tick(station, 0)
+    limits(station)
+    heard(station, 30, avg=-70)
+    tick(station, 30)
+    heard(station, 200, avg=-55)             # back above leave
+    assert tick(station, 200).weak_since is None
+    heard(station, 330, avg=-70)
+    assert tick(station, 330).state == P.PRESENT
+
+
+def test_the_weak_timer_does_not_survive_a_rental(station, monkeypatch):
+    rented = {}
+    monkeypatch.setattr(engine, "active_rentals", lambda ids: dict(rented))
+    tick(station, 0)
+    limits(station)
+    heard(station, 30, avg=-70)
+    assert tick(station, 30).weak_since == at(30)
+    rented[station["bike"].pk] = ("A1", T0)
+    assert tick(station, 60).weak_since is None
+    rented.clear()
+    heard(station, 700, avg=-70)
+    tick(station, 690)
+
+    assert tick(station, 700).state == P.PRESENT
 
 
 def test_back_to_present_needs_enter_not_just_leave(station):
     tick(station, 0)
     limits(station)
     heard(station, 30, avg=-70)
-    assert tick(station, 30).state == P.ALERT
+    tick(station, 30)
+    heard(station, 330, avg=-70)
+    assert tick(station, 330).state == P.MISSING
 
-    heard(station, 60, avg=-55)              # between leave and enter
-    assert tick(station, 60).state == P.ALERT
-    heard(station, 90, avg=-45)
-    assert tick(station, 90).state == P.PRESENT
+    heard(station, 360, avg=-55)             # between leave and enter
+    row = tick(station, 360)
+    assert (row.state, row.reason) == (P.MISSING, engine.WEAK_SIGNAL)
+    heard(station, 390, avg=-45)
+    assert tick(station, 390).state == P.PRESENT
 
 
 def test_no_flapping_on_reads_around_the_band(station):
@@ -294,10 +324,10 @@ def test_events_only_on_change_and_alerts_only_with_alerts_on(station):
     tick(station, 0)
     heard(station, 0)
     tick(station, 30)
-    tick(station, 150)
-    tick(station, 180)
+    tick(station, 300)
+    tick(station, 330)
 
-    event = PresenceEvent.objects.get(to_state=P.ALERT)
+    event = PresenceEvent.objects.get(to_state=P.MISSING)
 
     assert (event.from_state, event.alerts) == (P.PRESENT, False)
     assert PresenceEvent.objects.filter(kind=EventKind.STATE).count() == 1
@@ -307,9 +337,9 @@ def test_a_branch_with_alerts_on_rings_the_bell(station):
     alerts_on(station["branch"])
     tick(station, 0)
     heard(station, 0)
-    tick(station, 150)
+    tick(station, 300)
 
-    assert PresenceEvent.objects.get(to_state=P.ALERT).alerts is True
+    assert PresenceEvent.objects.get(to_state=P.MISSING).alerts is True
 
 
 def test_reader_offline_and_back_are_events(station):
@@ -325,32 +355,31 @@ def test_reader_offline_and_back_are_events(station):
 # -- settings: company default, per-branch overrides ------------------------------------------
 
 def test_the_company_default_applies(world, station):
-    TrackingSettings.objects.create(company=world["company"], alert_after_s=60, missing_after_s=120)
+    TrackingSettings.objects.create(company=world["company"], missing_after_s=120)
     tick(station, 0)
     heard(station, 0)
 
-    assert tick(station, 60).state == P.ALERT
+    assert tick(station, 119).state == P.PRESENT
     assert tick(station, 120).state == P.MISSING
 
 
 def test_a_branch_override_beats_the_company_default(world, station):
-    TrackingSettings.objects.create(company=world["company"], alert_after_s=60, missing_after_s=120)
-    BranchTrackingSettings.objects.create(branch=station["branch"], alert_after_s=90, missing_after_s=600)
+    TrackingSettings.objects.create(company=world["company"], missing_after_s=120)
+    BranchTrackingSettings.objects.create(branch=station["branch"], missing_after_s=600)
     tick(station, 0)
     heard(station, 0)
 
-    assert tick(station, 60).state == P.PRESENT
-    assert tick(station, 90).state == P.ALERT
-    assert tick(station, 300).state == P.ALERT
+    assert tick(station, 300).state == P.PRESENT
+    assert tick(station, 600).state == P.MISSING
 
 
 def test_blank_override_falls_back_field_by_field(world, station):
-    TrackingSettings.objects.create(company=world["company"], alert_after_s=60, missing_after_s=120)
+    TrackingSettings.objects.create(company=world["company"], missing_after_s=120, offline_after_s=240)
     BranchTrackingSettings.objects.create(branch=station["branch"], missing_after_s=600)
 
     timing = engine.timings_by_branch([station["branch"].pk])[station["branch"].pk]
 
-    assert (timing.alert, timing.missing, timing.offline) == (60, 600, 300)
+    assert (timing.missing, timing.offline) == (600, 240)
 
 
 def test_a_settings_change_applies_on_the_next_cycle(station):
@@ -358,9 +387,9 @@ def test_a_settings_change_applies_on_the_next_cycle(station):
     heard(station, 0)
     assert tick(station, 60).state == P.PRESENT
 
-    BranchTrackingSettings.objects.create(branch=station["branch"], alert_after_s=30, missing_after_s=900)
+    BranchTrackingSettings.objects.create(branch=station["branch"], missing_after_s=90)
 
-    assert tick(station, 90).state == P.ALERT
+    assert tick(station, 90).state == P.MISSING
 
 
 # -- the rows the engine keeps ----------------------------------------------------------------
@@ -416,3 +445,132 @@ def test_a_failed_read_skips_the_cycle_and_flags_nobody(station, monkeypatch):
     assert engine.tick(at(1000)) is None
     assert VehiclePresence.objects.get().state == P.PRESENT
     assert PresenceEvent.objects.count() == alerts_before
+
+
+# -- a talking reader that hears nothing ----------------------------------------------------
+
+@pytest.fixture
+def fleet(station, shop):
+    """Three tagged bikes at the station."""
+    bikes = [station["bike"], shop["dc02"], shop["mo42"]]
+    for bike, tag in zip(bikes[1:], ("0A0B0C0E", "0A0B0C0F"), strict=True):
+        bike.rfid_epc = tag
+        bike.save(update_fields=["rfid_epc"])
+    return {**station, "bikes": bikes, "tags": [TAG, "0A0B0C0E", "0A0B0C0F"]}
+
+
+def hear(fleet, seconds, tags=None):
+    for tag in tags if tags is not None else fleet["tags"]:
+        TagLastSeen.objects.update_or_create(tag=tag, defaults={
+            "reader": fleet["reader"], "port": 1, "seen_at": at(seconds), "reader_time": at(seconds), "rssi": -40,
+            "rssi_avg": -40.0})
+
+
+def states(fleet):
+    return [VehiclePresence.objects.get(pk=b.pk).state for b in fleet["bikes"]]
+
+
+def settled(fleet):
+    """A working station: every bike heard, up to 300 s."""
+    tick(fleet, 0)
+    for seconds in (60, 120, 180, 240, 300):
+        hear(fleet, seconds)
+        tick(fleet, seconds)
+    assert states(fleet) == [P.PRESENT] * 3
+
+
+def test_a_reader_that_hears_nothing_flags_nobody_and_alerts_once(fleet):
+    alerts_on(fleet["branch"])
+    settled(fleet)
+
+    for seconds in (540, 570, 700, 900, 1200):
+        tick(fleet, seconds)
+        assert states(fleet) == [P.UNKNOWN] * 3
+
+    assert VehiclePresence.objects.filter(reason=engine.NO_NEW_READS).count() == 3
+    assert PresenceEvent.objects.filter(kind=EventKind.READER_SILENT, alerts=True).count() == 1
+    assert not PresenceEvent.objects.filter(to_state=P.MISSING).exists()
+
+
+def test_the_silence_guard_does_not_flap(fleet):
+    alerts_on(fleet["branch"])
+    settled(fleet)
+    for seconds in range(540, 2400, 30):
+        tick(fleet, seconds)
+
+    changes = PresenceEvent.objects.filter(kind=EventKind.STATE).count()
+    assert changes == 3                      # present -> unknown, once each
+    assert PresenceEvent.objects.filter(kind=EventKind.READER_SILENT).count() == 1
+
+
+def test_one_stolen_bike_at_a_working_station_still_goes_missing(fleet):
+    settled(fleet)
+    for seconds in range(360, 660, 30):
+        hear(fleet, seconds, fleet["tags"][1:])
+        tick(fleet, seconds)
+
+    assert states(fleet) == [P.MISSING, P.PRESENT, P.PRESENT]
+
+
+def test_a_reader_back_from_a_drop_raises_no_silence_alert(fleet):
+    settled(fleet)
+    tick(fleet, 700, talking=False)          # offline -> unknown
+    tick(fleet, 730)                         # talking again, its first upload not here yet
+
+    assert not PresenceEvent.objects.filter(kind=EventKind.READER_SILENT).exists()
+
+
+def test_when_the_antennas_recover_a_bike_that_really_left_goes_missing(fleet):
+    settled(fleet)
+    tick(fleet, 570)
+    assert states(fleet) == [P.UNKNOWN] * 3
+
+    hear(fleet, 600, fleet["tags"][1:])
+    tick(fleet, 600)
+    assert states(fleet)[1:] == [P.PRESENT, P.PRESENT]
+
+    for seconds in range(630, 960, 30):
+        hear(fleet, seconds, fleet["tags"][1:])
+        tick(fleet, seconds)
+    assert states(fleet)[0] == P.MISSING
+
+
+# -- calibration, and what the engine writes ----------------------------------------------
+
+def test_a_bike_in_an_open_calibration_is_excused_and_starts_afresh(station):
+    tick(station, 0)
+    heard(station, 0)
+    tick(station, 30)
+    session = Calibration.objects.create(reader=station["reader"], tags=[TAG], started_at=at(40))
+
+    row = tick(station, 400)
+    assert (row.state, row.reason) == (P.UNKNOWN, engine.CALIBRATING)
+
+    session.status = CalibrationStatus.DISCARDED
+    session.save(update_fields=["status"])
+    assert tick(station, 430).state == P.PRESENT
+
+
+def test_a_proposed_session_no_longer_excuses_a_bike(station):
+    tick(station, 0)
+    heard(station, 0)
+    tick(station, 30)
+    Calibration.objects.create(reader=station["reader"], tags=[TAG], started_at=at(40),
+                               status=CalibrationStatus.PROPOSED)
+
+    assert tick(station, 300).state == P.MISSING
+
+
+def test_nothing_is_written_or_published_when_nothing_changed(station, monkeypatch):
+    sent = []
+    monkeypatch.setattr(engine, "publish", lambda group, message: sent.append(group))
+    tick(station, 0)
+    heard(station, 30)
+    tick(station, 30)
+    sent.clear()
+
+    heard(station, 60)
+    heartbeat(station, 60)
+    result = engine.run_cycle(at(60))
+
+    assert (result["written"], sent) == (0, [])

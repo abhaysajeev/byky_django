@@ -15,14 +15,11 @@
   </div>
 </div>
 
-<div data-tracking-live>
-  <div class="scr-tiles" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr))">
-    {% for t in tiles %}
-    <div class="scr-tile">
-      <div class="scr-tile-lab">{{ t.label }}</div>
-      <div class="scr-tile-val">{{ t.value }}</div>
-    </div>
-    {% endfor %}
+<div class="scr-track-stack" data-tracking-live>
+  <div class="scr-card">
+    <dl class="scr-live-totals scr-track-totals">
+      {% for t in tiles %}<div{% if t.key == "missing" %} class="is-missing"{% endif %}><dt>{{ t.label }}</dt><dd>{{ t.value }}</dd></div>{% endfor %}
+    </dl>
   </div>
 
   <div class="scr-card">
@@ -33,7 +30,7 @@
         <tbody>
           {% for v in vehicles %}
           <tr class="scr-row">
-            <td><span class="scr-code">{{ v.code }}</span> {{ v.name }}</td>
+            <td>{% include "tracking/_vehicle.html" with name=v.name sub=v.type %}</td>
             <td><span class="scr-badge {{ v.badge }}"><i></i>{{ v.state_label }}</span></td>
             <td class="scr-contact">{{ v.reason|default:"—" }}</td>
             <td class="scr-contact">{{ v.since|date:"d M H:i:s" }}</td>
@@ -59,7 +56,7 @@
             {% for n in b.cells %}<td>{{ n }}</td>{% endfor %}
           </tr>
           {% empty %}
-          <tr><td colspan="8" style="padding:0"><div class="scr-empty"><div>
+          <tr><td colspan="7" style="padding:0"><div class="scr-empty"><div>
             <div class="scr-empty-title">Nothing tracked yet</div>
             <p class="scr-empty-sub">Approve a reader on the Readers page and give it a station. Tagged vehicles then appear here within 30 seconds.</p>
           </div></div></td></tr>

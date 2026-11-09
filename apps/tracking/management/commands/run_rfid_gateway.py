@@ -28,5 +28,5 @@ class Command(BaseCommand):
                         reader_tz=settings.TRACKING_READER_TZ, idle_seconds=settings.TRACKING_IDLE_SECONDS,
                         max_per_ip=settings.TRACKING_MAX_PER_IP, max_connections=settings.TRACKING_MAX_CONNECTIONS)
         store = Store(size=settings.TRACKING_DB_POOL, max_pending=settings.TRACKING_MAX_PENDING,
-                      reader_tz=settings.TRACKING_READER_TZ)
+                      reader_tz=settings.TRACKING_READER_TZ, events=ops.event)
         asyncio.run(Gateway(config, store, events=ops.event).serve_forever())

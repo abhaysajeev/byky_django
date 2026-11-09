@@ -51,6 +51,9 @@ class Reader(TimeStampedModel):
     # the engine's own view, so reader offline / online is an event only on a change
     online = models.BooleanField(db_default=False)
     online_changed_at = models.DateTimeField(null=True, blank=True)
+    # Keep every raw read of this reader (owner, 9 Nov 2026). Off by default: raw
+    # reads are also kept, whatever this says, during a calibration of the reader.
+    keep_raw = models.BooleanField(db_default=False)
 
     class Meta:
         db_table = "tracking_reader"
@@ -108,8 +111,7 @@ class Antenna(TimeStampedModel):
 
 
 class CalibrationMethod(models.TextChoices):
-    FULL = "full", "Full survey"
-    QUICK = "quick", "Quick (boundary + outside spots)"
+    PARKED = "parked", "Bikes parked on the boundary"
 
 
 class CalibrationStatus(models.TextChoices):
@@ -123,7 +125,7 @@ class Calibration(TimeStampedModel):
     """One calibration session of a reader (design §6)."""
 
     reader = models.ForeignKey(Reader, on_delete=models.PROTECT, related_name="calibrations")
-    method = models.CharField(max_length=10, choices=CalibrationMethod.choices)
+    method = models.CharField(max_length=10, choices=CalibrationMethod.choices, default=CalibrationMethod.PARKED)
     status = models.CharField(max_length=10, choices=CalibrationStatus.choices, default=CalibrationStatus.OPEN)
     tags = models.JSONField(default=list)          # the calibration bikes' tags, 8-hex
     started_at = models.DateTimeField()
@@ -144,9 +146,7 @@ class Calibration(TimeStampedModel):
 
 
 class PointZone(models.TextChoices):
-    INSIDE = "inside", "Inside"
     BOUNDARY = "boundary", "Boundary"
-    OUTSIDE = "outside", "Outside"
 
 
 class CalibrationPoint(models.Model):
@@ -200,7 +200,10 @@ class ReadingKey(models.Model):
     received_at. ON CONFLICT DO NOTHING here decides which reads are new."""
 
     pk = models.CompositePrimaryKey("reader_id", "port", "tag", "reader_time")
-    reader = models.ForeignKey(Reader, on_delete=models.CASCADE, related_name="+")
+    # No foreign key or index: the primary key already starts with it, and this
+    # table takes one insert per read.
+    reader = models.ForeignKey(Reader, on_delete=models.DO_NOTHING, db_constraint=False, db_index=False,
+                               related_name="+")
     port = models.SmallIntegerField()
     tag = models.CharField(max_length=8)
     reader_time = models.DateTimeField()
@@ -253,7 +256,6 @@ class TagLastSeen(models.Model):
 
 class PresenceState(models.TextChoices):
     PRESENT = "present", "Present"
-    ALERT = "alert", "At edge"
     MISSING = "missing", "Missing"
     ON_RENT = "on_rent", "On rent"
     ON_TEST = "on_test", "On test"
@@ -277,6 +279,8 @@ class VehiclePresence(models.Model):
     # where a tag's silence is counted from when that is later than last_seen_at:
     # the moment it stopped being excused (back from rent, reader back online)
     clock_from = models.DateTimeField(null=True)
+    # since when its signal has been below the antenna's leave limit
+    weak_since = models.DateTimeField(null=True)
 
     class Meta:
         db_table = "tracking_vehicle_presence"
@@ -291,6 +295,7 @@ class EventKind(models.TextChoices):
     LOW_BATTERY = "low_battery", "Low battery"
     READER_OFFLINE = "reader_offline", "Reader offline"
     READER_ONLINE = "reader_online", "Reader back online"
+    READER_SILENT = "reader_silent", "Reader hears no tags"
 
 
 class PresenceEvent(models.Model):
@@ -306,7 +311,7 @@ class PresenceEvent(models.Model):
     to_state = models.CharField(max_length=12, choices=PresenceState.choices, blank=True)
     reason = models.CharField(max_length=30, blank=True)
     at = models.DateTimeField()
-    alerts = models.BooleanField(default=False)    # shown in the bell (missing/edge/low battery/offline, alerts on)
+    alerts = models.BooleanField(default=False)    # shown in the bell (missing/low battery/reader, alerts on)
     acknowledged_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT,
                                         related_name="+")
     acknowledged_at = models.DateTimeField(null=True, blank=True)
@@ -328,20 +333,16 @@ class TrackingSettings(models.Model):
     """Per company, edited on the Tracking Settings page (D2, D6)."""
 
     company = models.OneToOneField("company.Company", primary_key=True, on_delete=models.CASCADE, related_name="+")
-    alert_after_s = models.PositiveIntegerField(default=150)
     missing_after_s = models.PositiveIntegerField(default=300)
     offline_after_s = models.PositiveIntegerField(default=300)
     retention_days = models.PositiveSmallIntegerField(default=3)
-    allowance_in_db = models.PositiveSmallIntegerField(default=3)
-    allowance_out_db = models.PositiveSmallIntegerField(default=3)
+    allowance_out_db = models.PositiveSmallIntegerField(default=3)  # beyond the boundary before a bike counts as out
     modified_on = models.DateTimeField(auto_now=True)
     modified_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
 
     class Meta:
         db_table = "tracking_settings"
         constraints = [
-            models.CheckConstraint(condition=Q(alert_after_s__lt=models.F("missing_after_s")),
-                                   name="tracking_alert_before_missing"),
             models.CheckConstraint(condition=Q(retention_days__gte=1, retention_days__lte=14),
                                    name="tracking_retention_1_14"),
         ]
@@ -356,7 +357,6 @@ class BranchTrackingSettings(models.Model):
 
     branch = models.OneToOneField("company.Branch", primary_key=True, on_delete=models.CASCADE, related_name="+")
     alerts_on = models.BooleanField(default=False)
-    alert_after_s = models.PositiveIntegerField(null=True, blank=True)
     missing_after_s = models.PositiveIntegerField(null=True, blank=True)
     offline_after_s = models.PositiveIntegerField(null=True, blank=True)
     modified_on = models.DateTimeField(auto_now=True)

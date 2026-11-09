@@ -62,3 +62,24 @@ def test_drop_older_keeps_the_retention():
     assert dropped[-1] == today - timedelta(days=3)
     assert {today, today - timedelta(1), today - timedelta(2)} <= have
     assert today - timedelta(3) not in have
+
+
+def _stray(cursor, at):
+    _insert(cursor, at)
+    assert _home(cursor, at) == partitions.DEFAULT
+
+
+def test_rows_stuck_in_the_default_partition_are_moved_and_partitions_can_be_made_again():
+    today = datetime(2027, 3, 10, tzinfo=UTC)
+    earlier = today - timedelta(days=2)
+    with connection.cursor() as cursor:
+        _stray(cursor, today.replace(hour=5))
+        _stray(cursor, earlier.replace(hour=5))
+
+        assert partitions.repair_default(cursor) == [earlier.date(), today.date()]
+
+        assert partitions.default_rows(cursor) == 0
+        assert _home(cursor, today.replace(hour=5)) == partitions.name_for(today.date())
+        assert _home(cursor, earlier.replace(hour=5)) == partitions.name_for(earlier.date())
+        made = partitions.ensure(cursor, today.date())   # refused before the repair
+        assert today.date() not in made and today.date() + timedelta(days=1) in made

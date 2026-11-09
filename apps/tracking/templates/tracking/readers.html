@@ -3,80 +3,96 @@
 {% block screen_title %}Readers{% endblock %}
 {% block crumb %}Readers{% endblock %}
 {% block heading %}Readers{% endblock %}
-{% block sub %}A reader that connects appears here as Pending. Approve it and give it a station before its data counts.{% endblock %}
+{% block sub %}A reader that connects appears here as Pending. Approve it and give it a station before its data counts. Updates by itself.{% endblock %}
 
 {% block actions %}
-{% if perm.create %}<button type="button" class="scr-btn-primary" data-modal-open="reader-add">Add reader</button>{% endif %}
+{% if perm.create and perm.approve %}<button type="button" class="scr-btn-primary" data-modal-open="reader-add">Add reader</button>{% endif %}
 {% endblock %}
 
 {% block body %}
-<div class="scr-tiles">
-  <div class="scr-tile"><div class="scr-tile-lab">Pending</div><div class="scr-tile-val">{{ counts.pending }}</div></div>
-  <div class="scr-tile"><div class="scr-tile-lab">Approved</div><div class="scr-tile-val">{{ counts.approved }}</div></div>
-  <div class="scr-tile"><div class="scr-tile-lab">Blocked</div><div class="scr-tile-val">{{ counts.blocked }}</div></div>
-</div>
+<div class="scr-track-stack" data-tracking-live data-test-url="{% url 'tracking-reader-test' %}">
+  <div class="scr-tiles">
+    <div class="scr-tile"><div class="scr-tile-lab">Pending</div><div class="scr-tile-val">{{ counts.pending }}</div></div>
+    <div class="scr-tile"><div class="scr-tile-lab">Approved</div><div class="scr-tile-val">{{ counts.approved }}</div></div>
+    <div class="scr-tile"><div class="scr-tile-lab">Blocked</div><div class="scr-tile-val">{{ counts.blocked }}</div></div>
+  </div>
 
-<div class="scr-card">
-  <div class="scr-table-scroll scr-sb">
-    <table>
-      <thead><tr><th>Device ID</th><th>Name</th><th>Station</th><th>Status</th><th>Online</th><th>Last contact</th><th>Last IP</th><th>Firmware</th><th style="text-align:center">On</th><th></th></tr></thead>
-      <tbody>
-        {% for row in rows %}
-        {% with r=row.r %}
-        <tr class="scr-row">
-          <td><span class="scr-code">{{ r.device_id }}</span></td>
-          <td style="font-weight:600">{{ r.name|default:"—" }}</td>
-          <td>{{ row.branch.name|default:"—" }}</td>
-          <td>
-            {% if r.status == "approved" %}<span class="scr-badge scr-badge-active"><i></i>Approved</span>
-            {% elif r.status == "blocked" %}<span class="scr-badge scr-badge-rejected"><i></i>Blocked</span>
-            {% else %}<span class="scr-badge scr-badge-pending"><i></i>Pending</span>{% endif %}
-          </td>
-          <td>{% if r.status == "approved" %}{% if r.online %}<span class="scr-badge scr-badge-active"><i></i>Online</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Offline</span>{% endif %}{% else %}—{% endif %}</td>
-          <td class="scr-contact">{% if row.last %}{{ row.last|date:"d M H:i:s" }}<div class="scr-contact-sub">{{ row.age }} s ago</div>{% else %}Never{% endif %}</td>
-          <td class="scr-contact">{{ r.last_ip|default:"—" }}</td>
-          <td class="scr-contact">{{ r.firmware|default:"—" }}</td>
-          <td style="text-align:center">
-            {% if r.status == "approved" %}
-            <button type="button" class="scr-toggle{% if r.enabled %} is-on{% endif %}" role="switch" aria-checked="{% if r.enabled %}true{% else %}false{% endif %}" aria-label="Reader on — {{ r.device_id }}" data-tracking-toggle data-url="{% url 'tracking-reader-enabled' r.pk %}" {% if not perm.update %}disabled{% endif %}><i></i></button>
-            {% else %}—{% endif %}
-          </td>
-          <td><div class="scr-row-actions" style="opacity:1">
-            {% if r.status == "pending" and perm.approve %}<button type="button" class="scr-btn-primary scr-btn-small" data-modal-open="reader-approve" data-url="{% url 'tracking-reader-approve' r.pk %}" data-fill-device="{{ r.device_id }}" data-fill-name="{{ r.name }}">Approve</button>{% endif %}
-            {% if r.status == "approved" and perm.update %}<button type="button" class="scr-btn-secondary scr-btn-small" data-modal-open="reader-edit" data-url="{% url 'tracking-reader-edit' r.pk %}" data-fill-device="{{ r.device_id }}" data-fill-name="{{ r.name }}" data-fill-branch="{{ row.branch.pk|default:'' }}">Edit</button>{% endif %}
-            {% if r.status != "blocked" and perm.approve %}<button type="button" class="scr-btn-danger scr-btn-small" data-post="{% url 'tracking-reader-block' r.pk %}" data-confirm="Block reader {{ r.device_id }}? Its connections will be closed.">Block</button>{% endif %}
-            {% if r.status == "blocked" and perm.approve %}<button type="button" class="scr-btn-secondary scr-btn-small" data-post="{% url 'tracking-reader-unblock' r.pk %}">Unblock</button>{% endif %}
-          </div></td>
-        </tr>
-        {% endwith %}
-        {% empty %}
-        <tr><td colspan="10" style="padding:0"><div class="scr-empty"><div>
-          <div class="scr-empty-title">No readers yet</div>
-          <p class="scr-empty-sub">Set the reader's server IP and port. It appears here when it connects, or add it now by its device id.</p>
-        </div></div></td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <div class="scr-card">
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead><tr><th>Device ID</th><th>Name</th><th>Station</th><th>Status</th><th>Connection</th><th>Last heartbeat</th><th>Last tag data</th><th>Last IP</th><th>Firmware</th><th style="text-align:center">On</th><th style="text-align:center">Keep raw</th><th></th></tr></thead>
+        <tbody>
+          {% for row in rows %}
+          {% with r=row.r %}
+          <tr class="scr-row">
+            <td><span class="scr-code">{{ r.device_id }}</span></td>
+            <td style="font-weight:600">{{ r.name|default:"—" }}</td>
+            <td>{{ row.branch.name|default:"—" }}</td>
+            <td>
+              {% if r.status == "approved" %}<span class="scr-badge scr-badge-active"><i></i>Approved</span>
+              {% elif r.status == "blocked" %}<span class="scr-badge scr-badge-missing"><i></i>Blocked</span>
+              {% else %}<span class="scr-badge scr-badge-pending"><i></i>Pending</span>{% endif %}
+            </td>
+            <td>{% if row.online %}<span class="scr-badge scr-badge-active"><i></i>Online</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Offline</span>{% endif %}</td>
+            <td class="scr-contact">{% if r.last_heartbeat_at %}{{ r.last_heartbeat_at|date:"d M H:i:s" }}<div class="scr-contact-sub">{{ row.heartbeat_age }} s ago</div>{% else %}Never{% endif %}</td>
+            <td class="scr-contact">{% if r.last_data_at %}{{ r.last_data_at|date:"d M H:i:s" }}<div class="scr-contact-sub">{{ row.data_age }} s ago</div>{% else %}Never{% endif %}</td>
+            <td class="scr-contact">{{ r.last_ip|default:"—" }}</td>
+            <td class="scr-contact">{{ r.firmware|default:"—" }}</td>
+            <td style="text-align:center">
+              {% if r.status == "approved" %}
+              <button type="button" class="scr-toggle{% if r.enabled %} is-on{% endif %}" role="switch" aria-checked="{% if r.enabled %}true{% else %}false{% endif %}" aria-label="Reader on — {{ r.device_id }}" data-tracking-toggle data-url="{% url 'tracking-reader-enabled' r.pk %}" {% if not perm.update %}disabled{% endif %}><i></i></button>
+              {% else %}—{% endif %}
+            </td>
+            <td style="text-align:center">
+              <button type="button" class="scr-toggle{% if r.keep_raw %} is-on{% endif %}" role="switch" aria-checked="{% if r.keep_raw %}true{% else %}false{% endif %}" aria-label="Keep raw readings — {{ r.device_id }}" data-tracking-toggle data-url="{% url 'tracking-reader-keep-raw' r.pk %}" {% if not perm.update %}disabled{% endif %}><i></i></button>
+            </td>
+            <td><div class="scr-row-actions" style="opacity:1">
+              <button type="button" class="scr-btn-secondary scr-btn-small" data-modal-open="reader-test" data-fill-device="{{ r.device_id }}">Test</button>
+              {% if r.status == "pending" and perm.approve %}<button type="button" class="scr-btn-primary scr-btn-small" data-modal-open="reader-approve" data-url="{% url 'tracking-reader-approve' r.pk %}" data-fill-device="{{ r.device_id }}" data-fill-name="{{ r.name }}">Approve</button>{% endif %}
+              {% if r.status == "approved" and perm.update %}<button type="button" class="scr-btn-secondary scr-btn-small" data-modal-open="reader-edit" data-url="{% url 'tracking-reader-edit' r.pk %}" data-fill-device="{{ r.device_id }}" data-fill-name="{{ r.name }}" data-fill-branch="{{ row.branch.pk|default:'' }}">Edit</button>{% endif %}
+              {% if r.status != "blocked" and perm.approve %}<button type="button" class="scr-btn-danger scr-btn-small" data-post="{% url 'tracking-reader-block' r.pk %}" data-confirm="Block reader {{ r.device_id }}? Its connections will be closed.">Block</button>{% endif %}
+              {% if r.status == "blocked" and perm.approve %}<button type="button" class="scr-btn-secondary scr-btn-small" data-post="{% url 'tracking-reader-unblock' r.pk %}">Unblock</button>{% endif %}
+            </div></td>
+          </tr>
+          {% endwith %}
+          {% empty %}
+          <tr><td colspan="12" style="padding:0"><div class="scr-empty"><div>
+            <div class="scr-empty-title">No readers yet</div>
+            <p class="scr-empty-sub">Set the reader's server IP and port. It appears here when it connects, or add it now by its device id.</p>
+          </div></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
 {% endblock %}
 
 {% block modals %}
 <div class="scr-modal-veil" data-scr-modal-veil="reader-add" hidden></div>
-<div class="scr-modal" data-scr-modal="reader-add" hidden style="width:min(460px, 100%)">
+<div class="scr-modal" data-scr-modal="reader-add" hidden style="width:min(520px, 100%)">
   <form data-tracking-form data-url="{% url 'tracking-reader-add' %}">
     <div class="scr-modal-head"><div class="scr-modal-title">Add reader</div></div>
     <div class="scr-modal-body">
       <div class="scr-field" style="margin-bottom:14px"><label class="scr-label" for="add-device">Device ID</label><input class="scr-input" id="add-device" name="device_id" maxlength="16" required style="width:100%"></div>
       <div class="scr-field" style="margin-bottom:14px"><label class="scr-label" for="add-name">Name</label><input class="scr-input" id="add-name" name="name" maxlength="100" style="width:100%"></div>
-      <div class="scr-field" style="margin-bottom:14px"><label class="scr-label" for="add-company">Company</label>
-        <select class="scr-input" id="add-company" name="company" required style="width:100%">{% for c in companies %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></div>
+      <div class="scr-field" style="margin-bottom:14px"><label class="scr-label" for="add-branch">Station</label>
+        <select class="scr-input" id="add-branch" name="branch" required style="width:100%"><option value="">Choose a station</option>{% for b in all_branches %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}</select></div>
+      <div class="scr-track-result" data-test-result aria-live="polite" hidden></div>
     </div>
     <div class="scr-modal-foot" style="justify-content:flex-end;gap:8px">
       <button type="button" class="scr-btn-secondary" data-tracking-close>Cancel</button>
-      <button type="submit" class="scr-btn-primary">Add</button>
+      <button type="button" class="scr-btn-secondary" data-test-connection>Test connection</button>
+      <button type="submit" class="scr-btn-primary">Save</button>
     </div>
   </form>
+</div>
+
+<div class="scr-modal-veil" data-scr-modal-veil="reader-test" hidden></div>
+<div class="scr-modal" data-scr-modal="reader-test" data-auto-test hidden style="width:min(520px, 100%)">
+  <div class="scr-modal-head"><div><div class="scr-modal-title">Test connection</div><p class="scr-modal-sub" data-show="device"></p></div></div>
+  <div class="scr-modal-body"><div class="scr-track-result" data-test-result aria-live="polite" hidden></div></div>
+  <div class="scr-modal-foot" style="justify-content:flex-end"><button type="button" class="scr-btn-primary" data-tracking-close>Close</button></div>
 </div>
 
 <div class="scr-modal-veil" data-scr-modal-veil="reader-approve" hidden></div>

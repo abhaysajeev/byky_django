@@ -34,6 +34,7 @@ from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 from apps.tracking import protocol as p
+from apps.tracking.store import NEW_DEVICE
 
 log = logging.getLogger("apps.tracking.gateway")
 
@@ -116,8 +117,8 @@ class Gateway:
             return
         self.stats.connections += 1
         self._per_ip[ip] = self._per_ip.get(ip, 0) + 1
-        self.events("connect", ip=ip)
         device = ""
+        conn = {"known": False}               # no connect event until a frame names a known reader
         try:
             while True:
                 try:
@@ -125,21 +126,19 @@ class Gateway:
                     size = p.frame_size(head)
                     rest = await asyncio.wait_for(reader.readexactly(size - 4), 30)
                 except p.FrameError as exc:
-                    self._bad(ip, device, head, str(exc))
-                    await self._save_raw_safe(device, ip, head, False, str(exc))
+                    await self._reject(ip, device, head, str(exc))
                     return
                 frame = head + rest
                 try:
                     p.check(frame)
                     parsed = p.parse(frame)
                 except p.FrameError as exc:
-                    self._bad(ip, device, frame, str(exc))
-                    await self._save_raw_safe(device, ip, frame, False, str(exc))
+                    await self._reject(ip, device, frame, str(exc))
                     return
                 device = parsed.device_id
                 self.stats.frames += 1
                 self.stats.last_frame_at = time.monotonic()
-                answer = await self._handle(parsed, frame, ip)
+                answer = await self._handle(parsed, frame, ip, conn)
                 if answer is None:            # blocked / refused
                     return
                 if answer:
@@ -154,15 +153,22 @@ class Gateway:
             self._per_ip[ip] -= 1
             if not self._per_ip[ip]:
                 del self._per_ip[ip]
-            self.events("disconnect", ip=ip, device=device)
+            if conn["known"]:
+                self.events("disconnect", ip=ip, device=device)
             writer.close()
 
     def _bad(self, ip, device, data, why):
         self.stats.bad_frames += 1
-        self.events("bad_frame", ip=ip, device=device, reason=why)
+        if device:                            # the port is public: a scanner's noise is only a log line
+            self.events("bad_frame", ip=ip, device=device, reason=why)
         log.warning("rfid gateway: bad frame from %s (%s): %s", ip, device, why)
 
-    async def _handle(self, frame, raw, ip):
+    async def _reject(self, ip, device, data, why):
+        self._bad(ip, device, data, why)
+        if device:                            # only from a connection that has already identified itself
+            await self._save_raw_safe(device, ip, data, False, why)
+
+    async def _handle(self, frame, raw, ip, conn=None):
         """-> the reply bytes, b"" for no reply, or None to close the connection."""
         now = self._now()
         firmware = ""
@@ -178,6 +184,9 @@ class Gateway:
             self.events("db_error", device=frame.device_id, error=str(exc)[:200])
             log.warning("rfid gateway: touch failed for %s: %s", frame.device_id, exc)
             return None                      # no ACK; the reader reconnects and resends
+        if conn is not None and not conn["known"] and status != NEW_DEVICE:
+            conn["known"] = True
+            self.events("connect", ip=ip, device=frame.device_id)
         if status == "blocked":
             self.events("blocked", device=frame.device_id, ip=ip)
             return None

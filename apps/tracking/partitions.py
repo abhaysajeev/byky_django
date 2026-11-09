@@ -52,6 +52,30 @@ def existing(cursor):
     return days
 
 
+def repair_default(cursor):
+    """Move rows that landed in the default partition into their own day's.
+
+    `CREATE TABLE ... PARTITION OF` refuses while the default holds rows for
+    that day, which would stop every partition being made from then on: a
+    capture period longer than the days made ahead could cause exactly that.
+    Returns the days moved."""
+    cursor.execute(f"LOCK TABLE {DEFAULT} IN ACCESS EXCLUSIVE MODE")
+    cursor.execute(f"SELECT DISTINCT (received_at AT TIME ZONE 'UTC')::date FROM {DEFAULT} ORDER BY 1")
+    days = [row[0] for row in cursor.fetchall()]
+    have = existing(cursor)
+    for day in days:
+        name = name_for(day)
+        low, high = f"{day:%Y-%m-%d} 00:00+00", f"{day + timedelta(days=1):%Y-%m-%d} 00:00+00"
+        if day not in have:
+            cursor.execute(f"CREATE TABLE {name} (LIKE {PARENT} INCLUDING DEFAULTS INCLUDING CONSTRAINTS)")
+        cursor.execute(
+            f"WITH moved AS (DELETE FROM {DEFAULT} WHERE received_at >= %s AND received_at < %s RETURNING *) "
+            f"INSERT INTO {name} SELECT * FROM moved", [low, high])
+        if day not in have:
+            cursor.execute(f"ALTER TABLE {PARENT} ATTACH PARTITION {name} FOR VALUES FROM ('{low}') TO ('{high}')")
+    return days
+
+
 def ensure(cursor, today, ahead=3):
     """Partitions for today .. today + ahead (UTC days). Returns the ones made."""
     have = existing(cursor)

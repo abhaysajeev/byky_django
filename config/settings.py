@@ -440,3 +440,5 @@ TRACKING_MAX_PER_IP = int(os.environ.get("TRACKING_MAX_PER_IP", 5))
 TRACKING_MAX_CONNECTIONS = int(os.environ.get("TRACKING_MAX_CONNECTIONS", 200))
 TRACKING_MAX_PENDING = 50          # unknown readers kept as pending; beyond this, not stored
 TRACKING_DB_POOL = 3
+# Where the web asks the gateway whether it is running (Readers -> Test connection).
+TRACKING_GATEWAY_HEALTH_URL = os.environ.get("TRACKING_GATEWAY_HEALTH_URL", "http://rfid-gateway:8100/")

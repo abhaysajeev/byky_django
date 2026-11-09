@@ -7,6 +7,9 @@ statement it can run visible in one file.
 """
 
 import asyncio
+import time
+from datetime import timedelta
+from typing import NamedTuple
 from zoneinfo import ZoneInfo
 
 import psycopg
@@ -37,6 +40,16 @@ INSERT INTO tracking_raw_frame (device_id, peer, received_at, data, crc_ok, note
 VALUES (%s, %s, %s, %s, %s, %s)
 """
 
+
+# The reader of an upload, and whether its raw reads are kept (owner, 9 Nov 2026).
+READER_FOR_UPLOAD = """
+SELECT r.id, r.keep_raw OR EXISTS (
+    SELECT 1 FROM tracking_calibration c WHERE c.reader_id = r.id AND c.status = 'open')
+FROM tracking_reader r WHERE r.device_id = %s
+"""
+
+# touch(): a device we had no row for until now (treated as pending).
+NEW_DEVICE = "new"
 
 # Which reads of an upload are new: the dedupe key decides (E8: readers re-send).
 NEW_KEYS = """
@@ -73,6 +86,26 @@ WHERE EXCLUDED.reader_time IS NULL OR t.reader_time IS NULL
 """
 
 
+# A reader's clock is only believed within these limits (E11: readers have
+# reported 2070). Ahead of the server: as good as no clock. Older than the limit
+# (a long-held backlog): stored, but it says nothing about where the bike is now.
+CLOCK_AHEAD = timedelta(minutes=10)
+CLOCK_TOO_OLD = timedelta(days=3)
+BAD_CLOCK_EVENT_SECONDS = 3600
+EWMA_ALPHA = 0.3                   # calibration replays the same smoothing
+
+
+class Row(NamedTuple):
+    port: int
+    tag: str
+    sent: object          # the reader's clock, as sent -- what tracking_reading keeps
+    clock: object         # the clock we believe, or None
+    rssi: int
+    entry: bool
+    staying: bool
+    low_battery: bool
+
+
 def dsn():
     """TRACKING_DB_URL, or the app's own database (dev, tests)."""
     if settings.TRACKING_DB_URL:
@@ -83,7 +116,7 @@ def dsn():
 
 
 class Store:
-    def __init__(self, conninfo=None, size=3, max_pending=50, reader_tz="Asia/Dubai", ewma_alpha=0.3):
+    def __init__(self, conninfo=None, size=3, max_pending=50, reader_tz="Asia/Dubai", ewma_alpha=EWMA_ALPHA, events=None):
         self.conninfo = conninfo or dsn()
         self.reader_tz = reader_tz
         self.ewma_alpha = ewma_alpha
@@ -92,6 +125,8 @@ class Store:
         self._pool = None
         self._made = 0
         self._lock = asyncio.Lock()
+        self.events = events or (lambda name, **fields: None)
+        self._clock_warned = {}
 
     # -- a tiny pool: `size` connections, handed out one at a time --------------------
 
@@ -153,7 +188,7 @@ class Store:
 
     async def touch(self, device, ip, kind, now, *, firmware=""):
         """Note that `device` was heard -> "accepted" (approved and on), "off"
-        (approved, switched off), "pending" or "blocked"."""
+        (approved, switched off), "pending", "new" (not known until this frame) or "blocked"."""
         args = {"device": device, "ip": ip, "now": now, "firmware": firmware or "",
                 "heartbeat": kind in ("heartbeat", "login", "register"), "data": kind == "tag_data"}
 
@@ -164,12 +199,19 @@ class Store:
                     "SELECT count(*) FROM tracking_reader WHERE status = 'pending'")).fetchone()
                 if pending[0] < self.max_pending:
                     await conn.execute(NEW_PENDING, args)
-                return "pending"
+                return NEW_DEVICE
             status, enabled = row
             if status == "approved":
                 return "accepted" if enabled else "off"
             return status
         return await self.run(go)
+
+    def _warn_clock(self, device, count):
+        """At most once an hour per reader."""
+        at = time.monotonic()
+        if at - self._clock_warned.get(device, -1e9) >= BAD_CLOCK_EVENT_SECONDS:
+            self._clock_warned[device] = at
+            self.events("reader_clock_ahead", device=device, reads=count)
 
     async def save_raw(self, device, ip, now, data, crc_ok, note):
         async def go(conn):
@@ -182,48 +224,60 @@ class Store:
         committed and the reader sends the batch again (design §3)."""
         tz = ZoneInfo(self.reader_tz)
         rows = []
+        ahead = 0
         for r in reads:
-            at = r.reader_time.replace(tzinfo=tz) if r.reader_time else None
-            rows.append((r.port, r.tag, at, r.rssi, r.entry, r.staying, r.low_battery))
+            sent = r.reader_time.replace(tzinfo=tz) if r.reader_time else None
+            clock = sent
+            if sent is not None and sent > now + CLOCK_AHEAD:
+                clock, ahead = None, ahead + 1
+            rows.append(Row(r.port, r.tag, sent, clock, r.rssi, r.entry, r.staying, r.low_battery))
+        if ahead:
+            self._warn_clock(frame.device_id, ahead)
 
         async def go(conn):
             async with conn.transaction():
-                found = await (await conn.execute(
-                    "SELECT id FROM tracking_reader WHERE device_id = %s", [frame.device_id])).fetchone()
+                found = await (await conn.execute(READER_FOR_UPLOAD, [frame.device_id])).fetchone()
                 if found is None:
                     return 0
-                reader_id = found[0]
-                keyed = [row for row in rows if row[2] is not None]
+                reader_id, keep_raw = found
+                keyed = [row for row in rows if row.clock is not None]
                 new_keys = set()
                 if keyed:
                     cur = await conn.execute(NEW_KEYS, {
-                        "r": reader_id, "now": now, "ports": [r[0] for r in keyed],
-                        "tags": [r[1] for r in keyed], "times": [r[2] for r in keyed]})
+                        "r": reader_id, "now": now, "ports": [r.port for r in keyed],
+                        "tags": [r.tag for r in keyed], "times": [r.clock for r in keyed]})
                     new_keys = {(port, tag, at) for port, tag, at in await cur.fetchall()}
                 # a read with no usable reader clock cannot be deduped; it counts as new
                 # (and a read repeated inside one upload is kept once)
                 fresh, taken = [], set()
                 for r in rows:
-                    key = (r[0], r[1], r[2])
-                    if r[2] is None or (key in new_keys and key not in taken):
+                    key = (r.port, r.tag, r.clock)
+                    if r.clock is None or (key in new_keys and key not in taken):
                         fresh.append(r)
                         taken.add(key)
                 if not fresh:
                     return 0
-                await conn.execute(INSERT_READS, {
-                    "r": reader_id, "now": now, "ports": [r[0] for r in fresh], "tags": [r[1] for r in fresh],
-                    "times": [r[2] for r in fresh], "rssi": [r[3] for r in fresh], "entry": [r[4] for r in fresh],
-                    "staying": [r[5] for r in fresh], "lowbat": [r[6] for r in fresh]})
+                if keep_raw:
+                    await conn.execute(INSERT_READS, {
+                        "r": reader_id, "now": now, "ports": [r.port for r in fresh], "tags": [r.tag for r in fresh],
+                        "times": [r.sent for r in fresh], "rssi": [r.rssi for r in fresh],
+                        "entry": [r.entry for r in fresh], "staying": [r.staying for r in fresh],
+                        "lowbat": [r.low_battery for r in fresh]})
                 # per tag, the strongest new read stands for the batch (the strongest
                 # antenna is the presence feature, design §6)
                 best = {}
+                too_old = now - CLOCK_TOO_OLD
                 for r in fresh:
-                    if r[1] not in best or r[3] > best[r[1]][3]:
-                        best[r[1]] = r
-                b = list(best.values())
-                await conn.execute(LAST_SEEN, {
-                    "r": reader_id, "now": now, "tags": [r[1] for r in b], "ports": [r[0] for r in b],
-                    "times": [r[2] for r in b], "rssi": [r[3] for r in b], "lowbat": [r[6] for r in b],
-                    "alpha": self.ewma_alpha})
+                    if r.clock is not None and r.clock < too_old:
+                        continue
+                    if r.tag not in best or r.rssi > best[r.tag].rssi:
+                        best[r.tag] = r
+                # in tag order, so two readers hearing the same tags cannot deadlock
+                b = [best[tag] for tag in sorted(best)]
+                if b:
+                    await conn.execute(LAST_SEEN, {
+                        "r": reader_id, "now": now, "tags": [r.tag for r in b], "ports": [r.port for r in b],
+                        "times": [r.clock for r in b], "rssi": [r.rssi for r in b],
+                        "lowbat": [r.low_battery for r in b], "alpha": self.ewma_alpha})
                 return len(fresh)
         return await self.run(go)

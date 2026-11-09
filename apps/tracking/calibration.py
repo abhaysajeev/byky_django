@@ -1,36 +1,50 @@
-"""Calibrating a reader's antennas (design §6): walk tagged bikes round the
-station, stop at labelled points, and turn what the antennas heard into an
-enter and a leave limit per antenna.
+"""Calibrating a reader's antennas (design §6, owner 9 Nov 2026): park the bikes
+on the boundary, pick them, let the reader listen for a few minutes, approve.
 
-Limits are only written when someone approves them. Until then an antenna has
-none and any read counts as present (legacy behaviour, E6). When inside and
-outside overlap, no limits are proposed: the fix is physical.
+Each antenna gets two limits from what it heard: `enter` (the typical boundary
+signal: a bike counts as back inside at this strength) and `leave` (the weakest
+boundary signal less an allowance: below this a bike counts as out). Limits are
+only written when someone approves them. Until then any read counts as present
+(legacy behaviour, E6).
 
 A new design (no legacy source: RmsVehicleRFTagDetails.RSSIValue was never set,
-E6); the method and its research basis are in design §6.
+E6).
 """
 
 import datetime
 import statistics
 
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
+from apps.fleet.models import Vehicle
+from apps.fleet.service_requests import in_warehouse_service
+from apps.rental.models import TestRide, TestRideStatus
+from apps.rental.services import active_rentals
 from apps.tracking import engine, upkeep
 from apps.tracking.models import (
     Antenna,
     Calibration,
-    CalibrationMethod,
     CalibrationPoint,
     CalibrationStatus,
     PointZone,
+    ReaderAssignment,
     Reading,
+    TagLastSeen,
     TrackingSettings,
 )
+from apps.tracking.store import EWMA_ALPHA
 
 CHECK_DAYS = 3
-FULL_LEAVE_MARGIN_DB = 2
 OPEN_STATES = (CalibrationStatus.OPEN, CalibrationStatus.PROPOSED)
+MIN_SECONDS = 300                # the bikes stay parked at least this long
+MIN_UPLOADS = 8                  # per bike, so the warm-up leaves enough samples
+WARM_UP_SAMPLES = 3              # the smoothed signal has not settled before this
+MIN_PORT_SAMPLES = 8             # fewer: this antenna takes the combined limits
+HEARD_WITHIN_SECONDS = 300
+READER_ONLINE_SECONDS = 300
+DEFAULT_ALLOWANCE_DB = 3
 
 
 class CalibrationError(Exception):
@@ -39,48 +53,96 @@ class CalibrationError(Exception):
         self.message, self.field = message, field
 
 
-def parse_tags(raw):
-    """The calibration bikes' tags, from free text; each 8-hex."""
-    tags = []
-    for word in str(raw or "").replace(",", " ").split():
-        tag = engine.tag_of(word)
-        if len(tag) != 8 or any(c not in "0123456789ABCDEF" for c in tag):
-            raise CalibrationError(f"{word} is not a tag number.", "Tags")
-        if tag not in tags:
-            tags.append(tag)
-    if not tags:
-        raise CalibrationError("Enter the tag number of at least one calibration bike.", "Tags")
-    return tags
+def station_of(reader):
+    assignment = ReaderAssignment.objects.filter(reader=reader, to_at__isnull=True).select_related("branch").first()
+    return assignment.branch if assignment else None
 
 
-def start(reader, method, tags, *, user=None, now=None):
-    if method not in CalibrationMethod.values:
-        raise CalibrationError("Choose a method.", "Method")
+def _names(vehicles):
+    return ", ".join(v.vehicle_name for v in vehicles)
+
+
+def _check_reader(reader, now):
+    if settings.TRACKING_MODE != "write":
+        raise CalibrationError("Tracking is in capture mode, so readings are not being saved. Switch to write mode first.")
+    times = [t for t in (reader.last_heartbeat_at, reader.last_data_at) if t]
+    if not times or (now - max(times)).total_seconds() >= READER_ONLINE_SECONDS:
+        raise CalibrationError("This reader is not connected. Check it on the Readers page first.")
+
+
+def choosable(reader):
+    """The bikes that can be picked: tagged and at this reader's station."""
+    branch = station_of(reader)
+    if branch is None:
+        return Vehicle.objects.none()
+    return (Vehicle.objects.filter(company_id=reader.company_id, current_branch=branch, is_active=True)
+            .exclude(rfid_epc="").order_by("vehicle_name"))
+
+
+def _check_bikes(reader, vehicle_ids, now):
+    wanted = {int(pk) for pk in vehicle_ids if str(pk).isdigit()}
+    if not wanted:
+        raise CalibrationError("Pick at least one bike parked on the boundary.", "Bikes")
+    bikes = list(choosable(reader).filter(pk__in=wanted))
+    if len(bikes) != len(wanted):
+        raise CalibrationError("Every bike must have an RFID tag and be at this reader's station.", "Bikes")
+
+    ids = [b.pk for b in bikes]
+    rented = active_rentals(ids)
+    on_test = set(TestRide.objects.filter(vehicle_id__in=ids, status=TestRideStatus.ON_TEST)
+                  .values_list("vehicle_id", flat=True))
+    service = in_warehouse_service(ids)
+    away = [b for b in bikes if b.pk in rented or b.pk in on_test or b.pk in service]
+    if away:
+        raise CalibrationError(f"Out on rent, on a test ride or in service: {_names(away)}.", "Bikes")
+
+    since = now - datetime.timedelta(seconds=HEARD_WITHIN_SECONDS)
+    heard = set(TagLastSeen.objects.filter(reader=reader, seen_at__gte=since,
+                                           tag__in=[engine.tag_of(b.rfid_epc) for b in bikes])
+                .values_list("tag", flat=True))
+    silent = [b for b in bikes if engine.tag_of(b.rfid_epc) not in heard]
+    if silent:
+        raise CalibrationError(f"This reader has not heard these bikes in the last 5 minutes: {_names(silent)}.", "Bikes")
+    return bikes
+
+
+@transaction.atomic
+def start(reader, vehicle_ids, *, user=None, now=None):
+    now = now or timezone.now()
     if Calibration.objects.filter(reader=reader, status__in=OPEN_STATES).exists():
         raise CalibrationError("This reader already has a session open. Finish or discard it first.")
-    return Calibration.objects.create(reader=reader, method=method, tags=parse_tags(tags),
-                                      started_at=now or timezone.now(), created_by=user)
+    _check_reader(reader, now)
+    bikes = _check_bikes(reader, vehicle_ids, now)
+    session = Calibration.objects.create(reader=reader, tags=[engine.tag_of(b.rfid_epc) for b in bikes], started_at=now,
+                                         created_by=user)
+    CalibrationPoint.objects.create(calibration=session, seq=1, label="Boundary", zone=PointZone.BOUNDARY, started_at=now)
+    return session
 
 
-def _open(calibration):
-    if calibration.status != CalibrationStatus.OPEN:
-        raise CalibrationError("This session is not in progress.")
+def _rows(calibration, end):
+    return Reading.objects.filter(reader_id=calibration.reader_id, tag__in=calibration.tags,
+                                  received_at__gte=calibration.started_at, received_at__lte=end).values_list(
+        "tag", "port", "rssi", "received_at")
 
 
-def next_point(calibration, label, zone, *, variant="", now=None):
-    """Close the stop in progress and start the next: readings between a stop's
-    start and end belong to it."""
-    _open(calibration)
-    label = (label or "").strip()
-    if not label:
-        raise CalibrationError("Name this point, for example Corner NE.", "Point")
-    if zone not in PointZone.values:
-        raise CalibrationError("Choose inside, boundary or outside.", "Zone")
-    now = now or timezone.now()
-    calibration.points.filter(ended_at__isnull=True).update(ended_at=now)
-    last = calibration.points.order_by("-seq").first()
-    return CalibrationPoint.objects.create(calibration=calibration, seq=(last.seq + 1) if last else 1, label=label[:60],
-                                           zone=zone, variant=(variant or "").strip()[:30], started_at=now)
+def series(rows):
+    """{tag: [(port, smoothed rssi), ...]}: exactly what the engine would have
+    held for this bike -- per upload the strongest read, then the moving average
+    (store.LAST_SEEN). Limits measured on any other number would not fit."""
+    uploads = {}
+    for tag, port, rssi, at in rows:
+        batch = uploads.setdefault(tag, {})
+        if at not in batch or rssi > batch[at][1]:
+            batch[at] = (port, rssi)
+    out = {}
+    for tag, batch in uploads.items():
+        smoothed, points = None, []
+        for at in sorted(batch):
+            port, rssi = batch[at]
+            smoothed = rssi if smoothed is None else EWMA_ALPHA * rssi + (1 - EWMA_ALPHA) * smoothed
+            points.append((port, smoothed))
+        out[tag] = points
+    return out
 
 
 def _percentile(values, share):
@@ -90,96 +152,79 @@ def _percentile(values, share):
     return ordered[low] + (ordered[high] - ordered[low]) * (position - low)
 
 
-def point_samples(calibration):
-    """[(point, {port: [rssi...]})] from the raw reads of the session's tags. One
-    query over the session's whole span; raw readings are kept for days, so a
-    session has to be finished within the retention."""
-    points = list(calibration.points.all())
-    if not points:
-        return []
-    start_at, end_at = points[0].started_at, max(p.ended_at or timezone.now() for p in points)
-    rows = Reading.objects.filter(reader_id=calibration.reader_id, tag__in=calibration.tags,
-                                  received_at__gte=start_at, received_at__lte=end_at).values_list(
-        "port", "received_at", "rssi")
-    result = [(p, {}) for p in points]
-    for port, at, rssi in rows:
-        for point, by_port in result:
-            if point.started_at <= at < (point.ended_at or end_at + datetime.timedelta(seconds=1)):
-                by_port.setdefault(port, []).append(rssi)
-                break
-    return result
+def _limits(values, allowance):
+    enter, leave = round(statistics.median(values)), round(_percentile(values, 0.10) - allowance)
+    return enter, min(leave, enter - 1)
 
 
-def _limits(zones, method, allowance_in, allowance_out):
-    """(enter, leave, note): limits from {zone: [rssi]}, or None and why not."""
-    inside, boundary, outside = (zones.get(z, []) for z in ("inside", "boundary", "outside"))
-    if method == CalibrationMethod.FULL:
-        if not inside or not outside:
-            return None, None, "Needs both inside and outside points."
-        enter, far = _percentile(inside, 0.10), _percentile(outside, 0.90)
-        if far > enter:
-            return None, None, f"Inside and outside overlap: outside reaches {far:.0f} dBm, inside drops to {enter:.0f}."
-        leave = far + FULL_LEAVE_MARGIN_DB
-    else:
-        if not boundary:
-            return None, None, "Needs boundary points."
-        middle = statistics.median(boundary)
-        if outside and _percentile(outside, 0.90) > middle:
-            return None, None, (f"Outside spots read as strong as the boundary "
-                                f"({_percentile(outside, 0.90):.0f} dBm against {middle:.0f}).")
-        enter, leave = middle + allowance_in, _percentile(boundary, 0.10) - allowance_out
-    enter, leave = round(enter), round(leave)
-    if enter <= leave:
-        return None, None, f"The limits would cross (enter {enter}, leave {leave})."
-    return enter, leave, ""
+def _allowance(calibration):
+    row = TrackingSettings.objects.filter(company_id=calibration.reader.company_id).first()
+    return row.allowance_out_db if row else DEFAULT_ALLOWANCE_DB
 
 
-def propose(calibration, samples=None):
-    """Per port: reads and median per zone, and the proposed limits or why there
-    are none. A point counts for the antenna that heard it strongest, the same
-    feature the engine decides on; a port never strongest takes the pooled limits."""
-    settings_row = TrackingSettings.objects.filter(company_id=calibration.reader.company_id).first()
-    allowance_in = settings_row.allowance_in_db if settings_row else 3
-    allowance_out = settings_row.allowance_out_db if settings_row else 3
-
-    samples = point_samples(calibration) if samples is None else samples
-    points, per_port, pooled = [], {}, {}
-    for point, by_port in samples:
-        medians = {port: statistics.median(values) for port, values in by_port.items()}
-        strongest = max(medians, key=medians.get) if medians else None
-        points.append({"seq": point.seq, "label": point.label, "zone": point.zone, "variant": point.variant,
-                       "reads": sum(len(v) for v in by_port.values()), "strongest": strongest,
-                       "medians": {str(p): round(m, 1) for p, m in sorted(medians.items())}})
-        if strongest is not None:
-            per_port.setdefault(strongest, {}).setdefault(point.zone, []).extend(by_port[strongest])
-            pooled.setdefault(point.zone, []).extend(by_port[strongest])
-
-    pooled_enter, pooled_leave, pooled_note = _limits(pooled, calibration.method, allowance_in, allowance_out)
+def propose(calibration, rows):
+    """Limits per antenna. An antenna that was strongest for too few samples
+    takes the limits of all the antennas together."""
+    allowance = _allowance(calibration)
+    per_port, pooled = {}, []
+    for points in series(rows).values():
+        for port, value in points[WARM_UP_SAMPLES:]:
+            per_port.setdefault(port, []).append(value)
+            pooled.append(value)
+    if not pooled:
+        return {"ports": {}, "can_approve": False, "allowance_db": allowance}
+    pooled_limits = _limits(pooled, allowance)
     ports = {}
     for port in range(1, 5):
-        zones = per_port.get(port)
-        if zones:
-            enter, leave, note = _limits(zones, calibration.method, allowance_in, allowance_out)
-            source = "own"
-        else:
-            enter, leave, note, source = pooled_enter, pooled_leave, pooled_note, "pooled"
-        ports[str(port)] = {
-            "enter_rssi": enter, "leave_rssi": leave, "note": note, "source": source,
-            "zones": {zone: {"reads": len(values), "median": round(statistics.median(values), 1)}
-                      for zone, values in (zones or {}).items()},
-        }
-    return {"points": points, "ports": ports, "can_approve": all(p["enter_rssi"] is not None for p in ports.values())}
+        values = per_port.get(port, [])
+        own = len(values) >= MIN_PORT_SAMPLES
+        enter, leave = _limits(values, allowance) if own else pooled_limits
+        ports[str(port)] = {"enter_rssi": enter, "leave_rssi": leave, "samples": len(values),
+                            "source": "own" if own else "pooled"}
+    return {"ports": ports, "can_approve": True, "allowance_db": allowance}
+
+
+def vehicle_names(tags):
+    names = {}
+    for name, epc in Vehicle.objects.exclude(rfid_epc="").values_list("vehicle_name", "rfid_epc"):
+        names[engine.tag_of(epc)] = name
+    return {tag: names.get(tag, tag) for tag in tags}
+
+
+def progress(calibration, now=None):
+    """What the screen shows while the bikes are parked."""
+    now = now or timezone.now()
+    uploads = {tag: set() for tag in calibration.tags}
+    for tag, _port, _rssi, at in _rows(calibration, now):
+        uploads[tag].add(at)
+    names = vehicle_names(calibration.tags)
+    elapsed = int((now - calibration.started_at).total_seconds())
+    bikes = [{"tag": tag, "name": names[tag], "uploads": len(seen), "enough": len(seen) >= MIN_UPLOADS}
+             for tag, seen in uploads.items()]
+    return {"elapsed": elapsed, "need_seconds": MIN_SECONDS, "need_uploads": MIN_UPLOADS, "bikes": bikes,
+            "ready": elapsed >= MIN_SECONDS and all(b["enough"] for b in bikes)}
+
+
+def _open(calibration):
+    if calibration.status != CalibrationStatus.OPEN:
+        raise CalibrationError("This session is not in progress.")
 
 
 def finish(calibration, *, now=None):
     _open(calibration)
     now = now or timezone.now()
-    calibration.points.filter(ended_at__isnull=True).update(ended_at=now)
-    if not calibration.points.exists():
-        raise CalibrationError("Record at least one point first.")
-    calibration.result = propose(calibration)
+    state = progress(calibration, now)
+    if state["elapsed"] < MIN_SECONDS:
+        left = MIN_SECONDS - state["elapsed"]
+        raise CalibrationError(f"Keep the bikes parked for another {left} seconds.")
+    short = [b["name"] for b in state["bikes"] if not b["enough"]]
+    if short:
+        raise CalibrationError(f"Not enough readings yet from: {', '.join(short)}.")
+    calibration.result = propose(calibration, _rows(calibration, now))
+    calibration.result["bikes"] = state["bikes"]
     calibration.ended_at, calibration.status = now, CalibrationStatus.PROPOSED
     calibration.save(update_fields=["result", "ended_at", "status", "modified_on"])
+    calibration.points.filter(ended_at__isnull=True).update(ended_at=now)
     return calibration
 
 
@@ -188,7 +233,7 @@ def approve(calibration, *, user, now=None):
     if calibration.status != CalibrationStatus.PROPOSED:
         raise CalibrationError("Only a proposed session can be approved.")
     if not calibration.result.get("can_approve"):
-        raise CalibrationError("No limits were proposed for every antenna: fix the antenna or re-survey.")
+        raise CalibrationError("No limits could be worked out from this session. Discard it and try again.")
     now = now or timezone.now()
     medians = upkeep.parked_medians(calibration.reader_id)
     for port, proposal in calibration.result["ports"].items():
@@ -207,3 +252,9 @@ def discard(calibration):
     calibration.status = CalibrationStatus.DISCARDED
     calibration.save(update_fields=["status", "modified_on"])
     return calibration
+
+
+def clear_limits(reader):
+    """Back to any-read-counts, for when approved limits turn out wrong."""
+    return Antenna.objects.filter(reader=reader).update(enter_rssi=None, leave_rssi=None, baseline_rssi=None,
+                                                        calibration=None, drift_note="")
