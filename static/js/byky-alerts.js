@@ -160,10 +160,6 @@
   });
 
   /* ── the dropdown list ───────────────────────────────────────────── */
-  function timeLabel(date) {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  }
-
   function addRow(alert) {
     if (empty) empty.hidden = true;
     var known = list.querySelector('[data-alert-id="' + alert.id + '"]');
@@ -190,7 +186,7 @@
     var title = document.createElement('b');
     title.textContent = alert.title;
     var when = document.createElement('time');
-    when.textContent = timeLabel(new Date(alert.at));
+    when.textContent = alert.time;
     head.appendChild(title);
     head.appendChild(when);
 

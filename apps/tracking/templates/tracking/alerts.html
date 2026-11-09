@@ -8,17 +8,17 @@
 {% block body %}
 <div class="scr-card">
   <div class="scr-content-tabs">
-    <a class="scr-content-tab{% if view == 'current' %} active{% endif %}" href="?view=current">Current</a>
-    <a class="scr-content-tab{% if view == 'history' %} active{% endif %}" href="?view=history">History</a>
+    <a class="scr-content-tab{% if view == 'current' %} is-on{% endif %}" href="?view=current">Current</a>
+    <a class="scr-content-tab{% if view == 'history' %} is-on{% endif %}" href="?view=history">History</a>
   </div>
   <div class="scr-toolbar">
-    <select class="scr-input" name="branch" aria-label="Station" data-tracking-filter>
+    <select class="scr-input" name="branch" aria-label="Station" data-tracking-filter style="flex:0 0 auto;width:220px">
       <option value="">All stations</option>
       {% for b in branches_list %}<option value="{{ b.id }}"{% if b.id == chosen_branch %} selected{% endif %}>{{ b.name }}</option>{% endfor %}
     </select>
     {% if view == 'history' %}
-    <input class="scr-input" type="date" name="from" value="{{ from }}" aria-label="From date" data-tracking-filter>
-    <input class="scr-input" type="date" name="to" value="{{ to }}" aria-label="To date" data-tracking-filter>
+    <input class="scr-input" type="date" name="from" value="{{ from }}" aria-label="From date" data-tracking-filter style="flex:0 0 auto;width:220px">
+    <input class="scr-input" type="date" name="to" value="{{ to }}" aria-label="To date" data-tracking-filter style="flex:0 0 auto;width:220px">
     {% if vehicle_filter %}<a class="scr-btn-secondary scr-btn-small" href="?view=history">Clear vehicle filter</a>{% endif %}
     {% endif %}
   </div>

@@ -8,13 +8,13 @@
 {% block body %}
 <div class="scr-card">
   <div class="scr-toolbar">
-    <select class="scr-input" name="reader" aria-label="Reader" data-tracking-filter>
+    <select class="scr-input" name="reader" aria-label="Reader" data-tracking-filter style="flex:0 0 auto;width:220px">
       <option value="">All readers</option>
       {% for r in readers %}<option value="{{ r.pk }}"{% if r.pk == chosen_reader %} selected{% endif %}>{{ r.name|default:r.device_id }}</option>{% endfor %}
     </select>
-    <input class="scr-input" name="tag" value="{{ tag }}" maxlength="8" placeholder="Tag" aria-label="Tag" data-tracking-filter>
-    <input class="scr-input" type="datetime-local" name="from" value="{{ from }}" aria-label="From" data-tracking-filter>
-    <input class="scr-input" type="datetime-local" name="to" value="{{ to }}" aria-label="To" data-tracking-filter>
+    <input class="scr-input" name="tag" value="{{ tag }}" maxlength="8" placeholder="Tag" aria-label="Tag" data-tracking-filter style="flex:0 0 auto;width:130px">
+    <input class="scr-input" type="datetime-local" name="from" value="{{ from }}" aria-label="From" data-tracking-filter style="flex:0 0 auto;width:220px">
+    <input class="scr-input" type="datetime-local" name="to" value="{{ to }}" aria-label="To" data-tracking-filter style="flex:0 0 auto;width:220px">
   </div>
   {% if too_long %}<div class="scr-banner"><span class="scr-banner-text">A search covers at most 24 hours, so the start was moved.</span></div>{% endif %}
   <div class="scr-table-scroll scr-sb">

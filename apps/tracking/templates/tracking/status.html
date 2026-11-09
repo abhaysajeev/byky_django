@@ -8,7 +8,7 @@
 {% block body %}
 <div class="scr-card">
   <div class="scr-toolbar">
-    <select class="scr-input" name="branch" aria-label="Station" data-tracking-filter>
+    <select class="scr-input" name="branch" aria-label="Station" data-tracking-filter style="flex:0 0 auto;width:220px">
       <option value="">All stations</option>
       {% for b in branches_list %}<option value="{{ b.id }}"{% if b.id == chosen_branch %} selected{% endif %}>{{ b.name }}</option>{% endfor %}
     </select>
@@ -16,7 +16,7 @@
 </div>
 
 <div data-tracking-live>
-  <div class="scr-tiles">
+  <div class="scr-tiles" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr))">
     {% for t in tiles %}
     <div class="scr-tile">
       <div class="scr-tile-lab">{{ t.label }}</div>

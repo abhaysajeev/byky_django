@@ -14,7 +14,7 @@
 {% else %}
 <div class="scr-card">
   <div class="scr-toolbar">
-    <select class="scr-input" name="reader" aria-label="Reader" data-tracking-filter>
+    <select class="scr-input" name="reader" aria-label="Reader" data-tracking-filter style="flex:0 0 auto;width:220px">
       {% for r in readers %}<option value="{{ r.pk }}"{% if r.pk == reader.pk %} selected{% endif %}>{{ r.name|default:r.device_id }}</option>{% endfor %}
     </select>
   </div>
@@ -46,9 +46,9 @@
   {% if not session %}
     {% if perm.update %}
     <form data-tracking-form data-url="{% url 'tracking-calibration' reader.pk 'start' %}">
-      <div class="scr-field"><label class="scr-label" for="cal-method">Method</label>
+      <div class="scr-field" style="margin-bottom:14px"><label class="scr-label" for="cal-method">Method</label>
         <select class="scr-input" id="cal-method" name="method">{% for value, label in methods %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
-      <div class="scr-field"><label class="scr-label" for="cal-tags">Calibration bikes' tags</label>
+      <div class="scr-field" style="margin-bottom:14px"><label class="scr-label" for="cal-tags">Calibration bikes' tags</label>
         <input class="scr-input" id="cal-tags" name="tags" required placeholder="170732EA 1707365C" style="width:100%"></div>
       <button type="submit" class="scr-btn-primary">Start session</button>
     </form>
@@ -58,9 +58,9 @@
     <p class="scr-sub">{{ session.get_method_display }} · bikes {{ session.tags|join:", " }} · started {{ session.started_at|date:"d M H:i" }}. Stop about 2 minutes at each point.</p>
     {% if perm.update %}
     <form data-tracking-form data-url="{% url 'tracking-calibration' reader.pk 'point' %}" class="scr-toolbar">
-      <input class="scr-input" name="label" required placeholder="Point name, e.g. Corner NE" aria-label="Point name">
-      <select class="scr-input" name="zone" aria-label="Zone">{% for value, label in zones %}<option value="{{ value }}"{% if value == "boundary" %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
-      <input class="scr-input" name="variant" placeholder="Variation (optional)" aria-label="Variation">
+      <input class="scr-input" name="label" required placeholder="Point name, e.g. Corner NE" aria-label="Point name" style="flex:0 0 auto;width:220px">
+      <select class="scr-input" name="zone" aria-label="Zone" style="flex:0 0 auto;width:140px">{% for value, label in zones %}<option value="{{ value }}"{% if value == "boundary" %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+      <input class="scr-input" name="variant" placeholder="Variation (optional)" aria-label="Variation" style="flex:0 0 auto;width:220px">
       <button type="submit" class="scr-btn-primary">Next point</button>
     </form>
     {% endif %}
