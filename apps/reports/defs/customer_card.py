@@ -9,6 +9,7 @@ range picks cards first used in it (owner, 29 Oct 2026).
 
 from apps.discount.models import ClaimStatus
 from apps.discount.scoping import claims_for
+from apps.rental.counted import counted
 from apps.reports.base import COUNT, DATETIME, Column, Kpi, Report, Row, local, paged
 
 USED = (ClaimStatus.APPROVED, ClaimStatus.REDEEMED)
@@ -26,7 +27,8 @@ class CustomerWiseCard(Report):
 
     def build(self, ctx, page=None, per_page=None):
         f = ctx.f
-        claims = claims_for(ctx.user).filter(status__in=USED)
+        # a card used only on a cancelled order was not used (apps/rental/counted.py)
+        claims = counted(claims_for(ctx.user).filter(status__in=USED))
         if f.get("customer"):
             claims = claims.filter(customer_name__icontains=f.get("customer"))
         if f.get("phone"):

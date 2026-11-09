@@ -57,8 +57,14 @@ USER = {
                     "option_key": "name", "system_only": True,
                 },
                 {
-                    "id": "employee", "label": "Employee", "kind": "select",
-                    "required": False, "options_from": "employees_list", "option_key": "name",
+                    # Searchable, as the Duty Roster drawer's employee (owner,
+                    # 7 Nov 2026); only employees without a login, but for the
+                    # user being edited; narrowed to the chosen company.
+                    "id": "employee", "label": "Employee", "kind": "combo",
+                    "required": False, "combo_source": "user-employees-data", "combo_key": "name",
+                    "combo_sub": "code", "combo_value": "id", "combo_taken": "user_id",
+                    "combo_filter_field": "company", "combo_filter_key": "company_id",
+                    "placeholder": "Search employee by name or code...",
                     "help": "Link a staff record and the username becomes their employee code.",
                 },
                 {

@@ -40,6 +40,7 @@ urlpatterns = [
     path("approval/<int:pk>/block/", views.DeviceBlockView.as_view(), name="devices-device-block"),
     path("approval/<int:pk>/unblock/", views.DeviceUnblockView.as_view(), name="devices-device-unblock"),
     path("approval/<int:pk>/rename/", views.DeviceRenameView.as_view(), name="devices-device-rename"),
+    path("approval/<int:pk>/logout/", views.DeviceLogoutView.as_view(), name="devices-device-logout"),
 
     # Device Mapping: Add (drawer), Re-map and Close mapping.
     path("mapping/save/", views.DeviceMapSaveView.as_view(), name="devices-mapping-save"),

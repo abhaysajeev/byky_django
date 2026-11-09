@@ -25,6 +25,7 @@ from django.db.models import Count, DecimalField, Exists, F, OuterRef, Prefetch,
 from django.db.models.functions import Coalesce
 
 from apps.rental import order_status
+from apps.rental.counted import counted, counted_q, counts
 from apps.rental.models import (
     CreditNote,
     CreditNoteStatus,
@@ -185,6 +186,9 @@ class RentDetails(Report):
     def _row(self, order, ctx, paid, refs, credit):
         invoice = getattr(order, "invoice", None)
         settled = order.status == OrderStatus.COMPLETED and invoice is not None
+        # a cancelled order is listed (this report lists bookings) but its money
+        # counts nowhere: its money cells are blank (apps/rental/counted.py)
+        live = counts(order)
         source = invoice.discount_source if settled else ""
         claim = order.discount_claim if source == DiscountSource.CARD else None
         cells = {
@@ -196,9 +200,9 @@ class RentDetails(Report):
             "close_by": common.person(invoice.issued_by) if settled else None,
             "customer": order.customer_name,
             "phone": order.customer_mobile,
-            "initial": order.initial,
-            "collected": order.paid_amount,
-            "deposit": order.paid_amount - order.net_amount if settled else order.advance,
+            "initial": order.initial if live else None,
+            "collected": order.paid_amount if live else None,
+            "deposit": (order.paid_amount - order.net_amount if settled else order.advance) if live else None,
             "rounding": order.rounding_adjustment if settled else None,
             "tax_pct": order.tax_percentage if settled else None,
             "tax": order.tax_amount if settled else None,
@@ -215,7 +219,7 @@ class RentDetails(Report):
         }
         lines = []
         for item in order.shown:
-            billed = item.status in common.BILLING
+            billed = item.status in common.BILLING and live
             lines.append({
                 "vehicle_no": item.vehicle.vehicle_code,
                 "vehicle_status": LINE_LABELS.get(item.status, item.status),
@@ -229,9 +233,11 @@ class RentDetails(Report):
     def _totals(self, orders, ids, shown_lines):
         """Every order the filters find, each counted once; the line columns over
         the lines shown."""
+        # A cancelled order is in `orders` (listed) but none of its money is
+        # summed (apps/rental/counted.py).
         settled = Q(status=OrderStatus.COMPLETED)
         agg = orders.aggregate(
-            collected=Coalesce(Sum("paid_amount"), ZERO, output_field=_DEC),
+            collected=Coalesce(Sum("paid_amount", filter=counted_q("")), ZERO, output_field=_DEC),
             rounding=Coalesce(Sum("rounding_adjustment", filter=settled), ZERO, output_field=_DEC),
             tax=Coalesce(Sum("tax_amount", filter=settled), ZERO, output_field=_DEC),
             net=Coalesce(Sum("net_amount", filter=settled), ZERO, output_field=_DEC),
@@ -241,18 +247,19 @@ class RentDetails(Report):
             card_discount=Coalesce(Sum("invoice__discount_amount", filter=settled & Q(
                 invoice__discount_source=DiscountSource.CARD)), ZERO, output_field=_DEC),
         )
-        advance = (Payment.objects.filter(order__in=orders.exclude(status=OrderStatus.COMPLETED).values("pk"),
-                                          kind=PaymentKind.ADVANCE)
+        # running orders' advances (a cancelled one's no longer counts)
+        advance = (counted(Payment.objects.filter(order__in=orders.exclude(status=OrderStatus.COMPLETED).values("pk"),
+                                                  kind=PaymentKind.ADVANCE))
                    .aggregate(s=Coalesce(Sum("amount"), ZERO, output_field=_DEC))["s"])
-        credit = (CreditNote.objects.filter(order__in=ids, status=CreditNoteStatus.APPROVED)
+        credit = (counted(CreditNote.objects.filter(order__in=ids, status=CreditNoteStatus.APPROVED))
                   .aggregate(s=Coalesce(Sum("net_amount"), ZERO, output_field=_DEC))["s"])
-        initial = (OrderItem.objects.filter(order__in=ids, status__in=common.BILLING)
+        initial = (counted(OrderItem.objects.filter(order__in=ids, status__in=common.BILLING))
                    .aggregate(s=Coalesce(Sum("base_fare"), ZERO, output_field=_DEC))["s"])
-        fares = shown_lines.filter(status__in=common.BILLING).aggregate(
+        fares = counted(shown_lines.filter(status__in=common.BILLING)).aggregate(
             initial_fare=Coalesce(Sum("base_fare"), ZERO, output_field=_DEC),
             total_fare=Coalesce(Sum("total_amount"), ZERO, output_field=_DEC))
         paid = dict.fromkeys(common.PAY_KEYS, ZERO)
-        for row in (Payment.objects.filter(order__in=ids).values("mode__name", "kind")
+        for row in (counted(Payment.objects.filter(order__in=ids)).values("mode__name", "kind")
                     .annotate(total=Sum("amount")).order_by()):
             sign = -1 if row["kind"] == PaymentKind.REFUND else 1
             paid[common.bucket(row["mode__name"])] += sign * (row["total"] or ZERO)

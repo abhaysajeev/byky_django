@@ -18,7 +18,8 @@
 <div class="scr" data-device-approval
      data-url-approve="{{ action_urls.approve }}" data-url-reconnect="{{ action_urls.reconnect }}"
      data-url-reject="{{ action_urls.reject }}" data-url-block="{{ action_urls.block }}"
-     data-url-unblock="{{ action_urls.unblock }}" data-url-rename="{{ action_urls.rename }}">
+     data-url-unblock="{{ action_urls.unblock }}" data-url-rename="{{ action_urls.rename }}"
+     data-url-logout="{{ action_urls.logout }}">
 
   <div class="scr-head">
     <div>
@@ -159,7 +160,7 @@
       <div class="scr-toolbar">
         <div class="scr-search">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
-          <input type="text" placeholder="Search device name, number or station" />
+          <input type="text" placeholder="Search device name, number or who is logged in" />
         </div>
         <span class="scr-toolbar-count">{{ approved_devices|length }} devices</span>
       </div>
@@ -171,7 +172,7 @@
               <th>Device ID</th>
               <th>Device Name</th>
               <th>Model</th>
-              <th>Station</th>
+              <th>Login Status</th>
               <th>Last Seen</th>
               <th data-status-cell>Status</th>
               <th>Actions</th>
@@ -179,11 +180,11 @@
           </thead>
           <tbody>
             {% for d in approved_devices %}
-            <tr class="scr-row" data-search="{{ d.registration_id }} {{ d.name|lower }} {{ d.branch|lower }}" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-state="approved" data-name="{{ d.name }}">
+            <tr class="scr-row" data-search="{{ d.registration_id }} {{ d.name|lower }} {{ d.signed_in|lower }}" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-state="approved" data-name="{{ d.name }}">
               <td><span class="scr-code">{{ d.registration_id }}</span></td>
               <td style="font-weight:600">{{ d.name|default:"—" }}</td>
               <td class="scr-contact">{{ d.model|default:"—" }}</td>
-              <td class="scr-contact">{{ d.branch|default:"—" }}</td>
+              <td>{% if d.signed_in %}<span class="scr-badge scr-badge-active" title="{{ d.signed_in }}"><i></i>Logged in</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Logged out</span>{% endif %}</td>
               <td class="scr-contact">{{ d.last_seen_at|date:"d M Y H:i"|default:"—" }}</td>
               <td data-status-cell><span class="scr-badge scr-badge-approved"><i></i>{{ d.status_label }}</span></td>
               <td>
@@ -202,6 +203,12 @@
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
                         Rename
                       </button>
+                      {% if d.signed_in %}
+                      <button type="button" class="scr-menu-item scr-menu-item-danger" data-device-action="logout" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-name="{{ d.name }}" data-channel="{{ d.channel_value }}" data-signed-in="{{ d.signed_in }}">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><path d="m16 17 5-5-5-5"></path><path d="M21 12H9"></path></svg>
+                        Force logout
+                      </button>
+                      {% endif %}
                       <button type="button" class="scr-menu-item scr-menu-item-danger" data-device-action="block" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-name="{{ d.name }}" data-channel="{{ d.channel_value }}">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
                         Block

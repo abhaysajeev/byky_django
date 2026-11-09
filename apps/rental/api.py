@@ -28,7 +28,7 @@ from apps.devices.models import BillKind
 from apps.portal.authentication import AppJWTAuthentication
 from apps.rental import credit_notes, order_status, services
 from apps.rental import requests as order_requests
-from apps.rental.models import DecisionChannel, Invoice
+from apps.rental.models import DecisionChannel, Invoice, OrderStatus
 from apps.rental.serializers import (
     CreditNoteCancelRequest,
     CreditNoteRequest,
@@ -104,6 +104,7 @@ _INVOICE_SAMPLE = {
     "payments": [{"mode": "Cash", "kind": "advance", "amount": "60.000", "reference_no": ""},
                  {"mode": "Card", "kind": "settlement", "amount": "50.000", "reference_no": "448812"}],
     "star_rating": "4.5", "rating_remarks": "Bikes were clean, quick service",
+    "status": "issued", "cancelled_at": None, "cancel_reason": None,
 }
 
 
@@ -151,6 +152,13 @@ driving_license, others), `id_no`, `email`, `address`, `remarks`.
 **A phone already registered** is `customer_exists`: to this company, with
 that customer (block state included) so the app can use them; to another
 company, with no details.
+
+**Parking** -- as every recording call: with `credentials.park: true` a
+refusal (or a crash) is kept for the office and answered `parked`; a resend
+while it is open is answered `parked` again, and once the office replays it,
+`duplicate` with the customer. **`customer_exists` is never parked** -- it is
+answered as above, park or not. A booking for a parked customer names it by
+`customer_sync_id` (see `/orders`).
 """
 
 
@@ -202,10 +210,13 @@ class _OperatorView(APIView):
     # park it (apps/sync/parking.py) and replays run it as the original session.
     park_kind = None
 
+    # Refusal codes answered as they are even with park: true.
+    never_park = ()
+
     def parked(self, request, app):
         if app != Channel.OPERATOR:
             return envelope("wrong_channel", "Not allowed on this app.", http_status=403)
-        return parking.handle(request, app, self.park_kind, self.perform)
+        return parking.handle(request, app, self.park_kind, self.perform, never_park=self.never_park)
 
 
 _COMMON = (
@@ -262,6 +273,11 @@ class CustomerLookupView(_OperatorView):
 class CustomerCreateView(_OperatorView):
     """POST /api/v1/{app}/customers/create -- operator app only."""
 
+    park_kind = IssueKind.CUSTOMER_CREATE
+    # Owner, 7 Nov 2026: the phone is registered -- the reply already names
+    # the customer (this company) and the tablet uses it; nothing to correct.
+    never_park = ("customer_exists",)
+
     @extend_schema(
         tags=["Operator Customers"],
         summary="Register a new customer",
@@ -277,20 +293,22 @@ class CustomerCreateView(_OperatorView):
             (409, "customer_exists", "A customer with this phone number already exists.", {},
              "customer_exists (another company)"),
             (409, "sync_id_conflict", "That sync_id is already used.", {}),
+            *parking.SCHEMA_ROWS,
             *_COMMON,
         ),
     )
     def post(self, request, app):
-        branch, refused = self.station(request, app)
+        return self.parked(request, app)
+
+    def perform(self, session, app, request_data, *, replay=False):
+        branch, refused = station_of(session, replay=replay)
         if refused:
             return refused
-
-        _, request_data = request_parts(request)
         form = CustomerCreateRequest(data=request_data)
         form.is_valid(raise_exception=True)
 
         try:
-            customer, created = services.create_customer(request.user, branch.company, form.validated_data)
+            customer, created = services.create_customer(session.user, branch.company, form.validated_data)
         except services.CustomerExists as exists:
             data = _customer_json(exists.customer) if exists.customer else {}
             return envelope("customer_exists", "A customer with this phone number already exists.", data,
@@ -350,6 +368,18 @@ def invoice_json(invoice, zone):
         "payments": invoice.payments,
         "star_rating": _rating(invoice.star_rating),
         "rating_remarks": invoice.rating_remarks or None,
+        **_invoice_status(invoice, zone),
+    }
+
+
+def _invoice_status(invoice, zone):
+    """`issued`, or `cancelled` once a system administrator cancelled it after
+    settle (requests.cancel_settled) -- kept for the record, its money counted
+    nowhere -- with when and why."""
+    return {
+        "status": "cancelled" if invoice.is_void else "issued",
+        "cancelled_at": _local(invoice.voided_at, zone),
+        "cancel_reason": invoice.void_reason or None,
     }
 
 
@@ -483,7 +513,7 @@ def _order_body(order, zone, items, payments, invoice):
         ],
         "invoice": {
             "invoice_no": invoice.invoice_no, "issued_at": _local(invoice.issued_at, zone),
-            "net_amount": _money(invoice.net_amount),
+            "net_amount": _money(invoice.net_amount), **_invoice_status(invoice, zone),
         } if invoice else None,
         # The customer's rating at settle and what they said; null while running.
         "star_rating": _rating(invoice.star_rating) if invoice else None,
@@ -598,12 +628,13 @@ _SETTLED_SAMPLE = {
          "payment_mode": {"id": 2, "name": "Card"}, "amount": "4.50", "reference_no": "4421",
          "reference_date": "2026-10-02", "paid_at": "2026-10-02 17:13:30"},
     ],
-    "invoice": {"invoice_no": "DUBPP60182000231", "issued_at": "2026-10-02 17:13:30", "net_amount": "104.50"},
+    "invoice": {"invoice_no": "DUBPP60182000231", "issued_at": "2026-10-02 17:13:30", "net_amount": "104.50",
+                "status": "issued", "cancelled_at": None, "cancel_reason": None},
 }
 
 _BOOK_ERRORS = (
     "sync_id_conflict", "order_no_used", "vehicle_already_rented", "vehicle_repeated", "item_id_used",
-    "payment_id_used", "unknown_customer", "unknown_payment_mode", "unknown_vehicle",
+    "payment_id_used", "unknown_customer", "customer_not_synced", "unknown_payment_mode", "unknown_vehicle",
     "vehicle_not_at_station", "unknown_fare", "unknown_offer", "package_not_available",
     "vehicle_on_test_ride", "vehicle_in_warehouse_service", "unknown_test_ride", "test_ride_closed",
 )
@@ -625,6 +656,13 @@ never silently one version or the other. Keys may come in any order.
 **`customer_id`, `vehicle_id`, `fare_id`, `offer_id`, `payment_mode_id`** are
 ids the tablet already holds from `/customers/lookup`, `/vehicles`, `/fares`
 and `/payment-modes`.
+
+**`customer_sync_id`** -- instead of `customer_id`, for a customer this tablet
+created and has no server id for yet: the `sync_id` of its `/customers/create`
+call. Send **exactly one** of the two. If that create is parked, the booking
+is parked behind it (`waiting_on` is the customer's issue) and runs once the
+office replays the customer. If the server has never seen it, the booking is
+refused `customer_not_synced` (retry: send the create first).
 
 **`order_no`** is the printed receipt number, unique in the company, built
 from the top-level `order_no_prefix` that login and `/device/settings` give.
@@ -936,7 +974,7 @@ class InvoiceDetailView(_OperatorView):
             (200, "ok", "Invoice.", _INVOICE_SAMPLE),
             (400, "invalid_request", "order_id or invoice_no is required.",
              {"errors": {"order_id": "or invoice_no is required"}}),
-            *_error_rows("unknown_invoice"),
+            *_error_rows("unknown_invoice", "invoice_void"),
             *_COMMON,
         ),
     )
@@ -953,6 +991,8 @@ class InvoiceDetailView(_OperatorView):
                                               invoice_no=values.get("invoice_no"))
         if invoice is None:
             return _refused(services.OrderRefused("unknown_invoice"))
+        if invoice.order.status == OrderStatus.CANCELLED:       # cancelled after settle: void
+            return _refused(services.OrderRefused("invoice_void"))
         return envelope("ok", "Invoice.", invoice_json(invoice, zone_for(branch.company)))
 
 
@@ -1792,7 +1832,7 @@ _REQUEST_CREATE_ERRORS = (
     "card_discount_requested", "cancel_request_pending", "cancel_approved",
 )
 _REQUEST_USED_ERRORS = (
-    "order_not_synced", "sync_id_conflict", "unknown_request", "request_not_approved", "request_used",
+    "order_not_synced", "sync_id_conflict", "unknown_request", "request_not_approved", "request_used", "invoice_void",
 )
 _REQUEST_WITHDRAW_ERRORS = ("order_not_synced", "sync_id_conflict", "unknown_request", "request_closed")
 
@@ -2252,7 +2292,7 @@ both days included, either may be left out) for when they were asked.
 Each row carries the order: customer, advance paid so far, and every vehicle
 out or back with the minutes run so far (`minutes_run`; for one still out, up
 to now) -- plus `details`, `null` for an order request (an invoice `reprint` carries its
-`invoice_no` and `invoice_net_amount`) and, for the others:
+`invoice_no`, `invoice_net_amount` and `invoice_void` -- true once its invoice was cancelled, the amount then null) and, for the others:
 a credit note's `credit_note_no`, `invoice_no`, `invoice_net_amount`, issued
 `net_amount` / `tax_amount`; a card discount's card type, grade, number,
 **the card photo** (`card_photo_thumb_url` / `card_photo_url`, paths on this

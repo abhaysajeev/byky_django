@@ -165,7 +165,11 @@ class OrderCreateRequest(serializers.Serializer):
     order_no = text_field(max_length=30)                # the receipt number, unique per company
     # The tablet's daily transaction count with its prefix (DUP-A-12); stored as sent.
     transaction_no = text_field(max_length=30, required=False, allow_blank=True)
-    customer_id = whole_number_field()
+    # Exactly one of the two: the server's id, or -- for a customer created on
+    # this tablet and not yet on the server -- the sync_id of its create call
+    # (a booking naming a parked create waits behind it; owner, 7 Nov 2026).
+    customer_id = whole_number_field(required=False, allow_null=True)
+    customer_sync_id = uuid7_field(required=False, allow_null=True)
 
     # booked_at is when the booking happened on the tablet, possibly offline,
     # well before this call reaches the server; start_time is the rental's own.
@@ -183,6 +187,12 @@ class OrderCreateRequest(serializers.Serializer):
     # The ride is closed as rented and linked to this order.
     test_ride_id = serializers.UUIDField(required=False, allow_null=True,
                                          error_messages={"invalid": "must be a test ride's id"})
+
+    def validate(self, attrs):
+        named = [key for key in ("customer_id", "customer_sync_id") if attrs.get(key) is not None]
+        if len(named) != 1:
+            raise serializers.ValidationError({"customer_id": "send exactly one of customer_id or customer_sync_id"})
+        return attrs
 
     def validate_items(self, items):
         if not items:

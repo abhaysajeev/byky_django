@@ -50,9 +50,14 @@ class PortalScreenView(PagePermissionMixin, ThemedTemplateView):
         context.update({
             "companies_list": list(companies_for(user).filter(is_active=True).values("id", "name")),
             "roles_list": list(scoping.roles_for(user).filter(is_active=True).values("id", "name")),
+            # The User drawer's Employee search (owner, 7 Nov 2026): who already
+            # has a login carries its user_id, and the combo leaves them out --
+            # but for the user being edited (UserForm enforces the same).
             "employees_list": [
-                {"id": e.pk, "name": f"{e.employee_code} — {e.full_name}"}
-                for e in employees_for(user).filter(is_active=True)
+                {"id": e.pk, "name": e.full_name, "code": e.employee_code, "company_id": e.company_id,
+                 "user_id": getattr(getattr(e, "user", None), "pk", None)}
+                for e in employees_for(user).filter(is_active=True).select_related("user")
+                .order_by("first_name", "last_name", "employee_code")
             ],
             "channels_list": [{"id": value, "name": label} for value, label in Channel.choices],
             "perm": {
