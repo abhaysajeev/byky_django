@@ -20,5 +20,5 @@ ALTER ROLE tracking_writer SET idle_in_transaction_session_timeout = '30s';
 GRANT SELECT, INSERT ON tracking_reading, tracking_reading_key, tracking_raw_frame TO tracking_writer;
 GRANT SELECT, INSERT, UPDATE ON tracking_tag_last_seen TO tracking_writer;
 GRANT SELECT, INSERT, UPDATE ON tracking_reader TO tracking_writer;
-GRANT SELECT ON tracking_antenna, tracking_reader_assignment TO tracking_writer;
+GRANT SELECT ON tracking_antenna, tracking_reader_assignment, tracking_calibration TO tracking_writer;
 GRANT USAGE ON SEQUENCE tracking_reader_id_seq, tracking_raw_frame_id_seq TO tracking_writer;

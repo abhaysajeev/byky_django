@@ -64,6 +64,8 @@ services:
     image: ${COMPOSE_PROJECT:-byky_f_qa}-app
     command: gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-3} --access-logfile - --error-logfile -
     environment:
+      TRACKING_ENABLED: ${TRACKING_ENABLED:-0}
+      TRACKING_MODE: ${TRACKING_MODE:-capture}
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?set a real, freshly generated key in .env}
       DJANGO_DEBUG: "False"
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:?set the VPS IP or QA domain in .env}
@@ -208,7 +210,9 @@ services:
   # TRACKING_PUBLISH=5101:5100 (default: a random port on localhost only).
   # A published port bypasses ufw -- the gateway's allow-list, frame and
   # connection limits are what guard it.
+  # Both tracking containers start only where COMPOSE_PROFILES=tracking is in .env.
   rfid-gateway:
+    profiles: [tracking]
     image: ${COMPOSE_PROJECT:-byky_f_qa}-app
     command: python manage.py run_rfid_gateway
     environment:
@@ -232,10 +236,15 @@ services:
       start_period: 15s
     mem_limit: 256m
     cpus: 0.5
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "5"
     restart: unless-stopped
 
   # The presence engine (apps/tracking): its own container, not Celery.
   tracking-engine:
+    profiles: [tracking]
     image: ${COMPOSE_PROJECT:-byky_f_qa}-app
     command: python manage.py run_tracking_engine
     environment:
@@ -245,6 +254,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "find /tmp/tracking-engine.alive -mmin -3 | grep -q ."]
       interval: 30s
@@ -253,6 +264,10 @@ services:
       start_period: 45s
     mem_limit: 256m
     cpus: 0.5
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "5"
     restart: unless-stopped
 
   proxy:

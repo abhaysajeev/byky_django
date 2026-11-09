@@ -1412,3 +1412,35 @@ body.scr-live-wall .scr-live-th-group { display: none; }
   .scr-live-veh-row[hidden] { display: none; }
   .scr-live-pill { top: 12px; }
 }
+
+
+/* Antenna Tracking. The Live Monitoring tile and two-line cell classes are
+   reused; their sizes scale with --live-s, which only that page sets. */
+.scr-track { --live-s: 1; gap: 24px; }
+.scr-track-stack { display: flex; flex-direction: column; gap: 24px; }
+.scr-live-totals.scr-track-totals { grid-template-columns: repeat(6, minmax(0, 1fr)); border-bottom: 0; }
+.scr-track-totals > div:last-child { border-right: 0; }
+.scr-track-totals > .is-missing dd { color: #c2141a; font-weight: 800; }
+.scr-track .scr-live-p { font-weight: 700; color: #1a1640; }
+.scr-badge-missing { background: #fdeced; color: #c2141a; }
+.scr-track-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.scr-track-chip { display: inline-flex; align-items: center; gap: 8px; padding: 5px 6px 5px 10px; border-radius: 99px; background: #f4f3f9; font-size: 12px; color: #1a1640; }
+.scr-track-chip small { color: #7d7aa0; }
+.scr-track-chip button { border: 0; background: transparent; color: #6b6790; cursor: pointer; padding: 0 4px; line-height: 1; }
+.scr-track-result { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.scr-track-result[hidden] { display: none; }
+.scr-track-check { display: flex; align-items: flex-start; gap: 10px; font-size: 12.5px; color: #1a1640; }
+.scr-track-check .scr-badge { flex: 0 0 auto; }
+.scr-track-headline { font-weight: 700; font-size: 13px; color: #1a1640; }
+@media (max-width: 1023.98px) {
+  .scr-live-totals.scr-track-totals { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .scr-track-totals > div:nth-child(3n) { border-right: 0; }
+  .scr-track-totals > div:nth-child(-n+3) { border-bottom: 1px solid #f4f3f9; }
+}
+@media (max-width: 767.98px) {
+  .scr-live-totals.scr-track-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .scr-track-totals > div:last-child { grid-column: auto; border-bottom: 0; }
+  .scr-track-totals > div:nth-last-child(2) { border-bottom: 0; }
+  .scr-track-totals > div:nth-child(3n) { border-right: 1px solid #f4f3f9; }
+  .scr-track-totals > div:nth-child(even) { border-right: 0; }
+}

@@ -20,14 +20,19 @@ MAX_COUNT = 99
 EPOCH = datetime.datetime(2000, 1, 1, tzinfo=datetime.UTC)
 
 _TITLES = {EventKind.LOW_BATTERY: "Low tag battery", EventKind.READER_OFFLINE: "Reader offline",
-           EventKind.READER_ONLINE: "Reader back online"}
-_STATES = {PresenceState.MISSING: "Vehicle missing", PresenceState.ALERT: "Vehicle at edge"}
+           EventKind.READER_ONLINE: "Reader back online", EventKind.READER_SILENT: "Reader hears no tags"}
+_STATES = {PresenceState.MISSING: "Vehicle missing"}
 _REASONS = {"test_overdue": "test ride overdue", "not_seen": "not heard by the antennas",
-            "weak_signal": "signal below the limit", "edge": "at the edge of the station"}
+            "weak_signal": "signal below the limit"}
+_CRITICAL = (EventKind.READER_OFFLINE, EventKind.READER_SILENT)
 
 
 def bell_for(user):
-    """What the navbar needs, or None: no bell feed without the privilege."""
+    """What the navbar needs, or None: no bell feed with tracking off or
+    without the privilege. The flag first: with tracking off, a page costs no
+    extra query."""
+    if not settings.TRACKING_ENABLED:
+        return None
     if not getattr(user, "is_authenticated", False) or not has_permission(user, PAGE, "read"):
         return None
     return {"feed_url": reverse("tracking-bell-feed"), "read_url": reverse("tracking-bell-read"),
@@ -41,7 +46,7 @@ def events_for(user):
 
 
 def _item(event, read_at):
-    vehicle = event.vehicle.vehicle_code if event.vehicle_id else ""
+    vehicle = event.vehicle.vehicle_name if event.vehicle_id else ""
     branch = event.branch.name if event.branch_id else ""
     if event.kind == EventKind.STATE:
         title = _STATES.get(event.to_state, event.get_to_state_display())
@@ -50,8 +55,7 @@ def _item(event, read_at):
         title, why = _TITLES.get(event.kind, event.get_kind_display()), ""
     if event.reader_id:
         vehicle = event.reader.name or event.reader.device_id
-    severity = "critical" if event.to_state == PresenceState.MISSING or event.kind == EventKind.READER_OFFLINE \
-        else "warning"
+    severity = "critical" if event.to_state == PresenceState.MISSING or event.kind in _CRITICAL else "warning"
     target = reverse("tracking-alerts") + "?view=history"
     if event.vehicle_id:
         target += f"&vehicle={event.vehicle_id}"

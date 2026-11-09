@@ -4,21 +4,24 @@ replays never refresh last-seen (design §3, §5; E8)."""
 import asyncio
 import uuid
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import psycopg
 import pytest
 from django.db import connection
+from django.utils import timezone
 
 from apps.tracking import protocol as p
 from apps.tracking.gateway import Config, Gateway
 from apps.tracking.grants import grants_for
-from apps.tracking.models import ReadingKey, TagLastSeen
+from apps.tracking.models import Calibration, Reader, ReadingKey, TagLastSeen
 from apps.tracking.store import Store, dsn
 from apps.tracking.tests.test_gateway_capture import DEVICE, approve
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
-T0 = datetime(2026, 11, 6, 10, 0, 0)
+# The reader's clock: UAE time, no zone, and recent enough to be believed.
+T0 = datetime.now(ZoneInfo("Asia/Dubai")).replace(tzinfo=None, microsecond=0) - timedelta(hours=1)
 
 
 def upload(*reads):
@@ -160,3 +163,49 @@ def test_the_writer_role_cannot_touch_business_tables(world):
         with connection.cursor() as cursor:
             cursor.execute(f"DROP OWNED BY {role}")
             cursor.execute(f"DROP ROLE {role}")
+
+
+# -- the reader's clock is not to be trusted (E11) -----------------------------------------
+
+def test_a_clock_in_2070_does_not_freeze_the_bike(world):
+    approve(company=world["company"])
+    send(upload(read(at=datetime(2070, 1, 1))))
+    first = TagLastSeen.objects.get(tag="0A0B0C01")
+    assert first.reader_time is None
+
+    send(upload(read(rssi=-30)))
+
+    assert TagLastSeen.objects.get(tag="0A0B0C01").seen_at > first.seen_at
+
+
+def test_the_sent_clock_is_kept_on_the_reading_for_debugging(world):
+    approve(company=world["company"])
+    send(upload(read(at=datetime(2070, 1, 1))))
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT extract(year FROM reader_time) FROM tracking_reading")
+        assert int(cursor.fetchone()[0]) in (2069, 2070)
+
+
+def test_a_backlog_too_old_is_stored_but_says_nothing_about_now(world):
+    approve(company=world["company"])
+    send(upload(read(at=T0 - timedelta(days=5))))
+    assert len(readings()) == 1
+    assert not TagLastSeen.objects.exists()
+
+
+# -- the raw switch (owner, 9 Nov 2026) ----------------------------------------------------
+
+def test_with_the_switch_off_only_last_seen_is_kept(world):
+    approve(company=world["company"])
+    Reader.objects.update(keep_raw=False)
+    send(upload(read()))
+    assert readings() == []
+    assert TagLastSeen.objects.filter(tag="0A0B0C01").exists() and ReadingKey.objects.count() == 1
+
+
+def test_an_open_calibration_keeps_raw_reads_whatever_the_switch(world):
+    approve(company=world["company"])
+    Reader.objects.update(keep_raw=False)
+    Calibration.objects.create(reader=Reader.objects.get(), tags=["0A0B0C01"], started_at=timezone.now())
+    send(upload(read()))
+    assert len(readings()) == 1

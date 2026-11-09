@@ -233,6 +233,8 @@ PAGES = [
 SYSTEM_ONLY = {
     "monitoring.request_log",
     "monitoring.error_log",
+    # Every read a reader sent: for troubleshooting only (owner, 9 Nov 2026).
+    "tracking.raw",
 }
 
 # A page listed inside another page: left out of the sidebar for anyone who

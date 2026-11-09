@@ -3,40 +3,51 @@
 {% block screen_title %}Raw Readings{% endblock %}
 {% block crumb %}Raw Readings{% endblock %}
 {% block heading %}Raw Readings{% endblock %}
-{% block sub %}What the readers sent, for debugging and calibration. At most 24 hours per search.{% endblock %}
+{% block sub %}What a reader sent, for troubleshooting and calibration. At most 24 hours per search.{% endblock %}
 
 {% block body %}
 <div class="scr-card">
+  {% if chosen_reader %}
   <div class="scr-toolbar">
     <select class="scr-input" name="reader" aria-label="Reader" data-tracking-filter style="flex:0 0 auto;width:220px">
-      <option value="">All readers</option>
-      {% for r in readers %}<option value="{{ r.pk }}"{% if r.pk == chosen_reader %} selected{% endif %}>{{ r.name|default:r.device_id }}</option>{% endfor %}
+      {% for r in readers %}<option value="{{ r.pk }}"{% if r.pk == chosen_reader.pk %} selected{% endif %}>{{ r.name|default:r.device_id }}</option>{% endfor %}
     </select>
     <input class="scr-input" name="tag" value="{{ tag }}" maxlength="8" placeholder="Tag" aria-label="Tag" data-tracking-filter style="flex:0 0 auto;width:130px">
     <input class="scr-input" type="datetime-local" name="from" value="{{ from }}" aria-label="From" data-tracking-filter style="flex:0 0 auto;width:220px">
     <input class="scr-input" type="datetime-local" name="to" value="{{ to }}" aria-label="To" data-tracking-filter style="flex:0 0 auto;width:220px">
   </div>
   {% if too_long %}<div class="scr-banner"><span class="scr-banner-text">A search covers at most 24 hours, so the start was moved.</span></div>{% endif %}
+  {% if timed_out %}<div class="scr-banner"><span class="scr-banner-text">That search took too long. Narrow it to a tag or a shorter time.</span></div>{% endif %}
+  {% if not chosen_reader.keep_raw %}<div class="scr-banner"><span class="scr-banner-text">Keep raw readings is off for this reader, so only readings from a calibration are saved. Turn it on from the Readers page.</span></div>{% endif %}
   <div class="scr-table-scroll scr-sb">
     <table>
-      <thead><tr><th>Received</th><th>Reader</th><th>Port</th><th>Tag</th><th>RSSI</th><th>Reader clock</th><th>Staying</th><th>Entry</th><th>Low battery</th></tr></thead>
+      <thead><tr><th>Received</th><th>Port</th><th>Tag</th><th>RSSI</th><th>Reader clock</th><th>Staying</th><th>Entry</th><th>Low battery</th></tr></thead>
       <tbody>
-        {% for row in page.object_list %}
+        {% for row in rows %}
         <tr class="scr-row">
           <td class="scr-contact">{{ row.received_at|date:"d M H:i:s" }}</td>
-          <td>{{ row.reader_name }}</td><td>{{ row.port }}</td><td><span class="scr-code">{{ row.tag }}</span></td><td>{{ row.rssi }}</td>
+          <td>{{ row.port }}</td><td><span class="scr-code">{{ row.tag }}</span></td><td>{{ row.rssi }}</td>
           <td class="scr-contact">{{ row.reader_time|date:"d M H:i:s"|default:"—" }}</td>
           <td>{{ row.staying|yesno:"Yes,No" }}</td><td>{{ row.entry|yesno:"Yes,No" }}</td><td>{{ row.low_battery|yesno:"Yes,No" }}</td>
         </tr>
         {% empty %}
-        <tr><td colspan="9" style="padding:0"><div class="scr-empty"><div>
+        <tr><td colspan="8" style="padding:0"><div class="scr-empty"><div>
           <div class="scr-empty-title">No readings in this period</div>
-          <p class="scr-empty-sub">Raw readings are kept for the days set in Tracking Settings.</p>
+          <p class="scr-empty-sub">Try a longer time range. Raw readings are kept for the days set in Tracking Settings.</p>
         </div></div></td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-  {% include "byky/partials/server_pager.html" %}
+  <div class="scr-pager">
+    <span class="scr-pager-info">Page {{ page_no }}</span>
+    <div class="scr-pager-nav">
+      {% if prev_query %}<a class="scr-btn-secondary scr-btn-small" href="?{{ prev_query }}">Newer</a>{% endif %}
+      {% if next_query %}<a class="scr-btn-secondary scr-btn-small" href="?{{ next_query }}">Older</a>{% endif %}
+    </div>
+  </div>
+  {% else %}
+  <div class="scr-empty"><div><div class="scr-empty-title">No readers yet</div></div></div>
+  {% endif %}
 </div>
 {% endblock %}
