@@ -1,0 +1,87 @@
+{% extends "tracking/_base.html" %}
+{% load static %}
+
+{% block screen_title %}Tracking Settings{% endblock %}
+{% block crumb %}Tracking Settings{% endblock %}
+{% block heading %}Tracking Settings{% endblock %}
+{% block sub %}Times are in seconds. A blank box in a station's row uses the company default. Changes apply within 30 seconds.{% endblock %}
+
+{% block page_js %}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+{{ block.super }}
+{% endblock page_js %}
+
+{% block actions %}
+{% if perm.update and chosen_company %}<button type="button" class="scr-btn-primary" data-settings-save>Save</button>{% endif %}
+{% endblock %}
+
+{% block body %}
+{% if chosen_company %}
+<div class="scr-track-stack" data-tracking-settings data-save-url="{{ save_url }}">
+  {% comment %}
+  Its own card and no .scr-row: byky-screen.js pages and searches the station
+  rows below, and the company default must always stay visible.
+  {% endcomment %}
+  <div class="scr-card">
+    <div class="scr-toolbar">
+      {% if companies|length > 1 %}
+      <select class="scr-input" name="company" aria-label="Company" data-tracking-filter style="flex:0 0 auto;width:220px">
+        {% for c in companies %}<option value="{{ c.id }}"{% if c.id == chosen_company %} selected{% endif %}>{{ c.name }}</option>{% endfor %}
+      </select>
+      {% endif %}
+      <label class="scr-label" for="retention" style="margin:0">Keep raw readings (days)</label>
+      <input class="scr-input" id="retention" name="retention_days" type="number" min="1" max="14" value="{{ default.retention_days }}" style="flex:0 0 auto;width:90px" {% if not perm.update %}disabled{% endif %}>
+      <label class="scr-label" for="allowance" style="margin:0" title="How far past the boundary signal a bike may go before it counts as out. About 3 dB is roughly 2 m, 10 m from an antenna.">Boundary allowance (dB)</label>
+      <input class="scr-input" id="allowance" name="allowance_out_db" type="number" min="1" max="15" value="{{ default.allowance_out_db }}" style="flex:0 0 auto;width:90px" {% if not perm.update %}disabled{% endif %}>
+    </div>
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead><tr><th>Company default</th><th>Missing after</th><th>Reader offline after</th></tr></thead>
+        <tbody>
+          <tr data-default-row>
+            <td style="font-weight:600">All stations, unless set below</td>
+            <td><input class="scr-input" name="missing_after_s" type="number" min="30" max="3600" value="{{ default.missing_after_s }}" aria-label="Company default missing after" {% if not perm.update %}disabled{% endif %}></td>
+            <td><input class="scr-input" name="offline_after_s" type="number" min="{{ min_offline }}" max="3600" value="{{ default.offline_after_s }}" aria-label="Company default reader offline after" {% if not perm.update %}disabled{% endif %}></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="scr-card" data-scr-noun-singular="station" data-scr-noun-plural="stations">
+    <div class="scr-toolbar">
+      <div class="scr-search">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="text" placeholder="Search station" aria-label="Search station" />
+      </div>
+      <span class="scr-toolbar-count">{{ rows|length }} station{{ rows|length|pluralize }}</span>
+    </div>
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead><tr><th>Station</th><th style="text-align:center">Alerts</th><th>Missing after</th><th>Reader offline after</th></tr></thead>
+        <tbody>
+          {% for row in rows %}
+          <tr class="scr-row" data-branch-row="{{ row.branch.pk }}" data-search="{{ row.branch.name|lower }} {{ row.branch.short_code|lower }}">
+            <td>{{ row.branch.name }}</td>
+            <td style="text-align:center"><button type="button" class="scr-toggle{% if row.own.alerts_on %} is-on{% endif %}" role="switch" aria-checked="{% if row.own.alerts_on %}true{% else %}false{% endif %}" aria-label="Alerts — {{ row.branch.name }}" data-alerts-switch {% if not perm.update %}disabled{% endif %}><i></i></button></td>
+            <td><input class="scr-input" name="missing_after_s" type="number" min="30" max="3600" value="{{ row.own.missing_after_s|default_if_none:'' }}" placeholder="{{ default.missing_after_s }}" aria-label="{{ row.branch.name }} missing after" {% if not perm.update %}disabled{% endif %}></td>
+            <td><input class="scr-input" name="offline_after_s" type="number" min="{{ min_offline }}" max="3600" value="{{ row.own.offline_after_s|default_if_none:'' }}" placeholder="{{ default.offline_after_s }}" aria-label="{{ row.branch.name }} reader offline after" {% if not perm.update %}disabled{% endif %}></td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="4" style="padding:0"><div class="scr-empty"><div><div class="scr-empty-title">No stations</div></div></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="scr-pager">
+      <span class="scr-pager-info">Showing {{ rows|length }} of {{ rows|length }}</span>
+      <div class="scr-pager-nav">
+        <button type="button" class="scr-pager-btn" disabled aria-label="Previous"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"></path></svg></button>
+        <span class="scr-pager-current">1</span>
+        <button type="button" class="scr-pager-btn" disabled aria-label="Next"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 6 6 6-6 6"></path></svg></button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,34 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}{% block screen_title %}{% endblock %} - Tracking{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-tracking.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr scr-track">
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Tracking</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>{% block crumb %}{% endblock %}</b>
+      </div>
+      <h1 class="scr-title">{% block heading %}{% endblock %}</h1>
+      <p class="scr-sub">{% block sub %}{% endblock %}</p>
+    </div>
+    <div class="scr-head-actions">{% block actions %}{% endblock %}</div>
+  </div>
+  {% block body %}{% endblock %}
+</div>
+{% block modals %}{% endblock %}
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}
