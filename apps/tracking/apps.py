@@ -1,0 +1,7 @@
+from django.apps import AppConfig
+
+
+class TrackingConfig(AppConfig):
+    name = "apps.tracking"
+    label = "tracking"
+    verbose_name = "Antenna Tracking"

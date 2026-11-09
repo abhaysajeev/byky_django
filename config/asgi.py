@@ -15,9 +15,10 @@ from channels.sessions import SessionMiddlewareStack  # noqa: E402
 from django.urls import path  # noqa: E402
 
 from apps.rental.consumers import LiveConsumer  # noqa: E402
+from apps.tracking.consumers import TrackingConsumer  # noqa: E402
 from core.realtime import SessionUserMiddleware  # noqa: E402
 
-websocket_urls = [path("ws/live/", LiveConsumer.as_asgi())]
+websocket_urls = [path("ws/live/", LiveConsumer.as_asgi()), path("ws/tracking/", TrackingConsumer.as_asgi())]
 
 application = ProtocolTypeRouter({
     "http": django_app,

@@ -17,6 +17,7 @@ urlpatterns = [
     path("discount/", include("apps.discount.urls")),
     path("reports/", include("apps.reports.urls")),
     path("monitoring/", include("apps.monitoring.urls")),
+    path("tracking/", include("apps.tracking.urls")),
     path("sync/", include("apps.sync.urls")),
     path("photos/", include("apps.photos.urls")),
     path("api/v1/<app:app>/", include("apps.devices.api_urls")),

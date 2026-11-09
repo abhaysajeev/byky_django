@@ -1,0 +1,103 @@
+{% extends "tracking/_base.html" %}
+
+{% block screen_title %}Missing &amp; Alerts{% endblock %}
+{% block crumb %}Missing &amp; Alerts{% endblock %}
+{% block heading %}Missing &amp; Alerts{% endblock %}
+{% block sub %}Vehicles that are missing now, and everything that has happened.{% endblock %}
+
+{% block body %}
+<div class="scr-card">
+  <div class="scr-content-tabs">
+    <a class="scr-content-tab{% if view == 'current' %} is-on{% endif %}" href="?view=current">Current</a>
+    <a class="scr-content-tab{% if view == 'history' %} is-on{% endif %}" href="?view=history">History</a>
+  </div>
+  <div class="scr-toolbar">
+    <select class="scr-input" name="branch" aria-label="Station" data-tracking-filter style="flex:0 0 auto;width:220px">
+      <option value="">All stations</option>
+      {% for b in branches_list %}<option value="{{ b.id }}"{% if b.id == chosen_branch %} selected{% endif %}>{{ b.name }}</option>{% endfor %}
+    </select>
+    {% if view == 'history' %}
+    <input class="scr-input" type="date" name="from" value="{{ from }}" aria-label="From date" data-tracking-filter style="flex:0 0 auto;width:220px">
+    <input class="scr-input" type="date" name="to" value="{{ to }}" aria-label="To date" data-tracking-filter style="flex:0 0 auto;width:220px">
+    {% if vehicle_filter %}<a class="scr-btn-secondary scr-btn-small" href="?view=history">Clear vehicle filter</a>{% endif %}
+    {% endif %}
+  </div>
+</div>
+
+<div class="scr-card">
+  {% if view == 'current' %}
+  <div data-tracking-live>
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead><tr><th>Vehicle</th><th>Station</th><th>Status</th><th>Why</th><th>Since</th><th>Last heard</th><th>Heard at</th><th></th></tr></thead>
+        <tbody>
+          {% for r in current %}
+          <tr class="scr-row">
+            <td>{% include "tracking/_vehicle.html" with name=r.name sub=r.type %}</td>
+            <td>{{ r.branch }}</td>
+            <td><span class="scr-badge {{ r.badge }}"><i></i>{{ r.state_label }}</span></td>
+            <td class="scr-contact">{{ r.reason|default:"—" }}</td>
+            <td class="scr-contact">{{ r.since|date:"d M H:i:s" }}</td>
+            <td class="scr-contact">{{ r.last_seen|date:"d M H:i:s"|default:"—" }}</td>
+            <td class="scr-contact">{{ r.heard_at|default:"—" }}</td>
+            <td><a class="scr-href" href="?view=history&amp;vehicle={{ r.vehicle_id }}">History</a></td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="8" style="padding:0"><div class="scr-empty"><div>
+            <div class="scr-empty-title">Nothing missing</div>
+            <p class="scr-empty-sub">Every tracked vehicle is where it should be.</p>
+          </div></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="scr-table-scroll scr-sb">
+    <table>
+      <thead><tr><th>When</th><th>Vehicle / Reader</th><th>Station</th><th>What happened</th><th>Acknowledged</th><th></th></tr></thead>
+      <tbody>
+        {% for e in page.object_list %}
+        <tr class="scr-row">
+          <td class="scr-contact">{{ e.at|date:"d M Y H:i:s" }}</td>
+          <td>{% include "tracking/_vehicle.html" with name=e.subject sub=e.subject_sub %}</td>
+          <td>{{ e.branch.name|default:"—" }}</td>
+          <td>{{ e.what }}</td>
+          <td class="scr-contact">{% if e.acknowledged_at %}{{ e.acknowledged_by.display_name }}, {{ e.acknowledged_at|date:"d M H:i" }}{% if e.note %} — {{ e.note }}{% endif %}{% else %}—{% endif %}</td>
+          <td>{% if perm.update and e.alerts and not e.acknowledged_at %}
+            <button type="button" class="scr-btn-secondary scr-btn-small" data-modal-open="ack" data-url="{% url 'tracking-alert-acknowledge' e.pk %}" data-fill-subject="{{ e.subject }}">Acknowledge</button>
+          {% endif %}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" style="padding:0"><div class="scr-empty"><div>
+          <div class="scr-empty-title">Nothing in this period</div>
+          <p class="scr-empty-sub">Try a wider date range or another station.</p>
+        </div></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "byky/partials/server_pager.html" %}
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block modals %}
+<div class="scr-modal-veil" data-scr-modal-veil="ack" hidden></div>
+<div class="scr-modal" data-scr-modal="ack" hidden style="width:min(460px, 100%)">
+  <form data-tracking-form>
+    <div class="scr-modal-head"><div>
+      <div class="scr-modal-title">Acknowledge</div>
+      <p class="scr-modal-sub" data-show="subject"></p>
+    </div></div>
+    <div class="scr-modal-body">
+      <label class="scr-label" for="ack-note">Note (optional)</label>
+      <input class="scr-input" id="ack-note" name="note" maxlength="200" style="width:100%">
+    </div>
+    <div class="scr-modal-foot" style="justify-content:flex-end;gap:8px">
+      <button type="button" class="scr-btn-secondary" data-tracking-close>Cancel</button>
+      <button type="submit" class="scr-btn-primary">Acknowledge</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
