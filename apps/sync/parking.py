@@ -87,7 +87,8 @@ def order_key(kind, company_id, request_data):
     order: the parent's order if the parent is on the server, else the order
     of the parked parent call."""
     if kind in (IssueKind.ATTENDANCE, IssueKind.SERVICE_REQUEST, IssueKind.IMAGE_SHARE, IssueKind.ASSET_CHECK,
-                IssueKind.TEST_RIDE_START, IssueKind.TEST_RIDE_END, IssueKind.TEST_RIDE_CANCEL):
+                IssueKind.TEST_RIDE_START, IssueKind.TEST_RIDE_END, IssueKind.TEST_RIDE_CANCEL,
+                IssueKind.CUSTOMER_CREATE):
         return None                    # not about an order: nothing to queue behind
     if kind == IssueKind.BOOKING:
         return uuid_or_none(request_data.get("sync_id"))
@@ -120,12 +121,42 @@ def head_of(company_id, key):
             .order_by("id").first())
 
 
-def waiting_on(issue):
-    """The head this open issue waits behind, or None when it is the head."""
-    if not issue.is_open or issue.order_id is None:
+def customer_sync_id(kind, request_data):
+    """The customer a booking names by its create call's sync_id, or None."""
+    if kind != IssueKind.BOOKING:
         return None
-    head = head_of(issue.company_id, issue.order_id)
-    return head.pk if head is not None and head.pk != issue.pk else None
+    return uuid_or_none((request_data or {}).get("customer_sync_id"))
+
+
+def customer_blocker(company_id, kind, request_data):
+    """The open parked create of the customer a booking names by
+    customer_sync_id: the booking waits behind it (owner, 7 Nov 2026)."""
+    reference = customer_sync_id(kind, request_data)
+    if reference is None:
+        return None
+    return SyncIssue.objects.filter(company_id=company_id, sync_id=reference, kind=IssueKind.CUSTOMER_CREATE,
+                                    status=IssueStatus.OPEN).first()
+
+
+def waiting_on(issue):
+    """The issue this open one waits behind -- its order's head, or the parked
+    create of the customer it names -- or None when nothing is ahead."""
+    if not issue.is_open:
+        return None
+    if issue.order_id is not None:
+        head = head_of(issue.company_id, issue.order_id)
+        if head is not None and head.pk != issue.pk:
+            return head.pk
+    blocker = customer_blocker(issue.company_id, issue.kind, issue.request_data)
+    return blocker.pk if blocker is not None else None
+
+
+def lock_key(kind, sync_id, key):
+    """What a call locks while it is decided and run: its order's queue; a
+    customer create, its own sync_id (the key its bookings wait on)."""
+    if kind == IssueKind.CUSTOMER_CREATE:
+        return sync_id
+    return key
 
 
 @contextlib.contextmanager
@@ -161,9 +192,10 @@ def reply_parts(response):
     return body.get("code", ""), body.get("message", ""), body.get("data") or {}
 
 
-def parkable(response):
+def parkable(response, never_park=()):
     code, _, _ = reply_parts(response)
-    return response.status_code >= 400 and code not in DONE and code not in NOT_PARKABLE
+    return (response.status_code >= 400 and code not in DONE and code not in NOT_PARKABLE
+            and code not in never_park)
 
 
 def parked_reply(issue):
@@ -183,8 +215,9 @@ def dismissed_reply(issue):
     }, http_status=status.HTTP_409_CONFLICT)
 
 
-def handle(request, app, kind, perform):
-    """The HTTP side of every parkable call. `perform` is the view's own."""
+def handle(request, app, kind, perform, *, never_park=()):
+    """The HTTP side of every parkable call. `perform` is the view's own;
+    `never_park` names refusals answered as they are even with park: true."""
     credentials, request_data = request_parts(request)
     session = request.auth
     sync_id = uuid_or_none(request_data.get("sync_id"))
@@ -201,9 +234,11 @@ def handle(request, app, kind, perform):
 
     park = credentials.get("park") is True
     key = order_key(kind, company_id, request_data)
-    with queue_lock(key):
+    # A booking naming a customer by customer_sync_id takes that create's lock
+    # first, as a replay of the create does, so the two never cross.
+    with queue_lock(customer_sync_id(kind, request_data)), queue_lock(lock_key(kind, sync_id, key)):
         if known is None:
-            head = head_of(company_id, key)
+            head = head_of(company_id, key) or customer_blocker(company_id, kind, request_data)
             if head is not None:
                 return parked_reply(_store(request, session, app, kind, sync_id, key, request_data,
                                            IssueReason.FOLLOWER))
@@ -218,7 +253,7 @@ def handle(request, app, kind, perform):
             return parked_reply(_store(request, session, app, kind, sync_id, key, request_data,
                                        IssueReason.SERVER_ERROR, status_code=500, code="server_error",
                                        message=SERVER_ERROR_MESSAGE))
-        if park and known is None and parkable(response):
+        if park and known is None and parkable(response, never_park):
             code, message, data = reply_parts(response)
             return parked_reply(_store(request, session, app, kind, sync_id, key, request_data,
                                        IssueReason.REFUSED, status_code=response.status_code, code=code,
@@ -292,7 +327,7 @@ def views():
     from apps.rental import test_ride_api
 
     classes = (
-        rental.OrderCreateView, rental.OrderAddView, rental.OrderReplaceView, rental.OrderRemoveView,
+        rental.CustomerCreateView, rental.OrderCreateView, rental.OrderAddView, rental.OrderReplaceView, rental.OrderRemoveView,
         rental.OrderReturnView, rental.OrderPaymentsView, rental.OrderSettleView,
         rental.CreditNoteRequestView, rental.CreditNoteCancelView, rental.OrderRequestView,
         rental.OrderRequestWithdrawView, rental.OrderRequestUsedView, ApprovalRequestView,
