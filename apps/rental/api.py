@@ -152,6 +152,13 @@ driving_license, others), `id_no`, `email`, `address`, `remarks`.
 **A phone already registered** is `customer_exists`: to this company, with
 that customer (block state included) so the app can use them; to another
 company, with no details.
+
+**Parking** -- as every recording call: with `credentials.park: true` a
+refusal (or a crash) is kept for the office and answered `parked`; a resend
+while it is open is answered `parked` again, and once the office replays it,
+`duplicate` with the customer. **`customer_exists` is never parked** -- it is
+answered as above, park or not. A booking for a parked customer names it by
+`customer_sync_id` (see `/orders`).
 """
 
 
@@ -203,10 +210,13 @@ class _OperatorView(APIView):
     # park it (apps/sync/parking.py) and replays run it as the original session.
     park_kind = None
 
+    # Refusal codes answered as they are even with park: true.
+    never_park = ()
+
     def parked(self, request, app):
         if app != Channel.OPERATOR:
             return envelope("wrong_channel", "Not allowed on this app.", http_status=403)
-        return parking.handle(request, app, self.park_kind, self.perform)
+        return parking.handle(request, app, self.park_kind, self.perform, never_park=self.never_park)
 
 
 _COMMON = (
@@ -263,6 +273,11 @@ class CustomerLookupView(_OperatorView):
 class CustomerCreateView(_OperatorView):
     """POST /api/v1/{app}/customers/create -- operator app only."""
 
+    park_kind = IssueKind.CUSTOMER_CREATE
+    # Owner, 7 Nov 2026: the phone is registered -- the reply already names
+    # the customer (this company) and the tablet uses it; nothing to correct.
+    never_park = ("customer_exists",)
+
     @extend_schema(
         tags=["Operator Customers"],
         summary="Register a new customer",
@@ -278,20 +293,22 @@ class CustomerCreateView(_OperatorView):
             (409, "customer_exists", "A customer with this phone number already exists.", {},
              "customer_exists (another company)"),
             (409, "sync_id_conflict", "That sync_id is already used.", {}),
+            *parking.SCHEMA_ROWS,
             *_COMMON,
         ),
     )
     def post(self, request, app):
-        branch, refused = self.station(request, app)
+        return self.parked(request, app)
+
+    def perform(self, session, app, request_data, *, replay=False):
+        branch, refused = station_of(session, replay=replay)
         if refused:
             return refused
-
-        _, request_data = request_parts(request)
         form = CustomerCreateRequest(data=request_data)
         form.is_valid(raise_exception=True)
 
         try:
-            customer, created = services.create_customer(request.user, branch.company, form.validated_data)
+            customer, created = services.create_customer(session.user, branch.company, form.validated_data)
         except services.CustomerExists as exists:
             data = _customer_json(exists.customer) if exists.customer else {}
             return envelope("customer_exists", "A customer with this phone number already exists.", data,
@@ -617,7 +634,7 @@ _SETTLED_SAMPLE = {
 
 _BOOK_ERRORS = (
     "sync_id_conflict", "order_no_used", "vehicle_already_rented", "vehicle_repeated", "item_id_used",
-    "payment_id_used", "unknown_customer", "unknown_payment_mode", "unknown_vehicle",
+    "payment_id_used", "unknown_customer", "customer_not_synced", "unknown_payment_mode", "unknown_vehicle",
     "vehicle_not_at_station", "unknown_fare", "unknown_offer", "package_not_available",
     "vehicle_on_test_ride", "vehicle_in_warehouse_service", "unknown_test_ride", "test_ride_closed",
 )
@@ -639,6 +656,13 @@ never silently one version or the other. Keys may come in any order.
 **`customer_id`, `vehicle_id`, `fare_id`, `offer_id`, `payment_mode_id`** are
 ids the tablet already holds from `/customers/lookup`, `/vehicles`, `/fares`
 and `/payment-modes`.
+
+**`customer_sync_id`** -- instead of `customer_id`, for a customer this tablet
+created and has no server id for yet: the `sync_id` of its `/customers/create`
+call. Send **exactly one** of the two. If that create is parked, the booking
+is parked behind it (`waiting_on` is the customer's issue) and runs once the
+office replays the customer. If the server has never seen it, the booking is
+refused `customer_not_synced` (retry: send the create first).
 
 **`order_no`** is the printed receipt number, unique in the company, built
 from the top-level `order_no_prefix` that login and `/device/settings` give.

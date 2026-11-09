@@ -51,7 +51,9 @@ queue can be replayed or dismissed (apps/sync/services.py).
   <div class="scr-card scr-mon-card">
     <div class="scr-form-head"><h2 class="scr-form-title">{% if issue.waiting_on %}Waiting{% else %}Why it was refused{% endif %}</h2></div>
     <div class="scr-form-body">
-      {% if issue.waiting_on %}
+      {% if issue.waiting_on_customer %}
+        <p class="scr-mon-message-full">This booking names a customer whose create call is parked, so it was not run. It replays after <a href="{% url 'sync-issue-detail' issue.waiting_on %}">issue {{ issue.waiting_on }}</a>.</p>
+      {% elif issue.waiting_on %}
         <p class="scr-mon-message-full">This call arrived while an earlier call for the same order was parked, so it was not run. It replays after <a href="{% url 'sync-issue-detail' issue.waiting_on %}">issue {{ issue.waiting_on }}</a>.</p>
       {% else %}
         <p class="scr-mon-message-full"><b>{{ issue.error_code }}</b> — {{ issue.error_message }}</p>
@@ -122,6 +124,28 @@ queue can be replayed or dismissed (apps/sync/services.py).
             <td><a class="scr-code" href="{% url 'sync-issue-detail' q.pk %}">#{{ q.pk }}</a></td>
             <td class="scr-state">{{ q.received_at|date:"d M Y, H:i:s" }}</td>
             <td class="scr-state">{{ q.get_kind_display }}</td>
+            <td class="scr-state">{% if q.device_id %}Device {{ q.device.device_registration_id }}{% else %}—{% endif %}</td>
+            <td>{% include "sync/_status.html" with issue=q %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if bookings %}
+  <div class="scr-card scr-mon-card">
+    <div class="scr-form-head"><h2 class="scr-form-title">Bookings for this customer</h2></div>
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead><tr><th>Issue</th><th>Received</th><th>Order</th><th>Device</th><th>Status</th></tr></thead>
+        <tbody>
+          {% for q in bookings %}
+          <tr class="scr-mon-row" data-scr-href="{% url 'sync-issue-detail' q.pk %}">
+            <td><a class="scr-code" href="{% url 'sync-issue-detail' q.pk %}">#{{ q.pk }}</a></td>
+            <td class="scr-state">{{ q.received_at|date:"d M Y, H:i:s" }}</td>
+            <td class="scr-state">{{ q.order_no|default:"—" }}</td>
             <td class="scr-state">{% if q.device_id %}Device {{ q.device.device_registration_id }}{% else %}—{% endif %}</td>
             <td>{% include "sync/_status.html" with issue=q %}</td>
           </tr>

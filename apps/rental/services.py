@@ -116,6 +116,8 @@ def record_payment(order, *, payment_id, kind, mode, amount, paid_at, device=Non
 
 ORDER_ERRORS = {
     "order_not_synced": (409, "That order has not reached the server yet.", True),
+    # A booking naming its customer by customer_sync_id before the create arrived.
+    "customer_not_synced": (409, "The customer is not on the server yet.", True),
     "sync_id_conflict": (409, "That sync_id is already used for something else.", False),
     "order_no_used": (409, "That order number is already used.", False),
     "vehicle_already_rented": (409, "A vehicle in this order is already on an active rental.", False),
@@ -604,9 +606,14 @@ def _book(session, values, reply_for):
     if Order.objects.filter(company=company, order_no=values["order_no"]).exists():
         raise OrderRefused("order_no_used")
 
-    customer = Customer.objects.filter(pk=values["customer_id"], company=company).first()
-    if customer is None:
-        raise OrderRefused("unknown_customer")
+    if values.get("customer_sync_id") is not None:
+        customer = Customer.objects.filter(sync_id=values["customer_sync_id"], company=company).first()
+        if customer is None:
+            raise OrderRefused("customer_not_synced")
+    else:
+        customer = Customer.objects.filter(pk=values["customer_id"], company=company).first()
+        if customer is None:
+            raise OrderRefused("unknown_customer")
 
     # A rental after a test ride names it: the ride is closed as rented and
     # linked to this order (legacy Save_Order_Booking:437-482, @TestNo).
