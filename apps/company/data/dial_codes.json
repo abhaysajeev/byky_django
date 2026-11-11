@@ -1,0 +1,1962 @@
+[
+ {
+  "iso2": "AC",
+  "country": "Ascension Island",
+  "dial_code": "247",
+  "mobile_digits_min": 5,
+  "mobile_digits_max": 5,
+  "example_mobile": "40123"
+ },
+ {
+  "iso2": "AD",
+  "country": "Andorra",
+  "dial_code": "376",
+  "mobile_digits_min": 6,
+  "mobile_digits_max": 9,
+  "example_mobile": "312345"
+ },
+ {
+  "iso2": "AE",
+  "country": "United Arab Emirates",
+  "dial_code": "971",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "501234567"
+ },
+ {
+  "iso2": "AF",
+  "country": "Afghanistan",
+  "dial_code": "93",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "701234567"
+ },
+ {
+  "iso2": "AG",
+  "country": "Antigua & Barbuda",
+  "dial_code": "1",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "2684641234"
+ },
+ {
+  "iso2": "AI",
+  "country": "Anguilla",
+  "dial_code": "1",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "2642351234"
+ },
+ {
+  "iso2": "AL",
+  "country": "Albania",
+  "dial_code": "355",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "672123456"
+ },
+ {
+  "iso2": "AM",
+  "country": "Armenia",
+  "dial_code": "374",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "77123456"
+ },
+ {
+  "iso2": "AO",
+  "country": "Angola",
+  "dial_code": "244",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "923123456"
+ },
+ {
+  "iso2": "AR",
+  "country": "Argentina",
+  "dial_code": "54",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 11,
+  "example_mobile": "91123456789"
+ },
+ {
+  "iso2": "AS",
+  "country": "American Samoa",
+  "dial_code": "1",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "6847331234"
+ },
+ {
+  "iso2": "AT",
+  "country": "Austria",
+  "dial_code": "43",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 13,
+  "example_mobile": "664123456"
+ },
+ {
+  "iso2": "AU",
+  "country": "Australia",
+  "dial_code": "61",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "412345678"
+ },
+ {
+  "iso2": "AW",
+  "country": "Aruba",
+  "dial_code": "297",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 7,
+  "example_mobile": "5601234"
+ },
+ {
+  "iso2": "AX",
+  "country": "Åland Islands",
+  "dial_code": "358",
+  "mobile_digits_min": 6,
+  "mobile_digits_max": 10,
+  "example_mobile": "412345678"
+ },
+ {
+  "iso2": "AZ",
+  "country": "Azerbaijan",
+  "dial_code": "994",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "401234567"
+ },
+ {
+  "iso2": "BA",
+  "country": "Bosnia & Herzegovina",
+  "dial_code": "387",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 9,
+  "example_mobile": "61123456"
+ },
+ {
+  "iso2": "BB",
+  "country": "Barbados",
+  "dial_code": "1",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "2462501234"
+ },
+ {
+  "iso2": "BD",
+  "country": "Bangladesh",
+  "dial_code": "880",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "1812345678"
+ },
+ {
+  "iso2": "BE",
+  "country": "Belgium",
+  "dial_code": "32",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "450001234"
+ },
+ {
+  "iso2": "BF",
+  "country": "Burkina Faso",
+  "dial_code": "226",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "70123456"
+ },
+ {
+  "iso2": "BG",
+  "country": "Bulgaria",
+  "dial_code": "359",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 9,
+  "example_mobile": "43012345"
+ },
+ {
+  "iso2": "BH",
+  "country": "Bahrain",
+  "dial_code": "973",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "36001234"
+ },
+ {
+  "iso2": "BI",
+  "country": "Burundi",
+  "dial_code": "257",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "79561234"
+ },
+ {
+  "iso2": "BJ",
+  "country": "Benin",
+  "dial_code": "229",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "0195123456"
+ },
+ {
+  "iso2": "BL",
+  "country": "St. Barthélemy",
+  "dial_code": "590",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "690001234"
+ },
+ {
+  "iso2": "BM",
+  "country": "Bermuda",
+  "dial_code": "1",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "4413701234"
+ },
+ {
+  "iso2": "BN",
+  "country": "Brunei",
+  "dial_code": "673",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 7,
+  "example_mobile": "7123456"
+ },
+ {
+  "iso2": "BO",
+  "country": "Bolivia",
+  "dial_code": "591",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "71234567"
+ },
+ {
+  "iso2": "BQ",
+  "country": "Caribbean Netherlands",
+  "dial_code": "599",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 7,
+  "example_mobile": "3181234"
+ },
+ {
+  "iso2": "BR",
+  "country": "Brazil",
+  "dial_code": "55",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 11,
+  "example_mobile": "11961234567"
+ },
+ {
+  "iso2": "BS",
+  "country": "Bahamas",
+  "dial_code": "1",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "2423591234"
+ },
+ {
+  "iso2": "BT",
+  "country": "Bhutan",
+  "dial_code": "975",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "17123456"
+ },
+ {
+  "iso2": "BW",
+  "country": "Botswana",
+  "dial_code": "267",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "71123456"
+ },
+ {
+  "iso2": "BY",
+  "country": "Belarus",
+  "dial_code": "375",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "294911911"
+ },
+ {
+  "iso2": "BZ",
+  "country": "Belize",
+  "dial_code": "501",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 7,
+  "example_mobile": "6221234"
+ },
+ {
+  "iso2": "CA",
+  "country": "Canada",
+  "dial_code": "1",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "5062345678"
+ },
+ {
+  "iso2": "CC",
+  "country": "Cocos (Keeling) Islands",
+  "dial_code": "61",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "412345678"
+ },
+ {
+  "iso2": "CD",
+  "country": "Congo - Kinshasa",
+  "dial_code": "243",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 9,
+  "example_mobile": "991234567"
+ },
+ {
+  "iso2": "CF",
+  "country": "Central African Republic",
+  "dial_code": "236",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "70012345"
+ },
+ {
+  "iso2": "CG",
+  "country": "Congo - Brazzaville",
+  "dial_code": "242",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "061234567"
+ },
+ {
+  "iso2": "CH",
+  "country": "Switzerland",
+  "dial_code": "41",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "781234567"
+ },
+ {
+  "iso2": "CI",
+  "country": "Côte d’Ivoire",
+  "dial_code": "225",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "0123456789"
+ },
+ {
+  "iso2": "CK",
+  "country": "Cook Islands",
+  "dial_code": "682",
+  "mobile_digits_min": 5,
+  "mobile_digits_max": 5,
+  "example_mobile": "71234"
+ },
+ {
+  "iso2": "CL",
+  "country": "Chile",
+  "dial_code": "56",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "221234567"
+ },
+ {
+  "iso2": "CM",
+  "country": "Cameroon",
+  "dial_code": "237",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "671234567"
+ },
+ {
+  "iso2": "CN",
+  "country": "China",
+  "dial_code": "86",
+  "mobile_digits_min": 11,
+  "mobile_digits_max": 11,
+  "example_mobile": "13123456789"
+ },
+ {
+  "iso2": "CO",
+  "country": "Colombia",
+  "dial_code": "57",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "3211234567"
+ },
+ {
+  "iso2": "CR",
+  "country": "Costa Rica",
+  "dial_code": "506",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "83123456"
+ },
+ {
+  "iso2": "CU",
+  "country": "Cuba",
+  "dial_code": "53",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "51234567"
+ },
+ {
+  "iso2": "CV",
+  "country": "Cape Verde",
+  "dial_code": "238",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 7,
+  "example_mobile": "9911234"
+ },
+ {
+  "iso2": "CW",
+  "country": "Curaçao",
+  "dial_code": "599",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 8,
+  "example_mobile": "95181234"
+ },
+ {
+  "iso2": "CX",
+  "country": "Christmas Island",
+  "dial_code": "61",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "412345678"
+ },
+ {
+  "iso2": "CY",
+  "country": "Cyprus",
+  "dial_code": "357",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "96123456"
+ },
+ {
+  "iso2": "CZ",
+  "country": "Czechia",
+  "dial_code": "420",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "601123456"
+ },
+ {
+  "iso2": "DE",
+  "country": "Germany",
+  "dial_code": "49",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 11,
+  "example_mobile": "15123456789"
+ },
+ {
+  "iso2": "DJ",
+  "country": "Djibouti",
+  "dial_code": "253",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "77831001"
+ },
+ {
+  "iso2": "DK",
+  "country": "Denmark",
+  "dial_code": "45",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "34412345"
+ },
+ {
+  "iso2": "DM",
+  "country": "Dominica",
+  "dial_code": "1",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "7672251234"
+ },
+ {
+  "iso2": "DO",
+  "country": "Dominican Republic",
+  "dial_code": "1",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "8092345678"
+ },
+ {
+  "iso2": "DZ",
+  "country": "Algeria",
+  "dial_code": "213",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "551234567"
+ },
+ {
+  "iso2": "EC",
+  "country": "Ecuador",
+  "dial_code": "593",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "991234567"
+ },
+ {
+  "iso2": "EE",
+  "country": "Estonia",
+  "dial_code": "372",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 8,
+  "example_mobile": "51234567"
+ },
+ {
+  "iso2": "EG",
+  "country": "Egypt",
+  "dial_code": "20",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "1001234567"
+ },
+ {
+  "iso2": "EH",
+  "country": "Western Sahara",
+  "dial_code": "212",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "650123456"
+ },
+ {
+  "iso2": "ER",
+  "country": "Eritrea",
+  "dial_code": "291",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 7,
+  "example_mobile": "7123456"
+ },
+ {
+  "iso2": "ES",
+  "country": "Spain",
+  "dial_code": "34",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "612345678"
+ },
+ {
+  "iso2": "ET",
+  "country": "Ethiopia",
+  "dial_code": "251",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "911234567"
+ },
+ {
+  "iso2": "FI",
+  "country": "Finland",
+  "dial_code": "358",
+  "mobile_digits_min": 6,
+  "mobile_digits_max": 10,
+  "example_mobile": "412345678"
+ },
+ {
+  "iso2": "FJ",
+  "country": "Fiji",
+  "dial_code": "679",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 7,
+  "example_mobile": "7012345"
+ },
+ {
+  "iso2": "FK",
+  "country": "Falkland Islands",
+  "dial_code": "500",
+  "mobile_digits_min": 5,
+  "mobile_digits_max": 5,
+  "example_mobile": "51234"
+ },
+ {
+  "iso2": "FM",
+  "country": "Micronesia",
+  "dial_code": "691",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 7,
+  "example_mobile": "3501234"
+ },
+ {
+  "iso2": "FO",
+  "country": "Faroe Islands",
+  "dial_code": "298",
+  "mobile_digits_min": 6,
+  "mobile_digits_max": 6,
+  "example_mobile": "211234"
+ },
+ {
+  "iso2": "FR",
+  "country": "France",
+  "dial_code": "33",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "612345678"
+ },
+ {
+  "iso2": "GA",
+  "country": "Gabon",
+  "dial_code": "241",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 8,
+  "example_mobile": "06031234"
+ },
+ {
+  "iso2": "GB",
+  "country": "United Kingdom",
+  "dial_code": "44",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "7400123456"
+ },
+ {
+  "iso2": "GD",
+  "country": "Grenada",
+  "dial_code": "1",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "4734031234"
+ },
+ {
+  "iso2": "GE",
+  "country": "Georgia",
+  "dial_code": "995",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "555123456"
+ },
+ {
+  "iso2": "GF",
+  "country": "French Guiana",
+  "dial_code": "594",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "694201234"
+ },
+ {
+  "iso2": "GG",
+  "country": "Guernsey",
+  "dial_code": "44",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "7781123456"
+ },
+ {
+  "iso2": "GH",
+  "country": "Ghana",
+  "dial_code": "233",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "231234567"
+ },
+ {
+  "iso2": "GI",
+  "country": "Gibraltar",
+  "dial_code": "350",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "57123456"
+ },
+ {
+  "iso2": "GL",
+  "country": "Greenland",
+  "dial_code": "299",
+  "mobile_digits_min": 6,
+  "mobile_digits_max": 6,
+  "example_mobile": "221234"
+ },
+ {
+  "iso2": "GM",
+  "country": "Gambia",
+  "dial_code": "220",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 9,
+  "example_mobile": "3012345"
+ },
+ {
+  "iso2": "GN",
+  "country": "Guinea",
+  "dial_code": "224",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "601123456"
+ },
+ {
+  "iso2": "GP",
+  "country": "Guadeloupe",
+  "dial_code": "590",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "690001234"
+ },
+ {
+  "iso2": "GQ",
+  "country": "Equatorial Guinea",
+  "dial_code": "240",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "222123456"
+ },
+ {
+  "iso2": "GR",
+  "country": "Greece",
+  "dial_code": "30",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "6912345678"
+ },
+ {
+  "iso2": "GT",
+  "country": "Guatemala",
+  "dial_code": "502",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "51234567"
+ },
+ {
+  "iso2": "GU",
+  "country": "Guam",
+  "dial_code": "1",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "6713001234"
+ },
+ {
+  "iso2": "GW",
+  "country": "Guinea-Bissau",
+  "dial_code": "245",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "955012345"
+ },
+ {
+  "iso2": "GY",
+  "country": "Guyana",
+  "dial_code": "592",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 7,
+  "example_mobile": "6091234"
+ },
+ {
+  "iso2": "HK",
+  "country": "Hong Kong SAR China",
+  "dial_code": "852",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "51234567"
+ },
+ {
+  "iso2": "HN",
+  "country": "Honduras",
+  "dial_code": "504",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "91234567"
+ },
+ {
+  "iso2": "HR",
+  "country": "Croatia",
+  "dial_code": "385",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 9,
+  "example_mobile": "921234567"
+ },
+ {
+  "iso2": "HT",
+  "country": "Haiti",
+  "dial_code": "509",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "34101234"
+ },
+ {
+  "iso2": "HU",
+  "country": "Hungary",
+  "dial_code": "36",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "201234567"
+ },
+ {
+  "iso2": "ID",
+  "country": "Indonesia",
+  "dial_code": "62",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 12,
+  "example_mobile": "812345678"
+ },
+ {
+  "iso2": "IE",
+  "country": "Ireland",
+  "dial_code": "353",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "850123456"
+ },
+ {
+  "iso2": "IL",
+  "country": "Israel",
+  "dial_code": "972",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "502345678"
+ },
+ {
+  "iso2": "IM",
+  "country": "Isle of Man",
+  "dial_code": "44",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "7924123456"
+ },
+ {
+  "iso2": "IN",
+  "country": "India",
+  "dial_code": "91",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "8123456789"
+ },
+ {
+  "iso2": "IO",
+  "country": "British Indian Ocean Territory",
+  "dial_code": "246",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 7,
+  "example_mobile": "3801234"
+ },
+ {
+  "iso2": "IQ",
+  "country": "Iraq",
+  "dial_code": "964",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "7912345678"
+ },
+ {
+  "iso2": "IR",
+  "country": "Iran",
+  "dial_code": "98",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "9123456789"
+ },
+ {
+  "iso2": "IS",
+  "country": "Iceland",
+  "dial_code": "354",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 9,
+  "example_mobile": "6111234"
+ },
+ {
+  "iso2": "IT",
+  "country": "Italy",
+  "dial_code": "39",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 10,
+  "example_mobile": "3123456789"
+ },
+ {
+  "iso2": "JE",
+  "country": "Jersey",
+  "dial_code": "44",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "7797712345"
+ },
+ {
+  "iso2": "JM",
+  "country": "Jamaica",
+  "dial_code": "1",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "8762101234"
+ },
+ {
+  "iso2": "JO",
+  "country": "Jordan",
+  "dial_code": "962",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "790123456"
+ },
+ {
+  "iso2": "JP",
+  "country": "Japan",
+  "dial_code": "81",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "9012345678"
+ },
+ {
+  "iso2": "KE",
+  "country": "Kenya",
+  "dial_code": "254",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "712123456"
+ },
+ {
+  "iso2": "KG",
+  "country": "Kyrgyzstan",
+  "dial_code": "996",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "700123456"
+ },
+ {
+  "iso2": "KH",
+  "country": "Cambodia",
+  "dial_code": "855",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 9,
+  "example_mobile": "91234567"
+ },
+ {
+  "iso2": "KI",
+  "country": "Kiribati",
+  "dial_code": "686",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "72001234"
+ },
+ {
+  "iso2": "KM",
+  "country": "Comoros",
+  "dial_code": "269",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 7,
+  "example_mobile": "3212345"
+ },
+ {
+  "iso2": "KN",
+  "country": "St. Kitts & Nevis",
+  "dial_code": "1",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "8697652917"
+ },
+ {
+  "iso2": "KP",
+  "country": "North Korea",
+  "dial_code": "850",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "1921234567"
+ },
+ {
+  "iso2": "KR",
+  "country": "South Korea",
+  "dial_code": "82",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 10,
+  "example_mobile": "1020000000"
+ },
+ {
+  "iso2": "KW",
+  "country": "Kuwait",
+  "dial_code": "965",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "50012345"
+ },
+ {
+  "iso2": "KY",
+  "country": "Cayman Islands",
+  "dial_code": "1",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "3453231234"
+ },
+ {
+  "iso2": "KZ",
+  "country": "Kazakhstan",
+  "dial_code": "7",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "7710009998"
+ },
+ {
+  "iso2": "LA",
+  "country": "Laos",
+  "dial_code": "856",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 10,
+  "example_mobile": "2023123456"
+ },
+ {
+  "iso2": "LB",
+  "country": "Lebanon",
+  "dial_code": "961",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 8,
+  "example_mobile": "71123456"
+ },
+ {
+  "iso2": "LC",
+  "country": "St. Lucia",
+  "dial_code": "1",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "7582845678"
+ },
+ {
+  "iso2": "LI",
+  "country": "Liechtenstein",
+  "dial_code": "423",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 9,
+  "example_mobile": "660234567"
+ },
+ {
+  "iso2": "LK",
+  "country": "Sri Lanka",
+  "dial_code": "94",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "712345678"
+ },
+ {
+  "iso2": "LR",
+  "country": "Liberia",
+  "dial_code": "231",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 9,
+  "example_mobile": "770123456"
+ },
+ {
+  "iso2": "LS",
+  "country": "Lesotho",
+  "dial_code": "266",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "50123456"
+ },
+ {
+  "iso2": "LT",
+  "country": "Lithuania",
+  "dial_code": "370",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "61234567"
+ },
+ {
+  "iso2": "LU",
+  "country": "Luxembourg",
+  "dial_code": "352",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "628123456"
+ },
+ {
+  "iso2": "LV",
+  "country": "Latvia",
+  "dial_code": "371",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "21234567"
+ },
+ {
+  "iso2": "LY",
+  "country": "Libya",
+  "dial_code": "218",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "912345678"
+ },
+ {
+  "iso2": "MA",
+  "country": "Morocco",
+  "dial_code": "212",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "650123456"
+ },
+ {
+  "iso2": "MC",
+  "country": "Monaco",
+  "dial_code": "377",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 9,
+  "example_mobile": "612345678"
+ },
+ {
+  "iso2": "MD",
+  "country": "Moldova",
+  "dial_code": "373",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "62112345"
+ },
+ {
+  "iso2": "ME",
+  "country": "Montenegro",
+  "dial_code": "382",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "60123456"
+ },
+ {
+  "iso2": "MF",
+  "country": "St. Martin",
+  "dial_code": "590",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "690001234"
+ },
+ {
+  "iso2": "MG",
+  "country": "Madagascar",
+  "dial_code": "261",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "321234567"
+ },
+ {
+  "iso2": "MH",
+  "country": "Marshall Islands",
+  "dial_code": "692",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 7,
+  "example_mobile": "2351234"
+ },
+ {
+  "iso2": "MK",
+  "country": "North Macedonia",
+  "dial_code": "389",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "72345678"
+ },
+ {
+  "iso2": "ML",
+  "country": "Mali",
+  "dial_code": "223",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "65012345"
+ },
+ {
+  "iso2": "MM",
+  "country": "Myanmar (Burma)",
+  "dial_code": "95",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 10,
+  "example_mobile": "92123456"
+ },
+ {
+  "iso2": "MN",
+  "country": "Mongolia",
+  "dial_code": "976",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "88123456"
+ },
+ {
+  "iso2": "MO",
+  "country": "Macao SAR China",
+  "dial_code": "853",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "66123456"
+ },
+ {
+  "iso2": "MP",
+  "country": "Northern Mariana Islands",
+  "dial_code": "1",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "6702345678"
+ },
+ {
+  "iso2": "MQ",
+  "country": "Martinique",
+  "dial_code": "596",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "696201234"
+ },
+ {
+  "iso2": "MR",
+  "country": "Mauritania",
+  "dial_code": "222",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "22123456"
+ },
+ {
+  "iso2": "MS",
+  "country": "Montserrat",
+  "dial_code": "1",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "6644923456"
+ },
+ {
+  "iso2": "MT",
+  "country": "Malta",
+  "dial_code": "356",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "96961234"
+ },
+ {
+  "iso2": "MU",
+  "country": "Mauritius",
+  "dial_code": "230",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "52512345"
+ },
+ {
+  "iso2": "MV",
+  "country": "Maldives",
+  "dial_code": "960",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 7,
+  "example_mobile": "7712345"
+ },
+ {
+  "iso2": "MW",
+  "country": "Malawi",
+  "dial_code": "265",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "991234567"
+ },
+ {
+  "iso2": "MX",
+  "country": "Mexico",
+  "dial_code": "52",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "2221234567"
+ },
+ {
+  "iso2": "MY",
+  "country": "Malaysia",
+  "dial_code": "60",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 10,
+  "example_mobile": "123456789"
+ },
+ {
+  "iso2": "MZ",
+  "country": "Mozambique",
+  "dial_code": "258",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "821234567"
+ },
+ {
+  "iso2": "NA",
+  "country": "Namibia",
+  "dial_code": "264",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "811234567"
+ },
+ {
+  "iso2": "NC",
+  "country": "New Caledonia",
+  "dial_code": "687",
+  "mobile_digits_min": 6,
+  "mobile_digits_max": 6,
+  "example_mobile": "751234"
+ },
+ {
+  "iso2": "NE",
+  "country": "Niger",
+  "dial_code": "227",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "93123456"
+ },
+ {
+  "iso2": "NF",
+  "country": "Norfolk Island",
+  "dial_code": "672",
+  "mobile_digits_min": 6,
+  "mobile_digits_max": 6,
+  "example_mobile": "381234"
+ },
+ {
+  "iso2": "NG",
+  "country": "Nigeria",
+  "dial_code": "234",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "8021234567"
+ },
+ {
+  "iso2": "NI",
+  "country": "Nicaragua",
+  "dial_code": "505",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "81234567"
+ },
+ {
+  "iso2": "NL",
+  "country": "Netherlands",
+  "dial_code": "31",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 11,
+  "example_mobile": "612345678"
+ },
+ {
+  "iso2": "NO",
+  "country": "Norway",
+  "dial_code": "47",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "40612345"
+ },
+ {
+  "iso2": "NP",
+  "country": "Nepal",
+  "dial_code": "977",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "9841234567"
+ },
+ {
+  "iso2": "NR",
+  "country": "Nauru",
+  "dial_code": "674",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 7,
+  "example_mobile": "5551234"
+ },
+ {
+  "iso2": "NU",
+  "country": "Niue",
+  "dial_code": "683",
+  "mobile_digits_min": 4,
+  "mobile_digits_max": 7,
+  "example_mobile": "8884012"
+ },
+ {
+  "iso2": "NZ",
+  "country": "New Zealand",
+  "dial_code": "64",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 10,
+  "example_mobile": "211234567"
+ },
+ {
+  "iso2": "OM",
+  "country": "Oman",
+  "dial_code": "968",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "92123456"
+ },
+ {
+  "iso2": "PA",
+  "country": "Panama",
+  "dial_code": "507",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 8,
+  "example_mobile": "61234567"
+ },
+ {
+  "iso2": "PE",
+  "country": "Peru",
+  "dial_code": "51",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "912345678"
+ },
+ {
+  "iso2": "PF",
+  "country": "French Polynesia",
+  "dial_code": "689",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "87123456"
+ },
+ {
+  "iso2": "PG",
+  "country": "Papua New Guinea",
+  "dial_code": "675",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "70123456"
+ },
+ {
+  "iso2": "PH",
+  "country": "Philippines",
+  "dial_code": "63",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "9051234567"
+ },
+ {
+  "iso2": "PK",
+  "country": "Pakistan",
+  "dial_code": "92",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "3012345678"
+ },
+ {
+  "iso2": "PL",
+  "country": "Poland",
+  "dial_code": "48",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "512345678"
+ },
+ {
+  "iso2": "PM",
+  "country": "St. Pierre & Miquelon",
+  "dial_code": "508",
+  "mobile_digits_min": 6,
+  "mobile_digits_max": 9,
+  "example_mobile": "551234"
+ },
+ {
+  "iso2": "PR",
+  "country": "Puerto Rico",
+  "dial_code": "1",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "7872345678"
+ },
+ {
+  "iso2": "PS",
+  "country": "Palestinian Territories",
+  "dial_code": "970",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "599123456"
+ },
+ {
+  "iso2": "PT",
+  "country": "Portugal",
+  "dial_code": "351",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "912345678"
+ },
+ {
+  "iso2": "PW",
+  "country": "Palau",
+  "dial_code": "680",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 7,
+  "example_mobile": "6201234"
+ },
+ {
+  "iso2": "PY",
+  "country": "Paraguay",
+  "dial_code": "595",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "961456789"
+ },
+ {
+  "iso2": "QA",
+  "country": "Qatar",
+  "dial_code": "974",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "33123456"
+ },
+ {
+  "iso2": "RE",
+  "country": "Réunion",
+  "dial_code": "262",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "692123456"
+ },
+ {
+  "iso2": "RO",
+  "country": "Romania",
+  "dial_code": "40",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "712034567"
+ },
+ {
+  "iso2": "RS",
+  "country": "Serbia",
+  "dial_code": "381",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 10,
+  "example_mobile": "601234567"
+ },
+ {
+  "iso2": "RU",
+  "country": "Russia",
+  "dial_code": "7",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "9123456789"
+ },
+ {
+  "iso2": "RW",
+  "country": "Rwanda",
+  "dial_code": "250",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "720123456"
+ },
+ {
+  "iso2": "SA",
+  "country": "Saudi Arabia",
+  "dial_code": "966",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "512345678"
+ },
+ {
+  "iso2": "SB",
+  "country": "Solomon Islands",
+  "dial_code": "677",
+  "mobile_digits_min": 5,
+  "mobile_digits_max": 7,
+  "example_mobile": "7421234"
+ },
+ {
+  "iso2": "SC",
+  "country": "Seychelles",
+  "dial_code": "248",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 7,
+  "example_mobile": "2510123"
+ },
+ {
+  "iso2": "SD",
+  "country": "Sudan",
+  "dial_code": "249",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "911231234"
+ },
+ {
+  "iso2": "SE",
+  "country": "Sweden",
+  "dial_code": "46",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "701234567"
+ },
+ {
+  "iso2": "SG",
+  "country": "Singapore",
+  "dial_code": "65",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "81234567"
+ },
+ {
+  "iso2": "SH",
+  "country": "St. Helena",
+  "dial_code": "290",
+  "mobile_digits_min": 5,
+  "mobile_digits_max": 5,
+  "example_mobile": "51234"
+ },
+ {
+  "iso2": "SI",
+  "country": "Slovenia",
+  "dial_code": "386",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "31234567"
+ },
+ {
+  "iso2": "SJ",
+  "country": "Svalbard & Jan Mayen",
+  "dial_code": "47",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "41234567"
+ },
+ {
+  "iso2": "SK",
+  "country": "Slovakia",
+  "dial_code": "421",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "912123456"
+ },
+ {
+  "iso2": "SL",
+  "country": "Sierra Leone",
+  "dial_code": "232",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "25123456"
+ },
+ {
+  "iso2": "SM",
+  "country": "San Marino",
+  "dial_code": "378",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "66661212"
+ },
+ {
+  "iso2": "SN",
+  "country": "Senegal",
+  "dial_code": "221",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "701234567"
+ },
+ {
+  "iso2": "SO",
+  "country": "Somalia",
+  "dial_code": "252",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 9,
+  "example_mobile": "71123456"
+ },
+ {
+  "iso2": "SR",
+  "country": "Suriname",
+  "dial_code": "597",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 7,
+  "example_mobile": "7412345"
+ },
+ {
+  "iso2": "SS",
+  "country": "South Sudan",
+  "dial_code": "211",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "977123456"
+ },
+ {
+  "iso2": "ST",
+  "country": "São Tomé & Príncipe",
+  "dial_code": "239",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 7,
+  "example_mobile": "9812345"
+ },
+ {
+  "iso2": "SV",
+  "country": "El Salvador",
+  "dial_code": "503",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "70123456"
+ },
+ {
+  "iso2": "SX",
+  "country": "Sint Maarten",
+  "dial_code": "1",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "7215205678"
+ },
+ {
+  "iso2": "SY",
+  "country": "Syria",
+  "dial_code": "963",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "944567890"
+ },
+ {
+  "iso2": "SZ",
+  "country": "Eswatini",
+  "dial_code": "268",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "76123456"
+ },
+ {
+  "iso2": "TA",
+  "country": "Tristan da Cunha",
+  "dial_code": "290",
+  "mobile_digits_min": 4,
+  "mobile_digits_max": 4,
+  "example_mobile": ""
+ },
+ {
+  "iso2": "TC",
+  "country": "Turks & Caicos Islands",
+  "dial_code": "1",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "6492311234"
+ },
+ {
+  "iso2": "TD",
+  "country": "Chad",
+  "dial_code": "235",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "63012345"
+ },
+ {
+  "iso2": "TG",
+  "country": "Togo",
+  "dial_code": "228",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "90112345"
+ },
+ {
+  "iso2": "TH",
+  "country": "Thailand",
+  "dial_code": "66",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "812345678"
+ },
+ {
+  "iso2": "TJ",
+  "country": "Tajikistan",
+  "dial_code": "992",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "917123456"
+ },
+ {
+  "iso2": "TK",
+  "country": "Tokelau",
+  "dial_code": "690",
+  "mobile_digits_min": 4,
+  "mobile_digits_max": 7,
+  "example_mobile": "7290"
+ },
+ {
+  "iso2": "TL",
+  "country": "Timor-Leste",
+  "dial_code": "670",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "77212345"
+ },
+ {
+  "iso2": "TM",
+  "country": "Turkmenistan",
+  "dial_code": "993",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "66123456"
+ },
+ {
+  "iso2": "TN",
+  "country": "Tunisia",
+  "dial_code": "216",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "20123456"
+ },
+ {
+  "iso2": "TO",
+  "country": "Tonga",
+  "dial_code": "676",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 7,
+  "example_mobile": "7715123"
+ },
+ {
+  "iso2": "TR",
+  "country": "Türkiye",
+  "dial_code": "90",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "5012345678"
+ },
+ {
+  "iso2": "TT",
+  "country": "Trinidad & Tobago",
+  "dial_code": "1",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "8682911234"
+ },
+ {
+  "iso2": "TV",
+  "country": "Tuvalu",
+  "dial_code": "688",
+  "mobile_digits_min": 6,
+  "mobile_digits_max": 7,
+  "example_mobile": "901234"
+ },
+ {
+  "iso2": "TW",
+  "country": "Taiwan",
+  "dial_code": "886",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "912345678"
+ },
+ {
+  "iso2": "TZ",
+  "country": "Tanzania",
+  "dial_code": "255",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "621234567"
+ },
+ {
+  "iso2": "UA",
+  "country": "Ukraine",
+  "dial_code": "380",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "501234567"
+ },
+ {
+  "iso2": "UG",
+  "country": "Uganda",
+  "dial_code": "256",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "712345678"
+ },
+ {
+  "iso2": "US",
+  "country": "United States",
+  "dial_code": "1",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "2015550123"
+ },
+ {
+  "iso2": "UY",
+  "country": "Uruguay",
+  "dial_code": "598",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "94231234"
+ },
+ {
+  "iso2": "UZ",
+  "country": "Uzbekistan",
+  "dial_code": "998",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "912345678"
+ },
+ {
+  "iso2": "VA",
+  "country": "Vatican City",
+  "dial_code": "39",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 10,
+  "example_mobile": "3123456789"
+ },
+ {
+  "iso2": "VC",
+  "country": "St. Vincent & Grenadines",
+  "dial_code": "1",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "7844301234"
+ },
+ {
+  "iso2": "VE",
+  "country": "Venezuela",
+  "dial_code": "58",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "4121234567"
+ },
+ {
+  "iso2": "VG",
+  "country": "British Virgin Islands",
+  "dial_code": "1",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "2843001234"
+ },
+ {
+  "iso2": "VI",
+  "country": "U.S. Virgin Islands",
+  "dial_code": "1",
+  "mobile_digits_min": 10,
+  "mobile_digits_max": 10,
+  "example_mobile": "3406421234"
+ },
+ {
+  "iso2": "VN",
+  "country": "Vietnam",
+  "dial_code": "84",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "912345678"
+ },
+ {
+  "iso2": "VU",
+  "country": "Vanuatu",
+  "dial_code": "678",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 7,
+  "example_mobile": "5912345"
+ },
+ {
+  "iso2": "WF",
+  "country": "Wallis & Futuna",
+  "dial_code": "681",
+  "mobile_digits_min": 6,
+  "mobile_digits_max": 6,
+  "example_mobile": "821234"
+ },
+ {
+  "iso2": "WS",
+  "country": "Samoa",
+  "dial_code": "685",
+  "mobile_digits_min": 7,
+  "mobile_digits_max": 10,
+  "example_mobile": "7212345"
+ },
+ {
+  "iso2": "XK",
+  "country": "Kosovo",
+  "dial_code": "383",
+  "mobile_digits_min": 8,
+  "mobile_digits_max": 8,
+  "example_mobile": "43201234"
+ },
+ {
+  "iso2": "YE",
+  "country": "Yemen",
+  "dial_code": "967",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "712345678"
+ },
+ {
+  "iso2": "YT",
+  "country": "Mayotte",
+  "dial_code": "262",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "639012345"
+ },
+ {
+  "iso2": "ZA",
+  "country": "South Africa",
+  "dial_code": "27",
+  "mobile_digits_min": 5,
+  "mobile_digits_max": 9,
+  "example_mobile": "711234567"
+ },
+ {
+  "iso2": "ZM",
+  "country": "Zambia",
+  "dial_code": "260",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "955123456"
+ },
+ {
+  "iso2": "ZW",
+  "country": "Zimbabwe",
+  "dial_code": "263",
+  "mobile_digits_min": 9,
+  "mobile_digits_max": 9,
+  "example_mobile": "712345678"
+ }
+]
