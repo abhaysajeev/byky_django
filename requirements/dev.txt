@@ -4,3 +4,6 @@ pytest-django==4.9.0
 pytest-xdist==3.6.1
 ruff==0.6.9
 django-debug-toolbar==4.4.6
+# Only to rebuild apps/company/data/dial_codes.json (manage.py load_dial_codes --rebuild).
+phonenumbers==9.0.42
+babel==2.18.0

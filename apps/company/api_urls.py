@@ -9,4 +9,5 @@ from apps.company import api
 urlpatterns = [
     path("branch", api.BranchDetailsView.as_view(), name="api-app-branch"),
     path("payment-modes", api.PaymentModesView.as_view(), name="api-app-payment-modes"),
+    path("dial-codes", api.DialCodesView.as_view(), name="api-app-dial-codes"),
 ]
