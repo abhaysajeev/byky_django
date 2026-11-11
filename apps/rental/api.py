@@ -94,10 +94,12 @@ _INVOICE_SAMPLE = {
     "items": [
         {"vehicle": "MO 41", "identifier": "VB1241", "vehicle_type": "Monaco", "package_minutes": 60,
          "run_minutes": 72, "start_time": "2026-10-02 16:00:00", "end_time": "2026-10-02 17:12:00",
-         "base_fare": "50.000", "overtime_amount": "10.000", "total_amount": "60.000"},
+         "base_fare": "50.000", "overtime_amount": "10.000", "total_amount": "60.000",
+         "package_details": None},
         {"vehicle": "DC 02", "identifier": "VB0202", "vehicle_type": "Monaco", "package_minutes": 60,
          "run_minutes": 60, "start_time": "2026-10-02 16:00:00", "end_time": "2026-10-02 17:00:00",
-         "base_fare": "50.000", "overtime_amount": "0.000", "total_amount": "50.000"},
+         "base_fare": "50.000", "overtime_amount": "0.000", "total_amount": "50.000",
+         "package_details": None},
     ],
     "subtotal": "110.000", "discount_percentage": None, "discount_amount": "0.000", "discount_source": None,
     "tax_percentage": "5.00", "tax_amount": "5.238", "rounding_adjustment": "0.000", "net_amount": "110.000",
@@ -355,7 +357,9 @@ def invoice_json(invoice, zone):
              "vehicle_type": item.vehicle_type, "package_minutes": item.package_minutes,
              "run_minutes": item.run_minutes, "start_time": _local(item.start_time, zone),
              "end_time": _local(item.end_time, zone), "base_fare": _money(item.base_fare),
-             "overtime_amount": _money(item.overtime_amount), "total_amount": _money(item.total_amount)}
+             "overtime_amount": _money(item.overtime_amount), "total_amount": _money(item.total_amount),
+             # the package applied to this vehicle, as the tablet sent it at booking; null if none
+             "package_details": item.order_item.package_details}
             for item in sorted(invoice.items.all(), key=lambda line: line.start_time)
         ],
         "subtotal": _money(invoice.subtotal),
@@ -498,6 +502,8 @@ def _order_body(order, zone, items, payments, invoice):
                 "reason": item.reason,
                 # The fare terms the line was priced on, as the tablet sent them; null if none were.
                 "fare_details": item.fare_details,
+                # The package applied to this vehicle, as sent; null if none.
+                "package_details": item.package_details,
             }
             for item in items
         ],
@@ -580,13 +586,15 @@ _ORDER_SAMPLE = {
          "fare_id": 88, "offer_id": None, "package_minutes": 60, "run_minutes": None,
          "start_time": "2026-10-02 16:00:00", "expected_end_time": "2026-10-02 17:00:00", "end_time": None,
          "base_fare": "50.00", "overtime_amount": None, "total_amount": None,
-         "replaced_item_id": None, "reason": "", "fare_details": _FARE_DETAILS_SAMPLE},
+         "replaced_item_id": None, "reason": "", "fare_details": _FARE_DETAILS_SAMPLE,
+         "package_details": None},
         {"sync_id": "01923e1c-0a13-7b22-8c33-d4e5f6a7b8c9", "status": "active",
          "vehicle": {"id": 3102, "name": "DC 02", "identifier": "VB0874"},
          "fare_id": 88, "offer_id": None, "package_minutes": 60, "run_minutes": None,
          "start_time": "2026-10-02 16:00:00", "expected_end_time": "2026-10-02 17:00:00", "end_time": None,
          "base_fare": "50.00", "overtime_amount": None, "total_amount": None,
-         "replaced_item_id": None, "reason": "", "fare_details": _FARE_DETAILS_SAMPLE},
+         "replaced_item_id": None, "reason": "", "fare_details": _FARE_DETAILS_SAMPLE,
+         "package_details": None},
     ],
     "payments": [
         {"sync_id": "01923e1c-0a14-7b22-8c33-d4e5f6a7b8c9", "kind": "advance",
@@ -703,6 +711,18 @@ price -- time window -- that set the price), `package_minutes`, `base_fare`,
 order keeps the terms it was booked on even if the fare is edited later. The
 same on add-vehicle (`item`) and replace (`new_item`). Every order reply
 returns it per item (`null` when not sent).
+
+**`package_details`** (optional per item) -- the package the tablet applied
+to that vehicle, as one object. The app does all package pricing: the line's
+`base_fare` is **already after** the package, and `fare_details` stays the
+fare **before** it. Stored exactly as sent, never checked and never used in
+any amount; send whatever keys you need. The web shows three of them, so use
+these names: `name` (the package's name), `amount_off` (AED taken off this
+vehicle, a 3-decimal string) and `is_free_item` (`true` for a free vehicle).
+Suggested also: `package_id`, `code`, `promotion_type`, from `packages`.
+Leave it out for a vehicle with no package. The same on add-vehicle (`item`)
+and replace (`new_item`); every order reply returns it per item and every
+invoice per line (`null` when not sent).
 
 **In every order reply**: `open_by` -- who booked the order; `close_by` -- who
 settled it (`null` until then); `star_rating` and `rating_remarks` -- the

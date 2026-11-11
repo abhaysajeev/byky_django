@@ -126,7 +126,7 @@
               {% include "rental/partials/order_status.html" with status=i.status %}
               {% if i.replaced_by %}<div class="scr-contact-sub">by {{ i.replaced_by }}{% if i.reason %} · {{ i.reason }}{% endif %}</div>{% elif i.reason %}<div class="scr-contact-sub">{{ i.reason }}</div>{% endif %}
             </td>
-            <td class="scr-state">{{ i.package_minutes }} min{% if i.run_minutes is not None %}<div class="scr-contact-sub">ran {{ i.run_minutes }} min</div>{% endif %}{% for line in i.fare_lines %}<div class="scr-contact-sub" title="Fare terms this line was priced on">{{ line }}</div>{% endfor %}</td>
+            <td class="scr-state">{{ i.package_minutes }} min{% if i.run_minutes is not None %}<div class="scr-contact-sub">ran {{ i.run_minutes }} min</div>{% endif %}{% for line in i.fare_lines %}<div class="scr-contact-sub" title="Fare terms this line was priced on">{{ line }}</div>{% endfor %}{% if i.package %}<div class="scr-contact-sub" title="Package applied by the tablet">Package: {{ i.package }}</div>{% endif %}{% if i.free_item %}<span class="scr-badge scr-badge-active" style="margin-top:4px"><i></i>Free</span>{% endif %}</td>
             <td class="scr-state">{{ i.start_time|date:"H:i" }} → {{ i.expected_end_time|date:"H:i" }}<div class="scr-contact-sub">{{ i.start_time|date:"d M Y" }}</div></td>
             <td class="scr-state">{% if i.end_time %}{{ i.end_time|date:"H:i" }}{% else %}—{% endif %}</td>
             <td class="scr-state">AED {{ i.base_fare|money }}</td>

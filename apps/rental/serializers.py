@@ -124,6 +124,12 @@ class OrderItemRequest(serializers.Serializer):
     # the terms it was booked on whatever the fare becomes. Optional for now.
     fare_details = serializers.DictField(required=False, allow_null=True,
                                          error_messages={"not_a_dict": "must be an object"})
+    # The package the tablet applied to this line (owner, 10 Nov 2026): name,
+    # amount_off, is_free_item and anything else it sends. base_fare above is
+    # already after it and fare_details is the fare before it. Stored exactly
+    # as sent, never checked or used in any sum. Optional.
+    package_details = serializers.DictField(required=False, allow_null=True,
+                                            error_messages={"not_a_dict": "must be an object"})
 
     def validate(self, values):
         if values["expected_end_time"] < values["start_time"]:
