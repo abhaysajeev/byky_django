@@ -111,7 +111,7 @@
           {% for l in bill.lines %}
           <tr>
             <td><div class="scr-co-name">{{ l.vehicle }}</div><div class="scr-contact-sub">{{ l.identifier }} · {{ l.vehicle_type }}</div></td>
-            <td class="scr-state">{{ l.package_minutes }} min<div class="scr-contact-sub">ran {{ l.duration }}</div></td>
+            <td class="scr-state">{{ l.package_minutes }} min<div class="scr-contact-sub">ran {{ l.duration }}</div>{% if l.package %}<div class="scr-contact-sub" title="Package applied by the tablet">Package: {{ l.package }}</div>{% endif %}{% if l.free_item %}<span class="scr-badge scr-badge-active" style="margin-top:4px"><i></i>Free</span>{% endif %}</td>
             <td class="scr-state">{{ l.start_time|date:"H:i" }} → {% if l.end_time %}{{ l.end_time|date:"H:i" }}{% else %}—{% endif %}<div class="scr-contact-sub">{{ l.start_time|date:"d M Y" }}</div></td>
             <td class="scr-state">AED {{ l.base_fare|money }}<div class="scr-contact-sub">{{ l.base_rate }}</div></td>
             <td class="scr-state">AED {{ l.overtime_amount|money }}<div class="scr-contact-sub">{{ l.extra_rate }}</div></td>

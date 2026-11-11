@@ -38,6 +38,7 @@ from apps.rental.models import (
 )
 from apps.rental.reports import _with_status
 from apps.rental.scoping import orders_for
+from apps.rental.views import is_free_item, package_label
 from apps.reports import common
 from apps.reports.base import (
     COUNT,
@@ -58,6 +59,12 @@ from apps.reports.base import (
 PAY = {"cash": "Paid By Cash", "card": "Paid By Card", "tap": "Paid By Tap & Pay", "upi": "Paid By UPI",
        "other": "Paid By Other"}
 STATUS_LABELS = order_status.LABELS
+def _package(details):
+    """The package on a vehicle row, with "(free)" for a free vehicle."""
+    label = package_label(details)
+    return f"{label} (free)" if label and is_free_item(details) else label
+
+
 LINE_LABELS = {OrderItemStatus.ACTIVE: "Running", OrderItemStatus.RETURNED: "Received",
                OrderItemStatus.REPLACED: "Replaced", OrderItemStatus.REMOVED: "Removed",
                OrderItemStatus.CANCELLED: "Cancelled"}
@@ -130,6 +137,8 @@ class RentDetails(Report):
             Column("refs", "Referance Number", part=order, width=18),
             Column("vehicle_no", "Vehicle Number", part="line", width=14),
             Column("vehicle_status", "Vehicle Status", part="line", width=13),
+            # The package the tablet applied to the vehicle (owner, 10 Nov 2026).
+            Column("package", "Package", part="line", width=26),
             Column("start", "Start Date And Time", DATETIME, part="line", width=21),
             Column("exit", "Exit Date And Time", DATETIME, part="line", width=21),
             Column("initial_fare", "Initial Fare Amount (AED)", MONEY, part="line"),
@@ -223,6 +232,7 @@ class RentDetails(Report):
             lines.append({
                 "vehicle_no": item.vehicle.vehicle_code,
                 "vehicle_status": LINE_LABELS.get(item.status, item.status),
+                "package": _package(item.package_details) or None,
                 "start": local(item.start_time, ctx.zone),
                 "exit": local(item.end_time, ctx.zone),
                 "initial_fare": item.base_fare if billed else None,

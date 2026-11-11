@@ -274,6 +274,22 @@ def fare_terms_lines(details):
     return [line for line in (" · ".join(price), extra) if line]
 
 
+def package_label(details):
+    """The package applied to a vehicle line, for the screens (owner, 10 Nov
+    2026): "Couple Scooter Ride · AED 7.500 off". Reads only name and
+    amount_off from the tablet's package_details, as sent; "" when none."""
+    if not isinstance(details, dict) or not details:
+        return ""
+    parts = [str(details.get("name") or "Package")]
+    if details.get("amount_off") not in (None, "", 0, "0"):
+        parts.append(f"AED {details['amount_off']} off")
+    return " · ".join(parts)
+
+
+def is_free_item(details):
+    return isinstance(details, dict) and details.get("is_free_item") is True
+
+
 def _status(value):
     return {"status": value, "status_label": order_status.label(value), "status_badge": order_status.BADGES[value]}
 
@@ -437,6 +453,8 @@ class OrderDetailView(RentalScreenView):
                     "replaced_by": replaced_by[item.pk].vehicle.vehicle_name if item.pk in replaced_by else "",
                     "fare_terms": fare_terms(item.fare_details),
                     "fare_lines": fare_terms_lines(item.fare_details),
+                    "package": package_label(item.package_details),
+                    "free_item": is_free_item(item.package_details),
                 }
                 for item in items
             ],
@@ -573,6 +591,8 @@ def _receipt(invoice, zone):
             "start_time": local(item.start_time), "end_time": local(item.end_time),
             "returned": _clock(local(item.end_time)), "duration": _hhmm(item.run_minutes),
             "base_fare": item.base_fare, "overtime_amount": item.overtime_amount, "amount": item.total_amount,
+            "package": package_label(item.order_item.package_details),
+            "free_item": is_free_item(item.order_item.package_details),
         })
     returned = max((item.end_time for item in items if item.end_time), default=None)
     run = sum(item.run_minutes or 0 for item in items) if items else None

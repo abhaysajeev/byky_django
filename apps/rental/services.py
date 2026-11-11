@@ -372,7 +372,7 @@ RECENT_INVOICES = 5
 
 
 def _invoices():
-    return Invoice.objects.select_related("order", "issued_by").prefetch_related("items")
+    return Invoice.objects.select_related("order", "issued_by").prefetch_related("items__order_item")
 
 
 def recent_invoices(branch, limit=RECENT_INVOICES):
@@ -702,7 +702,7 @@ def _new_lines(order, items_input, refs, user, replaced_item=None):
         OrderItem(
             id=item["sync_id"], order=order, vehicle=vehicles[item["vehicle_id"]],
             fare=fares.get(item.get("fare_id")), offer=offers.get(item.get("offer_id")),
-            fare_details=item.get("fare_details"),
+            fare_details=item.get("fare_details"), package_details=item.get("package_details"),
             package_minutes=item["package_minutes"], start_time=item["start_time"],
             expected_end_time=item["expected_end_time"], base_fare=item["base_fare"],
             replaced_item=replaced_item, created_by=user, modified_by=user,
