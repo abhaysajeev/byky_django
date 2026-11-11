@@ -32,8 +32,6 @@ from apps.rental.models import (
     OrderEvent,
     OrderItem,
     OrderItemStatus,
-    OrderRequestKind,
-    OrderRequestStatus,
     OrderStatus,
     Payment,
     PaymentKind,
@@ -188,8 +186,6 @@ ORDER_ERRORS = {
     "invoice_void": (409, "This invoice was cancelled -- it cannot be printed.", False),
     "cancel_request_pending": (409, "A cancel request is already waiting for this order.", False),
     "cancel_approved": (409, "This order's cancel is already approved.", False),
-    "cancel_requested": (409, "A cancel request is waiting for a manager's decision -- the order cannot be "
-                              "settled until it is decided.", False),
     "request_not_approved": (409, "That request is not approved.", False),
     "request_used": (409, "That reprint has already been printed.", False),
     "unknown_complimentary_request": (404, "That complimentary request is not on this order.", False),
@@ -940,9 +936,9 @@ def settle_order(session, values, request_data, reply_for):
 
     def apply():
         order = _open_order(session, values["order_id"])
-        # A cancel waiting for a manager: the order is not billed meanwhile.
-        if order.requests.filter(kind=OrderRequestKind.CANCEL, status=OrderRequestStatus.PENDING).exists():
-            raise OrderRefused("cancel_requested")
+        # A cancel still waiting for a manager does not stop the bill (owner,
+        # 11 Nov 2026): the station has decided to charge, and the request is
+        # closed with the other waiting ones (requests.close_at_settle).
         items = list(order.items.select_related("vehicle__vehicle_type"))
         if any(item.status == OrderItemStatus.ACTIVE for item in items):
             raise OrderRefused("items_still_out")
