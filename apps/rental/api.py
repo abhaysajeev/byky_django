@@ -1117,7 +1117,7 @@ _SETTLE_ERRORS = (
     "unknown_discount_request", "discount_request_not_approved", "discount_mismatch",
     "approved_discount_not_applied", "unknown_complimentary_request", "complimentary_request_not_approved",
     "approved_complimentary_not_applied", "approved_card_discount_not_applied", "unknown_payment_mode",
-    "payment_id_used", "cancel_requested",
+    "payment_id_used",
 )
 
 _SETTLE_DESCRIPTION = """
@@ -1805,9 +1805,11 @@ decides on the web or in the manager app. Five kinds:
   (no value), the order and its vehicles still out become `cancelled` at once
   -- the vehicles can be rented again -- other requests still waiting on it
   are `closed`, and a card discount on it is cancelled. **Final:** never
-  revoked. While a cancel waits, returns and changes go on, but
-  `orders/settle` is refused (`cancel_requested`). Money already taken stays
-  recorded; a refund may be added with `orders/payments` (`kind` `refund`).
+  revoked. While a cancel waits, returns and changes go on, and the order
+  can still be settled: settling closes the waiting cancel (`closed`), like
+  every other request still waiting, and the manager is told. Money already
+  taken stays recorded; a refund may be added with `orders/payments` (`kind`
+  `refund`).
   A cancel can also be made straight on the web, without a request.
 
 A discount or complimentary approval can be **revoked** while the order runs;
