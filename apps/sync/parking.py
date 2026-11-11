@@ -295,6 +295,9 @@ def _store(request, session, app, kind, sync_id, key, request_data, reason, *,
     if kind == IssueKind.RETURN:
         # The vehicle is back, whatever the office later makes of the call.
         mark_parked_returns(issue.company_id, issue.order_id)
+    # A parked call never reaches the normal order push (owner, 11 Nov 2026).
+    from apps.rental import station_sync
+    station_sync.call_parked(issue)
     return issue
 
 
