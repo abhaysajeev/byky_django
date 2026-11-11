@@ -294,10 +294,11 @@ class LoginView(PublicAPIView):
             "station's id in the database -- use it when building the station QR code. "
             "**Operator duty roster:** every operator login -- whatever the designation, "
             "managers and admins too -- signs in only when today's duty roster has them "
-            "Working at the device's station and now is inside shift 1 or shift 2 (exact "
-            "times; a shift started yesterday that runs past midnight counts). Otherwise "
-            "403: `duty_roster_not_found`, `not_working_today`, `rostered_at_another_branch` "
-            "or `outside_shift_hours` -- show the `message`. Manager and employee logins "
+            "Working **as Cashier** at the device's station and now is inside shift 1 or "
+            "shift 2 (exact times; a shift started yesterday that runs past midnight "
+            "counts). Otherwise 403: `duty_roster_not_found`, `not_working_today`, "
+            "`rostered_at_another_branch`, `not_rostered_as_cashier` or "
+            "`outside_shift_hours` -- show the `message`. Manager and employee logins "
             "are not checked. "
             "Operator also gets `roster` -- the employee's duty roster for the current week, "
             "the same block as the employee login (every designation; a day with no roster "
@@ -344,6 +345,8 @@ class LoginView(PublicAPIView):
              "not_working_today (operator)"),
             (403, "rostered_at_another_branch", "Rostered at Creek Park 1 today.", {},
              "rostered_at_another_branch (operator)"),
+            (403, "not_rostered_as_cashier", "You are rostered as Labour today. Only a Cashier can sign in "
+             "on this tablet.", {}, "not_rostered_as_cashier (operator)"),
             (403, "outside_shift_hours", "Your shift today is 08:00-16:00.", {},
              "outside_shift_hours (operator)"),
             (409, "session_active_elsewhere", "Logged in on another device.", {},
