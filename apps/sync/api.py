@@ -8,7 +8,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
 from apps.portal.authentication import AppJWTAuthentication
-from apps.sync.models import IssueStatus, SyncIssue
+from apps.sync import parking
+from apps.sync.models import IssueKind, IssueStatus, SyncIssue
 from core.api import envelope, request_parts
 from core.schema import SERVER_ERROR, envelope_request, envelope_responses
 
@@ -23,17 +24,26 @@ and dismissed ones for 45 days), newest first, at most 500.
 `status` is `open` (still with the office), `resolved` (replayed and recorded --
 drop the card) or `dismissed` (the office gave up on it; `dismiss_reason`
 says why). An open call waiting behind an earlier one for the same order has
-`waiting_on`; one dismissed with that earlier call has `dismissed_with`.
+`waiting_on`; one dismissed with that earlier call has `dismissed_with`. A
+booking that names its customer by `customer_sync_id` waits on that
+customer's parked create (`waiting_on` is the create's issue).
+
+`customer_id` -- on a **resolved** `customer_create`, the new customer's server
+id, to use from then on in place of its `customer_sync_id`; `null` otherwise.
 """
 
 _SAMPLE = {"issues": [
     {"issue_id": 12, "sync_id": "01923f8e-5b2a-7c3d-9e4f-a1b2c3d4e5f6", "kind": "settle",
      "order_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9", "status": "open", "waiting_on": None,
      "dismissed_with": None, "dismiss_reason": "",
-     "error": {"code": "amount_mismatch", "message": "The amounts do not add up."}, "resolved_at": None},
+     "error": {"code": "amount_mismatch", "message": "The amounts do not add up."}, "resolved_at": None,
+     "customer_id": None},
     {"issue_id": 13, "sync_id": "01923f8e-6c3b-7d4e-8f50-b2c3d4e5f6a7", "kind": "return",
      "order_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9", "status": "open", "waiting_on": 12,
-     "dismissed_with": None, "dismiss_reason": "", "error": None, "resolved_at": None},
+     "dismissed_with": None, "dismiss_reason": "", "error": None, "resolved_at": None, "customer_id": None},
+    {"issue_id": 14, "sync_id": "01923f90-1a2b-7c3d-8e4f-a1b2c3d4e5f6", "kind": "customer_create",
+     "order_id": None, "status": "resolved", "waiting_on": None, "dismissed_with": None, "dismiss_reason": "",
+     "error": None, "resolved_at": "2026-11-07T06:15:00+00:00", "customer_id": 5513},
 ]}
 
 
@@ -55,17 +65,35 @@ def _heads(issues):
     return heads
 
 
+def _waiting_on(issue, heads):
+    if issue.status != IssueStatus.OPEN:
+        return None
+    head = heads.get(issue.order_id)
+    if head is not None and head != issue.pk:
+        return head
+    blocker = parking.customer_blocker(issue.company_id, issue.kind, issue.request_data)
+    return blocker.pk if blocker is not None else None
+
+
+def _customer_id(issue):
+    """A resolved customer create: the customer its replay made."""
+    if issue.kind != IssueKind.CUSTOMER_CREATE or issue.status != IssueStatus.RESOLVED:
+        return None
+    data = (issue.reply or {}).get("data") or {}
+    return data.get("customer_id")
+
+
 def issue_json(issue, heads):
-    head = heads.get(issue.order_id) if issue.status == IssueStatus.OPEN else None
     return {
         "issue_id": issue.pk, "sync_id": str(issue.sync_id), "kind": issue.kind,
         "order_id": str(issue.order_id) if issue.order_id else None,
         "status": issue.status,
-        "waiting_on": head if head is not None and head != issue.pk else None,
+        "waiting_on": _waiting_on(issue, heads),
         "dismissed_with": issue.dismissed_with_id,
         "dismiss_reason": issue.dismiss_reason,
         "error": {"code": issue.error_code, "message": issue.error_message} if issue.error_code else None,
         "resolved_at": issue.resolved_at.isoformat() if issue.resolved_at else None,
+        "customer_id": _customer_id(issue),
     }
 
 

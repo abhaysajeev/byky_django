@@ -19,6 +19,12 @@ Service requests (owner, 29 Oct 2026) are too: reported, approved, rejected and
 back in service reach the station's other tablets (`service_request_changed`),
 never the reporting tablet -- it has its own alerts.
 
+Parked order calls (owner, 11 Nov 2026) are too, at multi-device stations only:
+a parked call never reaches the push above, yet a parked booking means bikes are
+out. It may not be an order on the server yet, so `orders/detail` cannot fetch
+it and the message carries what the other tablets need (`call_parked`). A replay
+is an ordinary order change, pushed as one.
+
 Sent after the change commits, from the worker; a failure to queue or send is
 logged and never touches the order.
 """
@@ -363,3 +369,139 @@ def service_push(req_id, action, device_id, at):
     if req is None:
         return 0
     return _send(req, service_message(req, action, at), device_id)
+
+
+# -- Parked order calls ------------------------------------------------------------------
+
+# The parked calls the other tablets hear of (sync.IssueKind values), and the words.
+PARKED_VERBS = {
+    "booking": "booking parked",
+    "add": "vehicle add parked",
+    "replace": "vehicle replace parked",
+    "remove": "vehicle remove parked",
+    "return": "vehicle return parked",
+    "payments": "payment parked",
+    "settle": "settle parked",
+}
+
+
+def call_parked(issue):
+    """After a call is parked, tell the station's other tablets. `issue` is new;
+    a resend of a call already parked never gets here."""
+    if issue.kind not in PARKED_VERBS:
+        return                                   # attendance, a customer, ...: not an order call
+    issue_id, at = issue.pk, timezone.now()
+
+    def queue():
+        try:
+            from apps.rental.tasks import station_parked_push
+
+            station_parked_push.delay(issue_id, at.isoformat())
+        except Exception:
+            log.warning("station sync for parked call %s not queued", issue_id, exc_info=True)
+
+    transaction.on_commit(queue)
+
+
+def _as_id(value):
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _line_vehicle(line):
+    return _as_id(line.get("vehicle_id")) if isinstance(line, dict) else None
+
+
+def _parked_lines(issue):
+    """The lines of the booking parked for this issue's order, if there is one."""
+    from apps.sync.models import IssueKind, SyncIssue
+
+    if issue.order_id is None:
+        return []
+    booking = (SyncIssue.objects.filter(company_id=issue.company_id, order_id=issue.order_id,
+                                        kind=IssueKind.BOOKING).order_by("id").first())
+    lines = (booking.request_data or {}).get("items") if booking else None
+    return lines if isinstance(lines, list) else []
+
+
+def _vehicle_ids(issue):
+    """The vehicles a parked call is about, read from its body as sent: it was
+    parked because something in it was refused, so nothing here is assumed."""
+    from apps.rental.models import OrderItem
+    from apps.sync.parking import uuid_or_none
+
+    data = issue.request_data if isinstance(issue.request_data, dict) else {}
+    if issue.kind == "booking":
+        lines = data.get("items")
+        found = [_line_vehicle(line) for line in lines] if isinstance(lines, list) else []
+    elif issue.kind == "add":
+        found = [_line_vehicle(data.get("item"))]
+    elif issue.kind == "replace":
+        found = [_line_vehicle(data.get("new_item"))]
+    elif issue.kind in ("remove", "return"):
+        item_id = uuid_or_none(data.get("item_id"))
+        on_server = (OrderItem.objects.filter(pk=item_id, order__company_id=issue.company_id)
+                     .values_list("vehicle_id", flat=True).first()) if item_id else None
+        if on_server is None and item_id:
+            on_server = next((_line_vehicle(line) for line in _parked_lines(issue)
+                              if isinstance(line, dict) and line.get("sync_id") == str(item_id)), None)
+        found = [on_server]
+    else:
+        found = []
+    return [vehicle for vehicle in found if vehicle is not None]
+
+
+def _parked_order_no(issue):
+    """The order's number: from the booking's body, the order, or the parked booking."""
+    from apps.rental.models import Order
+    from apps.sync.models import IssueKind, SyncIssue
+
+    data = issue.request_data if isinstance(issue.request_data, dict) else {}
+    if issue.kind == "booking":
+        return str(data.get("order_no") or "")
+    if issue.order_id is None:
+        return ""
+    number = (Order.objects.filter(pk=issue.order_id, company_id=issue.company_id)
+              .values_list("order_no", flat=True).first())
+    if number:
+        return number
+    booking = (SyncIssue.objects.filter(company_id=issue.company_id, order_id=issue.order_id,
+                                        kind=IssueKind.BOOKING).order_by("id").first())
+    return str((booking.request_data or {}).get("order_no") or "") if booking else ""
+
+
+def _names(vehicle_ids, company_id):
+    from apps.fleet.models import Vehicle
+
+    by_id = dict(Vehicle.objects.filter(pk__in=vehicle_ids, company_id=company_id)
+                 .values_list("pk", "vehicle_name"))
+    names = [by_id[pk] for pk in vehicle_ids if pk in by_id]
+    if len(names) > 2:
+        return f"{', '.join(names[:2])} +{len(names) - 2}"
+    return ", ".join(names)
+
+
+def parked_message(issue, at):
+    from core.timezones import zone_for
+
+    vehicle_ids = _vehicle_ids(issue)
+    number = _parked_order_no(issue)
+    return Push(
+        title=f"Order {number}: {PARKED_VERBS[issue.kind]}" if number else f"Order: {PARKED_VERBS[issue.kind]}",
+        body=" · ".join(part for part in (_names(vehicle_ids, issue.company_id), issue.branch.name) if part),
+        data={"type": "order_parked", "action": issue.kind, "issue_id": str(issue.pk),
+              "order_id": str(issue.order_id) if issue.order_id else "", "order_no": number,
+              "vehicle_ids": ",".join(str(pk) for pk in vehicle_ids), "branch_id": str(issue.branch_id),
+              "at": at.astimezone(zone_for(issue.company)).strftime(TIME_FORMAT)},
+        tag=f"parked:{issue.pk}", collapse_key=f"parked:{issue.pk}",
+    )
+
+
+def parked_push(issue_id, at):
+    """The worker's side of call_parked; a single-device station has no one to
+    tell. Returns how many were sent."""
+    from apps.sync.models import SyncIssue
+
+    issue = SyncIssue.objects.select_related("branch", "company").filter(pk=issue_id).first()
+    if issue is None or issue.branch_id is None or not issue.branch.is_multi_device:
+        return 0
+    return _send(issue, parked_message(issue, at), issue.device_id)

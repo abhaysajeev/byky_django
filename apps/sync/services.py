@@ -10,6 +10,8 @@ when it happened, not as of the replay.
 
 A replayed head that succeeds lets its order's followers run after it, in the
 order they arrived; the first that fails stops there and becomes the head.
+A replayed customer create that succeeds then runs the bookings that name it
+by customer_sync_id, oldest first, each with its own order's followers.
 """
 
 import datetime
@@ -20,7 +22,14 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.sync import parking
-from apps.sync.models import AttemptSource, IssueReason, IssueStatus, SyncIssue, SyncIssueAttempt
+from apps.sync.models import (
+    AttemptSource,
+    IssueKind,
+    IssueReason,
+    IssueStatus,
+    SyncIssue,
+    SyncIssueAttempt,
+)
 
 log = logging.getLogger(__name__)
 
@@ -76,7 +85,32 @@ def replay(issues_qs, pk, *, user, request_data=None, now=None):
         # A replayed booking's lines now exist; returns still waiting behind
         # it free their vehicles (rental.services.mark_return_pending).
         parking.mark_parked_returns(issue.company_id, issue.order_id)
+        if issue.kind == IssueKind.CUSTOMER_CREATE and outcome["stopped_at"] is None:
+            _replay_bookings_of(issue, user, now, outcome)
     return outcome
+
+
+def _replay_bookings_of(customer_issue, user, now, outcome):
+    """The open bookings naming this (now resolved) customer create by
+    customer_sync_id, each replayed with its order's followers. Each order is
+    its own: one that stops leaves the rest to run, and stays open with its
+    error. Runs under the create's lock, which a booking takes first too."""
+    bookings = [
+        booking for booking in SyncIssue.objects.filter(
+            company_id=customer_issue.company_id, kind=IssueKind.BOOKING, status=IssueStatus.OPEN,
+        ).order_by("id")
+        if parking.customer_sync_id(booking.kind, booking.request_data) == customer_issue.sync_id
+    ]
+    for booking in bookings:
+        with parking.queue_lock(_queue_key(booking)):
+            booking.refresh_from_db()
+            if not booking.is_open or parking.waiting_on(booking) is not None:
+                continue
+            ran = _replay_queue(booking, None, user, now)
+            parking.mark_parked_returns(booking.company_id, booking.order_id)
+        outcome["resolved"] += ran["resolved"]
+        if ran["stopped_at"] is not None and outcome["stopped_at"] is None:
+            outcome["stopped_at"] = ran["stopped_at"]
 
 
 def _replay_queue(issue, request_data, user, now):

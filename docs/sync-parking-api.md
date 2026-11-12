@@ -158,3 +158,25 @@ correct the request JSON, and press **Replay** — it runs as the original
 operator, device and station, even if that session has ended or the tablet has
 moved. Calls waiting behind it run next. Or **Dismiss** it with a reason; the
 calls waiting behind it are dismissed with it.
+
+
+## Push when an order call is parked (owner, 11 Nov 2026)
+
+A parked call never reaches the normal order push, yet a parked booking means bikes are out. So when one of these is parked -- booking, add, replace, remove, return, payments, settle, including a call waiting behind an earlier parked one -- the station's **other** operator tablets are told.
+
+- **Multi-device stations only** (`Branch.is_multi_device`).
+- Tablets with an open session and a push token at that station, never the one that parked it.
+- Once per parked call: a resend of a call already parked sends nothing.
+- A replay from Sync Issues is an ordinary order change and sends the usual `order_changed`.
+
+Sent on the quiet `station_activity` channel. `data`:
+
+| Key | Meaning |
+|---|---|
+| `type` | `order_parked` |
+| `action` | `booking`, `add`, `replace`, `remove`, `return`, `payments` or `settle` |
+| `issue_id` | The Sync Issues id |
+| `order_id` | The order's id; a parked booking may not be on the server yet, so `orders/detail` can't fetch it |
+| `order_no` | The order number |
+| `vehicle_ids` | Comma-separated vehicle ids the call is about; blank for payments and settle |
+| `branch_id`, `at` | Station, and when it was parked (company time) |
