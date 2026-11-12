@@ -271,7 +271,7 @@ class VehiclePresence(models.Model):
     company = models.ForeignKey("company.Company", on_delete=models.CASCADE, related_name="+")
     branch = models.ForeignKey("company.Branch", null=True, on_delete=models.SET_NULL, related_name="+")
     state = models.CharField(max_length=12, choices=PresenceState.choices)
-    reason = models.CharField(max_length=30, blank=True)   # e.g. test_overdue, reader_offline, no_reader
+    reason = models.CharField(max_length=30, blank=True)   # e.g. station_closed, reader_offline, no_reader
     since = models.DateTimeField()
     last_seen_at = models.DateTimeField(null=True)
     heard_by_branch = models.ForeignKey("company.Branch", null=True, on_delete=models.SET_NULL, related_name="+")

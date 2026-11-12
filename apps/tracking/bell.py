@@ -22,7 +22,7 @@ EPOCH = datetime.datetime(2000, 1, 1, tzinfo=datetime.UTC)
 _TITLES = {EventKind.LOW_BATTERY: "Low tag battery", EventKind.READER_OFFLINE: "Reader offline",
            EventKind.READER_ONLINE: "Reader back online", EventKind.READER_SILENT: "Reader hears no tags"}
 _STATES = {PresenceState.MISSING: "Vehicle missing"}
-_REASONS = {"test_overdue": "test ride overdue", "not_seen": "not heard by the antennas",
+_REASONS = {"not_seen": "not heard by the antennas",
             "weak_signal": "signal below the limit"}
 _CRITICAL = (EventKind.READER_OFFLINE, EventKind.READER_SILENT)
 
