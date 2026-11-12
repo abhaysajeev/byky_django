@@ -21,6 +21,7 @@ from django.views import View
 from apps.company import writes
 from apps.company.models import Branch
 from apps.company.scoping import branches_for, companies_for
+from apps.company.services import branch_open_state
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
@@ -55,7 +56,7 @@ BADGE = {PresenceState.PRESENT: "scr-badge-active", PresenceState.ON_RENT: "scr-
          PresenceState.ON_TEST: "scr-badge-approved", PresenceState.IN_SERVICE: "scr-badge-pending",
          PresenceState.MISSING: "scr-badge-missing",
          PresenceState.UNKNOWN: "scr-badge-inactive"}
-REASON_LABEL = {"test_overdue": "Test ride overdue", "not_seen": "Not heard", "weak_signal": "Signal below limit",
+REASON_LABEL = {"station_closed": "Station closed", "not_seen": "Not heard", "weak_signal": "Signal below limit",
                 "reader_offline": "Reader offline", "no_reader": "No reader",
                 "no_new_reads": "Reader hears no tags", "calibrating": "Calibrating"}
 
@@ -121,9 +122,11 @@ class StatusView(TrackingScreenView):
             counts = {}
             for branch_id, state, n in rows.order_by().values_list("branch_id", "state").annotate(n=Count("pk")):
                 counts.setdefault(branch_id, {})[state] = n
-            branches = Branch.objects.filter(pk__in=counts).order_by("name")
+            branches = Branch.objects.filter(pk__in=counts).select_related("company").order_by("name")
+            now = timezone.now()
             context["branch_rows"] = [
-                {"id": b.pk, "name": b.name, "cells": [counts[b.pk].get(s, 0) for s in STATE_ORDER]} for b in branches]
+                {"id": b.pk, "name": b.name, "cells": [counts[b.pk].get(s, 0) for s in STATE_ORDER],
+                 "hours": branch_open_state(b, now)} for b in branches]
             context["state_labels"] = [names[s] for s in STATE_ORDER]
         context["chosen_branch"] = chosen
         return context

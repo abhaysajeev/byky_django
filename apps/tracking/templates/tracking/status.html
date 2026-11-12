@@ -52,7 +52,8 @@
         <tbody>
           {% for b in branch_rows %}
           <tr class="scr-row">
-            <td style="font-weight:600"><a class="scr-href" href="?branch={{ b.id }}">{{ b.name }}</a></td>
+            <td style="font-weight:600"><a class="scr-href" href="?branch={{ b.id }}">{{ b.name }}</a>
+              {% if b.hours == "not_set" %} <span class="scr-badge scr-badge-pending" title="Tracked all day until working hours are saved"><i></i>No working hours</span>{% elif b.hours == "closed" %} <span class="scr-badge scr-badge-inactive" title="Outside working hours: not tracked"><i></i>Closed</span>{% endif %}</td>
             {% for n in b.cells %}<td>{{ n }}</td>{% endfor %}
           </tr>
           {% empty %}
