@@ -33,7 +33,6 @@ from core.timezones import business_day_of, business_window, day_start_for, zone
 
 ZERO = Decimal("0")
 HUNDRED = Decimal("100")
-NEAR = Decimal("70")          # % at which a month in progress shows amber rather than red
 
 
 class TargetError(Exception):
@@ -93,13 +92,6 @@ def percent(achieved, amount):
     if not amount:
         return ZERO
     return (achieved * HUNDRED / amount).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
-
-
-def tone(pct):
-    """met / near / behind, for the % chip."""
-    if pct >= HUNDRED:
-        return "met"
-    return "near" if pct >= NEAR else "behind"
 
 
 # -- Achieved -----------------------------------------------------------------------------
@@ -215,7 +207,7 @@ def create_targets(company, branches, year, month, amount, remarks, user, now=No
     saved, refused = [], []
     for branch in branches:
         if not branch.is_active:
-            refused.append((branch, "the station is inactive"))
+            refused.append((branch, "the branch is inactive"))
             continue
         if Target.objects.filter(branch=branch, period_start__lte=last, period_end__gte=first).exists():
             refused.append((branch, "it already has a target for this month"))
@@ -259,6 +251,13 @@ def delete_target(target, now=None):
 
 
 # -- Reading ------------------------------------------------------------------------------
+#
+# Statuses are words, never colour alone (design §6):
+#   month  Met | On track (achieved >= planned through yesterday) | Behind | Missed (ended) | Not started
+#   day    Met | Short (past, below its day's target) | In progress (today) | Upcoming
+
+MONTH_STATUS = {"met": "Met", "track": "On track", "behind": "Behind", "missed": "Missed", "idle": "Not started"}
+DAY_STATUS = {"met": "Met", "short": "Short", "live": "In progress", "idle": "Upcoming"}
 
 
 @dataclass
@@ -266,46 +265,39 @@ class Figures:
     amount: Decimal
     achieved: Decimal
     percent: Decimal
-    tone: str
     remaining: Decimal
 
 
 def figures(amount, achieved):
-    pct = percent(achieved, amount)
-    return Figures(amount, achieved, pct, tone(pct), max(amount - achieved, ZERO))
+    return Figures(amount, achieved, percent(achieved, amount), max(amount - achieved, ZERO))
 
 
-def month_view(target, now=None):
-    """Everything the month view (and the manager API later) shows."""
-    company = target.company
-    today = today_for(company, now)
-    ensure_frozen([target], today)
-    rows = list(target.days.order_by("date"))
-    achieved = achieved_by_day(company, [target.branch_id], target.period_start, min(today, target.period_end))
-    total = _sum(achieved, target.branch_id, target.period_start, target.period_end)
-    days = []
-    for row in rows:
-        got = achieved.get((target.branch_id, row.date), ZERO) if row.date <= today else None
-        if row.date > today:
-            state = "future"
-        elif row.date == today:
-            state = "today"
-        else:
-            state = "met" if got >= (row.required_amount or ZERO) else "missed"
-        days.append({"date": row.date, "planned": row.planned_amount, "required": row.required_amount,
-                     "achieved": got, "state": state,
-                     "gap": (got - row.required_amount) if got is not None and row.required_amount is not None
-                     else None})
-    current = next((d for d in days if d["state"] == "today"), None)
-    days_left = sum(1 for d in days if d["date"] >= today)
-    return {"target": target, "figures": figures(target.amount, total), "days": days, "today": current,
-            "days_left": days_left, "locked": is_locked(target, today), "started": target.period_start <= today,
-            "business_today": today}
+def _status(key, labels):
+    return {"key": key, "label": labels[key]}
 
 
-def year_targets(branch_ids, year):
-    return (Target.objects.filter(branch_id__in=branch_ids, period_start__year=year)
-            .select_related("company", "branch"))
+def month_status(target, achieved, planned_to_date, today):
+    """`planned_to_date`: the planned amounts of the days before today."""
+    if target.period_start > today:
+        return _status("idle", MONTH_STATUS)
+    if achieved >= target.amount:
+        return _status("met", MONTH_STATUS)
+    if target.period_end < today:
+        return _status("missed", MONTH_STATUS)
+    return _status("track" if achieved >= planned_to_date else "behind", MONTH_STATUS)
+
+
+def day_target(row):
+    """The day's target: frozen required amount, or the plan for a day not reached yet."""
+    return row.required_amount if row.required_amount is not None else row.planned_amount
+
+
+def day_status(row, achieved, today):
+    if row.date > today:
+        return _status("idle", DAY_STATUS)
+    if row.date == today:
+        return _status("met" if achieved >= day_target(row) else "live", DAY_STATUS)
+    return _status("met" if achieved >= day_target(row) else "short", DAY_STATUS)
 
 
 def achieved_for(targets, today):
@@ -324,46 +316,110 @@ def achieved_for(targets, today):
     return out
 
 
-def year_grid(branches, year, now=None):
-    """The list screen: one row per station, 12 month cells."""
+def _days_by_target(targets):
+    days = defaultdict(list)
+    for row in TargetDay.objects.filter(target__in=targets).order_by("date"):
+        days[row.target_id].append(row)
+    return days
+
+
+def month_view(target, now=None):
+    """Everything a station's month detail (and the manager API later) shows."""
+    company = target.company
+    today = today_for(company, now)
+    ensure_frozen([target], today)
+    rows = list(target.days.order_by("date"))
+    achieved = achieved_by_day(company, [target.branch_id], target.period_start, min(today, target.period_end))
+    total = _sum(achieved, target.branch_id, target.period_start, target.period_end)
+    days = []
+    for row in rows:
+        got = achieved.get((target.branch_id, row.date), ZERO) if row.date <= today else None
+        goal = day_target(row)
+        days.append({"date": row.date, "planned": row.planned_amount, "required": row.required_amount,
+                     "target": goal, "achieved": got, "gap": None if got is None else got - goal,
+                     "status": day_status(row, got or ZERO, today), "state": day_status(row, got or ZERO, today)["key"]})
+    current = next((d for d in days if d["date"] == today), None)
+    planned_to_date = sum((r.planned_amount for r in rows if r.date < today), ZERO)
+    return {"target": target, "figures": figures(target.amount, total), "days": days, "today": current,
+            "days_left": sum(1 for d in days if d["date"] >= today), "locked": is_locked(target, today),
+            "started": target.period_start <= today, "business_today": today,
+            "status": month_status(target, total, planned_to_date, today)}
+
+
+def month_targets(branch_ids, year, month):
+    first, _ = month_bounds(year, month)
+    return (Target.objects.filter(branch_id__in=branch_ids, period_start=first)
+            .select_related("company", "branch", "modified_by"))
+
+
+def overview(branches, year, month, now=None):
+    """Overview: every station with a target for the month, and the month's totals."""
     branches = list(branches)
-    targets = list(year_targets([b.pk for b in branches], year))
-    companies = {b.company_id: b.company for b in branches}
-    todays = {cid: today_for(c, now) for cid, c in companies.items()}
-    started = [t for t in targets if t.period_start <= todays[t.company_id]]
+    targets = list(month_targets([b.pk for b in branches], year, month))
+    todays = {t.company_id: today_for(t.company, now) for t in targets}
     achieved = {}
-    for cid in companies:
-        achieved.update(achieved_for([t for t in started if t.company_id == cid], todays[cid]))
-    by_cell = {(t.branch_id, t.period_start.month): t for t in targets}
-    rows = []
-    for b in branches:
-        cells = []
-        for month in range(1, 13):
-            t = by_cell.get((b.pk, month))
-            first, last = month_bounds(year, month)
-            today = todays[b.company_id]
-            cell = {"month": month, "key": f"{year}-{month:02d}", "target": t, "open": last >= today}
-            if t is not None and t.pk in achieved:
-                cell["figures"] = figures(t.amount, achieved[t.pk])
-            cells.append(cell)
-        rows.append({"branch": b, "cells": cells})
-    return rows
+    for cid in todays:
+        achieved.update(achieved_for([t for t in targets if t.company_id == cid], todays[cid]))
+    days = _days_by_target(targets)
+    rows, totals = [], {"target": ZERO, "achieved": ZERO, "today": ZERO, "on_track": 0, "today_set": False}
+    for t in sorted(targets, key=lambda t: t.branch.name.lower()):
+        today = todays[t.company_id]
+        got = achieved.get(t.pk, ZERO)
+        planned_to_date = sum((d.planned_amount for d in days[t.pk] if d.date < today), ZERO)
+        status = month_status(t, got, planned_to_date, today)
+        today_row = next((d for d in days[t.pk] if d.date == today), None)
+        today_goal = day_target(today_row) if today_row else None
+        rows.append({"target": t, "figures": figures(t.amount, got), "status": status, "today": today_goal})
+        totals["target"] += t.amount
+        totals["achieved"] += got
+        totals["on_track"] += status["key"] in ("met", "track")
+        if today_goal is not None:
+            totals["today"] += today_goal
+            totals["today_set"] = True
+    totals["percent"] = percent(totals["achieved"], totals["target"])
+    totals["stations"] = len(rows)
+    return {"rows": rows, "totals": totals}
 
 
-def branch_year(branch, year, now=None):
-    """The branch screen: the station's 12 months and the year's totals."""
-    today = today_for(branch.company, now)
-    targets = {t.period_start.month: t for t in year_targets([branch.pk], year)}
-    achieved = achieved_for(targets.values(), today)
-    months, amount, got = [], ZERO, ZERO
-    for month in range(1, 13):
-        first, last = month_bounds(year, month)
-        t = targets.get(month)
-        row = {"month": month, "first": first, "target": t, "open": last >= today, "started": first <= today}
-        if t is not None:
-            amount += t.amount
-            if t.pk in achieved:
-                got += achieved[t.pk]
-                row["figures"] = figures(t.amount, achieved[t.pk])
-        months.append(row)
-    return {"months": months, "total": figures(amount, got) if amount else None}
+def daily(branches, day, now=None):
+    """Daily Progress: every station whose target covers `day`."""
+    branches = list(branches)
+    targets = list(Target.objects.filter(branch__in=branches, period_start__lte=day, period_end__gte=day)
+                   .select_related("company", "branch"))
+    by_company = defaultdict(list)
+    for t in targets:
+        by_company[t.company].append(t)
+    achieved, todays = {}, {}
+    for company, items in by_company.items():
+        today = today_for(company, now)
+        todays[company.pk] = today
+        if day == today:
+            ensure_frozen(items, today)
+        if day <= today:
+            achieved.update(achieved_by_day(company, {t.branch_id for t in items}, day, day))
+    rows_by_target = {r.target_id: r for r in TargetDay.objects.filter(target__in=targets, date=day)}
+    rows, totals = [], {"target": ZERO, "achieved": ZERO, "gap": ZERO, "met": 0}
+    for t in sorted(targets, key=lambda t: t.branch.name.lower()):
+        row = rows_by_target.get(t.pk)
+        if row is None:
+            continue
+        today = todays[t.company_id]
+        got = achieved.get((t.branch_id, day), ZERO) if day <= today else None
+        goal = day_target(row)
+        status = day_status(row, got or ZERO, today)
+        rows.append({"target": t, "goal": goal, "achieved": got, "gap": None if got is None else got - goal,
+                     "status": status})
+        totals["target"] += goal
+        if got is not None:
+            totals["achieved"] += got
+            totals["gap"] += got - goal
+        totals["met"] += status["key"] == "met"
+    totals["stations"] = len(rows)
+    totals["reached"] = any(r["achieved"] is not None for r in rows)
+    return {"rows": rows, "totals": totals}
+
+
+def manage_rows(branches, year, month):
+    """Set Targets: every station, with its target for the month or none."""
+    by_branch = {t.branch_id: t for t in month_targets([b.pk for b in branches], year, month)}
+    return [{"branch": b, "target": by_branch.get(b.pk)} for b in branches]

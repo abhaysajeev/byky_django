@@ -40,7 +40,7 @@ PER_PAGE = 100
 CURRENT_LIMIT = 1000
 SILENT = "no_new_reads"
 STATES = [s.value for s in PresenceState]
-REASONS = {"station_closed": "Station closed", "not_seen": "Not heard", "weak_signal": "Signal below limit",
+REASONS = {"station_closed": "Branch closed", "not_seen": "Not heard", "weak_signal": "Signal below limit",
            "reader_offline": "Reader offline", "no_reader": "No reader", "no_new_reads": "Reader hears no tags",
            "calibrating": "Calibrating"}
 

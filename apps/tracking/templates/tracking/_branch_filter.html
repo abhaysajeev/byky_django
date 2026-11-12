@@ -1,0 +1,8 @@
+{% comment %}The Branch filter: reloads the page with ?branch= (byky-tracking.js, data-tracking-filter).{% endcomment %}
+<div class="scr-x-filter">
+  <label class="scr-x-visually-hidden" for="trk-branch">Branch</label>
+  <select id="trk-branch" class="scr-input" name="branch" data-tracking-filter>
+    <option value="">All branches</option>
+    {% for b in branches_list %}<option value="{{ b.id }}"{% if b.id == chosen_branch %} selected{% endif %}>{{ b.name }}</option>{% endfor %}
+  </select>
+</div>

@@ -10,18 +10,18 @@
 
 {% block page_js %}
 {{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
 <script src="{% static 'js/byky-targets.js' %}"></script>
 {% endblock page_js %}
 
 {% block content %}
-<div class="scr scr-tgt">
+<div class="scr scr-x">
   <div class="scr-head">
-    <div>
+    <div class="scr-x-head">
       <div class="scr-crumb">
-        <a href="{% url 'targets-list' %}">Targets</a>
-        {% block crumb_extra %}{% endblock %}
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
-        <b>{% block crumb %}{% endblock %}</b>
+        <span>Targets</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
+        {% block crumb %}{% endblock %}
       </div>
       <h1 class="scr-title">{% block heading %}{% endblock %}</h1>
       <p class="scr-sub">{% block sub %}{% endblock %}</p>
@@ -30,7 +30,7 @@
   </div>
   {% block body %}{% endblock %}
 </div>
-{% if perm.create or perm.update %}
+{% if can.create or can.update %}
 {% include "byky/partials/drawer.html" with save_url=save_url spec=drawer_target module_label="Targets" %}
 {% endif %}
 {% include "byky/partials/confirm_modal.html" %}
