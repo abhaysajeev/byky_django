@@ -1,0 +1,71 @@
+{% extends "tracking/_base.html" %}
+
+{% block screen_title %}Status Board{% endblock %}
+{% block crumb %}Status Board{% endblock %}
+{% block heading %}Status Board{% endblock %}
+{% block sub %}Where each tagged vehicle stands now. Updates by itself.{% endblock %}
+
+{% block body %}
+<div class="scr-card">
+  <div class="scr-toolbar">
+    <select class="scr-input" name="branch" aria-label="Station" data-tracking-filter style="flex:0 0 auto;width:220px">
+      <option value="">All stations</option>
+      {% for b in branches_list %}<option value="{{ b.id }}"{% if b.id == chosen_branch %} selected{% endif %}>{{ b.name }}</option>{% endfor %}
+    </select>
+  </div>
+</div>
+
+<div class="scr-track-stack" data-tracking-live>
+  <div class="scr-card">
+    <dl class="scr-live-totals scr-track-totals">
+      {% for t in tiles %}<div{% if t.key == "missing" %} class="is-missing"{% endif %}><dt>{{ t.label }}</dt><dd>{{ t.value }}</dd></div>{% endfor %}
+    </dl>
+  </div>
+
+  <div class="scr-card">
+    <div class="scr-table-scroll scr-sb">
+      {% if chosen_branch %}
+      <table>
+        <thead><tr><th>Vehicle</th><th>Status</th><th>Why</th><th>Since</th><th>Last heard here</th><th>Heard at</th><th>Battery</th></tr></thead>
+        <tbody>
+          {% for v in vehicles %}
+          <tr class="scr-row">
+            <td>{% include "tracking/_vehicle.html" with name=v.name sub=v.type %}</td>
+            <td><span class="scr-badge {{ v.badge }}"><i></i>{{ v.state_label }}</span></td>
+            <td class="scr-contact">{{ v.reason|default:"—" }}</td>
+            <td class="scr-contact">{{ v.since|date:"d M H:i:s" }}</td>
+            <td class="scr-contact">{{ v.last_seen|date:"d M H:i:s"|default:"—" }}</td>
+            <td class="scr-contact">{{ v.heard_at|default:"—" }}</td>
+            <td>{% if v.low_battery %}<span class="scr-badge scr-badge-pending"><i></i>Low</span>{% else %}—{% endif %}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7" style="padding:0"><div class="scr-empty"><div>
+            <div class="scr-empty-title">No tagged vehicles at this station</div>
+            <p class="scr-empty-sub">A vehicle appears here once it has an RFID tag and this is its current station.</p>
+          </div></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <table>
+        <thead><tr><th>Station</th>{% for label in state_labels %}<th>{{ label }}</th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for b in branch_rows %}
+          <tr class="scr-row">
+            <td style="font-weight:600"><a class="scr-href" href="?branch={{ b.id }}">{{ b.name }}</a>
+              {% if b.hours == "not_set" %} <span class="scr-badge scr-badge-pending" title="Tracked all day until working hours are saved"><i></i>No working hours</span>{% elif b.hours == "closed" %} <span class="scr-badge scr-badge-inactive" title="Outside working hours: not tracked"><i></i>Closed</span>{% endif %}</td>
+            {% for n in b.cells %}<td>{{ n }}</td>{% endfor %}
+          </tr>
+          {% empty %}
+          <tr><td colspan="7" style="padding:0"><div class="scr-empty"><div>
+            <div class="scr-empty-title">Nothing tracked yet</div>
+            <p class="scr-empty-sub">Approve a reader on the Readers page and give it a station. Tagged vehicles then appear here within 30 seconds.</p>
+          </div></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -89,6 +89,40 @@ class Country(ApprovalMixin, TimeStampedModel):
         return self.name
 
 
+class DialCode(TimeStampedModel):
+    """A country's dialling code for mobile numbers, for the apps' phone field
+    (owner, 11 Nov 2026; apps/company/dial_codes.py). Separate from Country,
+    which is a business master -- and whose short_code holds the dial code
+    in some databases (legacy import) and the ISO code in others.
+
+    Filled from the bundled libphonenumber + CLDR file; is_active and
+    sort_order are a person's to change and survive a reload."""
+
+    iso2 = models.CharField(max_length=2, unique=True)                 # AE
+    country = models.CharField(max_length=100)                          # United Arab Emirates
+    flag = models.CharField(max_length=8)                               # the flag emoji
+    dial_code = models.CharField(max_length=4)                          # 971, digits only
+    dial_code_digits = models.PositiveSmallIntegerField()               # 3
+    # how many digits a mobile number has after the code; a range where the
+    # country has more than one length (Germany 10-11)
+    mobile_digits_min = models.PositiveSmallIntegerField()
+    mobile_digits_max = models.PositiveSmallIntegerField()
+    example_mobile = models.CharField(max_length=20, blank=True)       # 501234567
+    is_active = models.BooleanField(default=True)
+    sort_order = models.PositiveSmallIntegerField(default=100)          # the UAE and the GCC first
+
+    class Meta:
+        db_table = "dial_code"
+        ordering = ["sort_order", "country"]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(mobile_digits_max__gte=models.F("mobile_digits_min")),
+                                   name="dial_code_mobile_digits_range"),
+        ]
+
+    def __str__(self):
+        return f"{self.country} +{self.dial_code}"
+
+
 class State(ApprovalMixin, TimeStampedModel):
     """An emirate, in the UAE."""
 
@@ -403,6 +437,9 @@ class CompanyConfig(TimeStampedModel):
 
     company = models.OneToOneField(Company, on_delete=models.CASCADE, related_name="config")
     report_day_start = models.TimeField(null=True, blank=True)
+    # When the primary dial codes last changed (owner, 12 Nov 2026): moves the
+    # dial-codes API's version, a removal included.
+    dial_codes_updated_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "company_config"
@@ -436,3 +473,24 @@ class CompanyMoneySetting(TimeStampedModel):
 
     def __str__(self):
         return f"{self.company} {self.country}: {self.decimal_places} decimals"
+
+
+class CompanyDialCode(models.Model):
+    """A company's primary dial codes (owner, 12 Nov 2026): the operator app
+    shows them first, in this order; every other active code is secondary.
+    Set on Company -> Configurations."""
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="primary_dial_codes")
+    dial_code = models.ForeignKey("company.DialCode", on_delete=models.CASCADE, related_name="+")
+    position = models.PositiveSmallIntegerField()
+
+    class Meta:
+        db_table = "company_dial_code"
+        ordering = ["company", "position"]
+        constraints = [
+            models.UniqueConstraint(fields=["company", "dial_code"], name="uniq_company_dial_code"),
+        ]
+
+    def __str__(self):
+        return f"{self.company} #{self.position} {self.dial_code}"
+

@@ -85,7 +85,7 @@ issue with its body, its attempts and Replay / Dismiss.
             <td class="scr-state">{{ i.branch.name|default:"—" }}</td>
             <td class="scr-state">{% if i.device %}Device {{ i.device.device_registration_id }}{% else %}—{% endif %}</td>
             <td class="scr-state">{{ i.user.username }}</td>
-            <td class="scr-mon-message">{% if i.error_code %}<div class="scr-co-name">{{ i.error_code }}</div><div class="scr-co-city">{{ i.error_message|truncatechars:90 }}</div>{% elif i.waiting_on %}<div class="scr-co-city">Waiting behind an earlier call</div>{% else %}<span class="scr-state">—</span>{% endif %}</td>
+            <td class="scr-mon-message">{% if i.error_code %}<div class="scr-co-name">{{ i.error_code }}</div><div class="scr-co-city">{{ i.error_message|truncatechars:90 }}</div>{% elif i.waiting_on_customer %}<div class="scr-co-city">Waiting for its customer (issue {{ i.waiting_on }})</div>{% elif i.waiting_on %}<div class="scr-co-city">Waiting behind an earlier call</div>{% else %}<span class="scr-state">—</span>{% endif %}</td>
             <td>{% include "sync/_status.html" with issue=i %}</td>
           </tr>
           {% empty %}

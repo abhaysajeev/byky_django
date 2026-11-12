@@ -1,6 +1,6 @@
-"""Asset checks: the operator app inspects an asset of its station -- a
-photo (required), its condition (active / needs inspection), optional
-remarks. Recorded only: no approval, no notification, no service request
+"""Asset checks: the operator app inspects an asset of its station -- its
+condition (active / needs inspection), an optional photo (required until
+owner, 4 Nov 2026), optional remarks. Recorded only: no approval, no notification, no service request
 (owner, 27 Oct 2026). The asset's condition is its latest check. Managers view
 them with photos in the manager app; the web lists them (Inventory -> Asset
 Checks).
@@ -46,10 +46,12 @@ def record(session, values):
     if asset.branch_id != branch.pk:
         raise CheckRefused("asset_not_at_station", "That asset is not at this station.", 400)
     with transaction.atomic():
-        try:
-            photo = photo_services.attachable(values["photo_id"], company, PhotoPurpose.ASSET_CHECK)
-        except photo_services.PhotoRefused as refusal:
-            raise CheckRefused(refusal.code, refusal.message, refusal.status) from None
+        photo = None
+        if values.get("photo_id"):
+            try:
+                photo = photo_services.attachable(values["photo_id"], company, PhotoPurpose.ASSET_CHECK)
+            except photo_services.PhotoRefused as refusal:
+                raise CheckRefused(refusal.code, refusal.message, refusal.status) from None
         check = AssetCheck(
             id=sync_id, company=company, branch=branch, asset=asset, status=values["status"],
             remarks=(values.get("remarks") or "").strip(), photo=photo, device=session.device,
@@ -64,7 +66,8 @@ def record(session, values):
             if raced is None:
                 raise
             return raced, False
-        photo_services.mark_attached(photo)
+        if photo is not None:
+            photo_services.mark_attached(photo)
     return check, True
 
 
@@ -128,16 +131,19 @@ def _local(moment, zone):
 
 def check_json(check, zone, channel):
     """One check for an app. Only the manager app views photos: its rows carry
-    two server-relative URLs (they need the access token)."""
+    two server-relative URLs (they need the access token). A check without a
+    photo has photo_id and both URLs null."""
     row = {
         "asset_check_id": str(check.pk), "asset_id": check.asset_id, "asset_code": check.asset.asset_code,
         "asset_type": check.asset.asset_type.asset_type_name, "status": check.status,
         "status_label": check.get_status_display(), "remarks": check.remarks,
         "branch_id": check.branch_id, "station": check.branch.name, "emirate": check.branch.location.state.name,
         "checked_by": (check.checked_by.display_name or check.checked_by.username) if check.checked_by_id else None,
-        "checked_at": _local(check.checked_at, zone), "photo_id": str(check.photo_id),
+        "checked_at": _local(check.checked_at, zone),
+        "photo_id": str(check.photo_id) if check.photo_id else None,
     }
     if channel == Channel.MANAGER:
-        row["photo_url"] = photo_services.view_path(channel, check.photo_id, "display")
-        row["photo_thumb_url"] = photo_services.view_path(channel, check.photo_id, "thumb")
+        has_photo = check.photo_id is not None
+        row["photo_url"] = photo_services.view_path(channel, check.photo_id, "display") if has_photo else None
+        row["photo_thumb_url"] = photo_services.view_path(channel, check.photo_id, "thumb") if has_photo else None
     return row

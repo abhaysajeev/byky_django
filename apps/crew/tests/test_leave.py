@@ -374,7 +374,8 @@ def test_leave_days_are_locked_on_the_roster(world, on_leave):
         with pytest.raises(services.Invalid, match=on_leave.reference):
             attempt()
     written, results = services.import_rows([{"employee_code": "EMP001", **entry}], user=user,
-                                            employees_qs=Employee.objects.all(),
+                                            # EMP001 exists in both companies: this company's is the one on leave
+                                            employees_qs=Employee.objects.filter(company=world["company"]),
                                             branches_qs=world["company"].branches.all())
     assert written == 0 and on_leave.reference in results[0]["message"]
 

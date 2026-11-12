@@ -356,6 +356,9 @@ class OrderItem(TimeStampedModel):
     # links to the fare's seasons or special prices -- those can be deleted;
     # their ids live in here. Empty for lines booked without it.
     fare_details = models.JSONField(null=True, blank=True)
+    # The package the tablet applied to this vehicle (owner, 10 Nov 2026), as
+    # sent: the line's amounts are already after it, so it is shown, never summed.
+    package_details = models.JSONField(null=True, blank=True)
     # Blank until the vehicle is returned. No discount here (it is on the
     # order's bill); VAT is inside the fare, shown once on the bill.
     run_minutes = models.PositiveIntegerField(null=True, blank=True)     # how long it actually ran

@@ -286,8 +286,9 @@ class AssetCheckListView(_InventoryScreen):
                 "checked_by": (c.checked_by.display_name or c.checked_by.username) if c.checked_by_id else "",
                 "tablet": c.device.device_registration_id if c.device_id else "",
                 "checked_at": c.checked_at.astimezone(zone), "received_at": c.created_on.astimezone(zone),
-                "thumb": reverse("photo", args=[c.photo_id, "thumb"]),
-                "full": reverse("photo", args=[c.photo_id, "original"]),
+                # A check may have no photo (owner, 4 Nov 2026).
+                "thumb": reverse("photo", args=[c.photo_id, "thumb"]) if c.photo_id else "",
+                "full": reverse("photo", args=[c.photo_id, "original"]) if c.photo_id else "",
             } for c in page.object_list],
             "statuses": AssetCheckStatus.choices,
             "page": page, "query": query.urlencode(), "params": params,

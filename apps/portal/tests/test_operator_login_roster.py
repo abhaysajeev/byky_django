@@ -41,11 +41,13 @@ def other_station(world):
                                  name="Creek Park 2", branch_type=BranchType.STATION)
 
 
-def roster(employee, branch, start, end, *, day=None, day_type=DutyRosterDayType.WORKING, shift2=None):
+def roster(employee, branch, start, end, *, day=None, day_type=DutyRosterDayType.WORKING, shift2=None,
+           role=RosterCategory.CASHIER):
     day = day or business_date_for(employee.company, start)
     working = day_type == DutyRosterDayType.WORKING
     return DutyRoster.objects.create(
         employee=employee, date=day, day_type=day_type, branch=branch if working else None,
+        role=role if working else "",
         shift1_start=start if working else None, shift1_end=end if working else None,
         shift2_start=shift2[0] if shift2 else None, shift2_end=shift2[1] if shift2 else None,
     )
@@ -177,8 +179,86 @@ def test_leave_days_read_their_type(world, rostered):
         "not_working_today", "Not working today (Sick Leave).")
 
 
-def test_labour_is_rostered_too(world, rostered):
+def test_labour_with_no_roster_is_told_there_is_none(world, rostered):
     rostered.designation.roster_category = RosterCategory.LABOUR
     rostered.designation.save()
     assert operator_roster_refusal(rostered, world["branch"])[0] == "duty_roster_not_found"
     assert Designation.objects.get(pk=rostered.designation_id).roster_category == "labour"
+
+
+# -- Only a Cashier signs in (owner, 11 Nov 2026) ------------------------------------------
+
+LABOUR_REFUSAL = ("not_rostered_as_cashier",
+                  "You are rostered as Labour today. Only a Cashier can sign in on this tablet.")
+NO_ROLE_REFUSAL = ("not_rostered_as_cashier",
+                   "You are not rostered as a Cashier today. Only a Cashier can sign in on this tablet.")
+
+
+def test_a_labour_day_is_refused_through_the_login(client, world, rostered, app_user, device):
+    now = timezone.now()
+    roster(rostered, world["branch"], now - HOUR, now + HOUR, role=RosterCategory.LABOUR)
+
+    assert refused(client, app_user, device) == LABOUR_REFUSAL
+
+
+def test_a_cashier_day_signs_in(client, world, rostered, app_user, device):
+    now = timezone.now()
+    roster(rostered, world["branch"], now - HOUR, now + HOUR, role=RosterCategory.CASHIER)
+
+    assert _login(client, app_user, device).json()["code"] == "ok"
+
+
+def test_a_labour_day_gets_the_real_reason_outside_the_shift_too(world, rostered):
+    day = datetime.date(2026, 10, 28)
+    roster(rostered, world["branch"], at(world, day, "08:00"), at(world, day, "16:00"), day=day,
+           role=RosterCategory.LABOUR)
+
+    assert operator_roster_refusal(rostered, world["branch"], at(world, day, "20:00")) == LABOUR_REFUSAL
+
+
+def test_the_days_role_beats_the_designation(world, rostered):
+    day = datetime.date(2026, 10, 28)
+    roster(rostered, world["branch"], at(world, day, "08:00"), at(world, day, "16:00"), day=day,
+           role=RosterCategory.LABOUR)                     # a Cashier by designation, working as Labour today
+
+    assert operator_roster_refusal(rostered, world["branch"], at(world, day, "10:00")) == LABOUR_REFUSAL
+
+
+def test_an_older_day_with_no_role_reads_the_designation(world, rostered):
+    day = datetime.date(2026, 10, 28)
+    roster(rostered, world["branch"], at(world, day, "08:00"), at(world, day, "16:00"), day=day, role="")
+
+    assert operator_roster_refusal(rostered, world["branch"], at(world, day, "10:00")) is None
+
+
+def test_no_role_anywhere_is_refused(world, employee):
+    day = datetime.date(2026, 10, 28)
+    assert employee.designation.roster_category == ""
+    roster(employee, world["branch"], at(world, day, "08:00"), at(world, day, "16:00"), day=day, role="")
+
+    assert operator_roster_refusal(employee, world["branch"], at(world, day, "10:00")) == NO_ROLE_REFUSAL
+
+
+def test_an_overnight_shift_uses_its_own_days_role(world, rostered):
+    yesterday, today = datetime.date(2026, 10, 27), datetime.date(2026, 10, 28)
+    branch = world["branch"]
+    roster(rostered, branch, at(world, yesterday, "22:00"), at(world, today, "02:00"), day=yesterday,
+           role=RosterCategory.LABOUR)
+    roster(rostered, branch, at(world, today, "10:00"), at(world, today, "18:00"), day=today)
+
+    assert operator_roster_refusal(rostered, branch, at(world, today, "01:00")) == LABOUR_REFUSAL
+    assert operator_roster_refusal(rostered, branch, at(world, today, "11:00")) is None
+
+
+def test_a_cashier_shift_from_yesterday_still_signs_in(world, rostered):
+    yesterday, today = datetime.date(2026, 10, 27), datetime.date(2026, 10, 28)
+    roster(rostered, world["branch"], at(world, yesterday, "22:00"), at(world, today, "02:00"), day=yesterday)
+
+    assert operator_roster_refusal(rostered, world["branch"], at(world, today, "01:00")) is None
+
+
+def test_a_cashier_outside_the_shift_still_hears_the_times(world, rostered):
+    day = datetime.date(2026, 10, 28)
+    roster(rostered, world["branch"], at(world, day, "08:00"), at(world, day, "16:00"), day=day)
+
+    assert operator_roster_refusal(rostered, world["branch"], at(world, day, "20:00"))[0] == "outside_shift_hours"

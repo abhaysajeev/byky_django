@@ -90,15 +90,19 @@ def test_a_cancel_sits_beside_a_discount_request(client, token, booked):
 
 # -- While it waits -------------------------------------------------------------------
 
-def test_returns_go_on_but_settle_waits_for_the_decision(client, token, shop, manager, booked):
+def test_settling_closes_a_cancel_still_waiting(client, token, shop, manager, booked):
+    """Owner, 11 Nov 2026: the station decided to charge after all -- the
+    settle goes through and the cancel is closed, like any request waiting."""
     request_id = asked_cancel(client, token, booked)
     rq.return_all(client, token, booked)                     # returns still allowed
 
-    refused = settles.settle(client, token, settles.bill(booked, shop))
-    assert refused["code"] == "cancel_requested"
-
-    rq.decide(client, manager, REJECT, request_id, note="Ride it out")
     assert settles.settle(client, token, settles.bill(booked, shop))["code"] == "ok"
+
+    cancel = OrderRequest.objects.get(pk=request_id)
+    assert cancel.status == OrderRequestStatus.CLOSED and cancel.closed_at is not None
+    assert Order.objects.get(pk=booked["sync_id"]).status == OrderStatus.COMPLETED
+    # Too late to decide it now.
+    assert rq.decide(client, manager, APPROVE, request_id)["code"] != "ok"
 
 
 # -- Approved --------------------------------------------------------------------------

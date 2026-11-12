@@ -11,13 +11,16 @@ from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
 from django.http import JsonResponse
+from django.utils import timezone
 
-from apps.company import scoping
+from apps.company import dial_codes, scoping
 from apps.company.models import (
     DECIMAL_PLACES,
     ROUND_OFF_STEPS,
     CompanyConfig,
+    CompanyDialCode,
     CompanyMoneySetting,
+    DialCode,
     RoundOffMode,
 )
 from apps.company.writes import WriteView, _payload
@@ -57,7 +60,28 @@ def context_for(request):
         "places": DECIMAL_PLACES,
         "modes": RoundOffMode.choices,
         "steps": {places: [fmt(step, places) for step in steps] for places, steps in ROUND_OFF_STEPS.items()},
+        "dial_code_options": dial_codes.picker_options(DialCode),
+        "primary_dial_codes": dial_codes.primary_iso2(company) if company else [],
     }
+
+
+def primary_codes(data):
+    """(DialCode rows in the order sent, errors) from the posted primary dial codes."""
+    sent = data.get("primary_dial_codes")
+    if sent in (None, ""):
+        return [], []
+    if not isinstance(sent, list):
+        return [], [{"field": "Primary dial codes", "message": "Send a list of country codes."}]
+    wanted = []
+    for value in sent:
+        iso = str(value or "").strip().upper()
+        if iso and iso not in wanted:              # a duplicate is dropped, not refused
+            wanted.append(iso)
+    found = {r.iso2: r for r in DialCode.objects.filter(iso2__in=wanted, is_active=True)}
+    missing = [iso for iso in wanted if iso not in found]
+    if missing:
+        return [], [{"field": "Primary dial codes", "message": f"Unknown or switched off: {', '.join(missing)}."}]
+    return [found[iso] for iso in wanted], []
 
 
 def _time(value):
@@ -126,6 +150,8 @@ class ConfigurationSave(WriteView):
                                  "errors": [{"field": "Company", "message": "Choose a company."}]}, status=400)
         countries = set(scoping.countries_for(request.user).values_list("pk", flat=True))
         start, rows, errors = validate(data, countries)
+        primaries, problems = primary_codes(data)
+        errors += problems
         if errors:
             return JsonResponse({"ok": False, "code": "invalid", "errors": errors}, status=400)
         with transaction.atomic():
@@ -142,5 +168,14 @@ class ConfigurationSave(WriteView):
                     setattr(setting, field, row[field])
                 setting.modified_by = request.user
                 setting.save()
+            if "primary_dial_codes" in data:
+                before = dial_codes.primary_iso2(company)
+                if before != [r.iso2 for r in primaries]:
+                    company.primary_dial_codes.all().delete()
+                    CompanyDialCode.objects.bulk_create([
+                        CompanyDialCode(company=company, dial_code=r, position=n)
+                        for n, r in enumerate(primaries, start=1)])
+                    config.dial_codes_updated_at = timezone.now()
+                    config.save(update_fields=["dial_codes_updated_at"])
         return JsonResponse({"ok": True, "message": f"{company.name} configurations saved.",
                              "money": money_rows(company)})

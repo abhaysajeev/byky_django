@@ -45,6 +45,8 @@ RENTAL_SVG = (
 DISCOUNT_SVG = "M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 10h18M7 15h4"
 # A column chart on its baseline -- the client's web reports.
 REPORTS_SVG = "M4 20h16M7 16v-5M12 16V6M17 16v-8"
+# An antenna mast with its signal arcs -- the RFID readers.
+TRACKING_SVG = "M12 13a2 2 0 1 0 0-4 2 2 0 0 0 0 4M12 13v8M8.5 7.5a5 5 0 0 0 0 7M15.5 7.5a5 5 0 0 1 0 7M5.5 4.5a9 9 0 0 0 0 13M18.5 4.5a9 9 0 0 1 0 13"
 
 # code, name, menu header (blank = no divider), sort order, is_flat, svg, svg2
 MODULES = [
@@ -56,6 +58,7 @@ MODULES = [
     ("fare", "Fare & Packages", "Operations", 50, False, FARE_SVG, ""),
     ("rental", "Rental", "Operations", 60, False, RENTAL_SVG, ""),
     ("discount", "Discount Card", "Operations", 65, False, DISCOUNT_SVG, ""),
+    ("tracking", "Tracking", "Operations", 68, False, TRACKING_SVG, ""),
     ("reports", "Reports", "Operations", 70, False, REPORTS_SVG, ""),
     ("system", "Users & Roles", "System", 90, False, SYSTEM_SVG, ""),
     ("monitoring", "Logs", "System", 95, False, LOGS_SVG, ""),
@@ -171,6 +174,20 @@ PAGES = [
     ("discount.redemption", "discount", "Redemption History", "discount-redemption-list", ["read", "print"], 5, False),
     ("discount.privileges", "discount", "Privileges", "discount-privileges", ["read", "update"], 9, False),
 
+    # Antenna Tracking (design/07-tracking.md). Read on Missing & Alerts is also
+    # what shows a user the navbar bell (section 7.1).
+    ("tracking.status", "tracking", "Status Board", "tracking-status", ["read"], 1, False),
+    # update = acknowledge an alert.
+    ("tracking.alerts", "tracking", "Missing & Alerts", "tracking-alerts", ["read", "update"], 2, False),
+    # approve = approve or block a reader; create = add one in advance by its id.
+    ("tracking.readers", "tracking", "Readers", "tracking-readers", ["create", "read", "update", "approve"], 3, False),
+    # update = run a calibration; approve = approve its limits.
+    ("tracking.antennas", "tracking", "Antennas & Calibration", "tracking-antennas",
+     ["read", "update", "approve"], 4, False),
+    ("tracking.raw", "tracking", "Raw Readings", "tracking-raw", ["read"], 5, False),
+    ("tracking.settings", "tracking", "Tracking Settings", "tracking-settings", ["read", "update"], 6, False),
+    ("tracking.privileges", "tracking", "Privileges", "tracking-privileges", ["read", "update"], 9, False),
+
     # The client's web reports (apps/reports): read to see, print to export to Excel.
     ("reports.rent_summary", "reports", "Rent Summary", "reports-rent-summary", ["read", "print"], 1, False),
     ("reports.consolidated", "reports", "Consolidated", "reports-consolidated", ["read", "print"], 2, False),
@@ -216,6 +233,8 @@ PAGES = [
 SYSTEM_ONLY = {
     "monitoring.request_log",
     "monitoring.error_log",
+    # Every read a reader sent: for troubleshooting only (owner, 9 Nov 2026).
+    "tracking.raw",
 }
 
 # A page listed inside another page: left out of the sidebar for anyone who

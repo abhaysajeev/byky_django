@@ -69,6 +69,7 @@ authentication in this phase (CLAUDE.md section 1), so it signs nothing out.
       until an alerts source exists (theme/context_processors.py).
       {% endcomment %}
       {{ alert_feed|json_script:"byky-alert-feed" }}
+      {% if tracking_bell %}{{ tracking_bell|json_script:"byky-tracking-bell" }}{% endif %}
 
       <a class="byky-alert-strip" id="byky-alert-strip" href="#" hidden>
         <span class="byky-alert-dot"></span>

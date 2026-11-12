@@ -94,10 +94,12 @@ _INVOICE_SAMPLE = {
     "items": [
         {"vehicle": "MO 41", "identifier": "VB1241", "vehicle_type": "Monaco", "package_minutes": 60,
          "run_minutes": 72, "start_time": "2026-10-02 16:00:00", "end_time": "2026-10-02 17:12:00",
-         "base_fare": "50.000", "overtime_amount": "10.000", "total_amount": "60.000"},
+         "base_fare": "50.000", "overtime_amount": "10.000", "total_amount": "60.000",
+         "package_details": None},
         {"vehicle": "DC 02", "identifier": "VB0202", "vehicle_type": "Monaco", "package_minutes": 60,
          "run_minutes": 60, "start_time": "2026-10-02 16:00:00", "end_time": "2026-10-02 17:00:00",
-         "base_fare": "50.000", "overtime_amount": "0.000", "total_amount": "50.000"},
+         "base_fare": "50.000", "overtime_amount": "0.000", "total_amount": "50.000",
+         "package_details": None},
     ],
     "subtotal": "110.000", "discount_percentage": None, "discount_amount": "0.000", "discount_source": None,
     "tax_percentage": "5.00", "tax_amount": "5.238", "rounding_adjustment": "0.000", "net_amount": "110.000",
@@ -152,6 +154,13 @@ driving_license, others), `id_no`, `email`, `address`, `remarks`.
 **A phone already registered** is `customer_exists`: to this company, with
 that customer (block state included) so the app can use them; to another
 company, with no details.
+
+**Parking** -- as every recording call: with `credentials.park: true` a
+refusal (or a crash) is kept for the office and answered `parked`; a resend
+while it is open is answered `parked` again, and once the office replays it,
+`duplicate` with the customer. **`customer_exists` is never parked** -- it is
+answered as above, park or not. A booking for a parked customer names it by
+`customer_sync_id` (see `/orders`).
 """
 
 
@@ -203,10 +212,13 @@ class _OperatorView(APIView):
     # park it (apps/sync/parking.py) and replays run it as the original session.
     park_kind = None
 
+    # Refusal codes answered as they are even with park: true.
+    never_park = ()
+
     def parked(self, request, app):
         if app != Channel.OPERATOR:
             return envelope("wrong_channel", "Not allowed on this app.", http_status=403)
-        return parking.handle(request, app, self.park_kind, self.perform)
+        return parking.handle(request, app, self.park_kind, self.perform, never_park=self.never_park)
 
 
 _COMMON = (
@@ -263,6 +275,11 @@ class CustomerLookupView(_OperatorView):
 class CustomerCreateView(_OperatorView):
     """POST /api/v1/{app}/customers/create -- operator app only."""
 
+    park_kind = IssueKind.CUSTOMER_CREATE
+    # Owner, 7 Nov 2026: the phone is registered -- the reply already names
+    # the customer (this company) and the tablet uses it; nothing to correct.
+    never_park = ("customer_exists",)
+
     @extend_schema(
         tags=["Operator Customers"],
         summary="Register a new customer",
@@ -278,20 +295,22 @@ class CustomerCreateView(_OperatorView):
             (409, "customer_exists", "A customer with this phone number already exists.", {},
              "customer_exists (another company)"),
             (409, "sync_id_conflict", "That sync_id is already used.", {}),
+            *parking.SCHEMA_ROWS,
             *_COMMON,
         ),
     )
     def post(self, request, app):
-        branch, refused = self.station(request, app)
+        return self.parked(request, app)
+
+    def perform(self, session, app, request_data, *, replay=False):
+        branch, refused = station_of(session, replay=replay)
         if refused:
             return refused
-
-        _, request_data = request_parts(request)
         form = CustomerCreateRequest(data=request_data)
         form.is_valid(raise_exception=True)
 
         try:
-            customer, created = services.create_customer(request.user, branch.company, form.validated_data)
+            customer, created = services.create_customer(session.user, branch.company, form.validated_data)
         except services.CustomerExists as exists:
             data = _customer_json(exists.customer) if exists.customer else {}
             return envelope("customer_exists", "A customer with this phone number already exists.", data,
@@ -338,7 +357,9 @@ def invoice_json(invoice, zone):
              "vehicle_type": item.vehicle_type, "package_minutes": item.package_minutes,
              "run_minutes": item.run_minutes, "start_time": _local(item.start_time, zone),
              "end_time": _local(item.end_time, zone), "base_fare": _money(item.base_fare),
-             "overtime_amount": _money(item.overtime_amount), "total_amount": _money(item.total_amount)}
+             "overtime_amount": _money(item.overtime_amount), "total_amount": _money(item.total_amount),
+             # the package applied to this vehicle, as the tablet sent it at booking; null if none
+             "package_details": item.order_item.package_details}
             for item in sorted(invoice.items.all(), key=lambda line: line.start_time)
         ],
         "subtotal": _money(invoice.subtotal),
@@ -481,6 +502,8 @@ def _order_body(order, zone, items, payments, invoice):
                 "reason": item.reason,
                 # The fare terms the line was priced on, as the tablet sent them; null if none were.
                 "fare_details": item.fare_details,
+                # The package applied to this vehicle, as sent; null if none.
+                "package_details": item.package_details,
             }
             for item in items
         ],
@@ -563,13 +586,15 @@ _ORDER_SAMPLE = {
          "fare_id": 88, "offer_id": None, "package_minutes": 60, "run_minutes": None,
          "start_time": "2026-10-02 16:00:00", "expected_end_time": "2026-10-02 17:00:00", "end_time": None,
          "base_fare": "50.00", "overtime_amount": None, "total_amount": None,
-         "replaced_item_id": None, "reason": "", "fare_details": _FARE_DETAILS_SAMPLE},
+         "replaced_item_id": None, "reason": "", "fare_details": _FARE_DETAILS_SAMPLE,
+         "package_details": None},
         {"sync_id": "01923e1c-0a13-7b22-8c33-d4e5f6a7b8c9", "status": "active",
          "vehicle": {"id": 3102, "name": "DC 02", "identifier": "VB0874"},
          "fare_id": 88, "offer_id": None, "package_minutes": 60, "run_minutes": None,
          "start_time": "2026-10-02 16:00:00", "expected_end_time": "2026-10-02 17:00:00", "end_time": None,
          "base_fare": "50.00", "overtime_amount": None, "total_amount": None,
-         "replaced_item_id": None, "reason": "", "fare_details": _FARE_DETAILS_SAMPLE},
+         "replaced_item_id": None, "reason": "", "fare_details": _FARE_DETAILS_SAMPLE,
+         "package_details": None},
     ],
     "payments": [
         {"sync_id": "01923e1c-0a14-7b22-8c33-d4e5f6a7b8c9", "kind": "advance",
@@ -617,7 +642,7 @@ _SETTLED_SAMPLE = {
 
 _BOOK_ERRORS = (
     "sync_id_conflict", "order_no_used", "vehicle_already_rented", "vehicle_repeated", "item_id_used",
-    "payment_id_used", "unknown_customer", "unknown_payment_mode", "unknown_vehicle",
+    "payment_id_used", "unknown_customer", "customer_not_synced", "unknown_payment_mode", "unknown_vehicle",
     "vehicle_not_at_station", "unknown_fare", "unknown_offer", "package_not_available",
     "vehicle_on_test_ride", "vehicle_in_warehouse_service", "unknown_test_ride", "test_ride_closed",
 )
@@ -639,6 +664,13 @@ never silently one version or the other. Keys may come in any order.
 **`customer_id`, `vehicle_id`, `fare_id`, `offer_id`, `payment_mode_id`** are
 ids the tablet already holds from `/customers/lookup`, `/vehicles`, `/fares`
 and `/payment-modes`.
+
+**`customer_sync_id`** -- instead of `customer_id`, for a customer this tablet
+created and has no server id for yet: the `sync_id` of its `/customers/create`
+call. Send **exactly one** of the two. If that create is parked, the booking
+is parked behind it (`waiting_on` is the customer's issue) and runs once the
+office replays the customer. If the server has never seen it, the booking is
+refused `customer_not_synced` (retry: send the create first).
 
 **`order_no`** is the printed receipt number, unique in the company, built
 from the top-level `order_no_prefix` that login and `/device/settings` give.
@@ -679,6 +711,18 @@ price -- time window -- that set the price), `package_minutes`, `base_fare`,
 order keeps the terms it was booked on even if the fare is edited later. The
 same on add-vehicle (`item`) and replace (`new_item`). Every order reply
 returns it per item (`null` when not sent).
+
+**`package_details`** (optional per item) -- the package the tablet applied
+to that vehicle, as one object. The app does all package pricing: the line's
+`base_fare` is **already after** the package, and `fare_details` stays the
+fare **before** it. Stored exactly as sent, never checked and never used in
+any amount; send whatever keys you need. The web shows three of them, so use
+these names: `name` (the package's name), `amount_off` (AED taken off this
+vehicle, a 3-decimal string) and `is_free_item` (`true` for a free vehicle).
+Suggested also: `package_id`, `code`, `promotion_type`, from `packages`.
+Leave it out for a vehicle with no package. The same on add-vehicle (`item`)
+and replace (`new_item`); every order reply returns it per item and every
+invoice per line (`null` when not sent).
 
 **In every order reply**: `open_by` -- who booked the order; `close_by` -- who
 settled it (`null` until then); `star_rating` and `rating_remarks` -- the
@@ -1093,7 +1137,7 @@ _SETTLE_ERRORS = (
     "unknown_discount_request", "discount_request_not_approved", "discount_mismatch",
     "approved_discount_not_applied", "unknown_complimentary_request", "complimentary_request_not_approved",
     "approved_complimentary_not_applied", "approved_card_discount_not_applied", "unknown_payment_mode",
-    "payment_id_used", "cancel_requested",
+    "payment_id_used",
 )
 
 _SETTLE_DESCRIPTION = """
@@ -1781,9 +1825,11 @@ decides on the web or in the manager app. Five kinds:
   (no value), the order and its vehicles still out become `cancelled` at once
   -- the vehicles can be rented again -- other requests still waiting on it
   are `closed`, and a card discount on it is cancelled. **Final:** never
-  revoked. While a cancel waits, returns and changes go on, but
-  `orders/settle` is refused (`cancel_requested`). Money already taken stays
-  recorded; a refund may be added with `orders/payments` (`kind` `refund`).
+  revoked. While a cancel waits, returns and changes go on, and the order
+  can still be settled: settling closes the waiting cancel (`closed`), like
+  every other request still waiting, and the manager is told. Money already
+  taken stays recorded; a refund may be added with `orders/payments` (`kind`
+  `refund`).
   A cancel can also be made straight on the web, without a request.
 
 A discount or complimentary approval can be **revoked** while the order runs;
