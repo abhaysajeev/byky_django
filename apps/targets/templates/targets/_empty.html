@@ -1,0 +1,5 @@
+<div class="scr-empty"><div>
+  <div class="scr-empty-title">{{ title }}</div>
+  <p class="scr-empty-sub">{{ text }}</p>
+  {% if can.create and not hide_link %}<a class="scr-btn scr-btn-secondary scr-x-empty-action" href="{% url 'targets-manage' %}{% if first %}?month={{ first|date:'Y-m' }}{% endif %}">Set targets</a>{% endif %}
+</div></div>

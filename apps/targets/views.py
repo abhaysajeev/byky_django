@@ -1,5 +1,5 @@
-"""Targets screens (design/08-targets.md §6): the stations x months list, a
-station's year, one month's days, and the writes behind the drawer. Every
+"""Targets screens (design/08-targets.md §6): Overview, Daily Progress, Set
+Targets, a station's month detail, and the writes behind the drawer. Every
 figure comes from apps/targets/services.py; these views only scope and draw.
 """
 
@@ -23,9 +23,7 @@ from core.money import fmt, places_for
 from theme import drawers as theme_drawers
 from theme.views import ThemedTemplateView
 
-PAGE = "targets.list"
-ACTIONS = ("create", "read", "update", "delete")
-MONTHS_AHEAD = 12
+OVERVIEW, DAILY, MANAGE = "targets.overview", "targets.daily", "targets.manage"
 
 
 def _int(value):
@@ -44,118 +42,157 @@ def scoped_targets(user):
     return Target.objects.filter(branch__in=branches_for(user), company__in=companies_for(user))
 
 
-def _first_company(user):
-    return companies_for(user).order_by("name").first()
+def _month(value, today):
+    """(year, month) from "YYYY-MM", else today's."""
+    try:
+        year, month = (int(part) for part in str(value or "").split("-"))
+        datetime.date(year, month, 1)
+        return year, month
+    except ValueError:
+        return today.year, today.month
 
 
-def month_options(today):
-    """This month and the next eleven, for the drawer's Month select."""
-    out, year, month = [], today.year, today.month
-    for _ in range(MONTHS_AHEAD):
-        first = datetime.date(year, month, 1)
-        out.append({"id": f"{year}-{month:02d}", "name": first.strftime("%B %Y")})
-        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
-    return out
+def _shift(year, month, by):
+    index = year * 12 + (month - 1) + by
+    return index // 12, index % 12 + 1
+
+
+def _day(value, today):
+    try:
+        return datetime.date.fromisoformat(str(value))
+    except ValueError:
+        return today
 
 
 def record(target):
     """The edit drawer's prefill."""
     places = places_for(target.company, target.branch)
-    return {"pk": target.pk, "title": f"{target.branch.name} · {target.period_start:%B %Y}",
-            "branches": [target.branch_id], "month": f"{target.period_start:%Y-%m}",
-            "amount": fmt(target.amount, places), "remarks": target.remarks}
+    return {"pk": target.pk, "title": "Edit target", "branches": str(target.branch_id),
+            "month": f"{target.period_start:%Y-%m}", "amount": fmt(target.amount, places), "remarks": target.remarks,
+            "summary": f"{target.branch.name} · {target.period_start:%B %Y}"}
 
 
 class TargetsScreenView(PagePermissionMixin, ThemedTemplateView):
-    page_code = PAGE
+    """Shared context: rights on Set Targets (the drawer), today, the emirate filter."""
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         user = self.request.user
-        company = _first_company(user)
-        today = services.today_for(company) if company else datetime.date.today()
-        context["perm"] = {action: has_permission(user, PAGE, action) for action in ACTIONS}
-        context["business_today"] = today
-        context["branches_list"] = [{"id": b.pk, "name": b.name}
-                                    for b in scoped_branches(user).filter(is_active=True).order_by("name")]
-        context["months_list"] = month_options(today)
+        company = companies_for(user).order_by("name").first()
+        context["business_today"] = services.today_for(company) if company else datetime.date.today()
+        context["can"] = {a: has_permission(user, MANAGE, a) for a in ("create", "update", "delete")}
         context["drawer_target"] = theme_drawers.resolve(drawers.TARGET, context)
         context["save_url"] = reverse("targets-save")
         context["delete_url"] = reverse("targets-delete", args=[0])
+        branches = scoped_branches(user).filter(is_active=True)
+        context["states"] = State.objects.filter(pk__in=branches.values("location__state_id")).order_by("name")
+        context["chosen_state"] = _int(self.request.GET.get("state"))
         return context
 
-    def year(self, today):
-        year = _int(self.request.GET.get("year"))
-        return year if year and 2000 <= year <= 2100 else today.year
+    def branches(self, context):
+        rows = scoped_branches(self.request.user).filter(is_active=True)
+        if context["chosen_state"]:
+            rows = rows.filter(location__state_id=context["chosen_state"])
+        return rows.order_by("name")
+
+    def month_context(self, context, url_name):
+        year, month = _month(self.request.GET.get("month"), context["business_today"])
+        first, last = services.month_bounds(year, month)
+        state = f"&state={context['chosen_state']}" if context["chosen_state"] else ""
+
+        def link(by):
+            y, m = _shift(year, month, by)
+            return f"{reverse(url_name)}?month={y}-{m:02d}{state}"
+
+        context.update({"year": year, "month": month, "first": first, "last": last,
+                        "prev_url": link(-1), "next_url": link(1),
+                        "is_current": (year, month) == (context["business_today"].year,
+                                                        context["business_today"].month),
+                        "ended": last < context["business_today"]})
+        return year, month
 
 
-# -- List: stations x months ----------------------------------------------------------------
+# -- Overview -------------------------------------------------------------------------------
 
 
-class TargetListView(TargetsScreenView):
-    template_name = "targets/list.html"
+class OverviewView(TargetsScreenView):
+    template_name = "targets/overview.html"
+    page_code = OVERVIEW
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        params = self.request.GET
-        year = self.year(context["business_today"])
-        branches = scoped_branches(self.request.user).filter(is_active=True)
-        states = State.objects.filter(pk__in=branches.values("location__state_id")).order_by("name")
-        state = _int(params.get("state"))
-        if state:
-            branches = branches.filter(location__state_id=state)
-        q = (params.get("q") or "").strip()
-        if q:
-            branches = branches.filter(name__icontains=q)
-        rows = services.year_grid(branches.order_by("location__state__name", "name"), year)
+        year, month = self.month_context(context, "targets-overview")
+        context.update(services.overview(self.branches(context), year, month))
+        return context
+
+
+# -- Daily Progress ---------------------------------------------------------------------------
+
+
+class DailyView(TargetsScreenView):
+    template_name = "targets/daily.html"
+    page_code = DAILY
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        today = context["business_today"]
+        day = _day(self.request.GET.get("date"), today)
+        state = f"&state={context['chosen_state']}" if context["chosen_state"] else ""
+        base = reverse("targets-daily")
         context.update({
-            "year": year, "years": [year - 1, year, year + 1], "rows": rows,
-            "month_names": [datetime.date(year, m, 1).strftime("%b") for m in range(1, 13)],
-            "states": states, "chosen_state": state, "q": q,
+            "day": day, "is_today": day == today,
+            "prev_url": f"{base}?date={day - datetime.timedelta(days=1):%Y-%m-%d}{state}",
+            "next_url": f"{base}?date={day + datetime.timedelta(days=1):%Y-%m-%d}{state}",
+            **services.daily(self.branches(context), day),
         })
         return context
 
 
-# -- One station's year ----------------------------------------------------------------------
+# -- Set Targets ----------------------------------------------------------------------------
 
 
-class BranchView(TargetsScreenView):
-    template_name = "targets/branch.html"
+class ManageView(TargetsScreenView):
+    template_name = "targets/manage.html"
+    page_code = MANAGE
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        year, month = self.month_context(context, "targets-manage")
+        rows = services.manage_rows(list(self.branches(context)), year, month)
+        for row in rows:
+            if row["target"] is not None:
+                row["record_id"] = f"tgt-{row['target'].pk}"
+                row["record"] = record(row["target"])
+        context.update({"rows": rows, "month_key": f"{year}-{month:02d}",
+                        "set_count": sum(1 for r in rows if r["target"] is not None)})
+        return context
+
+
+# -- A station's month ------------------------------------------------------------------------
+
+
+class StationView(TargetsScreenView):
+    template_name = "targets/station.html"
+    page_code = OVERVIEW
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         branch = get_object_or_404(scoped_branches(self.request.user), pk=self.kwargs["pk"])
-        today = services.today_for(branch.company)
-        year = self.year(today)
-        context.update({"branch": branch, "year": year, "years": [year - 1, year, year + 1],
-                        **services.branch_year(branch, year)})
-        return context
-
-
-# -- One station's month ---------------------------------------------------------------------
-
-
-def _month_target(user, pk, year, month):
-    branch = get_object_or_404(scoped_branches(user), pk=pk)
-    if not 1 <= month <= 12:
-        raise Http404
-    first, _ = services.month_bounds(year, month)
-    target = (scoped_targets(user).filter(branch=branch, period_start=first)
-              .select_related("company", "branch").first())
-    return branch, first, target
-
-
-class MonthView(TargetsScreenView):
-    template_name = "targets/month.html"
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        branch, first, target = _month_target(self.request.user, self.kwargs["pk"], self.kwargs["year"],
-                                              self.kwargs["month"])
-        _, last = services.month_bounds(first.year, first.month)
-        context.update({"branch": branch, "first": first, "target": target,
-                        "open": last >= services.today_for(branch.company),
-                        "data_url": reverse("targets-month-data", args=[target.pk]) if target else ""})
+        year, month = self.kwargs["year"], self.kwargs["month"]
+        if not 1 <= month <= 12:
+            raise Http404
+        first, last = services.month_bounds(year, month)
+        target = (scoped_targets(self.request.user).filter(branch=branch, period_start=first)
+                  .select_related("company", "branch").first())
+        prev_y, prev_m = _shift(year, month, -1)
+        next_y, next_m = _shift(year, month, 1)
+        context.update({
+            "branch": branch, "first": first, "target": target, "month_key": f"{year}-{month:02d}",
+            "prev_url": reverse("targets-station", args=[branch.pk, prev_y, prev_m]),
+            "next_url": reverse("targets-station", args=[branch.pk, next_y, next_m]),
+            "open": last >= services.today_for(branch.company),
+            "data_url": reverse("targets-month-data", args=[target.pk]) if target else "",
+        })
         if target is not None:
             context.update(services.month_view(target))
             context["record"] = record(target)
@@ -163,24 +200,22 @@ class MonthView(TargetsScreenView):
 
 
 class MonthDataView(PagePermissionMixin, View):
-    """JSON of the month view's figures, for its 60-second refresh (T9)."""
+    """JSON of a station month's figures, for its 60-second refresh (T9)."""
 
-    page_code = PAGE
+    page_code = OVERVIEW
 
     def get(self, request, pk):
+        from apps.targets.templatetags.targets import amount, signed
+
         target = get_object_or_404(scoped_targets(request.user).select_related("company", "branch"), pk=pk)
         view = services.month_view(target)
-        places = places_for(target.company, target.branch)
-        money = lambda value: fmt(value, places) if value is not None else None  # noqa: E731
         f, today = view["figures"], view["today"]
         return JsonResponse({
-            "amount": money(f.amount), "achieved": money(f.achieved), "percent": str(f.percent), "tone": f.tone,
-            "remaining": money(f.remaining), "days_left": view["days_left"],
-            "today": {"date": today["date"].isoformat(), "planned": money(today["planned"]),
-                      "required": money(today["required"]), "achieved": money(today["achieved"])} if today else None,
-            "days": [{"date": d["date"].isoformat(), "planned": money(d["planned"]), "required": money(d["required"]),
-                      "achieved": money(d["achieved"]), "gap": money(d["gap"]), "state": d["state"]}
-                     for d in view["days"]],
+            "amount": amount(f.amount), "achieved": amount(f.achieved), "percent": str(f.percent),
+            "remaining": amount(f.remaining), "days_left": view["days_left"], "status": view["status"],
+            "today": {"date": today["date"].isoformat(), "target": amount(today["target"]),
+                      "achieved": amount(today["achieved"]), "gap": signed(today["gap"]),
+                      "status": today["status"]} if today else None,
         })
 
 
@@ -190,7 +225,7 @@ class MonthDataView(PagePermissionMixin, View):
 def _amount(value, company):
     places = places_for(company)
     try:
-        amount = Decimal(str(value).strip())
+        amount = Decimal(str(value).replace(",", "").strip())
     except (InvalidOperation, ValueError):
         return None, "Enter the target amount."
     if not amount.is_finite() or amount <= 0:
@@ -202,17 +237,24 @@ def _amount(value, company):
     return amount, None
 
 
+def _ids(value):
+    """Station ids sent as a list or as "1,2,3"."""
+    if isinstance(value, str):
+        value = value.split(",")
+    return {_int(v) for v in (value or [])} - {None}
+
+
 def _invalid(errors, status=400):
     return JsonResponse({"ok": False, "code": "invalid", "errors": errors}, status=status)
 
 
 class TargetSaveView(WriteView):
-    """POST {pk?, branches: [ids], month: "YYYY-MM", amount, remarks}. With a pk
-    it changes that target's amount and remarks; without, it adds the month's
-    target to each station chosen (refused stations are named)."""
+    """POST {pk?, branches: [ids] or "1,2", month: "YYYY-MM", amount, remarks}. With
+    a pk it changes that target's amount and remarks; without, it sets the month's
+    target for each station chosen (refused stations are named)."""
 
     model = Target
-    page_code = PAGE
+    page_code = MANAGE
 
     def post(self, request):
         data = _payload(request)
@@ -223,17 +265,16 @@ class TargetSaveView(WriteView):
         if not self.may("create"):
             return self.refused()
         errors = []
-        wanted = {_int(v) for v in (data.get("branches") or [])} - {None}
-        branches = list(scoped_branches(request.user).filter(pk__in=wanted).order_by("name"))
+        branches = list(scoped_branches(request.user).filter(pk__in=_ids(data.get("branches"))).order_by("name"))
         if not branches:
-            errors.append({"field": "Stations", "message": "Choose at least one station."})
+            errors.append({"field": "Branches", "message": "Choose at least one branch."})
         try:
             year, month = (int(part) for part in str(data.get("month") or "").split("-"))
             datetime.date(year, month, 1)
         except ValueError:
             errors.append({"field": "Month", "message": "Choose a month."})
             year = month = None
-        company = branches[0].company if branches else _first_company(request.user)
+        company = branches[0].company if branches else companies_for(request.user).first()
         amount, problem = _amount(data.get("amount"), company)
         if problem:
             errors.append({"field": "Target amount", "message": problem})
@@ -251,9 +292,9 @@ class TargetSaveView(WriteView):
             return _invalid([{"field": error.field, "message": error.message}])
         if not saved:
             return _invalid([{"field": b.name, "message": f"Not saved: {why}."} for b, why in refused])
-        message = f"Target saved for {len(saved)} station{'s' if len(saved) != 1 else ''}."
+        message = f"Target set for {len(saved)} branch{'es' if len(saved) != 1 else ''}."
         if refused:
-            message += " Not saved: " + "; ".join(f"{b.name} ({why})" for b, why in refused) + "."
+            message += " Skipped: " + "; ".join(f"{b.name} ({why})" for b, why in refused) + "."
         return JsonResponse({"ok": True, "message": message, "saved": [t.pk for t in saved],
                              "refused": [{"branch": b.name, "reason": why} for b, why in refused]})
 
@@ -273,7 +314,7 @@ class TargetSaveView(WriteView):
 
 class TargetDeleteView(WriteView):
     model = Target
-    page_code = PAGE
+    page_code = MANAGE
 
     def post(self, request, pk):
         if not self.may("delete"):
@@ -284,7 +325,7 @@ class TargetDeleteView(WriteView):
             services.delete_target(target)
         except services.TargetError as error:
             return _invalid([{"field": error.field, "message": error.message}])
-        return JsonResponse({"ok": True, "message": f"Target for {name} deleted."})
+        return JsonResponse({"ok": True, "message": f"Target for {name} removed."})
 
 
 class TargetPrivilegeView(PrivilegeScreenView):

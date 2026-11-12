@@ -1,0 +1,76 @@
+{% extends "targets/_base.html" %}
+{% load targets %}
+
+{% block screen_title %}{{ branch.name }}{% endblock %}
+{% block crumb %}<a href="{% url 'targets-overview' %}?month={{ month_key }}">Overview</a>
+<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
+<b>{{ branch.name }}</b>{% endblock %}
+{% block heading %}{{ branch.name }}{% endblock %}
+{% block sub %}{{ branch.location.state.name }}{% if status %} · {{ status.label }}{% endif %}{% endblock %}
+
+{% block actions %}
+{% if target and not locked %}
+<div class="scr-row scr-x-head-actions" data-record-id="tgt-record" data-pk="{{ target.pk }}" data-scr-delete-url="{{ delete_url }}" data-scr-noun="Target">
+  <span class="scr-co-name" hidden>{{ branch.name }}, {{ first|date:"F Y" }}</span>
+  {% if can.update or can.delete %}{% include "byky/partials/row_actions.html" with edit_open="target:edit" perm=can %}{% endif %}
+  {{ record|json_script:"tgt-record" }}
+</div>
+{% elif not target and open and can.create and branch.is_active %}
+<button type="button" class="scr-btn scr-btn-primary" data-tgt-set data-branch="{{ branch.pk }}" data-name="{{ branch.name }}" data-month="{{ month_key }}" data-month-label="{{ first|date:'F Y' }}">Set target</button>
+{% endif %}
+{% endblock %}
+
+{% block body %}
+<div class="scr-x-bar">
+  {% include "targets/_stepper.html" with group_label="Month" unit="month" label=first|date:"F Y" %}
+  {% if locked %}<span class="scr-x-status is-idle">Locked</span>{% endif %}
+</div>
+
+{% if target %}
+<div class="scr-card" data-tgt-month data-url="{{ data_url }}">
+  <dl class="scr-x-kpis">
+    <div><dt>Target</dt><dd>{{ figures.amount|amount }}</dd></div>
+    <div><dt>Achieved</dt><dd><span data-tgt="achieved">{{ figures.achieved|amount }}</span><small data-tgt="percent">{{ figures.percent }}%</small></dd></div>
+    <div><dt>Remaining</dt><dd data-tgt="remaining">{{ figures.remaining|amount }}</dd></div>
+    <div><dt>Today's target</dt><dd>{% if today %}<span data-tgt="today_target">{{ today.target|amount }}</span>{% else %}—{% endif %}<small><span data-tgt="days_left">{{ days_left }}</span> day{{ days_left|pluralize }} left</small></dd></div>
+  </dl>
+  <div class="scr-x-month-progress">
+    <span class="scr-x-track is-wide"><i data-tgt="bar" style="width:{{ figures.percent|bar }}%"></i></span>
+  </div>
+  {% if target.remarks %}<p class="scr-x-remarks">{{ target.remarks }}</p>{% endif %}
+</div>
+
+<div class="scr-card">
+  <div class="scr-table-scroll">
+    <table class="scr-x-table scr-x-days">
+      <colgroup><col /><col class="w-num" /><col class="w-num" /><col class="w-num" /><col class="w-status" /></colgroup>
+      <thead>
+        <tr>
+          <th scope="col">Date</th>
+          <th scope="col" class="num">Day's target (AED)</th>
+          <th scope="col" class="num">Achieved</th>
+          <th scope="col" class="num">Difference</th>
+          <th scope="col">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in days %}
+        <tr class="is-{{ d.status.key }}{% if d.date == business_today %} is-today{% endif %}" data-tgt-day="{{ d.date|date:'Y-m-d' }}">
+          <td data-label="Date">{{ d.date|date:"D j M" }}</td>
+          <td data-label="Day's target" class="num">{{ d.target|amount }}</td>
+          <td data-label="Achieved" class="num" data-col="achieved">{{ d.achieved|amount }}</td>
+          <td data-label="Difference" class="num{% if d.gap is not None and d.gap < 0 %} is-neg{% endif %}" data-col="gap">{{ d.gap|signed }}</td>
+          <td data-label="Status" data-col="status">{% include "targets/_status.html" with s=d.status %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<p class="scr-x-note">Even split: {{ days.0.planned|amount }} a day. A day's target is fixed when the day starts.</p>
+{% else %}
+<div class="scr-card">
+  {% include "targets/_empty.html" with title="No target for this month" text="Set one to see this branch's daily progress." hide_link=True %}
+</div>
+{% endif %}
+{% endblock %}

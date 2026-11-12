@@ -223,8 +223,42 @@ def test_the_month_view_figures(world, staff, sale):
     view = services.month_view(make_target(world, staff), now=NOW)
 
     assert (view["figures"].achieved, view["figures"].remaining, view["days_left"]) == (D("800"), D("29200"), 21)
-    assert view["today"]["achieved"] == D("200") and view["days"][0]["state"] == "missed"
-    assert view["days"][15]["state"] == "future"
+    assert view["today"]["achieved"] == D("200") and view["today"]["status"]["key"] == "live"
+    assert view["days"][0]["status"]["label"] == "Short" and view["days"][15]["status"]["label"] == "Upcoming"
+    assert view["status"]["label"] == "Behind"                    # 800 < 9 days x 1,000 planned
+
+
+def test_month_statuses(world, staff, sale):
+    target = make_target(world, staff, amount="3000")
+    assert services.month_view(target, now=NOW)["status"]["label"] == "Behind"
+    sale(local(3), "1000")                                       # 1,000 >= 9 days x 100 planned
+    assert services.month_view(target, now=NOW)["status"]["label"] == "On track"
+    sale(local(4), "2500")
+    assert services.month_view(target, now=NOW)["status"]["label"] == "Met"
+    december = datetime.datetime(2026, 12, 2, 10, tzinfo=DUBAI)
+    assert services.month_view(target, now=december)["status"]["label"] == "Met"
+
+
+def test_an_ended_month_below_target_is_missed(world, staff, sale):
+    target = make_target(world, staff, amount="3000")
+    december = datetime.datetime(2026, 12, 2, 10, tzinfo=DUBAI)
+    assert services.month_view(target, now=december)["status"]["label"] == "Missed"
+
+
+def test_overview_and_daily_totals(world, staff, sale):
+    sale(local(10), "700")
+    make_target(world, staff)
+    branches = [world["adc1"]]
+
+    view = services.overview(branches, 2026, 11, now=NOW)
+    day = services.daily(branches, datetime.date(2026, 11, 10), now=NOW)
+
+    assert (view["totals"]["target"], view["totals"]["achieved"], view["totals"]["stations"]) == (
+        D("30000"), D("700"), 1)
+    assert view["rows"][0]["today"] == D("1428.57")              # 30,000 over the 21 days left
+    assert (day["totals"]["target"], day["totals"]["achieved"], day["totals"]["gap"]) == (
+        D("1428.57"), D("700"), D("-728.57"))
+    assert day["rows"][0]["status"]["label"] == "In progress"
 
 
 # -- Screens ---------------------------------------------------------------------------------
@@ -240,17 +274,19 @@ def _current_target(world, staff):
 def test_the_screens_open(client_in, world, staff):
     target = _current_target(world, staff)
     first = target.period_start
-    urls = [reverse("targets-list"), reverse("targets-branch", args=[world["adc1"].pk]),
-            reverse("targets-month", args=[world["adc1"].pk, first.year, first.month]),
-            reverse("targets-month", args=[world["adc1"].pk, first.year + 1, first.month]),
+    urls = [reverse("targets-overview"), reverse("targets-overview") + "?month=1999-13",
+            reverse("targets-daily"), reverse("targets-daily") + "?date=nope",
+            reverse("targets-manage"), reverse("targets-manage") + "?month=2026-01",
+            reverse("targets-station", args=[world["adc1"].pk, first.year, first.month]),
+            reverse("targets-station", args=[world["adc1"].pk, first.year + 1, first.month]),
             reverse("targets-privileges"), reverse("targets-month-data", args=[target.pk])]
     for url in urls:
         assert client_in.get(url).status_code == 200, url
-    assert client_in.get(reverse("targets-month-data", args=[target.pk])).json()["amount"] == "9000.00"
+    assert client_in.get(reverse("targets-month-data", args=[target.pk])).json()["amount"] == "9,000.00"
 
 
 def test_another_companys_station_is_not_reachable(client_in, world):
-    assert client_in.get(reverse("targets-branch", args=[world["theirs"].pk])).status_code == 404
+    assert client_in.get(reverse("targets-station", args=[world["theirs"].pk, 2026, 11])).status_code == 404
 
 
 def _save(client, **data):
@@ -261,7 +297,7 @@ def test_add_edit_and_delete_from_the_drawer(client_in, world):
     today = services.today_for(world["company"])
     month = f"{today:%Y-%m}"
 
-    first = _save(client_in, branches=[str(world["adc1"].pk)], month=month, amount="12000", remarks="")
+    first = _save(client_in, branches=str(world["adc1"].pk), month=month, amount="12,000", remarks="")
     again = _save(client_in, branches=[str(world["adc1"].pk)], month=month, amount="12000")
     target = Target.objects.get(branch=world["adc1"])
     edit = _save(client_in, pk=target.pk, amount="15000.50", remarks="Eid")
@@ -281,7 +317,8 @@ def test_a_role_without_targets_is_refused(client, world):
                              allowed_channels=[Channel.WEB])
     client.post("/login/", {"username": "no.targets", "password": PASSWORD})
 
-    assert client.get(reverse("targets-list")).status_code == 403
+    assert client.get(reverse("targets-overview")).status_code == 403
+    assert client.get(reverse("targets-manage")).status_code == 403
     assert _save(client, branches=[str(world["adc1"].pk)], month="2026-12", amount="1").status_code == 403
 
 

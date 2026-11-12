@@ -85,7 +85,7 @@ def _check_bikes(reader, vehicle_ids, now):
         raise CalibrationError("Pick at least one bike parked on the boundary.", "Bikes")
     bikes = list(choosable(reader).filter(pk__in=wanted))
     if len(bikes) != len(wanted):
-        raise CalibrationError("Every bike must have an RFID tag and be at this reader's station.", "Bikes")
+        raise CalibrationError("Every bike must have an RFID tag and be at this reader's branch.", "Bikes")
 
     ids = [b.pk for b in bikes]
     rented = active_rentals(ids)

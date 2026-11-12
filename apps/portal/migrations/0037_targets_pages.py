@@ -1,7 +1,8 @@
 """The registry re-applied: the Targets module (design/08-targets.md §7).
 
-Granted to the roles that hold Company Configurations: read there gives read
-here; update there gives create, update and delete. Admins adjust it on the
+Granted to the roles that hold Company Configurations: read there gives read on
+every Targets page; update there also gives Set Targets' create, update and
+delete. Admins adjust it on the
 module's Privileges screen.
 """
 
@@ -9,7 +10,7 @@ from django.db import migrations
 
 from apps.portal.page_sync import sync
 
-NEW = ("targets.list", "targets.privileges")
+NEW = ("targets.overview", "targets.daily", "targets.manage", "targets.privileges")
 
 
 def apply_registry(apps, schema_editor):

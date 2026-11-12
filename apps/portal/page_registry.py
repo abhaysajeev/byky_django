@@ -191,8 +191,11 @@ PAGES = [
     ("tracking.settings", "tracking", "Tracking Settings", "tracking-settings", ["read", "update"], 6, False),
     ("tracking.privileges", "tracking", "Privileges", "tracking-privileges", ["read", "update"], 9, False),
 
-    # Station targets (design/08-targets.md): one page; its branch and month views share it.
-    ("targets.list", "targets", "Targets", "targets-list", ["create", "read", "update", "delete"], 1, False),
+    # Station targets (design/08-targets.md §6). A station's month detail opens from Overview
+    # and shares its read right; setting, editing and removing need Set Targets.
+    ("targets.overview", "targets", "Overview", "targets-overview", ["read"], 1, False),
+    ("targets.daily", "targets", "Daily Progress", "targets-daily", ["read"], 2, False),
+    ("targets.manage", "targets", "Set Targets", "targets-manage", ["create", "read", "update", "delete"], 3, False),
     ("targets.privileges", "targets", "Privileges", "targets-privileges", ["read", "update"], 9, False),
 
     # The client's web reports (apps/reports): read to see, print to export to Excel.
