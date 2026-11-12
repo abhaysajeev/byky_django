@@ -44,6 +44,63 @@ def branch_details(branch):
     }
 
 
+def _money_text(value):
+    return f"{value:.2f}" if value is not None else None
+
+
+def company_details(company, now=None):
+    """Every field of `company` the web's Company screen holds, except the
+    logo, for the operator app (owner, 13 Nov 2026). The company is the one
+    the signed-in tablet is registered to (apps/company/api.py::
+    CompanyDetailsView), never a value the app sends. Empty text stays "",
+    an unset date stays None, so the shape never changes."""
+    from core.timezones import utc_offset_string, zone_for
+
+    zone = zone_for(company)
+    changed = company.modified_on or company.created_on
+    return {
+        "id": company.pk,
+        "code": company.short_code,
+        "name": company.name,
+        "timezone": company.timezone,
+        "utc_offset": utc_offset_string(zone, now),
+        "ceo_name": company.ceo_name,
+        "dto_name": company.dto_name,
+        "date_of_commissioning": company.date_of_commissioning.isoformat() if company.date_of_commissioning else None,
+        "address": {
+            "address": company.address,
+            "city": company.city,
+            "state_id": company.state_id,
+            "state": company.state.name,
+            "country_id": company.country_id,
+            "country": company.country.name,
+            "zip_code": company.zip_code,
+        },
+        "registration": {
+            "incorporation_certificate_number": company.incorporation_certificate_number,
+            "business_certificate_number": company.business_certificate_number,
+            "income_tax_number": company.income_tax_number,
+            "tin": company.tin,
+            "cst": company.cst,
+            "service_tax_number": company.service_tax_number,
+        },
+        "tax": {
+            "tax_percentage": _money_text(company.tax_percentage),
+            "tax_type": company.tax_type,
+            "discount_type": company.discount_type,
+        },
+        "contact": {
+            "contact_person": company.contact_person,
+            "phone_number": company.phone_number,
+            "fax_number": company.fax_number,
+            "email": company.email,
+            "website": company.website,
+        },
+        # moves whenever the company is saved on the web
+        "version": changed.astimezone(zone).strftime("%Y-%m-%d %H:%M:%S") if changed else None,
+    }
+
+
 def device_payment_modes(company):
     """This company's active, approved payment modes, for the operator app's
     checkout screen. Legacy SfaPaymentMode: only 2 of its 5 rows are
