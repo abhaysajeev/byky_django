@@ -9,6 +9,10 @@ class PaymentModesRequest(serializers.Serializer):
     rows, always sent whole."""
 
 
+class DialCodesRequest(serializers.Serializer):
+    """No fields -- the whole list is always sent."""
+
+
 class BranchDetailsRequest(serializers.Serializer):
     """No fields -- the branch is the session's own (session_station), the
     same as PaymentModesRequest. Deliberately authenticated only: a device

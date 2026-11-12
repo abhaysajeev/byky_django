@@ -39,6 +39,8 @@ class IssueKind(models.TextChoices):
     TEST_RIDE_START = "test_ride_start", "Test ride start"
     TEST_RIDE_END = "test_ride_end", "Test ride end"
     TEST_RIDE_CANCEL = "test_ride_cancel", "Test ride cancel"
+    # Owner, 7 Nov 2026: a booking naming it by customer_sync_id waits behind it.
+    CUSTOMER_CREATE = "customer_create", "Customer create"
 
 
 class IssueReason(models.TextChoices):

@@ -79,6 +79,120 @@
     refreshEmpty();
   });
 
+  /* -- primary dial codes: search, add as a chip, remove (owner, 12 Nov 2026) -- */
+  var dialOptions = json('config-dial-codes') || [];
+  var chosenIso = json('config-primary-dial-codes') || [];
+  var chips = root.querySelector('[data-dial-chips]');
+  var dialEmpty = root.querySelector('[data-dial-empty]');
+  var picker = root.querySelector('[data-dial-picker]');
+  var canEdit = !!root.dataset.canUpdate;
+  var byIso = {};
+  dialOptions.forEach(function (d) { byIso[d.iso2] = d; });
+
+  function chosen() {
+    return chips ? Array.prototype.map.call(chips.querySelectorAll('[data-iso]'), function (c) { return c.dataset.iso; }) : [];
+  }
+
+  function renumber() {
+    if (!chips) return;
+    chips.querySelectorAll('[data-iso]').forEach(function (chip, n) {
+      chip.querySelector('.scr-dial-pos').textContent = String(n + 1);
+    });
+    if (dialEmpty) dialEmpty.hidden = chips.children.length > 0;
+  }
+
+  function addChip(d) {
+    var chip = document.createElement('span');
+    chip.className = 'scr-dial-chip';
+    chip.dataset.iso = d.iso2;
+    var pos = document.createElement('span');
+    pos.className = 'scr-dial-pos';
+    chip.appendChild(pos);
+    chip.appendChild(document.createTextNode(d.flag + ' ' + d.country + ' '));
+    var num = document.createElement('span');
+    num.className = 'scr-dial-num';
+    num.textContent = '+' + d.dial_code;
+    chip.appendChild(num);
+    if (canEdit) {
+      var x = document.createElement('button');
+      x.type = 'button';
+      x.setAttribute('aria-label', 'Remove ' + d.country);
+      x.textContent = '×';
+      x.addEventListener('click', function () { chip.remove(); renumber(); });
+      chip.appendChild(x);
+    }
+    chips.appendChild(chip);
+    renumber();
+  }
+
+  if (chips) chosenIso.forEach(function (iso) { if (byIso[iso]) addChip(byIso[iso]); });
+  renumber();
+
+  if (picker) {
+    var input = picker.querySelector('input');
+    var list = picker.querySelector('.scr-combo-list');
+
+    var matches = function () {
+      var q = input.value.trim().toLowerCase().replace(/^\+/, '');
+      var taken = chosen();
+      return dialOptions.filter(function (d) {
+        if (taken.indexOf(d.iso2) !== -1) return false;
+        if (!q) return true;
+        return d.country.toLowerCase().indexOf(q) !== -1 || d.dial_code.indexOf(q) === 0
+          || d.iso2.toLowerCase() === q;
+      }).slice(0, 30);
+    };
+
+    // Add it, empty the search and close the list: the chip shows what was picked.
+    // Typing again (or clicking the box) opens it for the next one.
+    var pick = function (d) {
+      addChip(d);
+      input.value = '';
+      list.hidden = true;
+    };
+
+    var draw = function () {
+      list.innerHTML = '';
+      matches().forEach(function (d) {
+        var item = document.createElement('div');
+        item.className = 'scr-combo-item';
+        var main = document.createElement('span');
+        main.className = 'scr-combo-item-main';
+        main.textContent = d.flag + ' ' + d.country;
+        var sub = document.createElement('span');
+        sub.className = 'scr-combo-item-sub';
+        sub.textContent = '+' + d.dial_code;
+        item.appendChild(main);
+        item.appendChild(sub);
+        item.addEventListener('mousedown', function (e) {
+          e.preventDefault();
+          pick(d);
+        });
+        list.appendChild(item);
+      });
+      list.hidden = !list.children.length;
+    };
+
+    input.addEventListener('input', draw);
+    input.addEventListener('click', draw);
+    input.addEventListener('blur', function () { list.hidden = true; });
+    input.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      var first = matches()[0];
+      if (first) pick(first);
+    });
+  }
+
+  /* -- Save: a spinner while it saves, nothing else on success (owner, 12 Nov 2026) -- */
+  var MIN_BUSY_MS = 400;
+
+  function setButton(btn, saving) {
+    btn.classList.toggle('is-saving', saving);
+    btn.disabled = saving;
+    btn.setAttribute('aria-busy', saving ? 'true' : 'false');
+  }
+
   var save = root.querySelector('[data-config-save]');
   if (save) save.addEventListener('click', function () {
     if (save.disabled || !crud().post) return;
@@ -87,22 +201,28 @@
       return { country: v('country'), decimal_places: v('decimal_places'), round_off_mode: v('round_off_mode'),
                round_off_step: v('round_off_step') };
     });
-    save.disabled = true;
-    crud().post(root.dataset.saveUrl, {
+    setButton(save, true);
+    var started = Date.now();
+    var payload = {
       company: root.dataset.company,
       report_day_start: root.querySelector('[data-config-day-start]').value,
       money: money
-    }).then(function (res) {
-      save.disabled = false;
-      var data = res.body || {};
-      if (data.ok) {
-        if (crud().toast) crud().toast(data.message || 'Saved.');
-        return;
-      }
-      if (crud().showMessages) crud().showMessages({ title: 'Could not save', items: data.errors || [] });
+    };
+    if (chips) payload.primary_dial_codes = chosen();
+    // never flash: the spinner stays at least MIN_BUSY_MS
+    function after(fn) { setTimeout(fn, Math.max(0, MIN_BUSY_MS - (Date.now() - started))); }
+    crud().post(root.dataset.saveUrl, payload).then(function (res) {
+      after(function () {
+        var data = res.body || {};
+        setButton(save, false);
+        if (data.ok) return;
+        if (crud().showMessages) crud().showMessages({ title: 'Could not save', items: data.errors || [] });
+      });
     }).catch(function () {
-      save.disabled = false;
-      if (crud().showMessages) crud().showMessages({ title: 'Could not save', items: [{ field: '', message: 'Could not reach the server. Try again.' }] });
+      after(function () {
+        setButton(save, false);
+        if (crud().showMessages) crud().showMessages({ title: 'Could not save', items: [{ field: '', message: 'Could not reach the server. Try again.' }] });
+      });
     });
   });
 })();

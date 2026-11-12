@@ -32,8 +32,6 @@ from apps.rental.models import (
     OrderEvent,
     OrderItem,
     OrderItemStatus,
-    OrderRequestKind,
-    OrderRequestStatus,
     OrderStatus,
     Payment,
     PaymentKind,
@@ -116,6 +114,8 @@ def record_payment(order, *, payment_id, kind, mode, amount, paid_at, device=Non
 
 ORDER_ERRORS = {
     "order_not_synced": (409, "That order has not reached the server yet.", True),
+    # A booking naming its customer by customer_sync_id before the create arrived.
+    "customer_not_synced": (409, "The customer is not on the server yet.", True),
     "sync_id_conflict": (409, "That sync_id is already used for something else.", False),
     "order_no_used": (409, "That order number is already used.", False),
     "vehicle_already_rented": (409, "A vehicle in this order is already on an active rental.", False),
@@ -186,8 +186,6 @@ ORDER_ERRORS = {
     "invoice_void": (409, "This invoice was cancelled -- it cannot be printed.", False),
     "cancel_request_pending": (409, "A cancel request is already waiting for this order.", False),
     "cancel_approved": (409, "This order's cancel is already approved.", False),
-    "cancel_requested": (409, "A cancel request is waiting for a manager's decision -- the order cannot be "
-                              "settled until it is decided.", False),
     "request_not_approved": (409, "That request is not approved.", False),
     "request_used": (409, "That reprint has already been printed.", False),
     "unknown_complimentary_request": (404, "That complimentary request is not on this order.", False),
@@ -370,7 +368,7 @@ RECENT_INVOICES = 5
 
 
 def _invoices():
-    return Invoice.objects.select_related("order", "issued_by").prefetch_related("items")
+    return Invoice.objects.select_related("order", "issued_by").prefetch_related("items__order_item")
 
 
 def recent_invoices(branch, limit=RECENT_INVOICES):
@@ -604,9 +602,14 @@ def _book(session, values, reply_for):
     if Order.objects.filter(company=company, order_no=values["order_no"]).exists():
         raise OrderRefused("order_no_used")
 
-    customer = Customer.objects.filter(pk=values["customer_id"], company=company).first()
-    if customer is None:
-        raise OrderRefused("unknown_customer")
+    if values.get("customer_sync_id") is not None:
+        customer = Customer.objects.filter(sync_id=values["customer_sync_id"], company=company).first()
+        if customer is None:
+            raise OrderRefused("customer_not_synced")
+    else:
+        customer = Customer.objects.filter(pk=values["customer_id"], company=company).first()
+        if customer is None:
+            raise OrderRefused("unknown_customer")
 
     # A rental after a test ride names it: the ride is closed as rented and
     # linked to this order (legacy Save_Order_Booking:437-482, @TestNo).
@@ -695,7 +698,7 @@ def _new_lines(order, items_input, refs, user, replaced_item=None):
         OrderItem(
             id=item["sync_id"], order=order, vehicle=vehicles[item["vehicle_id"]],
             fare=fares.get(item.get("fare_id")), offer=offers.get(item.get("offer_id")),
-            fare_details=item.get("fare_details"),
+            fare_details=item.get("fare_details"), package_details=item.get("package_details"),
             package_minutes=item["package_minutes"], start_time=item["start_time"],
             expected_end_time=item["expected_end_time"], base_fare=item["base_fare"],
             replaced_item=replaced_item, created_by=user, modified_by=user,
@@ -933,9 +936,9 @@ def settle_order(session, values, request_data, reply_for):
 
     def apply():
         order = _open_order(session, values["order_id"])
-        # A cancel waiting for a manager: the order is not billed meanwhile.
-        if order.requests.filter(kind=OrderRequestKind.CANCEL, status=OrderRequestStatus.PENDING).exists():
-            raise OrderRefused("cancel_requested")
+        # A cancel still waiting for a manager does not stop the bill (owner,
+        # 11 Nov 2026): the station has decided to charge, and the request is
+        # closed with the other waiting ones (requests.close_at_settle).
         items = list(order.items.select_related("vehicle__vehicle_type"))
         if any(item.status == OrderItemStatus.ACTIVE for item in items):
             raise OrderRefused("items_still_out")

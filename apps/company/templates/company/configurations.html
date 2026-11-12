@@ -21,6 +21,8 @@ apps/company/configurations.py; one save posts the whole page.
 {% endcomment %}
 {{ steps|json_script:"config-steps" }}
 {{ countries|json_script:"config-countries" }}
+{{ dial_code_options|json_script:"config-dial-codes" }}
+{{ primary_dial_codes|json_script:"config-primary-dial-codes" }}
 <div class="scr" data-config data-save-url="{{ save_url }}" data-company="{{ company.pk|default:'' }}"
      data-can-update="{% if perm.update %}1{% endif %}">
 
@@ -106,11 +108,31 @@ apps/company/configurations.py; one save posts the whole page.
     <div class="scr-empty" data-config-empty{% if money_rows %} hidden{% endif %}><div><div class="scr-empty-title">No countries yet: 3 decimals, upward, 0.250 apply</div></div></div>
   </div>
 
+  <div class="scr-card">
+    <div class="scr-form-head">
+      <div>
+        <div class="scr-form-title-row"><h2 class="scr-form-title">Primary dial codes</h2></div>
+        <p class="scr-form-sub">Shown first on the tablets' phone field, in this order. Every other country follows, A–Z.</p>
+      </div>
+    </div>
+    <div class="scr-form-body">
+      {% if perm.update %}
+      <div class="scr-combo scr-dial-picker" data-dial-picker>
+        <input type="text" class="scr-input scr-combo-input" placeholder="Search country or dial code" aria-label="Search country or dial code" autocomplete="off">
+        <div class="scr-combo-list" hidden></div>
+      </div>
+      {% endif %}
+      <div class="scr-dial-chips" data-dial-chips aria-label="Primary dial codes"></div>
+      <p class="scr-help" data-dial-empty hidden>None yet: every country is listed A–Z.</p>
+    </div>
+  </div>
+
   {% if perm.update %}
   <div class="scr-form-foot">
-    <div class="scr-form-actions"><button type="button" class="scr-btn-primary" data-config-save>Save</button></div>
+    <div class="scr-form-actions"><button type="button" class="scr-btn-primary" data-config-save><span class="scr-btn-spin" aria-hidden="true"></span><span>Save</span></button></div>
   </div>
   {% endif %}
   {% endif %}
 </div>
+{% include "byky/partials/message_modal.html" %}
 {% endblock %}

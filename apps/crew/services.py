@@ -934,29 +934,50 @@ def _in_shift(row, now):
             or (row.shift2_start is not None and row.shift2_start <= now <= row.shift2_end))
 
 
+def _not_cashier(role):
+    """The refusal for someone rostered here, but not as a Cashier."""
+    if role:
+        return ("not_rostered_as_cashier",
+                f"You are rostered as {RosterCategory(role).label} today. Only a Cashier can sign in on this tablet.")
+    return "not_rostered_as_cashier", "You are not rostered as a Cashier today. Only a Cashier can sign in on this tablet."
+
+
 def operator_roster_refusal(employee, branch, now=None):
     """Why this employee may not sign in on a tablet at `branch` now, or None
     (owner, 28 Oct 2026). Every operator login is checked, whatever the
     designation -- managers and admins too (owner, 7 Nov 2026; it was Cashier /
     Labour only): today's duty roster -- the company's business day -- must have
-    them Working at this station, and now must fall inside shift 1 or shift 2,
-    exact times. Yesterday's Working row counts too when its shift runs past
-    midnight and covers now. Returns (code, message).
+    them Working **as Cashier** (owner, 11 Nov 2026) at this station, and now
+    must fall inside shift 1 or shift 2, exact times. Yesterday's Working row
+    counts too when its shift runs past midnight and covers now; its own role
+    is the one that counts then. Returns (code, message).
 
     New: legacy had no duty roster (Service_Operator_Login took the station
     from the device mapping alone)."""
     if employee is None:
         return None
+    from apps.crew.duty import role_of  # it imports this module
+
     now = now or timezone.now()
     company = employee.company
     zone = zone_for(company)
     today = business_date_for(company, now)
     rows = {row.date: row for row in DutyRoster.objects.filter(
-        employee=employee, date__in=[today, today - datetime.timedelta(days=1)]).select_related("branch")}
+        employee=employee, date__in=[today, today - datetime.timedelta(days=1)]
+    ).select_related("branch", "employee__designation")}
+    wrong_role = None
     for row in rows.values():
         if row.day_type == DutyRosterDayType.WORKING and row.branch_id == branch.pk and _in_shift(row, now):
-            return None
+            if role_of(row) == RosterCategory.CASHIER:
+                return None
+            wrong_role = row
     row = rows.get(today)
+    # Before the shift-time message: more waiting will not help a Labour day.
+    if (wrong_role is None and row is not None and row.day_type == DutyRosterDayType.WORKING
+            and row.branch_id == branch.pk and role_of(row) != RosterCategory.CASHIER):
+        wrong_role = row
+    if wrong_role is not None:
+        return _not_cashier(role_of(wrong_role))
     if row is None:
         return "duty_roster_not_found", "Duty Roster not found today."
     if row.day_type != DutyRosterDayType.WORKING:
