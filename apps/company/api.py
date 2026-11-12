@@ -7,6 +7,8 @@ modes, for the checkout screen. Call it at login and whenever the app
 refreshes; each answer replaces what the app holds.
 POST /api/v1/{app}/dial-codes: the countries for a mobile number's code, for
 the operator app (apps/company/dial_codes.py).
+POST /api/v1/{app}/company: the company the tablet is registered to, every
+field except the logo (apps/company/services.py::company_details).
 """
 
 from drf_spectacular.utils import extend_schema
@@ -15,9 +17,14 @@ from rest_framework.views import APIView
 
 from apps.company import dial_codes, services
 from apps.company.models import DialCode
-from apps.company.serializers import BranchDetailsRequest, DialCodesRequest, PaymentModesRequest
+from apps.company.serializers import (
+    BranchDetailsRequest,
+    CompanyDetailsRequest,
+    DialCodesRequest,
+    PaymentModesRequest,
+)
 from apps.portal.authentication import AppJWTAuthentication
-from core.api import envelope, request_parts, session_station
+from core.api import envelope, other_app, request_parts, session_station
 from core.enums import Channel
 from core.schema import SERVER_ERROR, envelope_request, envelope_responses
 
@@ -197,3 +204,80 @@ class DialCodesView(APIView):
         form = DialCodesRequest(data=request_data)
         form.is_valid(raise_exception=True)
         return envelope("ok", "Dial codes.", dial_codes.device_dial_codes(DialCode, branch.company))
+
+
+# -- The company -------------------------------------------------------------------------
+
+_COMPANY_SAMPLE = {"company": {
+    "id": 1, "code": "BYKY", "name": "BY KY SPORT & LEISURE EQUIPMENT RENTAL & TRADING LLC",
+    "timezone": "Asia/Dubai", "utc_offset": "+04:00",
+    "ceo_name": "Ahmed Al Mansoori", "dto_name": "", "date_of_commissioning": "2019-03-01",
+    "address": {"address": "Office 12, Al Quoz Industrial 3", "city": "Dubai", "state_id": 2, "state": "Dubai",
+                "country_id": 1, "country": "United Arab Emirates", "zip_code": ""},
+    "registration": {"incorporation_certificate_number": "", "business_certificate_number": "CN-1234567",
+                     "income_tax_number": "100123456700003", "tin": "", "cst": "", "service_tax_number": ""},
+    "tax": {"tax_percentage": "5.00", "tax_type": "included", "discount_type": "before_tax"},
+    "contact": {"contact_person": "Mohammed", "phone_number": "+97142345678", "fax_number": "",
+                "email": "ops@byky.ae", "website": "https://byky.ae"},
+    "version": "2026-11-12 18:40:11",
+}}
+
+_COMPANY_DESCRIPTION = """
+The company this tablet is registered to: every field of the web's Company
+screen except the logo. Call it at login and whenever the app refreshes; each
+answer replaces what the app holds. `version` moves whenever the company is
+saved on the web, so an unchanged `version` means nothing changed.
+
+**Request** (`request_data`, may be empty or left out): nothing to send. The
+company is always the registered device's own, never a value the app sends.
+
+**Reply**, grouped as on the web:
+- `income_tax_number` is the tax registration number printed on invoices
+  (the TRN in the UAE).
+- `tax.tax_percentage` is a 2-decimal string. `tax.tax_type`: `included`
+  (fares already contain the tax) or `excluded` (tax is added on top).
+  `tax.discount_type`: `before_tax` or `after_tax`.
+- `utc_offset` is the company timezone's offset now, e.g. `+04:00`.
+- Empty text comes back as `""`; an unset `date_of_commissioning` as null.
+  No field is ever left out.
+"""
+
+
+class CompanyDetailsView(APIView):
+    """POST /api/v1/{app}/company -- operator app only."""
+
+    authentication_classes = [AppJWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Operator Company"],
+        summary="The company this tablet is registered to",
+        description=_COMPANY_DESCRIPTION,
+        request=envelope_request("CompanyDetailsEnvelope", CompanyDetailsRequest, request_data_required=False),
+        responses=envelope_responses(
+            (200, "ok", "Company.", _COMPANY_SAMPLE),
+            (401, "not_authenticated", "Sign in first.", {}),
+            (403, "wrong_channel", "Not allowed on this app.", {}),
+            (409, "device_not_registered", "This device is not registered.", {}),
+            (409, "company_inactive", "This company is switched off.", {}),
+            SERVER_ERROR,
+        ),
+    )
+    def post(self, request, app):
+        if app != Channel.OPERATOR:
+            return envelope("wrong_channel", "Not allowed on this app.", http_status=403)
+        refused = other_app(request, app)
+        if refused:
+            return refused
+        device = getattr(request.auth, "device", None)
+        if device is None or device.company_id is None:
+            return envelope("device_not_registered", "This device is not registered.", http_status=409)
+
+        _, request_data = request_parts(request)
+        form = CompanyDetailsRequest(data=request_data)
+        form.is_valid(raise_exception=True)
+
+        company = type(device.company).objects.select_related("state", "country").get(pk=device.company_id)
+        if not company.is_active:
+            return envelope("company_inactive", "This company is switched off.", http_status=409)
+        return envelope("ok", "Company.", {"company": services.company_details(company)})
