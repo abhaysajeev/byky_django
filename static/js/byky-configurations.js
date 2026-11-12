@@ -143,6 +143,14 @@
       }).slice(0, 30);
     };
 
+    // Add it, empty the search and close the list: the chip shows what was picked.
+    // Typing again (or clicking the box) opens it for the next one.
+    var pick = function (d) {
+      addChip(d);
+      input.value = '';
+      list.hidden = true;
+    };
+
     var draw = function () {
       list.innerHTML = '';
       matches().forEach(function (d) {
@@ -158,9 +166,7 @@
         item.appendChild(sub);
         item.addEventListener('mousedown', function (e) {
           e.preventDefault();
-          addChip(d);
-          input.value = '';
-          draw();
+          pick(d);
         });
         list.appendChild(item);
       });
@@ -168,27 +174,23 @@
     };
 
     input.addEventListener('input', draw);
-    input.addEventListener('focus', draw);
+    input.addEventListener('click', draw);
     input.addEventListener('blur', function () { list.hidden = true; });
     input.addEventListener('keydown', function (e) {
       if (e.key !== 'Enter') return;
       e.preventDefault();
       var first = matches()[0];
-      if (first) { addChip(first); input.value = ''; draw(); }
+      if (first) pick(first);
     });
   }
 
-  /* -- Save, with a visible state: spinner, then "Saved" ------------------------- */
+  /* -- Save: a spinner while it saves, nothing else on success (owner, 12 Nov 2026) -- */
   var MIN_BUSY_MS = 400;
-  var SAVED_MS = 2000;
 
-  function setButton(btn, state) {
-    var label = btn.querySelector('[data-config-save-label]');
-    btn.classList.toggle('is-saving', state === 'saving');
-    btn.classList.toggle('is-saved', state === 'saved');
-    btn.disabled = state === 'saving';
-    btn.setAttribute('aria-busy', state === 'saving' ? 'true' : 'false');
-    if (label) label.textContent = state === 'saving' ? 'Saving…' : state === 'saved' ? 'Saved ✓' : 'Save';
+  function setButton(btn, saving) {
+    btn.classList.toggle('is-saving', saving);
+    btn.disabled = saving;
+    btn.setAttribute('aria-busy', saving ? 'true' : 'false');
   }
 
   var save = root.querySelector('[data-config-save]');
@@ -199,7 +201,7 @@
       return { country: v('country'), decimal_places: v('decimal_places'), round_off_mode: v('round_off_mode'),
                round_off_step: v('round_off_step') };
     });
-    setButton(save, 'saving');
+    setButton(save, true);
     var started = Date.now();
     var payload = {
       company: root.dataset.company,
@@ -212,18 +214,13 @@
     crud().post(root.dataset.saveUrl, payload).then(function (res) {
       after(function () {
         var data = res.body || {};
-        if (data.ok) {
-          setButton(save, 'saved');
-          if (crud().toast) crud().toast(data.message || 'Saved.');
-          setTimeout(function () { setButton(save, 'idle'); }, SAVED_MS);
-          return;
-        }
-        setButton(save, 'idle');
+        setButton(save, false);
+        if (data.ok) return;
         if (crud().showMessages) crud().showMessages({ title: 'Could not save', items: data.errors || [] });
       });
     }).catch(function () {
       after(function () {
-        setButton(save, 'idle');
+        setButton(save, false);
         if (crud().showMessages) crud().showMessages({ title: 'Could not save', items: [{ field: '', message: 'Could not reach the server. Try again.' }] });
       });
     });
