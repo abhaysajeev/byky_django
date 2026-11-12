@@ -6,12 +6,10 @@
 {% block page_css %}
 {{ block.super }}
 <link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
-<link rel="stylesheet" href="{% static 'vendor/libs/sweetalert2/sweetalert2.css' %}" />
 {% endblock page_css %}
 
 {% block page_js %}
 {{ block.super }}
-<script src="{% static 'vendor/libs/sweetalert2/sweetalert2.js' %}"></script>
 <script src="{% static 'js/byky-screen.js' %}"></script>
 <script src="{% static 'js/byky-configurations.js' %}"></script>
 {% endblock page_js %}
@@ -131,7 +129,7 @@ apps/company/configurations.py; one save posts the whole page.
 
   {% if perm.update %}
   <div class="scr-form-foot">
-    <div class="scr-form-actions"><button type="button" class="scr-btn-primary" data-config-save><span class="scr-btn-spin" aria-hidden="true"></span><span data-config-save-label>Save</span></button></div>
+    <div class="scr-form-actions"><button type="button" class="scr-btn-primary" data-config-save><span class="scr-btn-spin" aria-hidden="true"></span><span>Save</span></button></div>
   </div>
   {% endif %}
   {% endif %}

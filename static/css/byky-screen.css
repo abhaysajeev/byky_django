@@ -1458,6 +1458,6 @@ body.scr-live-wall .scr-live-th-group { display: none; }
 /* A button busy saving: spinner, label swapped by the page's script. */
 .scr-btn-spin { display: none; width: 14px; height: 14px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: scrBtnSpin 0.7s linear infinite; vertical-align: -2px; margin-right: 8px; }
 .is-saving .scr-btn-spin { display: inline-block; }
-.is-saving, .is-saved { pointer-events: none; }
+.is-saving { pointer-events: none; }
 @keyframes scrBtnSpin { to { transform: rotate(360deg); } }
 

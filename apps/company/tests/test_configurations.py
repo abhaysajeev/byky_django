@@ -246,5 +246,5 @@ def test_the_page_shows_the_card_with_the_current_codes(client_in, world):
 
     assert response.context["primary_dial_codes"] == ["IN", "AE"]
     html = response.content.decode()
-    assert "Primary dial codes" in html and "data-dial-picker" in html and "sweetalert2.js" in html
-    assert 'data-config-save-label' in html
+    assert "Primary dial codes" in html and "data-dial-picker" in html
+    assert "scr-btn-spin" in html and "sweetalert2" not in html      # a spinner only, no success banner
