@@ -18,6 +18,7 @@ urlpatterns = [
     path("reports/", include("apps.reports.urls")),
     path("monitoring/", include("apps.monitoring.urls")),
     path("tracking/", include("apps.tracking.urls")),
+    path("targets/", include("apps.targets.urls")),
     path("sync/", include("apps.sync.urls")),
     path("photos/", include("apps.photos.urls")),
     path("api/v1/<app:app>/", include("apps.devices.api_urls")),

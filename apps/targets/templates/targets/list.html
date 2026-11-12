@@ -1,0 +1,78 @@
+{% extends "targets/_base.html" %}
+{% load money %}
+
+{% block screen_title %}Targets{% endblock %}
+{% block crumb %}{{ year }}{% endblock %}
+{% block heading %}Targets{% endblock %}
+{% block sub %}Each station's monthly target and how far it has got. Achievement counts settled orders by booking date, less credit notes.{% endblock %}
+
+{% block actions %}
+{% if perm.create %}
+<button type="button" class="scr-btn scr-btn-secondary" data-tgt-for-selected disabled>Set for selected</button>
+<button type="button" class="scr-btn scr-btn-primary" data-scr-open="target:add">
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+  Add Target
+</button>
+{% endif %}
+{% endblock %}
+
+{% block body %}
+<div class="scr-card">
+  <form class="scr-toolbar scr-tgt-toolbar" method="get">
+    <select class="scr-input" name="year" aria-label="Year" data-tgt-filter>
+      {% for y in years %}<option value="{{ y }}"{% if y == year %} selected{% endif %}>{{ y }}</option>{% endfor %}
+    </select>
+    <select class="scr-input" name="state" aria-label="Emirate" data-tgt-filter>
+      <option value="">All emirates</option>
+      {% for s in states %}<option value="{{ s.pk }}"{% if s.pk == chosen_state %} selected{% endif %}>{{ s.name }}</option>{% endfor %}
+    </select>
+    <input class="scr-input scr-tgt-search" type="search" name="q" value="{{ q }}" placeholder="Search station" aria-label="Search station" />
+  </form>
+
+  <div class="scr-table-scroll scr-sb">
+    <table class="scr-tgt-grid">
+      <thead>
+        <tr>
+          <th class="scr-tgt-station">{% if perm.create %}<input type="checkbox" aria-label="Select all stations" data-tgt-all />{% endif %}Station</th>
+          {% for m in month_names %}<th class="scr-tgt-month">{{ m }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% regroup rows by branch.location.state.name as groups %}
+        {% for group in groups %}
+        <tr class="scr-tgt-group"><td colspan="13">{{ group.grouper }}</td></tr>
+        {% for row in group.list %}
+        <tr>
+          <td class="scr-tgt-station">
+            {% if perm.create %}<input type="checkbox" value="{{ row.branch.pk }}" aria-label="Select {{ row.branch.name }}" data-tgt-pick />{% endif %}
+            <a class="scr-href" href="{% url 'targets-branch' row.branch.pk %}?year={{ year }}">{{ row.branch.name }}</a>
+          </td>
+          {% for c in row.cells %}
+          <td class="scr-tgt-cell">
+            {% if c.target %}
+            <a class="scr-tgt-amount" href="{% url 'targets-month' row.branch.pk year c.month %}">{{ c.target.amount|money }}</a>
+            {% if c.figures %}<span class="scr-tgt-chip is-{{ c.figures.tone }}">{{ c.figures.percent }}%</span>{% endif %}
+            {% elif c.open and perm.create %}
+            <button type="button" class="scr-tgt-add" data-tgt-add data-branch="{{ row.branch.pk }}" data-month="{{ c.key }}" aria-label="Add target for {{ row.branch.name }}, {{ c.key }}">—</button>
+            {% else %}<span class="scr-tgt-none">—</span>{% endif %}
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+        {% empty %}
+        <tr><td colspan="13" style="padding:0"><div class="scr-empty"><div>
+          <div class="scr-empty-title">No stations</div>
+          <p class="scr-empty-sub">Active stations you can see appear here, one row each.</p>
+        </div></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="scr-tgt-legend">
+    <span><i class="scr-tgt-chip is-met">100%</i> met</span>
+    <span><i class="scr-tgt-chip is-near">70%</i> close</span>
+    <span><i class="scr-tgt-chip is-behind">40%</i> behind</span>
+    <span>Amounts in AED. A month that has ended can't be changed.</span>
+  </div>
+</div>
+{% endblock %}

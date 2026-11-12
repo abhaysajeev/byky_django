@@ -208,6 +208,8 @@
       report_day_start: root.querySelector('[data-config-day-start]').value,
       money: money
     };
+    var period = root.querySelector('[data-config-target-period]');
+    if (period) payload.target_period = period.value;
     if (chips) payload.primary_dial_codes = chosen();
     // never flash: the spinner stays at least MIN_BUSY_MS
     function after(fn) { setTimeout(fn, Math.max(0, MIN_BUSY_MS - (Date.now() - started))); }
