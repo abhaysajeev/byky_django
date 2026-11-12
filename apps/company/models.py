@@ -428,6 +428,12 @@ ROUND_OFF_STEPS = {
 DECIMAL_PLACES = [(2, "2 (0.00)"), (3, "3 (0.000)")]
 
 
+class TargetPeriod(models.TextChoices):
+    """How a company's targets are set (design/08-targets.md T2). Monthly only for now."""
+
+    MONTHLY = "monthly", "Monthly"
+
+
 class CompanyConfig(TimeStampedModel):
     """A company's own settings: one row per company, made on first save.
 
@@ -437,6 +443,8 @@ class CompanyConfig(TimeStampedModel):
 
     company = models.OneToOneField(Company, on_delete=models.CASCADE, related_name="config")
     report_day_start = models.TimeField(null=True, blank=True)
+    # The period a station's target covers (design/08-targets.md T2).
+    target_period = models.CharField(max_length=10, choices=TargetPeriod.choices, default=TargetPeriod.MONTHLY)
     # When the primary dial codes last changed (owner, 12 Nov 2026): moves the
     # dial-codes API's version, a removal included.
     dial_codes_updated_at = models.DateTimeField(null=True, blank=True)

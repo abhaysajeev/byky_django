@@ -1,0 +1,54 @@
+{% extends "targets/_base.html" %}
+{% load money %}
+
+{% block screen_title %}{{ branch.name }}{% endblock %}
+{% block crumb %}{{ branch.name }}{% endblock %}
+{% block heading %}{{ branch.name }}{% endblock %}
+{% block sub %}{{ branch.location.state.name }} · targets and achievement for {{ year }}, by booking date.{% endblock %}
+
+{% block actions %}
+<form method="get">
+  <select class="scr-input" name="year" aria-label="Year" data-tgt-filter>
+    {% for y in years %}<option value="{{ y }}"{% if y == year %} selected{% endif %}>{{ y }}</option>{% endfor %}
+  </select>
+</form>
+{% endblock %}
+
+{% block body %}
+<div class="scr-card">
+  <dl class="scr-live-totals scr-tgt-totals">
+    <div><dt>Year target</dt><dd>{% if total %}{{ total.amount|money }}{% else %}—{% endif %}</dd></div>
+    <div><dt>Achieved</dt><dd>{% if total %}{{ total.achieved|money }}{% else %}—{% endif %}</dd></div>
+    <div><dt>Achievement</dt><dd>{% if total %}<span class="scr-tgt-chip is-{{ total.tone }}">{{ total.percent }}%</span>{% else %}—{% endif %}</dd></div>
+    <div><dt>Remaining</dt><dd>{% if total %}{{ total.remaining|money }}{% else %}—{% endif %}</dd></div>
+  </dl>
+</div>
+
+<div class="scr-card">
+  <div class="scr-table-scroll scr-sb">
+    <table>
+      <thead><tr><th>Month</th><th class="scr-num">Target</th><th class="scr-num">Achieved</th><th>Progress</th><th class="scr-num">Remaining</th><th></th></tr></thead>
+      <tbody>
+        {% for m in months %}
+        <tr class="scr-row">
+          <td><a class="scr-href" href="{% url 'targets-month' branch.pk year m.month %}">{{ m.first|date:"F Y" }}</a></td>
+          {% if m.target %}
+          <td class="scr-num">{{ m.target.amount|money }}</td>
+          <td class="scr-num">{% if m.figures %}{{ m.figures.achieved|money }}{% else %}—{% endif %}</td>
+          <td>{% if m.figures %}
+            <div class="scr-tgt-progress"><div class="scr-tgt-bar is-{{ m.figures.tone }}" style="width:{% if m.figures.percent > 100 %}100{% else %}{{ m.figures.percent }}{% endif %}%"></div></div>
+            <span class="scr-tgt-chip is-{{ m.figures.tone }}">{{ m.figures.percent }}%</span>
+            {% else %}<span class="scr-contact">Not started</span>{% endif %}</td>
+          <td class="scr-num">{% if m.figures %}{{ m.figures.remaining|money }}{% else %}{{ m.target.amount|money }}{% endif %}</td>
+          <td class="scr-num"><a class="scr-btn scr-btn-small scr-btn-secondary" href="{% url 'targets-month' branch.pk year m.month %}">Days</a></td>
+          {% else %}
+          <td class="scr-num scr-contact" colspan="4">No target</td>
+          <td class="scr-num">{% if m.open and perm.create and branch.is_active %}<button type="button" class="scr-btn scr-btn-small scr-btn-secondary" data-tgt-add data-branch="{{ branch.pk }}" data-month="{{ m.first|date:'Y-m' }}">Add</button>{% endif %}</td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
