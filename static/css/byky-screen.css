@@ -1444,3 +1444,20 @@ body.scr-live-wall .scr-live-th-group { display: none; }
   .scr-track-totals > div:nth-child(3n) { border-right: 1px solid #f4f3f9; }
   .scr-track-totals > div:nth-child(even) { border-right: 0; }
 }
+
+/* Primary dial codes (Company -> Configurations, owner 12 Nov 2026): a search
+   and small wrapping chips, so many fit in little room. */
+.scr-dial-picker { max-width: 360px; }
+.scr-dial-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.scr-dial-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 9px; border-radius: 99px; background: #f4f3f9; border: 1px solid #eceaf5; font-size: 12px; color: #1a1640; line-height: 1.4; }
+.scr-dial-chip .scr-dial-num { color: #7d7aa0; font-variant-numeric: tabular-nums; }
+.scr-dial-chip .scr-dial-pos { font-size: 10px; font-weight: 700; color: #9490bb; }
+.scr-dial-chip button { border: 0; background: transparent; color: #6b6790; cursor: pointer; padding: 0 5px; font-size: 14px; line-height: 1; border-radius: 99px; }
+.scr-dial-chip button:hover { color: #c2141a; background: #fdeced; }
+
+/* A button busy saving: spinner, label swapped by the page's script. */
+.scr-btn-spin { display: none; width: 14px; height: 14px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: scrBtnSpin 0.7s linear infinite; vertical-align: -2px; margin-right: 8px; }
+.is-saving .scr-btn-spin { display: inline-block; }
+.is-saving, .is-saved { pointer-events: none; }
+@keyframes scrBtnSpin { to { transform: rotate(360deg); } }
+

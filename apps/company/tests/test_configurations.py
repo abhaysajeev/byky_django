@@ -12,6 +12,7 @@ from apps.company.models import (
     Branch,
     BranchType,
     CompanyConfig,
+    CompanyDialCode,
     CompanyMoneySetting,
     Country,
     Location,
@@ -187,3 +188,63 @@ def test_a_company_user_keeps_their_own_company(world):
 
     user = User.objects.create_user("own.user", "Byky#2026", company=world["other"])
     assert money.company_for_user(user) == world["other"]
+
+
+# -- primary dial codes (owner, 12 Nov 2026) --------------------------------------------
+
+
+def stored(world):
+    return list(CompanyDialCode.objects.filter(company=world["company"]).order_by("position")
+                .values_list("dial_code__iso2", flat=True))
+
+
+def test_primary_dial_codes_are_saved_in_order_and_replaced(client_in, world):
+    assert post(client_in, SAVE, {"money": [], "primary_dial_codes": ["IN", "AE", "SA"]}).json()["ok"] is True
+    assert stored(world) == ["IN", "AE", "SA"]
+    first = CompanyConfig.objects.get(company=world["company"]).dial_codes_updated_at
+
+    assert post(client_in, SAVE, {"money": [], "primary_dial_codes": ["AE"]}).json()["ok"] is True
+    assert stored(world) == ["AE"]
+    assert CompanyConfig.objects.get(company=world["company"]).dial_codes_updated_at > first
+
+
+def test_an_unchanged_list_does_not_move_the_version(client_in, world):
+    post(client_in, SAVE, {"money": [], "primary_dial_codes": ["AE"]})
+    first = CompanyConfig.objects.get(company=world["company"]).dial_codes_updated_at
+
+    post(client_in, SAVE, {"money": [], "primary_dial_codes": ["AE"]})
+
+    assert CompanyConfig.objects.get(company=world["company"]).dial_codes_updated_at == first
+
+
+def test_duplicates_are_dropped_and_codes_read_in_any_case(client_in, world):
+    post(client_in, SAVE, {"money": [], "primary_dial_codes": ["ae", "AE", "in"]})
+
+    assert stored(world) == ["AE", "IN"]
+
+
+def test_an_unknown_code_saves_nothing(client_in, world):
+    body = post(client_in, SAVE, {"report_day_start": "04:00", "money": [], "primary_dial_codes": ["AE", "ZZ"]}).json()
+
+    assert body["ok"] is False and "ZZ" in body["errors"][0]["message"]
+    assert stored(world) == []
+    assert not CompanyConfig.objects.filter(company=world["company"], report_day_start__isnull=False).exists()
+
+
+def test_leaving_the_list_out_keeps_it(client_in, world):
+    post(client_in, SAVE, {"money": [], "primary_dial_codes": ["AE"]})
+
+    post(client_in, SAVE, {"money": []})
+
+    assert stored(world) == ["AE"]
+
+
+def test_the_page_shows_the_card_with_the_current_codes(client_in, world):
+    post(client_in, SAVE, {"money": [], "primary_dial_codes": ["IN", "AE"]})
+
+    response = client_in.get(PAGE)
+
+    assert response.context["primary_dial_codes"] == ["IN", "AE"]
+    html = response.content.decode()
+    assert "Primary dial codes" in html and "data-dial-picker" in html and "sweetalert2.js" in html
+    assert 'data-config-save-label' in html
