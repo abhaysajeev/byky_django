@@ -21,9 +21,9 @@ from pathlib import Path
 
 DATA_FILE = Path(__file__).parent / "data" / "dial_codes.json"
 
-# Offered first, in this order: the UAE, then the rest of the GCC. Everyone
-# else after, A-Z. sort_order can be changed per row later; a reload never
-# overwrites it.
+# A new row's sort_order: the UAE, then the rest of the GCC, then the others.
+# Kept for the table only; the API orders by each company's primary codes
+# (owner, 12 Nov 2026), then A-Z.
 FIRST = ("AE", "SA", "KW", "QA", "BH", "OM")
 OTHERS = 100
 
@@ -95,16 +95,43 @@ def load(model, rows):
     return created, updated
 
 
-def device_dial_codes(model):
-    """What the apps get: active rows, in order, and when the list last changed."""
-    rows = list(model.objects.filter(is_active=True).order_by("sort_order", "country"))
-    newest = max((r.modified_on or r.created_on for r in rows), default=None)
+def _row(r):
+    return {"iso2": r.iso2, "country": r.country, "flag": r.flag, "dial_code": f"+{r.dial_code}",
+            "dial_code_digits": r.dial_code_digits, "mobile_digits_min": r.mobile_digits_min,
+            "mobile_digits_max": r.mobile_digits_max, "example": r.example_mobile}
+
+
+def primary_iso2(company):
+    """The company's primary dial codes, in the order the admin added them."""
+    from apps.company.models import CompanyDialCode
+
+    return list(CompanyDialCode.objects.filter(company=company).order_by("position")
+                .values_list("dial_code__iso2", flat=True))
+
+
+def device_dial_codes(model, company):
+    """What the operator app gets (owner, 12 Nov 2026): the company's primary
+    codes first, in the order added, then every other active code A-Z; and
+    when either last changed."""
+    from apps.company.models import CompanyConfig
+
+    rows = list(model.objects.filter(is_active=True).order_by("country"))
+    by_iso = {r.iso2: r for r in rows}
+    chosen = [iso for iso in primary_iso2(company) if iso in by_iso]
+    taken = set(chosen)
+    moments = [r.modified_on or r.created_on for r in rows]
+    config = CompanyConfig.objects.filter(company=company).first()
+    if config and config.dial_codes_updated_at:
+        moments.append(config.dial_codes_updated_at)
+    newest = max(moments, default=None)
     return {
         "version": newest.isoformat() if newest else None,
-        "dial_codes": [
-            {"iso2": r.iso2, "country": r.country, "flag": r.flag, "dial_code": f"+{r.dial_code}",
-             "dial_code_digits": r.dial_code_digits, "mobile_digits_min": r.mobile_digits_min,
-             "mobile_digits_max": r.mobile_digits_max, "example": r.example_mobile}
-            for r in rows
-        ],
+        "primary": [_row(by_iso[iso]) for iso in chosen],
+        "secondary": [_row(r) for r in rows if r.iso2 not in taken],
     }
+
+
+def picker_options(model):
+    """Every active code, for the Configurations page's search."""
+    return [{"iso2": r.iso2, "country": r.country, "flag": r.flag, "dial_code": r.dial_code}
+            for r in model.objects.filter(is_active=True).order_by("country")]

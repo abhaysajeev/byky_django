@@ -437,6 +437,9 @@ class CompanyConfig(TimeStampedModel):
 
     company = models.OneToOneField(Company, on_delete=models.CASCADE, related_name="config")
     report_day_start = models.TimeField(null=True, blank=True)
+    # When the primary dial codes last changed (owner, 12 Nov 2026): moves the
+    # dial-codes API's version, a removal included.
+    dial_codes_updated_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "company_config"
@@ -470,3 +473,24 @@ class CompanyMoneySetting(TimeStampedModel):
 
     def __str__(self):
         return f"{self.company} {self.country}: {self.decimal_places} decimals"
+
+
+class CompanyDialCode(models.Model):
+    """A company's primary dial codes (owner, 12 Nov 2026): the operator app
+    shows them first, in this order; every other active code is secondary.
+    Set on Company -> Configurations."""
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="primary_dial_codes")
+    dial_code = models.ForeignKey("company.DialCode", on_delete=models.CASCADE, related_name="+")
+    position = models.PositiveSmallIntegerField()
+
+    class Meta:
+        db_table = "company_dial_code"
+        ordering = ["company", "position"]
+        constraints = [
+            models.UniqueConstraint(fields=["company", "dial_code"], name="uniq_company_dial_code"),
+        ]
+
+    def __str__(self):
+        return f"{self.company} #{self.position} {self.dial_code}"
+

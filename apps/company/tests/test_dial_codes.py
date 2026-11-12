@@ -4,7 +4,7 @@ loader, and POST /api/v1/{app}/dial-codes for every app."""
 import pytest
 
 from apps.company import dial_codes
-from apps.company.models import DialCode
+from apps.company.models import CompanyDialCode, DialCode
 from apps.crew.tests import test_attendance as attendance
 
 world, fresh_throttle, call, login = attendance.world, attendance.fresh_throttle, attendance.call, attendance.login
@@ -72,36 +72,74 @@ def test_a_reload_with_nothing_new_changes_nothing():
 
 # -- the API ------------------------------------------------------------------------------------
 
-def test_the_operator_app_gets_active_countries_in_order(client, world, operator):
+def primaries(world, *isos):
+    """Set the company's primary dial codes, in this order."""
+    CompanyDialCode.objects.filter(company=world["company"]).delete()
+    for n, iso in enumerate(isos, start=1):
+        CompanyDialCode.objects.create(company=world["company"], dial_code=DialCode.objects.get(iso2=iso), position=n)
+
+
+def fetch(client, operator):
+    body = call(client, URL.format("operator"), token=operator).json()
+    assert body["code"] == "ok", body
+    return body["data"]
+
+
+def test_primary_comes_first_in_the_order_added_and_the_rest_a_to_z(client, world, operator):
+    primaries(world, "IN", "AE")
     DialCode.objects.filter(iso2="FR").update(is_active=False)
 
-    body = call(client, URL.format("operator"), token=operator).json()
+    data = fetch(client, operator)
 
-    assert body["code"] == "ok", body
-    rows = body["data"]["dial_codes"]
-    assert [row["iso2"] for row in rows[:6]] == list(dial_codes.FIRST)
-    assert rows[0] == {"iso2": "AE", "country": "United Arab Emirates", "flag": "\U0001f1e6\U0001f1ea",
-                       "dial_code": "+971", "dial_code_digits": 3, "mobile_digits_min": 9,
-                       "mobile_digits_max": 9, "example": "501234567"}
-    assert "FR" not in by_iso(rows)
-    assert body["data"]["version"]
+    assert [row["iso2"] for row in data["primary"]] == ["IN", "AE"]
+    # A-Z as the database sorts names for people ("Åland Islands" beside "Albania")
+    expected = list(DialCode.objects.filter(is_active=True).exclude(iso2__in=["IN", "AE"]).order_by("country")
+                    .values_list("country", flat=True))
+    assert [row["country"] for row in data["secondary"]] == expected
+    isos = {row["iso2"] for row in data["secondary"]}
+    assert "IN" not in isos and "AE" not in isos and "FR" not in isos
+    assert data["primary"][1] == {"iso2": "AE", "country": "United Arab Emirates", "flag": "\U0001f1e6\U0001f1ea",
+                                  "dial_code": "+971", "dial_code_digits": 3, "mobile_digits_min": 9,
+                                  "mobile_digits_max": 9, "example": "501234567"}
+    assert data["version"]
+
+
+def test_with_no_primaries_set_primary_is_empty(client, world, operator):
+    data = fetch(client, operator)
+
+    assert data["primary"] == [] and len(data["secondary"]) > 240
+
+
+def test_a_switched_off_primary_is_left_out(client, world, operator):
+    primaries(world, "AE", "IN")
+    DialCode.objects.filter(iso2="IN").update(is_active=False)
+
+    data = fetch(client, operator)
+
+    assert [row["iso2"] for row in data["primary"]] == ["AE"]
+    assert "IN" not in {row["iso2"] for row in data["secondary"]}
 
 
 def test_the_version_moves_when_the_list_changes(client, world, operator):
-    before = call(client, URL.format("operator"), token=operator).json()["data"]["version"]
+    before = fetch(client, operator)["version"]
     uae = DialCode.objects.get(iso2="AE")
     uae.sort_order = 2
     uae.save()
 
-    after = call(client, URL.format("operator"), token=operator).json()["data"]["version"]
-
-    assert after > before
+    assert fetch(client, operator)["version"] > before
 
 
-def test_the_manager_app_gets_it_too(client, world, manager):
-    body = call(client, URL.format("manager"), token=manager).json()
+def test_another_companys_primaries_are_not_used(client, world, operator):
+    other = DialCode.objects.get(iso2="IN")
+    CompanyDialCode.objects.create(company=world["other"], dial_code=other, position=1)
 
-    assert body["code"] == "ok" and body["data"]["dial_codes"][0]["iso2"] == "AE"
+    assert fetch(client, operator)["primary"] == []
+
+
+@pytest.mark.parametrize("app", ["manager", "employee"])
+def test_only_the_operator_app_gets_it(client, world, manager, app):
+    # a manager token on either URL: the manager URL is not open, the employee one is another app
+    assert call(client, URL.format(app), token=manager).json()["code"] == "wrong_channel"
 
 
 def test_a_token_from_another_app_is_refused(client, world, operator):
