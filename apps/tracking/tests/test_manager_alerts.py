@@ -37,10 +37,12 @@ def hours(branch, start, end):
     BranchWorkingTime.objects.create(branch=branch, week_day=0, shift_number=1, start_time=start, end_time=end)
 
 
-def grant(world, read=True):
+def no_tracking_rights(world):
+    """The manager's role without any right on the web's Missing & Alerts: the
+    manager app needs none (owner, 13 Nov 2026), like every other manager API."""
     role = Role.objects.get(company=world["company"], name="Operator")
-    RolePermission.objects.update_or_create(role=role, page=Page.objects.get(code=alerts.PAGE),
-                                            defaults={"can_read": read})
+    RolePermission.objects.update_or_create(role=role, page=Page.objects.get(code="tracking.alerts"),
+                                            defaults={"can_read": False, "can_update": False})
 
 
 @pytest.fixture
@@ -183,11 +185,8 @@ def group(station, kind=alerts.MISSING, **extra):
             "vehicle_ids": [station["bike"].pk], "reader_id": None, "event_ids": [5], **extra}
 
 
-def test_a_push_reaches_managers_who_may_read_alerts(world, station, phone, fcm):
-    grant(world, read=False)
-    assert alerts.push([group(station)], at(0)) == 0     # no Read on Missing & Alerts
-
-    grant(world)
+def test_a_push_reaches_every_manager_phone_of_the_company(world, station, phone, fcm):
+    no_tracking_rights(world)
     assert alerts.push([group(station)], at(0).isoformat()) == 1
     token_, title, body, data, channel, tag, collapse = fcm.sent[0]
     branch = station["branch"]
@@ -200,7 +199,7 @@ def test_a_push_reaches_managers_who_may_read_alerts(world, station, phone, fcm)
 
 
 def test_quiet_and_reader_pushes(world, station, phone, fcm):
-    grant(world)
+    no_tracking_rights(world)
     reader = station["reader"].pk
     alerts.push([group(station, alerts.BACK), group(station, "reader_offline", vehicle_ids=[], reader_id=reader),
                  group(station, "reader_silent", vehicle_ids=[], reader_id=reader)], at(0))
@@ -209,8 +208,13 @@ def test_quiet_and_reader_pushes(world, station, phone, fcm):
         ("1 vehicle back", alerts.QUIET), ("reader offline", alerts.SOUND), ("reader hears no tags", alerts.SOUND)]
 
 
+def test_pushes_stay_within_the_company(world, phone):
+    assert len(alerts.recipients(world["company"].pk)) == 1
+    assert alerts.recipients(world["company"].pk + 1000) == []
+
+
 def test_a_failed_send_is_only_logged(world, station, phone, fcm):
-    grant(world)
+    no_tracking_rights(world)
     fcm.fail = PushError("unregistered")
 
     assert alerts.push([group(station)], at(0)) == 0
@@ -228,7 +232,7 @@ def get(client, manager, url, **request_data):
 
 @pytest.fixture
 def missing(world, station, manager, django_capture_on_commit_callbacks, queued):
-    grant(world)
+    no_tracking_rights(world)
     gone_missing(station, django_capture_on_commit_callbacks)
     return station
 
@@ -280,11 +284,12 @@ def test_history_dates_must_be_in_order(client, missing, manager):
     assert body["code"] == "invalid_request"
 
 
-def test_without_read_on_alerts_it_is_refused(client, world, manager):
-    grant(world, read=False)
-    response = call(client, SUMMARY, {}, token=manager)
-
-    assert response.status_code == 403 and response.json()["code"] == "forbidden"
+def test_a_manager_without_tracking_rights_is_answered(client, world, manager):
+    no_tracking_rights(world)
+    for url, request_data in [(SUMMARY, {}), (CURRENT, {}),
+                              (HISTORY, {"from_date": "2026-11-01", "to_date": "2026-11-09"})]:
+        response = call(client, url, request_data, token=manager)
+        assert response.status_code == 200 and response.json()["code"] == "ok", (url, response.json())
 
 
 def test_the_operator_app_is_refused(client, world, token):
