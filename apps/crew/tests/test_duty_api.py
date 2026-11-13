@@ -25,6 +25,7 @@ from apps.crew.models import (
 from apps.crew.tests import test_attendance as base
 from apps.crew.tests import test_team_attendance as team_tests
 from apps.crew.tests.test_attendance import call
+from apps.crew.tests.test_duty_roster import _roster_unlocked  # noqa: F401 -- autouse
 
 world, fresh_throttle, operator, manager, staff_app = (
     base.world, base.fresh_throttle, base.operator, base.manager, base.staff_app)
@@ -103,7 +104,7 @@ def test_a_day_carries_station_shift_and_overnight(client, world, manager, crew)
         "branch": "Creek Park 1",
         "branch_code": "AUH01", "state": "Abu Dhabi", "shift1_start": "15:00", "shift1_end": "02:00",
         "shift1_ends_next_day": True, "shift2_start": None, "shift2_end": None, "shift2_ends_next_day": None,
-        "leave_type": None, "leave_reference": None,
+        "leave_type": None, "leave_reference": None, "cashier_type": None,
     }
     assert (anil[1]["branch_code"], anil[1]["shift1_ends_next_day"]) == ("AUH02", False)
     assert anil[2]["status"] == "Week Off"

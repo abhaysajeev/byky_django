@@ -16,6 +16,7 @@ from apps.company.models import Branch, BranchType
 from apps.crew import duty
 from apps.crew.models import Designation, DutyRoster, DutyRosterDayType, RosterCategory
 from apps.crew.services import current_week_roster, operator_roster_refusal
+from apps.crew.tests.test_duty_roster import _roster_unlocked  # noqa: F401 -- autouse
 from apps.portal.tests import test_operator_login_api as login_api
 from core.timezones import business_date_for, zone_for
 
