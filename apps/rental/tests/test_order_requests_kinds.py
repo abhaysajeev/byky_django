@@ -7,7 +7,7 @@ from decimal import Decimal
 
 import pytest
 
-from apps.discount.models import ClaimStatus
+from apps.discount.models import CardDiscountClaim, ClaimStatus
 from apps.discount.tests.conftest import make_claim
 from apps.rental import api
 from apps.rental.models import (
@@ -69,28 +69,31 @@ def test_a_complimentary_is_asked_and_approved_without_a_value(client, token, ma
 
 
 @pytest.mark.parametrize(("first", "second", "code"), [
-    ("discount", "complimentary", "discount_requested"),
-    ("complimentary", "discount", "complimentary_requested"),
+    # A complimentary may be asked for over a discount, and a discount under a
+    # pending complimentary (owner, 13 Nov 2026); one live of each kind.
+    ("discount", "complimentary", "ok"),
+    ("complimentary", "discount", "ok"),
     ("complimentary", "complimentary", "complimentary_request_pending"),
+    ("discount", "discount", "discount_request_pending"),
 ])
-def test_a_discount_and_a_complimentary_never_share_an_order(client, token, booked, first, second, code):
+def test_one_live_request_of_each_kind(client, token, booked, first, second, code):
     asked(client, token, booked, kind=first)
 
     assert call(client, ASK, ask(booked, kind=second), token=token).json()["code"] == code
 
 
-def test_a_card_discount_and_a_complimentary_exclude_each_other(client, token, shop, booked, card):
-    claim = make_claim(card, shop["ahmed"], status=ClaimStatus.PENDING, order=Order.objects.get(pk=booked["sync_id"]))
-    assert call(client, ASK, ask(booked, kind="complimentary"), token=token).json()["code"] == "card_discount_requested"
+def test_a_card_discount_and_a_pending_complimentary_go_together(client, token, shop, booked, card):
+    make_claim(card, shop["ahmed"], status=ClaimStatus.PENDING, order=Order.objects.get(pk=booked["sync_id"]))
+    assert call(client, ASK, ask(booked, kind="complimentary"), token=token).json()["code"] == "ok"
 
-    claim.delete()
-    asked(client, token, booked, kind="complimentary")
+    other = rq.Order.objects.get(pk=booked["sync_id"])
+    CardDiscountClaim.objects.filter(order=other).delete()
     body = call(client, "/api/v1/operator/card-discounts/approval", {
         "sync_id": str(uuid7()), "card_discount_id": card.pk, "full_number": shop["ahmed"].mobile_full,
         "order_id": booked["sync_id"], "bill_amount": "100.000", "discount_percent": "10.00",
         "discount_amount": "10.000", "net_amount": "90.000", "requested_at": "2026-10-02 16:31:00",
     }, token=token).json()
-    assert body["code"] == "complimentary_requested"
+    assert body["code"] == "ok", body
 
 
 def test_a_complimentary_settles_at_net_zero_with_the_advance_refunded(client, token, manager, shop, booked):
