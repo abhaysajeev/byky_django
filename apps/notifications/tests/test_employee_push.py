@@ -12,6 +12,7 @@ from apps.crew import services as crew_services
 from apps.crew.models import Employee, LeaveRequest, RosterCategory
 from apps.crew.tests import test_attendance as attendance
 from apps.crew.tests import test_leave as leave_tests
+from apps.crew.tests.test_duty_roster import _roster_unlocked  # noqa: F401 -- autouse
 from apps.notifications.models import AndroidChannel, Audience, Notification, SubjectType
 from apps.portal.session_models import AppSession
 from core.enums import Channel

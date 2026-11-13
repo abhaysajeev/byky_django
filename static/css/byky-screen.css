@@ -1461,3 +1461,10 @@ body.scr-live-wall .scr-live-th-group { display: none; }
 .is-saving { pointer-events: none; }
 @keyframes scrBtnSpin { to { transform: rotate(360deg); } }
 
+
+/* Duty roster: past days are read-only (owner, 13 Nov 2026); cashier type tags */
+.scr-wk-day-card.is-past, .scr-cal-cell.is-past { background: #f8f7fc; opacity: 0.72; }
+.scr-lock { display: inline-flex; vertical-align: -1px; margin-right: 4px; color: #a9a6c4; }
+.scr-cal-date .scr-lock { margin: 0 0 0 2px; }
+.scr-wk-chip-tag { align-self: flex-start; margin-top: 2px; padding: 0 6px; border-radius: 99px; font-size: 10.5px; font-weight: 700; line-height: 16px; background: #f4f3f9; color: #6b6790; }
+.scr-wk-chip-tag.is-primary { background: #eaf1fd; color: #2b52a0; }

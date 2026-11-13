@@ -204,11 +204,13 @@ _LOGIN_BY_CHANNEL = {
 _ROSTER_SAMPLE = {
     "week_start": "2026-09-20", "week_end": "2026-09-26",
     "days": [
-        {"date": "2026-09-20", "status": "Working", "branch_id": 12, "branch": "Creek Park 1", "branch_code": "AUH01",
+        {"date": "2026-09-20", "status": "Working", "role": "cashier", "cashier_type": "primary", "branch_id": 12,
+         "branch": "Creek Park 1", "branch_code": "AUH01",
          "state": "Abu Dhabi", "shift1_start": "07:00", "shift1_end": "23:00", "shift1_ends_next_day": False,
          "shift2_start": None, "shift2_end": None, "shift2_ends_next_day": None,
          "leave_type": None, "leave_reference": None},
-        {"date": "2026-09-21", "status": None, "branch_id": None, "branch": None, "branch_code": None,
+        {"date": "2026-09-21", "status": None, "role": None, "cashier_type": None, "branch_id": None,
+         "branch": None, "branch_code": None,
          "state": None, "shift1_start": None, "shift1_end": None, "shift1_ends_next_day": None,
          "shift2_start": None, "shift2_end": None, "shift2_ends_next_day": None,
          "leave_type": None, "leave_reference": None},
