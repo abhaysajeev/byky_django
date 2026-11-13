@@ -63,10 +63,12 @@
     </tbody>
   </table>
 
-  <div class="bill-row2" style="margin-top:2mm">
-    <div class="col-a"><span class="bill-kv-label">{{ bill.discount_label }}</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ bill.discount_amount|money }}{% if bill.discount_percentage %} ({{ bill.discount_percentage }}%){% endif %}</span></div>
-    <div class="col-b"><span class="bill-kv-label">Taxable Amt</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ bill.taxable_amount|money }}</span></div>
+  {% for line in bill.discount_lines %}
+  <div class="bill-row2"{% if forloop.first %} style="margin-top:2mm"{% endif %}>
+    <div class="col-a"><span class="bill-kv-label">{{ line.short }}</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ line.amount|money }}{% if line.percentage %} ({{ line.percentage }}%){% endif %}</span></div>
+    {% if forloop.first %}<div class="col-b"><span class="bill-kv-label">Taxable Amt</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ bill.taxable_amount|money }}</span></div>{% else %}<div class="col-b"></div>{% endif %}
   </div>
+  {% endfor %}
   <div class="bill-row2">
     <div class="col-a"><span class="bill-kv-label">Rounded Off</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ bill.rounding|money }}</span></div>
     <div class="col-b"><span class="bill-kv-label">VAT @{{ bill.tax_percentage|floatformat:1 }}% incl.</span><span class="bill-kv-colon">:</span><span class="bill-kv-value">AED {{ bill.tax_amount|money }}</span></div>
