@@ -732,6 +732,10 @@ def _order_block(order, zone, now):
         "advance_paid": str(order.paid_amount) if counts(order) else _money(Decimal("0")),
         "net_amount": _money(order.net_amount) if counts(order) else None,
         **_billing(order, zone),
+        # Who booked it and when, beside who settled it (owner, 13 Nov 2026) --
+        # as open_by on the operator's orders and Live Monitoring. Not money,
+        # so a cancelled order keeps them.
+        "opened_by": _name(order.created_by), "opened_at": _local(order.booked_at, zone),
         "vehicles": _lines(order, zone, now),
     }
 
@@ -750,7 +754,7 @@ def manager_json(req, zone, now):
 
 def _manager_rows():
     return (OrderRequest.objects
-            .select_related("order", "order__invoice__issued_by", "branch", "company", "requested_by",
+            .select_related("order", "order__invoice__issued_by", "order__created_by", "branch", "company", "requested_by",
                             "decided_by", "revoked_by")
             .prefetch_related("order__items__vehicle__vehicle_type", "order__payments"))
 
@@ -839,7 +843,7 @@ def _manager_rows_of(keys):
             loaded[("request", req.pk)] = {**manager_json(req, zone_of(req), now), "details": request_details(req)}
     if CREDIT_NOTE in wanted:
         for note in (CreditNote.objects.filter(pk__in=wanted[CREDIT_NOTE])
-                     .select_related("order", "order__invoice__issued_by", "invoice", "branch", "company",
+                     .select_related("order", "order__invoice__issued_by", "order__created_by", "invoice", "branch", "company",
                                      "requested_by", "decided_by")
                      .prefetch_related(orders, "order__payments")):
             zone = zone_of(note)
@@ -851,7 +855,7 @@ def _manager_rows_of(keys):
             })
     if CARD_DISCOUNT in wanted:
         for claim in (CardDiscountClaim.objects.filter(pk__in=wanted[CARD_DISCOUNT])
-                      .select_related("order", "order__invoice__issued_by", "branch", "company", "requested_by",
+                      .select_related("order", "order__invoice__issued_by", "order__created_by", "branch", "company", "requested_by",
                                       "decided_by", "card_type", "card_grade")
                       .prefetch_related(orders, "order__payments")):
             zone = zone_of(claim)
