@@ -3,8 +3,9 @@ tracking for the manager app (owner, 12 Nov 2026).
 
 Every station of the manager's company, read from what the engine writes
 (VehiclePresence, PresenceEvent) -- the same figures as the web Status Board
-and Missing & Alerts. Needs Read on Missing & Alerts (`tracking.alerts`).
-Pushes for the same alerts: apps/tracking/alerts.py.
+and Missing & Alerts. Any manager of the company, like the other manager
+APIs -- no role privilege is checked (owner, 13 Nov 2026); the web pages keep
+theirs. Pushes for the same alerts: apps/tracking/alerts.py.
 """
 
 import datetime
@@ -20,9 +21,7 @@ from rest_framework.views import APIView
 from apps.company.scoping import branches_for, companies_for
 from apps.company.services import NOT_SET, OPEN, branch_open_state
 from apps.portal.authentication import AppJWTAuthentication
-from apps.portal.services import has_permission
 from apps.tracking import engine
-from apps.tracking.alerts import PAGE
 from apps.tracking.models import (
     EventKind,
     PresenceEvent,
@@ -48,7 +47,6 @@ REASONS = {"station_closed": "Station closed", "not_seen": "Not heard", "weak_si
 _COMMON = (
     (401, "not_authenticated", "Sign in first.", {}),
     (403, "wrong_channel", "Not allowed on this app.", {}),
-    (403, "forbidden", "Your role cannot see Missing & Alerts.", {}),
     SERVER_ERROR,
 )
 _BRANCH = """
@@ -97,8 +95,6 @@ class _TrackingView(APIView):
         refused = manager_only(request, app)
         if refused:
             return None, None, None, refused
-        if not has_permission(request.user, PAGE, "read"):
-            return None, None, None, envelope("forbidden", "Your role cannot see Missing & Alerts.", http_status=403)
         _, request_data = request_parts(request)
         form = self.form_class(data=request_data)
         form.is_valid(raise_exception=True)

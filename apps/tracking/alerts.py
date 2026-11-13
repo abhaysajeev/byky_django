@@ -1,7 +1,8 @@
 """Tracking alerts to the manager app (owner, 12 Nov 2026): pushed to every
-signed-in manager phone whose role can read Missing & Alerts, for every
-station of their company -- only for a station with Alerts on, and only while
-it is open (the engine raises nothing for a closed one).
+signed-in manager phone of the company, for every station of it, like the
+other manager pushes -- no role privilege is checked (owner, 13 Nov 2026).
+Only for a station with Alerts on, and only while it is open (the engine
+raises nothing for a closed one).
 
 Pushed: vehicles missing (one push per station per cycle), vehicles back,
 reader offline, reader back online, reader hearing no tags. Low tag battery
@@ -21,7 +22,6 @@ from apps.tracking.models import EventKind, PresenceState
 
 log = logging.getLogger(__name__)
 
-PAGE = "tracking.alerts"
 SOUND = "tracking_alerts"        # vehicles missing, reader offline, reader hears no tags
 QUIET = "tracking_updates"       # vehicles back, reader back online
 TTL_SECONDS = 3600
@@ -90,14 +90,12 @@ def after_cycle(events, now, alerting):
 
 
 def recipients(company_id):
-    """Signed-in manager phones of the company whose role can read Missing & Alerts."""
+    """Signed-in manager phones of the company -- the same sessions every other
+    manager push goes to (apps/notifications/services.py)."""
     from apps.portal.auth import push_sessions
-    from apps.portal.services import has_permission
     from core.enums import Channel
 
-    sessions = (push_sessions().filter(channel=Channel.MANAGER, user__employee__company_id=company_id)
-                .select_related("user"))
-    return [s for s in sessions if has_permission(s.user, PAGE, "read")]
+    return list(push_sessions().filter(channel=Channel.MANAGER, user__employee__company_id=company_id))
 
 
 def _names(vehicle_ids):
