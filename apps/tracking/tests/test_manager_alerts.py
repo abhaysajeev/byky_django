@@ -6,15 +6,22 @@ import datetime
 
 import pytest
 
-from apps.company.models import BranchWorkingTime
+from apps.company.models import Branch, BranchType, BranchWorkingTime, Location, State
 from apps.notifications import sender as sender_module
 from apps.notifications.sender import PushError
-from apps.portal.models import Page, Role, RolePermission
+from apps.portal.models import Role, RolePermission
 from apps.portal.session_models import AppSession
 from apps.rental.tests import test_order_requests as rq
 from apps.rental.tests.test_station_sync import FakeSender
 from apps.tracking import alerts, engine, ops, tasks
-from apps.tracking.models import EventKind, PresenceEvent, PresenceState, Reader
+from apps.tracking.models import (
+    EventKind,
+    PresenceEvent,
+    PresenceState,
+    Reader,
+    ReaderAssignment,
+    ReaderStatus,
+)
 from apps.tracking.tests import test_engine as te
 from core.enums import Channel
 
@@ -41,8 +48,8 @@ def no_tracking_rights(world):
     """The manager's role without any right on the web's Missing & Alerts: the
     manager app needs none (owner, 13 Nov 2026), like every other manager API."""
     role = Role.objects.get(company=world["company"], name="Operator")
-    RolePermission.objects.update_or_create(role=role, page=Page.objects.get(code="tracking.alerts"),
-                                            defaults={"can_read": False, "can_update": False})
+    RolePermission.objects.filter(role=role, page__code="tracking.alerts").delete()
+    assert not RolePermission.objects.filter(role=role, page__code="tracking.alerts").exists()
 
 
 @pytest.fixture
@@ -241,7 +248,8 @@ def test_summary_counts_states_and_readers(client, world, missing, manager):
     data = get(client, manager, SUMMARY)
 
     assert data["totals"]["missing"] == 1
-    row = data["stations"][0]
+    assert (data["state_id"], data["branch_id"]) == (None, None)
+    row = data["states"][0]["stations"][0]
     assert (row["branch_id"], row["open"], row["working_hours_set"], row["hears_no_tags"]) == (
         missing["branch"].pk, True, False, False)
     assert row["counts"] == {"present": 0, "missing": 1, "unknown": 0, "on_rent": 0, "on_test": 0,
@@ -252,7 +260,7 @@ def test_summary_counts_states_and_readers(client, world, missing, manager):
 def test_summary_shows_a_closed_station(client, world, missing, manager):
     hours(missing["branch"], *SHUT_NOW)
 
-    row = get(client, manager, SUMMARY)["stations"][0]
+    row = get(client, manager, SUMMARY)["states"][0]["stations"][0]
 
     assert (row["working_hours_set"], row["open"]) == (True, row["open"])   # open depends on the real clock
 
@@ -264,7 +272,6 @@ def test_current_lists_missing_and_filters(client, missing, manager):
     assert get(client, manager, CURRENT, q="zzz")["vehicles"] == []
     assert get(client, manager, CURRENT, q="mo 4")["total"] == 1
     assert get(client, manager, CURRENT, low_battery=True)["total"] == 0
-    assert get(client, manager, CURRENT, branch_id=999_999)["total"] == 0
     assert get(client, manager, CURRENT, state="all")["total"] == 1
 
 
@@ -276,6 +283,91 @@ def test_history_pages_events(client, missing, manager):
         ("vehicle_missing", "2026-11-09 12:05:00"), ("reader_online", "2026-11-09 12:00:00")]
     assert get(client, manager, HISTORY, from_date="2026-11-10", to_date="2026-11-10")["total_events"] == 0
     assert get(client, manager, HISTORY, from_date="2026-11-09", to_date="2026-11-09", page=3)["events"] == []
+
+
+# -- State and station filters (owner, 13 Nov 2026) -----------------------------------
+
+
+@pytest.fixture
+def dubai(world):
+    """A second station of the company, in another state, with a reader and no vehicles."""
+    adc1 = world["adc1"]
+    state = State.objects.create(country=adc1.location.country, short_code="DXB", name="Dubai")
+    place = Location.objects.create(country=adc1.location.country, state=state, short_code="ZAB", name="Zabeel")
+    branch = Branch.objects.create(company=world["company"], location=place, short_code="ZAB1", name="Zabeel Park 1",
+                                   branch_type=BranchType.STATION)
+    reader = Reader.objects.create(device_id="190619101016090", company=world["company"], name="Zabeel gate",
+                                   status=ReaderStatus.APPROVED, enabled=True, last_heartbeat_at=te.T0)
+    ReaderAssignment.objects.create(reader=reader, branch=branch, from_at=te.T0)
+    return branch
+
+
+def test_summary_without_a_state_is_grouped_by_state(client, world, missing, dubai, manager):
+    data = get(client, manager, SUMMARY)
+
+    assert "stations" not in data
+    # most missing first: Abu Dhabi (1 missing) before Dubai (0)
+    assert [(s["code"], s["name"], [r["name"] for r in s["stations"]]) for s in data["states"]] == [
+        ("AUH", "Abu Dhabi", [missing["branch"].name]), ("DXB", "Dubai", ["Zabeel Park 1"])]
+    assert data["states"][0]["state_id"] == missing["branch"].location.state_id
+    for key, total in data["totals"].items():
+        assert total == sum(s["totals"][key] for s in data["states"])
+    assert data["states"][0]["totals"]["missing"] == 1 and data["states"][1]["totals"]["missing"] == 0
+
+
+def test_summary_with_a_state_is_flat(client, world, missing, dubai, manager):
+    auh = missing["branch"].location.state_id
+    data = get(client, manager, SUMMARY, state_id=auh)
+
+    assert "states" not in data and (data["state_id"], data["branch_id"]) == (auh, None)
+    assert [r["branch_id"] for r in data["stations"]] == [missing["branch"].pk]
+    assert data["totals"]["missing"] == 1
+
+    data = get(client, manager, SUMMARY, state_id=dubai.location.state_id)
+    assert [r["name"] for r in data["stations"]] == ["Zabeel Park 1"] and data["totals"]["missing"] == 0
+
+
+def test_current_and_history_follow_the_state(client, world, missing, dubai, manager):
+    auh, dxb = missing["branch"].location.state_id, dubai.location.state_id
+    data = get(client, manager, CURRENT, state_id=auh)
+    assert data["total"] == 1 and (data["state_id"], data["branch_id"]) == (auh, None)
+    assert (data["vehicles"][0]["state_id"], data["vehicles"][0]["state_name"]) == (auh, "Abu Dhabi")
+    assert data["vehicles"][0]["state"] == "missing"          # the vehicle's tracking state, unchanged
+    assert get(client, manager, CURRENT, state_id=dxb)["total"] == 0
+
+    day = {"from_date": "2026-11-09", "to_date": "2026-11-09"}
+    data = get(client, manager, HISTORY, state_id=auh, **day)
+    assert data["total_events"] == 2 and data["pages"] == 1 and data["state_id"] == auh
+    assert {(e["state_id"], e["state_name"]) for e in data["events"]} == {(auh, "Abu Dhabi")}
+    data = get(client, manager, HISTORY, state_id=dxb, **day)
+    assert (data["total_events"], data["pages"], data["events"]) == (0, 0, [])
+
+
+def test_a_state_or_station_that_does_not_match_finds_nothing(client, world, missing, dubai, manager):
+    day = {"from_date": "2026-11-09", "to_date": "2026-11-09"}
+    for state_id, branch_id in [(999_999, None), (dubai.location.state_id, missing["branch"].pk)]:
+        place = {"state_id": state_id, "branch_id": branch_id}
+        summary = get(client, manager, SUMMARY, **place)
+        assert summary["stations"] == [] and set(summary["totals"].values()) == {0}
+        assert get(client, manager, CURRENT, **place)["total"] == 0
+        assert get(client, manager, HISTORY, **place, **day)["total_events"] == 0
+
+
+def test_a_station_that_is_not_yours_is_unknown(client, world, missing, manager):
+    theirs = Branch.objects.create(company=world["other"], location=world["adc1"].location, short_code="OTH1",
+                                   name="Their Station", branch_type=BranchType.STATION)
+    day = {"from_date": "2026-11-09", "to_date": "2026-11-09"}
+    for branch_id in (theirs.pk, 999_999):
+        for url, request_data in [(SUMMARY, {}), (CURRENT, {}), (HISTORY, day)]:
+            response = call(client, url, {"branch_id": branch_id, **request_data}, token=manager)
+            assert response.status_code == 404 and response.json()["code"] == "unknown_branch", url
+
+
+def test_one_station_echoes_it(client, world, missing, manager):
+    data = get(client, manager, SUMMARY, branch_id=missing["branch"].pk)
+
+    assert (data["state_id"], data["branch_id"]) == (None, missing["branch"].pk)
+    assert [r["branch_id"] for s in data["states"] for r in s["stations"]] == [missing["branch"].pk]
 
 
 def test_history_dates_must_be_in_order(client, missing, manager):
