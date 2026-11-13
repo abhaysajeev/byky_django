@@ -43,7 +43,8 @@ class CardDiscountDetails(Report):
     def build(self, ctx, page=None, per_page=None):
         f = ctx.f
         orders = orders_for(ctx.user).filter(status=OrderStatus.COMPLETED,
-                                             invoice__discount_source=DiscountSource.CARD,
+                                             invoice__discount_source__in=(DiscountSource.CARD,
+                                                                           DiscountSource.CARD_MANAGER),
                                              invoice__issued_at__gte=f.since, invoice__issued_at__lt=f.until)
         orders = common.customer(common.cashier(common.place(orders, f), f, order=""), f, order="")
         if f.get("vehicle_no"):
@@ -90,7 +91,7 @@ class CardDiscountDetails(Report):
                 "phone": order.customer_mobile, "start": local(order.start_time, ctx.zone),
                 "exit": local(max(ends), ctx.zone) if ends else None,
                 "bill": invoice.net_amount - invoice.tax_amount, "tax_pct": invoice.tax_percentage,
-                "tax": invoice.tax_amount, "discount": invoice.discount_amount,
+                "tax": invoice.tax_amount, "discount": invoice.card_discount_amount,  # the card's own (13 Nov 2026)
                 "rounding": invoice.rounding_adjustment, "received": order.paid_amount,
             }))
         total = total_of(rows, columns)

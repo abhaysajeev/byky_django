@@ -266,7 +266,15 @@ class Order(TimeStampedModel):
         related_name="applied_to_order",
     )
     discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    # What the bill took off in all: never more than the subtotal.
     discount_amount = models.DecimalField(**MONEY, null=True, blank=True)
+    # A card and a manager discount on one bill (owner, 13 Nov 2026), each on the
+    # full subtotal, kept as sent and approved -- together they may exceed what
+    # discount_amount took off (the net is then 0).
+    card_discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    card_discount_amount = models.DecimalField(**MONEY, null=True, blank=True)
+    manager_discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    manager_discount_amount = models.DecimalField(**MONEY, null=True, blank=True)
     tax_percentage = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)   # VAT %
     tax_amount = models.DecimalField(**MONEY, null=True, blank=True)          # VAT included in net_amount
     rounding_adjustment = models.DecimalField(max_digits=7, decimal_places=3, null=True, blank=True)
@@ -539,6 +547,7 @@ class DiscountSource(models.TextChoices):
     CARD = "card", "Card discount"
     MANAGER = "manager", "Discount"
     COMPLIMENTARY = "complimentary", "Complimentary"
+    CARD_MANAGER = "card_manager", "Card + manager discount"      # both on one bill (13 Nov 2026)
 
 
 class Invoice(TimeStampedModel):
@@ -565,6 +574,11 @@ class Invoice(TimeStampedModel):
     # Where the discount came from -- a card, a manager's approval, or a
     # complimentary ride (printed as COMPLIMENTARY); blank without one.
     discount_source = models.CharField(max_length=15, choices=DiscountSource.choices, blank=True)
+    # The two discounts as sent and approved -- see Order (owner, 13 Nov 2026).
+    card_discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    card_discount_amount = models.DecimalField(**MONEY, null=True, blank=True)
+    manager_discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    manager_discount_amount = models.DecimalField(**MONEY, null=True, blank=True)
     tax_percentage = models.DecimalField(max_digits=5, decimal_places=2)
     tax_amount = models.DecimalField(**MONEY)                    # VAT included in net_amount
     rounding_adjustment = models.DecimalField(max_digits=7, decimal_places=3)

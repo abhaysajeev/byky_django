@@ -68,7 +68,12 @@ def _package(details):
 LINE_LABELS = {OrderItemStatus.ACTIVE: "Running", OrderItemStatus.RETURNED: "Received",
                OrderItemStatus.REPLACED: "Replaced", OrderItemStatus.REMOVED: "Removed",
                OrderItemStatus.CANCELLED: "Cancelled"}
-_MANAGER = (DiscountSource.MANAGER, DiscountSource.COMPLIMENTARY)
+# A card and a manager discount may share a bill (owner, 13 Nov 2026): the
+# "card discount" and "supervisor" columns show each one's own amount as sent
+# (together they may be more than the bill took off); a complimentary is
+# supervisor, its whole discount.
+_CARD = (DiscountSource.CARD, DiscountSource.CARD_MANAGER)
+_DISCOUNTED = (DiscountSource.CARD, DiscountSource.MANAGER, DiscountSource.CARD_MANAGER)
 _DEC = DecimalField(max_digits=13, decimal_places=3)
 VEHICLE_NOTE = "Vehicle columns show the matching vehicles only; amounts are whole orders."
 
@@ -106,7 +111,7 @@ class RentDetails(Report):
                 **{value: Q(app_status=value) for value in order_status.VALUES},
                 "complimentary": Q(invoice__discount_source=DiscountSource.COMPLIMENTARY),
                 "direct_rent": Q(is_direct_bill=True),
-                "discounted": Q(invoice__discount_source__in=(DiscountSource.CARD, DiscountSource.MANAGER)),
+                "discounted": Q(invoice__discount_source__in=_DISCOUNTED),
             }[status])
         return qs
 
@@ -199,7 +204,7 @@ class RentDetails(Report):
         # counts nowhere: its money cells are blank (apps/rental/counted.py)
         live = counts(order)
         source = invoice.discount_source if settled else ""
-        claim = order.discount_claim if source == DiscountSource.CARD else None
+        claim = order.discount_claim if source in _CARD else None
         cells = {
             "branch": order.branch.name,
             "order_no": order.order_no,
@@ -220,8 +225,9 @@ class RentDetails(Report):
             "actual": order.net_amount - credit if settled else None,
             **common.pay_cells(paid),
             "refs": refs or None,
-            "supervisor": (invoice.discount_amount if source in _MANAGER else ZERO) if settled else None,
-            "card_discount": (invoice.discount_amount if source == DiscountSource.CARD else ZERO) if settled else None,
+            "supervisor": ((invoice.discount_amount if source == DiscountSource.COMPLIMENTARY
+                            else invoice.manager_discount_amount or ZERO) if settled else None),
+            "card_discount": (invoice.card_discount_amount or ZERO) if settled else None,
             "card_type": claim.card_type.name if claim else None,
             "card_grade": claim.card_grade.name if claim else None,
             "bill": order.net_amount - order.tax_amount if settled else None,
@@ -252,10 +258,10 @@ class RentDetails(Report):
             tax=Coalesce(Sum("tax_amount", filter=settled), ZERO, output_field=_DEC),
             net=Coalesce(Sum("net_amount", filter=settled), ZERO, output_field=_DEC),
             balance=Coalesce(Sum(F("paid_amount") - F("net_amount"), filter=settled), ZERO, output_field=_DEC),
-            supervisor=Coalesce(Sum("invoice__discount_amount", filter=settled & Q(
-                invoice__discount_source__in=_MANAGER)), ZERO, output_field=_DEC),
-            card_discount=Coalesce(Sum("invoice__discount_amount", filter=settled & Q(
-                invoice__discount_source=DiscountSource.CARD)), ZERO, output_field=_DEC),
+            complimentary=Coalesce(Sum("invoice__discount_amount", filter=settled & Q(
+                invoice__discount_source=DiscountSource.COMPLIMENTARY)), ZERO, output_field=_DEC),
+            manager=Coalesce(Sum("invoice__manager_discount_amount", filter=settled), ZERO, output_field=_DEC),
+            card_discount=Coalesce(Sum("invoice__card_discount_amount", filter=settled), ZERO, output_field=_DEC),
         )
         # running orders' advances (a cancelled one's no longer counts)
         advance = (counted(Payment.objects.filter(order__in=orders.exclude(status=OrderStatus.COMPLETED).values("pk"),
@@ -277,7 +283,7 @@ class RentDetails(Report):
             "initial": initial, "collected": agg["collected"], "deposit": agg["balance"] + advance,
             "rounding": agg["rounding"], "tax": agg["tax"], "net": agg["net"], "credit": credit,
             "actual": agg["net"] - credit, **common.pay_cells(paid),
-            "supervisor": agg["supervisor"], "card_discount": agg["card_discount"],
+            "supervisor": agg["complimentary"] + agg["manager"], "card_discount": agg["card_discount"],
             "bill": agg["net"] - agg["tax"], **fares,
             "_vehicles": shown_lines.aggregate(n=Count("pk"))["n"],
         }
