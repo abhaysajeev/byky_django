@@ -29,6 +29,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from apps.company.models import AuthorityType, BranchApprovalAuthority
+from apps.crew import cashiers
 from apps.crew.models import (
     LEAVE_LIVE,
     DutyRoster,
@@ -276,9 +277,13 @@ def _mark_roster(row, user):
     replaced = working_days_in(row)
     days = DutyRoster.objects.filter(employee_id=row.employee_id, date__range=(row.from_date, row.to_date))
     held = set(days.values_list("date", flat=True))
-    days.update(day_type=DutyRosterDayType.ON_LEAVE, role="", branch=None, shift1_start=None, shift1_end=None,
-                shift2_start=None, shift2_end=None, remarks="", leave_request=row, modified_by=user,
-                modified_on=timezone.now())
+    # A Primary cashier going on leave hands Primary to the branch-day's
+    # Secondary (owner, 13 Nov 2026); past days convert too.
+    emptied = cashiers.places_of(days.select_for_update())
+    days.update(day_type=DutyRosterDayType.ON_LEAVE, role="", cashier_type="", branch=None, shift1_start=None,
+                shift1_end=None, shift2_start=None, shift2_end=None, remarks="", leave_request=row,
+                modified_by=user, modified_on=timezone.now())
+    cashiers.settle(emptied)
     DutyRoster.objects.bulk_create([
         DutyRoster(employee_id=row.employee_id, date=day, day_type=DutyRosterDayType.ON_LEAVE, leave_request=row,
                    created_by=user, modified_by=user)

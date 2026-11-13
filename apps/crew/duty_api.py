@@ -22,13 +22,15 @@ from core.schema import SERVER_ERROR, envelope_request, envelope_responses
 from core.timezones import zone_for
 
 _DAY = {
-    "date": "2026-10-15", "status": "Working", "role": "cashier", "branch_id": 12, "branch": "Creek Park Gate 1",
+    "date": "2026-10-15", "status": "Working", "role": "cashier", "cashier_type": "primary", "branch_id": 12,
+    "branch": "Creek Park Gate 1",
     "branch_code": "CPG1", "state": "Dubai", "shift1_start": "15:00", "shift1_end": "02:00",
     "shift1_ends_next_day": True, "shift2_start": None, "shift2_end": None, "shift2_ends_next_day": None,
     "leave_type": None, "leave_reference": None,
 }
 _LEAVE_DAY = {
-    **_DAY, "date": "2026-10-16", "status": "On Leave", "role": None, "branch_id": None, "branch": None,
+    **_DAY, "date": "2026-10-16", "status": "On Leave", "role": None, "cashier_type": None, "branch_id": None,
+    "branch": None,
     "branch_code": None,
     "state": None, "shift1_start": None, "shift1_end": None, "shift1_ends_next_day": None,
     "leave_type": "Annual Leave", "leave_reference": "LEV-2026-00037",
@@ -45,6 +47,8 @@ there is one), `HH:MM` on the station's clock; `shiftN_ends_next_day` is true
 for a shift past midnight (15:00 to 02:00). `role` is what a Working day is
 worked as -- `cashier` or `labour`, which can differ from the employee's own
 designation (a Cashier rostered as labour that day); null on any other day.
+`cashier_type` is `primary` or `secondary` on a day worked as cashier (one
+primary per station per day), null on any other day.
 Dates `YYYY-MM-DD`. Every date of the range is listed. Read-only: rosters are
 written on the web.
 """

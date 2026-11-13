@@ -18,6 +18,7 @@ from apps.company.models import (
     WeekDay,
 )
 from apps.company.services import week_day_of
+from apps.crew import cashiers
 from apps.crew.models import (
     AddressType,
     Attendance,
@@ -705,6 +706,23 @@ def _on_leave(employee, dates):
     return {row.date: row.leave_request for row in rows}
 
 
+def roster_today(company, now=None):
+    """Today's business day for this company (Configurations' day start): the
+    first roster day the web may still change (owner, 13 Nov 2026)."""
+    from core.timezones import business_day_of
+
+    return business_day_of(company, now or timezone.now())
+
+
+def _past_errors(employee, dates):
+    """Refusals for days before today's business day: they are read-only on the
+    web; admins correct them in the database. Leave approval is not affected."""
+    today = roster_today(employee.company)
+    return [{"field": f"{day:%d %b}",
+             "message": f"{day:%d %b} has passed; days before {today:%d %b} can't be changed."}
+            for day in sorted(set(dates)) if day < today]
+
+
 def _leave_error(on_date, leave):
     return {"field": f"{on_date:%d %b}",
             "message": f"{on_date:%d %b} is approved leave {leave.reference}; it cannot be changed on the roster."}
@@ -742,13 +760,17 @@ def save_week(employee, days, *, user, branches_qs):
             clean.append(fields)
     locked = _on_leave(employee, [fields["date"] for fields in clean] + clear)
     errors += [_leave_error(day, leave) for day, leave in sorted(locked.items())]
+    errors += _past_errors(employee, [fields["date"] for fields in clean] + clear)
     if errors:
         raise Invalid(errors)
 
     written = []
     with transaction.atomic():
         if clear:
-            DutyRoster.objects.filter(employee=employee, date__in=clear).delete()
+            going = DutyRoster.objects.select_for_update().filter(employee=employee, date__in=clear)
+            emptied = cashiers.places_of(going)
+            going.delete()
+            cashiers.settle(emptied)
         for fields in clean:
             row, _ = _save_day(employee, fields, user)
             written.append(row)
@@ -759,10 +781,13 @@ def save_week(employee, days, *, user, branches_qs):
 
 def _save_day(employee, fields, user):
     """Upsert one checked day. A Working day always carries its role (owner,
-    7 Nov 2026 -- _check_day requires it); any other day carries none."""
-    return DutyRoster.objects.update_or_create(
-        employee=employee, date=fields["date"], defaults={**fields, "modified_by": user},
-    )
+    7 Nov 2026 -- _check_day requires it); any other day carries none. The
+    cashier type and the branch-day's Primary are kept right by
+    apps/crew/cashiers.py (owner, 13 Nov 2026)."""
+    try:
+        return cashiers.save_day(employee, fields, user)
+    except cashiers.CashierError as error:
+        raise Invalid([{"field": f"{fields['date']:%d %b} — {error.field}", "message": error.message}]) from None
 
 
 def _iso_date(value):
@@ -799,7 +824,7 @@ def _check_day(entry, *, branches_qs):
     fields = {"date": on_date, "day_type": day_type}
 
     if day_type != DutyRosterDayType.WORKING:
-        fields.update(role="", branch=None, shift1_start=None, shift1_end=None,
+        fields.update(role="", cashier_type="", branch=None, shift1_start=None, shift1_end=None,
                       shift2_start=None, shift2_end=None,
                       remarks=(entry.get("remarks") or "")[:200])
         return errors, fields
@@ -812,6 +837,13 @@ def _check_day(entry, *, branches_qs):
         errors.append({"field": f"{label} — Role", "message": "Choose Cashier or Labour."})
         return errors, {}
     fields["role"] = role
+    # Primary / Secondary on a Cashier day (owner, 13 Nov 2026); blank lets
+    # cashiers.save_day pick. Ignored on a Labour day.
+    wish = cashiers.wanted_type(entry.get("cashier_type")) if role == RosterCategory.CASHIER else ""
+    if wish is None:
+        errors.append({"field": f"{label} — Cashier type", "message": "Choose Primary or Secondary."})
+        return errors, {}
+    fields["cashier_type"] = wish
 
     branch = branches_qs.filter(pk=entry.get("branch")).select_related("company").first()
     if branch is None:
@@ -1022,10 +1054,13 @@ def roster_payload(user, year, month):
     `matrix[emp_no][date]` exists only for a date that has a DutyRoster row --
     absence means "not set", not "Working" or any other default.
     """
-    today = timezone.localdate()
     employees = list(
         roster_eligible_employees(user).select_related("designation", "company")
     )
+    # Today's business day: the screen greys out the days before it, the same
+    # line the server refuses at (_past_errors).
+    company = getattr(user, "company", None) or (employees[0].company if employees else None)
+    today = roster_today(company) if company else timezone.localdate()
     weeks = week_dates_all(year, month)
     if not weeks:
         weeks = week_dates_all(today.year, today.month)
@@ -1049,6 +1084,7 @@ def roster_payload(user, year, month):
             # The day's role as the screen labels it (Cashier / Labour), so a
             # Cashier rostered as labour that day sits under Labour.
             "role": RosterCategory(role).label if role else None,
+            "cashier_type": row.cashier_type or None,
             "branch": row.branch.name if row.branch_id else None,
             "shift1_start": _hhmm(row.shift1_start, zone),
             "shift1_end": _hhmm(row.shift1_end, zone),
@@ -1130,6 +1166,9 @@ def assign_day(employee, entry, *, branches_qs, user, require_new=False):
         raise Invalid(errors)
     for day, leave in _on_leave(employee, [fields["date"]]).items():
         raise Invalid([_leave_error(day, leave)])
+    past = _past_errors(employee, [fields["date"]])
+    if past:
+        raise Invalid(past)
     if require_new:
         existing = (
             DutyRoster.objects.filter(employee=employee, date=fields["date"])
@@ -1143,7 +1182,8 @@ def assign_day(employee, entry, *, branches_qs, user, require_new=False):
                            f"entry for {fields['date']:%d %b}{where}. Edit that day instead "
                            f"of adding a new one.",
             }])
-    row, _ = _save_day(employee, fields, user)
+    with transaction.atomic():
+        row, _ = _save_day(employee, fields, user)
     employee_push.roster_updated(employee, [fields["date"]])
     return row
 
@@ -1155,7 +1195,14 @@ def remove_day(employee, on_date, *, user):
         on_date = datetime.date.fromisoformat(on_date)
     for day, leave in _on_leave(employee, [on_date]).items():
         raise Invalid([_leave_error(day, leave)])
-    deleted, _ = DutyRoster.objects.filter(employee=employee, date=on_date).delete()
+    past = _past_errors(employee, [on_date])
+    if past:
+        raise Invalid(past)
+    with transaction.atomic():
+        going = DutyRoster.objects.select_for_update().filter(employee=employee, date=on_date)
+        emptied = cashiers.places_of(going)
+        deleted, _ = going.delete()
+        cashiers.settle(emptied)
     if deleted:
         employee_push.roster_updated(employee, [on_date])
     return deleted > 0
@@ -1173,30 +1220,39 @@ def import_rows(rows, *, user, employees_qs, branches_qs):
     Returns (written_count, row_results) where row_results is
     [{"row", "employee_code", "ok", "message"}, ...] in the order given.
     """
-    by_code = {e.employee_code: e for e in employees_qs.select_related("designation")}
+    by_code = {e.employee_code: e for e in employees_qs.select_related("designation", "company")}
     written = 0
-    results = []
+    results = {}
     changed = {}                # employee -> dates: one push per employee for the import
-    for i, entry in enumerate(rows, start=1):
+    # Primary cashiers before everyone else, so a file may list a branch-day's
+    # Secondary above its Primary (owner, 13 Nov 2026). Row numbers stay the file's.
+    order = sorted(enumerate(rows, start=1),
+                   key=lambda pair: 0 if cashiers.wanted_type(pair[1].get("cashier_type")) == "primary" else 1)
+    for i, entry in order:
         code = str(entry.get("employee_code") or "").strip()
         employee = by_code.get(code)
         if employee is None:
-            results.append({"row": i, "employee_code": code, "ok": False,
-                            "message": "No employee with that code."})
+            results[i] = {"row": i, "employee_code": code, "ok": False, "message": "No employee with that code."}
             continue
         errors, fields = _check_day(entry, branches_qs=branches_qs)
         if not errors:
             errors = [_leave_error(day, leave) for day, leave in _on_leave(employee, [fields["date"]]).items()]
+        if not errors:
+            errors = _past_errors(employee, [fields["date"]])
+        if not errors:
+            try:
+                with transaction.atomic():
+                    _save_day(employee, fields, user)
+            except Invalid as refused:
+                errors = refused.errors
         if errors:
-            results.append({"row": i, "employee_code": code, "ok": False,
-                            "message": errors[0]["message"]})
+            results[i] = {"row": i, "employee_code": code, "ok": False, "message": errors[0]["message"]}
             continue
-        _save_day(employee, fields, user)
         written += 1
         changed.setdefault(employee, []).append(fields["date"])
-        results.append({"row": i, "employee_code": code, "ok": True, "message": "Saved."})
+        results[i] = {"row": i, "employee_code": code, "ok": True, "message": "Saved."}
     employee_push.roster_saves(changed)
-    return written, results
+    return written, [results[i] for i in sorted(results)]
 
 
 # -- Employee App: what its login response returns --------------------------
