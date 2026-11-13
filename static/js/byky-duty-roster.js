@@ -57,6 +57,26 @@
   // The day's role: anyone rostered works a Working day as one of these
   // (owner, 7 Nov 2026); required, so the empty first option is a prompt.
   var ROLE_OPTIONS = [['', 'Role…'], ['cashier', 'Cashier'], ['labour', 'Labour']];
+  // Primary / Secondary on a Cashier day (owner, 13 Nov 2026).
+  var CASHIER_TYPE_OPTIONS = [['primary', 'Primary'], ['secondary', 'Secondary']];
+  var CASHIER_TYPE_LABEL = { primary: 'Primary', secondary: 'Secondary' };
+
+  // A day before today's business day is read-only (owner, 13 Nov 2026);
+  // the server refuses it too (services._past_errors).
+  function isPast(dateIso) { return !!R.today && dateIso < R.today; }
+
+  // Does this branch already have a Primary cashier that day (someone else)?
+  function hasPrimary(branchName, dateIso, exceptEmpNo) {
+    return Object.keys(R.matrix).some(function (empNo) {
+      if (empNo === exceptEmpNo) return false;
+      var rec = R.matrix[empNo][dateIso];
+      return !!(rec && rec.branch === branchName && rec.cashier_type === 'primary');
+    });
+  }
+  // The type a new Cashier day starts with: Primary unless the branch-day has one.
+  function defaultCashierType(branchName, dateIso, exceptEmpNo) {
+    return hasPrimary(branchName, dateIso, exceptEmpNo) ? 'secondary' : 'primary';
+  }
   function roleValue(text) {
     var v = String(text == null ? '' : text).trim().toLowerCase();
     return v === 'cashier' || v === 'labour' ? v : '';
@@ -181,7 +201,7 @@
   var editDayContext = null;
 
   function openEditDay(emp, dateIso) {
-    if (!editDayDrawer || !editDayDrawer.__bykyFill) return;
+    if (!editDayDrawer || !editDayDrawer.__bykyFill || isPast(dateIso)) return;
     var rec = (R.matrix[emp.emp_no] || {})[dateIso];
     editDayContext = { employeeId: emp.id, dateIso: dateIso };
     var record = {
@@ -189,6 +209,8 @@
       day_type: rec ? (DAY_TYPE_VALUE[rec.status] || 'working') : 'working',
       // The day's own role, else the employee's designation (owner, 5 Nov 2026).
       category: ((rec && rec.role) || emp.role || '').toLowerCase(),
+      cashier_type: (rec && rec.cashier_type) ||
+        defaultCashierType(rec && rec.branch, dateIso, emp.emp_no),
       branch: rec && rec.branch ? (branchNameToId[rec.branch] || '') : '',
       shift1_start_hhmm: (rec && rec.shift1_start) || '',
       shift1_end_hhmm: (rec && rec.shift1_end) || '',
@@ -220,6 +242,8 @@
         date: editDayContext.dateIso,
         day_type: dayType,
         role: working ? (val('category') || null) : null,
+        // Only on a Cashier day; a hidden select keeps its old value, so it is dropped here.
+        cashier_type: working && val('category') === 'cashier' ? (val('cashier_type') || null) : null,
         branch: working ? (val('branch') || null) : null,
         shift1_start: working ? (val('shift1_start_hhmm') || null) : null,
         shift1_end: working ? (val('shift1_end_hhmm') || null) : null,
@@ -267,12 +291,14 @@
       // as labour that day sits under Labour. Days saved before roles were
       // carry the designation's (services.roster_payload).
       var dayRole = function (w) { return (w.rec && w.rec.role) || w.emp.role; };
-      var cashiers = working.filter(function (w) { return dayRole(w) === 'Cashier'; });
+      var cashiers = working.filter(function (w) { return dayRole(w) === 'Cashier'; })
+        .sort(function (a, b) { return ((a.rec && a.rec.cashier_type) === 'primary' ? 0 : 1) - ((b.rec && b.rec.cashier_type) === 'primary' ? 0 : 1); });
+      var past = isPast(day);
       var labour = working.filter(function (w) { return dayRole(w) !== 'Cashier'; });
       var d = new Date(day + 'T00:00:00');
 
       var card = document.createElement('div');
-      card.className = 'scr-wk-day-card' + (day === R.today ? ' is-today' : '');
+      card.className = 'scr-wk-day-card' + (day === R.today ? ' is-today' : '') + (past ? ' is-past' : '');
       card.dataset.day = day;
 
       var cover;
@@ -283,20 +309,22 @@
 
       function chip(w, role) {
         return '<div class="scr-wk-chip is-' + role + '" data-emp="' + w.emp.id + '" title="' + w.emp.name + ' (' + w.emp.emp_no + ')">' +
-          '<div class="scr-wk-chip-main"><span class="scr-wk-chip-name">' + w.emp.name + '</span>' + shiftLines(w.rec) + '</div>' +
-          '<button type="button" class="scr-wk-chip-x" title="Remove from ' + shortDate(day) + '" aria-label="Remove ' + w.emp.name + ' from ' + shortDate(day) + '" data-wk-remove="' + w.emp.id + '">' +
-          '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg></button></div>';
+          '<div class="scr-wk-chip-main"><span class="scr-wk-chip-name">' + w.emp.name + '</span>' +
+          (role === 'cashier' && w.rec && w.rec.cashier_type ? '<span class="scr-wk-chip-tag is-' + w.rec.cashier_type + '">' + CASHIER_TYPE_LABEL[w.rec.cashier_type] + '</span>' : '') +
+          shiftLines(w.rec) + '</div>' +
+          (past ? '' : '<button type="button" class="scr-wk-chip-x" title="Remove from ' + shortDate(day) + '" aria-label="Remove ' + w.emp.name + ' from ' + shortDate(day) + '" data-wk-remove="' + w.emp.id + '">' +
+          '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg></button>') + '</div>';
       }
       function role(name, people) {
         var key = name === 'Cashier' ? 'cashier' : 'labour';
         return '<div class="scr-wk-role">' +
           '<div class="scr-wk-role-head"><i class="scr-roster-dot is-' + key + '"></i>' + (name === 'Cashier' ? 'Cashiers' : 'Labour') + '</div>' +
           people.map(function (w) { return chip(w, key); }).join('') +
-          '<button type="button" class="scr-wk-add" data-wk-add="' + name + '" data-wk-day="' + day + '">+ Add ' + name.toLowerCase() + '</button></div>';
+          (past ? '' : '<button type="button" class="scr-wk-add" data-wk-add="' + name + '" data-wk-day="' + day + '">+ Add ' + name.toLowerCase() + '</button>') + '</div>';
       }
 
       card.innerHTML = '<div class="scr-wk-day-head"><span>' + d.toLocaleDateString('en-US', { weekday: 'short' }) + '</span>' +
-        '<span class="scr-wk-day-date">' + shortDate(day) + (day === R.today ? ' · today' : '') + '</span></div>' +
+        '<span class="scr-wk-day-date">' + (past ? '<span class="scr-lock" role="img" title="Locked: this day has passed" aria-label="Locked"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg></span>' : '') + shortDate(day) + (day === R.today ? ' · today' : '') + '</span></div>' +
         cover + role('Cashier', cashiers) + role('Labour', labour);
       host.appendChild(card);
     });
@@ -370,6 +398,11 @@
           categorySelect.classList.toggle('has-value', !!categorySelect.value);
           categorySelect.dispatchEvent(new Event('change', { bubbles: true }));
         }
+        var typeSelect = addToDayDrawer.querySelector('[data-field="cashier_type"]');
+        if (typeSelect) {
+          typeSelect.value = defaultCashierType(branchName, dateIso, null);
+          typeSelect.classList.toggle('has-value', true);
+        }
         var branchHost = addToDayDrawer.querySelector('[data-days-host="branch"]');
         var dateHost = addToDayDrawer.querySelector('[data-days-host="for_date"]');
         if (branchHost) branchHost.innerHTML = '<div class="scr-help" style="padding:0"><b>' + branchName + '</b></div>';
@@ -439,6 +472,8 @@
         shift2_end: hasShift2 && addShift2End ? addShift2End.value || null : null,
         // The Role picked is the day's role (owner, 5 Nov 2026).
         role: (addToDayDrawer.querySelector('[data-field="category"]') || {}).value || null,
+        cashier_type: ((addToDayDrawer.querySelector('[data-field="category"]') || {}).value === 'cashier')
+          ? ((addToDayDrawer.querySelector('[data-field="cashier_type"]') || {}).value || null) : null,
         // Add to Day only ever introduces someone new to a day -- Edit Day
         // is the one place a day is meant to change. Without this,
         // re-picking someone already on the roster that day silently
@@ -461,6 +496,9 @@
             if (addShift2End) addShift2End.value = '';
             var shift2Toggle = addToDayDrawer.querySelector('[data-field="add_shift2"]');
             if (shift2Toggle) { shift2Toggle.checked = false; shift2Toggle.dispatchEvent(new Event('change')); }
+            // The next cashier added to the same day is a Secondary: the day now has a Primary.
+            var nextType = addToDayDrawer.querySelector('[data-field="cashier_type"]');
+            if (nextType) nextType.value = 'secondary';
             Crud.toast(result.body.message);
             return;
           }
@@ -516,11 +554,12 @@
       var rec = monthMatrix[day]; // undefined -- not "Working" -- for an unset day
       var d = new Date(day + 'T00:00:00');
       var cell = document.createElement('div');
-      cell.className = 'scr-cal-cell' + (day === R.today ? ' is-today' : '');
-      cell.innerHTML = '<span class="scr-cal-date">' + d.getDate() + '</span>' +
+      var past = isPast(day);
+      cell.className = 'scr-cal-cell' + (day === R.today ? ' is-today' : '') + (past ? ' is-past' : '');
+      cell.innerHTML = '<span class="scr-cal-date">' + d.getDate() + (past ? ' ' + '<span class="scr-lock" role="img" title="Locked: this day has passed" aria-label="Locked"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg></span>' : '') + '</span>' +
         (rec ? '<span class="scr-badge ' + statusBadgeClass(rec.status) + '"><i></i>' + statusText(rec) + '</span>' : '') +
         (rec && rec.status === 'Working' ? '<span class="scr-cal-shift">' + shiftLabel(rec) + '</span><span class="scr-cal-branch">' + (rec.branch || '') + '</span>' : '') +
-        (isLeave(rec) ? '' : '<button type="button" class="scr-cal-edit" title="Edit day" data-cal-edit="' + day + '">' +
+        (isLeave(rec) || past ? '' : '<button type="button" class="scr-cal-edit" title="Edit day" aria-label="Edit ' + shortDate(day) + '" data-cal-edit="' + day + '">' +
         '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10a2.1 2.1 0 0 0-3-3L5 17z"></path></svg></button>');
       cell.addEventListener('click', function (e) {
         if (e.target.closest('[data-cal-edit]')) return;
@@ -529,14 +568,16 @@
           sub: emp.role + ' · ' + emp.emp_no,
           badge: rec ? '<span class="scr-badge ' + statusBadgeClass(rec.status) + '"><i></i>' + statusText(rec) + '</span>' : '',
           fields: [
-            ['Station', rec && rec.status === 'Working' ? rec.branch : ''],
+            ['Branch', rec && rec.status === 'Working' ? rec.branch : ''],
+            ['Cashier type', rec && rec.cashier_type ? CASHIER_TYPE_LABEL[rec.cashier_type] : ''],
             ['Shift 1', shiftLabel(rec)],
             ['Shift 2', rec && rec.shift2_start ? rec.shift2_start + ' – ' + rec.shift2_end : ''],
             ['Leave request', isLeave(rec) ? rec.leave_reference : ''],
           ],
           empty: rec ? 'No station or shift for this day.' : 'Nothing is rostered for this day.',
-          note: isLeave(rec) ? 'Set by the approved leave request; it changes only if the leave is cancelled.' : '',
-          action: isLeave(rec) ? null : { label: rec ? 'Edit day' : 'Set this day', run: function () { openEditDay(emp, day); } },
+          note: isLeave(rec) ? 'Set by the approved leave request; it changes only if the leave is cancelled.'
+            : (past ? 'This day has passed and can no longer be changed.' : ''),
+          action: isLeave(rec) || past ? null : { label: rec ? 'Edit day' : 'Set this day', run: function () { openEditDay(emp, day); } },
         });
       });
       if (cell.querySelector('[data-cal-edit]')) cell.querySelector('[data-cal-edit]').addEventListener('click', function (ev) {
@@ -584,6 +625,13 @@
     function dayCard(emp, day, monthMatrix) {
       var rec = monthMatrix[day];
       var d = new Date(day + 'T00:00:00');
+      if (isPast(day)) {
+        // A day that has passed: shown, never posted with the week (owner, 13 Nov 2026).
+        return '<div class="scr-wk-day-card is-past" style="min-width:0" data-emp-day-past="' + day + '">' +
+          '<div class="scr-wk-day-head">' + d.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'short' }) + '</div>' +
+          (rec ? '<span class="scr-badge ' + statusBadgeClass(rec.status) + '"><i></i>' + statusText(rec) + '</span>' : '<span class="byky-help">Not set</span>') +
+          '<div class="byky-help" style="margin-top:6px">This day has passed and can no longer be changed.</div></div>';
+      }
       if (isLeave(rec)) {
         // Approved leave: shown, not posted with the week.
         return '<div class="scr-wk-day-card" style="min-width:0" data-emp-day-leave="' + day + '">' +
@@ -598,6 +646,7 @@
       // The day's role (owner, 7 Nov 2026): required on a Working day, never
       // guessed -- the saved one, else empty so it must be picked.
       var role = rec && rec.status === 'Working' && rec.role ? rec.role.toLowerCase() : '';
+      var cashierType = (rec && rec.cashier_type) || '';
 
       return '<div class="scr-wk-day-card" style="min-width:0" data-emp-day="' + day + '"' + (rec ? ' data-was-set' : '') + '>' +
         '<div class="scr-wk-day-head">' + d.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'short' }) + '</div>' +
@@ -607,6 +656,10 @@
         '<div data-emp-day-working' + (working ? '' : ' hidden') + '>' +
         '<select class="byky-input byky-select" data-emp-day-role aria-label="Role" style="margin-bottom:6px">' +
         ROLE_OPTIONS.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === role ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
+        '</select>' +
+        '<select class="byky-input byky-select" data-emp-day-cashier-type aria-label="Cashier type" style="margin-bottom:6px"' + (role === 'cashier' ? '' : ' hidden') + '>' +
+        '<option value="">Cashier type: automatic</option>' +
+        CASHIER_TYPE_OPTIONS.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === cashierType ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
         '</select>' +
         '<select class="byky-input byky-select" data-emp-day-branch style="margin-bottom:6px">' + branchOptionsHtml.replace('value="' + branchId + '"', 'value="' + branchId + '" selected') + '</select>' +
         '<label class="byky-help" style="display:block; margin-bottom:2px">Shift 1</label>' +
@@ -635,6 +688,9 @@
       if (!card) return;
       if (e.target.matches('[data-emp-day-type]')) {
         card.querySelector('[data-emp-day-working]').hidden = e.target.value !== 'working';
+      }
+      if (e.target.matches('[data-emp-day-role]')) {
+        card.querySelector('[data-emp-day-cashier-type]').hidden = e.target.value !== 'cashier';
       }
       if (e.target.matches('[data-emp-day-shift2-toggle]')) {
         var on = e.target.checked;
@@ -683,6 +739,8 @@
           date: card.dataset.empDay,
           day_type: dayType,
           role: working ? (card.querySelector('[data-emp-day-role]').value || null) : null,
+          cashier_type: working && card.querySelector('[data-emp-day-role]').value === 'cashier'
+            ? (card.querySelector('[data-emp-day-cashier-type]').value || null) : null,
           branch: working ? (card.querySelector('[data-emp-day-branch]').value || null) : null,
           shift1_start: working ? (card.querySelector('[data-emp-day-shift1-start]').value || null) : null,
           shift1_end: working ? (card.querySelector('[data-emp-day-shift1-end]').value || null) : null,
@@ -710,10 +768,6 @@
     });
   })();
 
-  // ============================================================
-  // renders once on load
-  // ============================================================
-  renderStateTable();
 
   // ============================================================
   // Bulk Import (Excel) -- real read via SheetJS, real write via /import/
@@ -728,10 +782,11 @@
       var today = R.today;
       return sample.map(function (e) {
         var rec = (R.matrix[e.emp_no] || {})[today];
-        // Columns: Code, Name, Date, Day Type, Role, Branch, Shift1 Start/End, Shift2 Start/End, Remarks.
+        // Columns: Code, Name, Date, Day Type, Role, Branch, Shift1 Start/End, Shift2 Start/End, Remarks, Cashier Type.
         return [e.emp_no, e.name, today, (rec && rec.status) || 'Working', (rec && rec.role) || 'Cashier',
           (rec && rec.branch) || (ALL_BRANCHES[0] || {}).name || '',
-          (rec && rec.shift1_start) || '09:00', (rec && rec.shift1_end) || '18:00', (rec && rec.shift2_start) || '', (rec && rec.shift2_end) || '', ''];
+          (rec && rec.shift1_start) || '09:00', (rec && rec.shift1_end) || '18:00', (rec && rec.shift2_start) || '', (rec && rec.shift2_end) || '', '',
+          CASHIER_TYPE_LABEL[(rec && rec.cashier_type) || ''] || ''];
       });
     }
 
@@ -753,7 +808,8 @@
           var monthMatrix = R.matrix[e.emp_no] || {};
           Object.keys(monthMatrix).forEach(function (day) {
             var rec = monthMatrix[day];
-            rows.push([e.emp_no, e.name, day, rec.status, rec.role || '', rec.branch || '', rec.shift1_start || '', rec.shift1_end || '', rec.shift2_start || '', rec.shift2_end || '', '']);
+            rows.push([e.emp_no, e.name, day, rec.status, rec.role || '', rec.branch || '', rec.shift1_start || '', rec.shift1_end || '', rec.shift2_start || '', rec.shift2_end || '', '',
+              CASHIER_TYPE_LABEL[rec.cashier_type || ''] || '']);
           });
         });
         if (!rows.length) { Crud.toast('Nothing rostered yet this month.'); return; }
@@ -803,6 +859,9 @@
       var dayType = DAY_TYPE_VALUE[String(r[3] || '').trim()] || String(r[3] || '').trim();
       if (dayType === 'working' && !roleValue(r[4])) return { ok: false, text: 'Choose Cashier or Labour' };
       if (dayType === 'working' && branchName && !branchNameToId[branchName]) return { ok: false, text: 'Unknown branch' };
+      var type = String(r[11] || '').trim().toLowerCase();
+      if (type && !CASHIER_TYPE_LABEL[type]) return { ok: false, text: 'Cashier type must be Primary or Secondary' };
+      if (isPast(normalizeDate(r[2]))) return { ok: false, text: 'Day has passed' };
       return { ok: true, text: 'Ready' };
     }
 
@@ -839,6 +898,7 @@
           shift1_start: r[6] || null, shift1_end: r[7] || null,
           shift2_start: r[8] || null, shift2_end: r[9] || null,
           remarks: r[10] || '',
+          cashier_type: String(r[11] || '').trim().toLowerCase() || null,
         };
       });
 
