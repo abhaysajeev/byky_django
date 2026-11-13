@@ -124,6 +124,14 @@ def client_in(client, world):
     return client
 
 
+@pytest.fixture(autouse=True)
+def _roster_unlocked(monkeypatch):
+    """These tests write roster days on fixed dates through the web paths; the
+    past-day lock (owner, 13 Nov 2026) is tested in test_cashier_type.py, so
+    the lock is switched off for them."""
+    monkeypatch.setattr(services, "_past_errors", lambda employee, dates: [])
+
+
 def post(client, url, payload):
     return client.post(url, data=json.dumps(payload), content_type="application/json")
 

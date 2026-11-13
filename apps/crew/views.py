@@ -28,6 +28,7 @@ from apps.crew.models import (
     AttendanceMethod,
     AttendanceSource,
     BlockAction,
+    CashierType,
     Designation,
     DutyRoster,
     DutyRosterDayType,
@@ -95,6 +96,9 @@ class CrewScreenView(PagePermissionMixin, ThemedTemplateView):
             ],
             "roster_categories_list": [
                 {"id": value, "name": label} for value, label in RosterCategory.choices
+            ],
+            "cashier_types_list": [
+                {"id": value, "name": label} for value, label in CashierType.choices
             ],
             "perm": {
                 action: has_permission(user, self.page_code, action) for action in ACTIONS
@@ -807,6 +811,8 @@ class DutyRosterListView(CrewScreenView):
                 # Role: the day's, required on a Working row (owner, 7 Nov 2026).
                 "Employee Code", "Employee Name", "Date", "Day Type", "Role", "Branch",
                 "Shift1 Start", "Shift1 End", "Shift2 Start", "Shift2 End", "Remarks",
+                # Primary / Secondary on a Cashier row; blank picks (owner, 13 Nov 2026).
+                "Cashier Type",
             ],
             # On Leave is set only by an approved leave request, never picked.
             "roster_day_types": [{"id": v, "name": label} for v, label in DutyRosterDayType.choices

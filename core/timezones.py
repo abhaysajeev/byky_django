@@ -62,3 +62,35 @@ def business_day_range(company, day):
     start_local = datetime.datetime.combine(day, datetime.time.min, tzinfo=zone)
     end_local = start_local + datetime.timedelta(days=1)
     return start_local.astimezone(datetime.UTC), end_local.astimezone(datetime.UTC)
+
+
+# -- The business day (Configurations: report day start) -------------------------------
+# With a day start of 04:00, 1 Nov runs 1 Nov 04:00 -> 2 Nov 03:59 local; a sale at
+# 01:30 on 2 Nov belongs to 1 Nov. No day start saved = the calendar day.
+
+
+def day_start_for(company):
+    """The company's business day start (CompanyConfig.report_day_start), else midnight."""
+    from apps.company.models import CompanyConfig
+
+    start = CompanyConfig.objects.filter(company=company).values_list("report_day_start", flat=True).first()
+    return start or datetime.time.min
+
+
+def business_day_of(company, moment, day_start=None):
+    """The business day `moment` belongs to."""
+    day_start = day_start_for(company) if day_start is None else day_start
+    if timezone.is_naive(moment):
+        moment = timezone.make_aware(moment, datetime.UTC)
+    local = moment.astimezone(zone_for(company))
+    shifted = local - datetime.timedelta(hours=day_start.hour, minutes=day_start.minute)
+    return shifted.date()
+
+
+def business_window(company, first_day, last_day, day_start=None):
+    """The UTC range [first_day at day start, the day after last_day at day start)."""
+    day_start = day_start_for(company) if day_start is None else day_start
+    zone = zone_for(company)
+    start = datetime.datetime.combine(first_day, day_start, tzinfo=zone)
+    end = datetime.datetime.combine(last_day + datetime.timedelta(days=1), day_start, tzinfo=zone)
+    return start.astimezone(datetime.UTC), end.astimezone(datetime.UTC)

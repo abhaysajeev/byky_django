@@ -275,6 +275,13 @@ DUTY_ROSTER_EDIT_DAY = {
                     "options_from": "roster_categories_list", "option_key": "name", "show_if": "day_type:working",
                 },
                 {
+                    # Primary / Secondary on a Cashier day (owner, 13 Nov 2026):
+                    # one Primary per branch per day; a Secondary needs one.
+                    "id": "cashier_type", "label": "Cashier type", "kind": "select", "required": True,
+                    "options_from": "cashier_types_list", "option_key": "name",
+                    "show_if": "day_type:working&category:cashier",
+                },
+                {
                     "id": "branch", "label": "Branch", "kind": "select",
                     "options_from": "branches_list", "option_key": "name", "show_if": "day_type:working",
                 },
@@ -312,6 +319,10 @@ DUTY_ROSTER_ADD_TO_DAY = {
                     # reverse. It no longer narrows the Employee list.
                     "id": "category", "label": "Role", "kind": "select", "required": True,
                     "options_from": "roster_categories_list", "option_key": "name",
+                },
+                {
+                    "id": "cashier_type", "label": "Cashier type", "kind": "select", "required": True,
+                    "options_from": "cashier_types_list", "option_key": "name", "show_if": "category:cashier",
                 },
                 {
                     # Every Cashier and Labour employee, whichever Role is picked.

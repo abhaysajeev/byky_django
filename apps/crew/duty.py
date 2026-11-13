@@ -67,7 +67,8 @@ def day_json(row, day, zone):
     No row: status null -- not set, never a defaulted Working."""
     if row is None:
         return {
-            "date": day.isoformat(), "status": None, "role": None, "branch_id": None, "branch": None,
+            "date": day.isoformat(), "status": None, "role": None, "cashier_type": None, "branch_id": None,
+            "branch": None,
             "branch_code": None, "state": None, "shift1_start": None, "shift1_end": None,
             "shift1_ends_next_day": None, "shift2_start": None, "shift2_end": None, "shift2_ends_next_day": None,
             "leave_type": None, "leave_reference": None,
@@ -80,6 +81,8 @@ def day_json(row, day, zone):
         "status": row.get_day_type_display(),
         # cashier / labour on a Working day (the day's own role), else null.
         "role": role_of(row),
+        # primary / secondary on a Cashier day (owner, 13 Nov 2026), else null.
+        "cashier_type": row.cashier_type or None,
         # The station's database id, for the app's QR code.
         "branch_id": row.branch_id,
         "branch": branch.name if branch else None,
