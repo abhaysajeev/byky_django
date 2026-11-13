@@ -618,6 +618,14 @@ class DutyRosterDayType(models.TextChoices):
     ON_LEAVE = "on_leave", "On Leave"
 
 
+class CashierType(models.TextChoices):
+    """Which cashier a Cashier day is (owner, 13 Nov 2026): one Primary per
+    branch per day; a Secondary only beside a Primary (apps/crew/cashiers.py)."""
+
+    PRIMARY = "primary", "Primary"
+    SECONDARY = "secondary", "Secondary"
+
+
 class DutyRoster(TimeStampedModel):
     """One employee's plan for one day: where, and on which shift.
 
@@ -658,6 +666,9 @@ class DutyRoster(TimeStampedModel):
     # non-Working days; an empty Working day reads as the employee's
     # designation (duty.role_of).
     role = models.CharField(max_length=10, choices=RosterCategory.choices, blank=True, default="")
+    # Primary or Secondary on a Cashier day, else empty (owner, 13 Nov 2026).
+    # Set only by the web roster; kept right by apps/crew/cashiers.py.
+    cashier_type = models.CharField(max_length=10, choices=CashierType.choices, blank=True, default="")
 
     branch = models.ForeignKey(
         "company.Branch", null=True, blank=True,
@@ -673,6 +684,21 @@ class DutyRoster(TimeStampedModel):
     leave_request = models.ForeignKey(
         LeaveRequest, null=True, blank=True, on_delete=models.PROTECT, related_name="roster_days",
     )
+
+    def save(self, *args, **kwargs):
+        """A row saved directly (a script, the shell, a test) still obeys the
+        cashier rule: a Cashier day without a type gets Primary if its branch
+        has none that day, else Secondary; any other day has none. The roster
+        screens decide it themselves (apps/crew/cashiers.py)."""
+        cashier_day = self.day_type == DutyRosterDayType.WORKING and self.role == RosterCategory.CASHIER
+        if not cashier_day:
+            self.cashier_type = ""
+        elif not self.cashier_type:
+            taken = (DutyRoster.objects.filter(branch_id=self.branch_id, date=self.date,
+                                               cashier_type=CashierType.PRIMARY)
+                     .exclude(pk=self.pk).exists())
+            self.cashier_type = CashierType.SECONDARY if taken else CashierType.PRIMARY
+        super().save(*args, **kwargs)
 
     class Meta:
         db_table = "duty_roster"
@@ -718,6 +744,20 @@ class DutyRoster(TimeStampedModel):
                     )
                 ),
                 name="duty_roster_shift2_both_or_neither_after_shift1",
+            ),
+            # A cashier type exactly on a Working day worked as Cashier.
+            models.CheckConstraint(
+                condition=models.Q(day_type=DutyRosterDayType.WORKING, role=RosterCategory.CASHIER,
+                                   cashier_type__in=CashierType.values)
+                | (~models.Q(day_type=DutyRosterDayType.WORKING, role=RosterCategory.CASHIER)
+                   & models.Q(cashier_type="")),
+                name="duty_roster_cashier_type_only_for_cashier_days",
+            ),
+            # One Primary cashier per branch per day.
+            models.UniqueConstraint(
+                fields=["branch", "date"], condition=models.Q(cashier_type=CashierType.PRIMARY),
+                name="uniq_duty_roster_primary_cashier_per_branch_day",
+                violation_error_message="This branch already has a primary cashier that day.",
             ),
             # On Leave exactly when an approved leave request set the day.
             models.CheckConstraint(

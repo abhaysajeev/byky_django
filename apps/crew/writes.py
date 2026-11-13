@@ -239,6 +239,8 @@ class DutyRosterAssignDayView(WriteView):
             "ok": True, "message": f"{employee.full_name} set for {row.date:%d %b}.",
             "day": {
                 "status": row.get_day_type_display(),
+                "role": row.get_role_display() or None,
+                "cashier_type": row.cashier_type or None,
                 "branch": row.branch.name if row.branch_id else None,
                 "shift1_start": services._hhmm(row.shift1_start, zone),
                 "shift1_end": services._hhmm(row.shift1_end, zone),
