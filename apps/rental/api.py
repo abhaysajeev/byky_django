@@ -102,6 +102,8 @@ _INVOICE_SAMPLE = {
          "package_details": None},
     ],
     "subtotal": "110.000", "discount_percentage": None, "discount_amount": "0.000", "discount_source": None,
+    "card_discount_percentage": None, "card_discount_amount": None,
+    "manager_discount_percentage": None, "manager_discount_amount": None,
     "tax_percentage": "5.00", "tax_amount": "5.238", "rounding_adjustment": "0.000", "net_amount": "110.000",
     "payments": [{"mode": "Cash", "kind": "advance", "amount": "60.000", "reference_no": ""},
                  {"mode": "Card", "kind": "settlement", "amount": "50.000", "reference_no": "448812"}],
@@ -366,6 +368,12 @@ def invoice_json(invoice, zone):
         "discount_percentage": _percent(invoice.discount_percentage),
         "discount_amount": _money(invoice.discount_amount),
         "discount_source": invoice.discount_source or None,
+        # Each discount as sent and approved (owner, 13 Nov 2026); discount_amount
+        # is what the bill took off in all, never more than the subtotal.
+        "card_discount_percentage": _percent(invoice.card_discount_percentage),
+        "card_discount_amount": _money(invoice.card_discount_amount),
+        "manager_discount_percentage": _percent(invoice.manager_discount_percentage),
+        "manager_discount_amount": _money(invoice.manager_discount_amount),
         "tax_percentage": _percent(invoice.tax_percentage), "tax_amount": _money(invoice.tax_amount),
         "rounding_adjustment": _money(invoice.rounding_adjustment),
         "net_amount": _money(invoice.net_amount),
@@ -387,24 +395,54 @@ def _invoice_status(invoice, zone):
     }
 
 
+def _applied_request(order):
+    """The approval the settle applied -- manager discount or complimentary --
+    read from the loaded requests (a list page prefetches them)."""
+    return next((r for r in order.requests.all() if r.applied_at is not None), None)
+
+
 def _discount_json(order):
-    """The discount the settle applied: a card discount (its approved request,
-    or none for an automatic one), a manager's approved discount or an approved
-    complimentary ride -- null without one."""
-    if order.discount_claim_id:
+    """What the settle took off: a card discount (its approved request, or none
+    for an automatic one), a manager's approved discount, both (`card_manager`,
+    owner 13 Nov 2026: the two are in card_discount / manager_discount) or an
+    approved complimentary ride -- null without one. The amount is the total
+    taken off."""
+    applied = _applied_request(order)
+    manager = applied is not None and applied.kind == "discount"
+    if order.discount_claim_id and manager:
+        source, request_id = "card_manager", None
+    elif order.discount_claim_id:
         claim = order.discount_claim
         source, request_id = "card", str(claim.pk) if claim.requires_approval else None
-    else:
-        # Read from the loaded requests (a list page prefetches them).
-        applied = next((r for r in order.requests.all() if r.applied_at is not None), None)
-        if applied is None:
-            return None
+    elif applied is not None:
         source = "complimentary" if applied.kind == "complimentary" else "manager"
         request_id = str(applied.pk)
+    else:
+        return None
     return {
         "source": source, "request_sync_id": request_id,
         "discount_percentage": _percent(order.discount_percentage), "discount_amount": _money(order.discount_amount),
     }
+
+
+def _card_discount_json(order):
+    """The card discount on the bill, as sent (owner, 13 Nov 2026) -- null without one."""
+    if not order.discount_claim_id:
+        return None
+    claim = order.discount_claim
+    return {"request_sync_id": str(claim.pk) if claim.requires_approval else None,
+            "discount_percentage": _percent(order.card_discount_percentage),
+            "discount_amount": _money(order.card_discount_amount)}
+
+
+def _manager_discount_json(order):
+    """The manager's approved discount on the bill, as sent -- null without one."""
+    applied = _applied_request(order)
+    if applied is None or applied.kind != "discount":
+        return None
+    return {"request_sync_id": str(applied.pk),
+            "discount_percentage": _percent(order.manager_discount_percentage),
+            "discount_amount": _money(order.manager_discount_amount)}
 
 
 def _test_ride_json(order):
@@ -479,6 +517,8 @@ def _order_body(order, zone, items, payments, invoice):
         # The bill: null until settle.
         "subtotal": _money(order.subtotal),
         "discount": _discount_json(order),
+        # Each one on its own (both may apply, owner 13 Nov 2026); null when not on the bill.
+        "card_discount": _card_discount_json(order), "manager_discount": _manager_discount_json(order),
         "tax_percentage": _percent(order.tax_percentage), "tax_amount": _money(order.tax_amount),
         "rounding_adjustment": _money(order.rounding_adjustment), "net_amount": _money(order.net_amount),
         # Money collected, from booking on; balance_due null until settle.
@@ -576,7 +616,8 @@ _ORDER_SAMPLE = {
     "is_direct_bill": False, "is_hotel_order": False, "hotel_commission": "0.00",
     "customer": {"id": 5512, "name": "Ahmed Al Mansoori", "mobile": "971501234567"},
     "test_ride": None,
-    "subtotal": None, "discount": None, "tax_percentage": None, "tax_amount": None,
+    "subtotal": None, "discount": None, "card_discount": None, "manager_discount": None,
+    "tax_percentage": None, "tax_amount": None,
     "rounding_adjustment": None, "net_amount": None,
     "amount_received": "100.00", "amount_refunded": "0.00", "paid_amount": "100.00", "balance_due": None,
     "items_out": 2,
@@ -628,6 +669,9 @@ _SETTLED_SAMPLE = {
     "subtotal": "110.00",
     "discount": {"source": "card", "request_sync_id": "01923e2a-11aa-7b22-8c33-d4e5f6a7b8c9",
                  "discount_percentage": "5.00", "discount_amount": "5.50"},
+    "card_discount": {"request_sync_id": "01923e2a-11aa-7b22-8c33-d4e5f6a7b8c9",
+                      "discount_percentage": "5.00", "discount_amount": "5.50"},
+    "manager_discount": None,
     "tax_percentage": "5.00", "tax_amount": "4.98", "rounding_adjustment": "0.00", "net_amount": "104.50",
     "amount_received": "104.50", "paid_amount": "104.50", "balance_due": "0.00",
     "payments": [
@@ -1158,9 +1202,16 @@ The server only checks that the figures agree (`amount_mismatch`):
 (`net_amount` × rate / (100 + rate), to 2 places: 104.50 at 5% → 4.98); they
 are stored as sent and printed on the tax invoice, never part of the sum.
 
-**The discount** (optional) -- **at most one** of three blocks:
-`card_discount`, `manager_discount` or `complimentary`; two is
-`invalid_request`. `discount_amount` is what the net check above uses.
+**The discount** (optional): `card_discount`, `manager_discount`, **both**
+(owner, 13 Nov 2026), or `complimentary` **alone** (with either of the others it
+is `invalid_request`). A card and a manager discount are each worked out on the
+**full subtotal** and checked against their own approval; the net check uses
+their sum, **never more than the subtotal**: when they add up to more, the bill
+is **net 0** -- send `net_amount` 0, `rounding_adjustment` 0 and `tax_amount` 0
+(else `amount_mismatch`), with each discount's own amount as it is. The reply
+and the invoice keep both (`card_discount`, `manager_discount`;
+`discount_source` `card_manager`), and `discount_amount` is what the bill took
+off in all.
 
 **`card_discount`** -- a card discount, one of:
 - `{request_sync_id, discount_percentage, discount_amount}` -- an approved
@@ -1191,7 +1242,7 @@ approval (`discount_mismatch`, the expected figures in `data`):
   the approved AED, or the `subtotal` if the bill is smaller (net 0).
 
 An order **with an approved manager discount must apply it**: settling without
-`manager_discount` (or with a card discount instead) is
+`manager_discount` (a card discount alone does not do) is
 `approved_discount_not_applied`, with `request_sync_id`, `discount_type` and
 `discount_value` in `data`. A request still pending at settle is closed.
 
@@ -1255,6 +1306,16 @@ _SETTLE_EXAMPLES = [
     _settle_example("automatic card discount", {"card_discount": {
         "card_discount_id": 7, "card_number": "4111 22** **** 3344", "discount_percentage": "5.00",
         "discount_amount": "5.500"}}),
+    _settle_example(
+        "card + manager discount, both on the full 110.000",
+        {"card_discount": {"request_sync_id": "01923e2a-11aa-7b22-8c33-d4e5f6a7b8c9", "discount_percentage": "5.00",
+                           "discount_amount": "5.500"},
+         "manager_discount": {"request_sync_id": "01923e2b-77aa-7b22-8c33-d4e5f6a7b8c9",
+                              "discount_percentage": "10.00", "discount_amount": "11.000"}},
+        tax_amount="4.452", net_amount="93.500",
+        payments=[{"sync_id": "01923e1c-0a16-7b22-8c33-d4e5f6a7b8c9", "kind": "refund", "payment_mode_id": 1,
+                   "amount": "6.500", "reference_no": "", "paid_at": "2026-10-02 17:13:30"}],
+    ),
     _settle_example(
         "complimentary, the AED 100 advance refunded",
         {"complimentary": {"request_sync_id": "01923e2b-99cc-7b22-8c33-d4e5f6a7b8c9"}},
@@ -1842,16 +1903,17 @@ settled or was cancelled) · `revoked` (approved, then taken back -- see `revoke
 (a reprint, printed -- `used_at`). `decided_channel` / `revoked_channel`: `web`
 or `manager`. One pending or approved request per order and kind; after
 rejected, withdrawn, revoked or used the order may be asked again. A manager
-discount, a complimentary and a card discount never share an order
-(`discount_requested`, `complimentary_requested`, `card_discount_requested`).
+discount and a card discount stand together on one bill (owner, 13 Nov 2026). A
+complimentary may be asked for over either; once approved it revokes them (approved)
+or closes them (pending), and no discount can then be asked for
+(`complimentary_approved`) until it is revoked.
 Times are company time.
 """
 
 _REQUEST_CREATE_ERRORS = (
     "order_not_synced", "sync_id_conflict", "order_closed", "order_not_settled",
     "discount_request_pending", "discount_approved", "complimentary_request_pending", "complimentary_approved",
-    "reprint_request_pending", "reprint_approved", "discount_requested", "complimentary_requested",
-    "card_discount_requested", "cancel_request_pending", "cancel_approved",
+    "reprint_request_pending", "reprint_approved", "cancel_request_pending", "cancel_approved",
 )
 _REQUEST_USED_ERRORS = (
     "order_not_synced", "sync_id_conflict", "unknown_request", "request_not_approved", "request_used", "invoice_void",
@@ -2220,7 +2282,8 @@ _MANAGER_SAMPLE = {
         # tax_amount, bill_amount, closed_by and closed_at are null. opened_by /
         # opened_at: who booked it and when (owner, 13 Nov 2026), always set.
         "fare_amount": "80.000", "deposit_amount": "100.000", "amount_received": "100.000",
-        "amount_refunded": "0.000", "tax_percentage": "5.00", "tax_amount": None, "bill_amount": None,
+        "amount_refunded": "0.000", "tax_percentage": "5.00", "tax_amount": None, "discount_amount": None,
+        "card_discount_amount": None, "manager_discount_amount": None, "bill_amount": None,
         "closed_by": None, "closed_at": None, "opened_by": "Asha Nair", "opened_at": "2026-10-08 16:00:00",
         "vehicles": [
             {"vehicle": "MO 41", "identifier": "VB1241", "vehicle_type": "Monaco", "status": "active",
@@ -2263,7 +2326,8 @@ _MANAGER_CREDIT_NOTE_ROW = {
     "status": "pending", "reason": "Chain broke after 10 minutes", "requested_at": "2026-10-08 17:05:00",
     "decided_by": None, "decided_channel": None, "decided_at": None, "decision_note": "",
     "order": {**_MANAGER_SAMPLE["order"], "status": "completed", "net_amount": "110.000",
-              "fare_amount": "110.000", "tax_amount": "5.240", "bill_amount": "110.000", "closed_by": "Rashed K",
+              "fare_amount": "110.000", "tax_amount": "5.240", "discount_amount": "0.000",
+              "bill_amount": "110.000", "closed_by": "Rashed K",
               "closed_at": "2026-10-08 17:15:00"},
     "details": {"credit_note_no": None, "invoice_no": "DUBPP60182000231", "invoice_net_amount": "110.000",
                 "net_amount": None, "tax_amount": None},

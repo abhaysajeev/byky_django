@@ -724,6 +724,8 @@ class _ClaimDecisionView(_ManagerView):
                                            channel=DecisionChannel.MANAGER)
         except discount_services.NotPending:
             return envelope("claim_decided", "This request is already decided.", http_status=409)
+        except discount_services.DiscountRefused as refused:      # e.g. complimentary_approved
+            return envelope(refused.code, refused.message, http_status=refused.status)
         return envelope("ok", self.message, approvals.claim_row(claim.pk))
 
 

@@ -217,7 +217,7 @@ def test_status_shows_the_rule_and_who_decided_where(client, token, manager, boo
     assert shape(row) == shape(api._REQUEST_APPROVED_SAMPLE)
 
 
-# -- Card discount and manager discount exclude each other --------------------------
+# -- Card discount and manager discount stand together (owner, 13 Nov 2026) ----------
 
 
 @pytest.fixture
@@ -228,14 +228,18 @@ def card(world):
 
 
 @pytest.mark.parametrize("status", [ClaimStatus.PENDING, ClaimStatus.APPROVED])
-def test_a_live_card_discount_request_blocks_a_manager_discount(client, token, shop, booked, card, status):
+def test_a_live_card_discount_request_allows_a_manager_discount(client, token, shop, booked, card, status):
     make_claim(card, shop["ahmed"], status=status, order=Order.objects.get(pk=booked["sync_id"]))
 
-    assert call(client, ASK, ask(booked), token=token).json()["code"] == "card_discount_requested"
+    assert call(client, ASK, ask(booked), token=token).json()["code"] == "ok"
 
 
-def test_a_live_manager_discount_blocks_a_card_discount_request(client, token, shop, booked, card):
-    asked(client, token, booked)
+@pytest.mark.parametrize("approve", [False, True])
+def test_a_live_manager_discount_allows_a_card_discount_request(client, token, manager, shop, booked, card, approve):
+    data = asked(client, token, booked)
+    if approve:
+        assert decide(client, manager, APPROVE, data["request_sync_id"], discount_type="percent",
+                      discount_value="10")["code"] == "ok"
 
     body = call(client, "/api/v1/operator/card-discounts/approval", {
         "sync_id": str(uuid7()), "card_discount_id": card.pk, "full_number": shop["ahmed"].mobile_full,
@@ -243,7 +247,7 @@ def test_a_live_manager_discount_blocks_a_card_discount_request(client, token, s
         "discount_amount": "10.000", "net_amount": "90.000", "requested_at": "2026-10-02 16:31:00",
     }, token=token).json()
 
-    assert body["code"] == "discount_requested"
+    assert body["code"] == "ok", body
 
 
 # -- Manager app ----------------------------------------------------------------------
@@ -445,13 +449,15 @@ def test_a_request_still_waiting_is_closed_by_the_settle(client, token, shop, bo
     assert (req.status, req.closed_at is not None) == (OrderRequestStatus.CLOSED, True)
 
 
-def test_a_card_and_a_manager_discount_together_are_refused(client, token, shop, booked):
+def test_a_complimentary_goes_alone(client, token, shop, booked):
+    """A card and a manager discount may share a bill (owner, 13 Nov 2026,
+    test_two_discounts.py); a complimentary never shares one."""
     body = call(client, SETTLE, bill(
         booked, shop,
         card_discount={"card_discount_id": 1, "discount_percentage": "5.00", "discount_amount": "5.500"},
-        manager_discount={"request_sync_id": str(uuid7()), "discount_amount": "5.500"}), token=token).json()
+        complimentary={"request_sync_id": str(uuid7())}), token=token).json()
 
-    assert body["code"] == "invalid_request" and "manager_discount" in body["data"]["errors"]
+    assert body["code"] == "invalid_request" and "complimentary" in body["data"]["errors"]
 
 
 # -- Web --------------------------------------------------------------------------------

@@ -274,11 +274,12 @@ company time. `remarks` (optional, up to 255) -- the operator's note for the
 approver; shown to the manager and on the web, and returned as
 `request_remarks` (the approver's own note is `remarks`).
 
-One pending request per order at a time, and none while the order has a manager
-discount or complimentary request waiting or approved (`discount_requested`,
-`complimentary_requested`) -- an order takes a
-card discount, a manager discount or a complimentary, never two. Once approved, apply it at
-settle in `card_discount` with this `sync_id` as `request_sync_id`.
+One pending request per order at a time. A card discount stands **with** a manager
+discount on one bill (owner, 13 Nov 2026), and may be asked for while a complimentary
+is pending; once the order is approved as complimentary it is refused
+(`complimentary_approved`), and that approval revokes an approved card discount and
+cancels a pending one. Once approved, apply it at settle in `card_discount` with this
+`sync_id` as `request_sync_id`.
 """
 
 
@@ -304,8 +305,7 @@ class ApprovalRequestView(APIView):
             (404, "unknown_card_discount", "No card discount with that id.", {}),
             (403, "customer_blocked", "The customer is blocked.", {}),
             (409, "request_pending", "This order already has a pending approval request.", {}),
-            (409, "discount_requested", "This order already has a manager discount request.", {}),
-            (409, "complimentary_requested", "This order already has a complimentary request.", {}),
+            (409, "complimentary_approved", "This order is already approved as complimentary.", {}),
             (409, "sync_id_conflict", "That sync_id is already used.", {}),
             (409, "photo_not_uploaded", "That photo has not reached the server yet. Upload it, then send this "
                                         "again.", {}),

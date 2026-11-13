@@ -160,7 +160,6 @@ ORDER_ERRORS = {
     # Requests (apps/rental/requests.py).
     "discount_request_pending": (409, "A discount request is already waiting for this order.", False),
     "discount_approved": (409, "This order already has an approved discount.", False),
-    "card_discount_requested": (409, "This order already has a card-discount request.", False),
     "unknown_request": (404, "No request with that id at this station.", False),
     "request_closed": (409, "That request is already decided or closed.", False),
     # A manager discount at settle.
@@ -173,8 +172,6 @@ ORDER_ERRORS = {
     # Complimentary and reprint requests.
     "complimentary_request_pending": (409, "A complimentary request is already waiting for this order.", False),
     "complimentary_approved": (409, "This order is already approved as complimentary.", False),
-    "complimentary_requested": (409, "This order already has a complimentary request.", False),
-    "discount_requested": (409, "This order already has a manager discount request.", False),
     "reprint_request_pending": (409, "A reprint request is already waiting for this order.", False),
     "reprint_approved": (409, "A reprint is already approved for this order -- print it first.", False),
     "order_reprint_request_pending": (409, "An order receipt reprint is already waiting for this order.", False),
@@ -922,11 +919,14 @@ def settle_order(session, values, request_data, reply_for):
     tax_percentage / tax_amount are the VAT *contained* in the net -- stored
     as sent and shown on the tax invoice, never part of the sum.
 
-    The one discount is a card discount (`card_discount`), a manager's
-    approved discount (`manager_discount`) or an approved complimentary ride
-    (`complimentary`: the whole subtotal off, net 0, any advance refunded in
-    `payments`) -- the last two checked against the approval
-    (apps/rental/requests.py::check_at_settle), and an approval must be
+    The discounts: a card discount (`card_discount`) and a manager's approved
+    discount (`manager_discount`) -- either, or both on one bill (owner, 13
+    Nov 2026), each worked out on the full subtotal and checked against its own
+    approval, the two added up and never more than the subtotal (beyond it the
+    net is 0) -- or, alone, an approved complimentary ride (`complimentary`: the
+    whole subtotal off, net 0, any advance refunded in `payments`). The manager
+    discount and the complimentary are checked against the approval
+    (apps/rental/requests.py::check_at_settle), and every approval must be
     applied. In one transaction: the card discount redeemed (and unused card
     requests cancelled), the approval marked applied (and waiting requests
     closed), the payments recorded, the order completed and the invoice
@@ -946,10 +946,12 @@ def settle_order(session, values, request_data, reply_for):
         billed = [item for item in items if item.status == OrderItemStatus.RETURNED]
         card, manager = values.get("card_discount"), values.get("manager_discount")
         free = values.get("complimentary")
-        discount = card or manager
-        # A complimentary ride: the whole subtotal is the discount, net 0.
+        card_amount = card["discount_amount"] if card else Decimal("0")
+        manager_amount = manager["discount_amount"] if manager else Decimal("0")
+        # A complimentary ride: the whole subtotal is the discount, net 0. A card
+        # and a manager discount add up, but never past the subtotal.
         discount_amount = (values["subtotal"] if free else
-                           discount["discount_amount"] if discount else Decimal("0"))
+                           min(card_amount + manager_amount, values["subtotal"]))
         lines_total = sum((item.total_amount for item in billed), Decimal("0"))
         if values["subtotal"] != lines_total:
             raise OrderRefused("amount_mismatch", f"subtotal must be the returned vehicles' total, {lines_total}.")
@@ -960,6 +962,13 @@ def settle_order(session, values, request_data, reply_for):
                 "amount_mismatch",
                 f"net_amount must be subtotal - discount_amount + rounding_adjustment = {expected_net} "
                 f"(VAT is included in the fares, not added).",
+            )
+        if not free and card_amount + manager_amount > values["subtotal"] and (
+                values["rounding_adjustment"] != 0 or values["tax_amount"] != 0):
+            raise OrderRefused(
+                "amount_mismatch",
+                "The discounts take off more than the subtotal: the bill is net 0, so rounding_adjustment and "
+                "tax_amount must be 0.",
             )
         # The company's round-off (Configurations, CR1): checked once its
         # money settings are saved; before that the bill is taken as sent.
@@ -1004,19 +1013,26 @@ def settle_order(session, values, request_data, reply_for):
         order.subtotal, order.tax_percentage = values["subtotal"], values["tax_percentage"]
         order.tax_amount, order.rounding_adjustment = values["tax_amount"], values["rounding_adjustment"]
         order.net_amount = values["net_amount"]
-        order_requests.close_at_settle(order, approval, discount_amount, values["settled_at"], session.user)
+        # The approval records its own amount: the manager discount's, not the total.
+        order_requests.close_at_settle(order, approval, values["subtotal"] if free else manager_amount,
+                                       values["settled_at"], session.user)
 
         order.discount_claim = claim
+        single = card if not manager else manager if not card else None
         order.discount_percentage = (Decimal("100") if free else
-                                     discount.get("discount_percentage") if discount else None)
+                                     single.get("discount_percentage") if single else None)
         order.discount_amount = discount_amount
+        order.card_discount_percentage = card.get("discount_percentage") if card else None
+        order.card_discount_amount = card_amount if card else None
+        order.manager_discount_percentage = manager.get("discount_percentage") if manager else None
+        order.manager_discount_amount = manager_amount if manager else None
         order.status, order.completed_at = OrderStatus.COMPLETED, values["settled_at"]
         order.modified_by = session.user
         order.save()
         order.refresh_from_db()            # payment_status, balance_due: computed by the database
 
-        source = (DiscountSource.CARD if card else DiscountSource.MANAGER if manager
-                  else DiscountSource.COMPLIMENTARY if free else "")
+        source = (DiscountSource.CARD_MANAGER if card and manager else DiscountSource.CARD if card
+                  else DiscountSource.MANAGER if manager else DiscountSource.COMPLIMENTARY if free else "")
         issue_invoice(order, billed, session, at=values["settled_at"], discount_source=source,
                       star_rating=values.get("star_rating"), rating_remarks=values.get("rating_remarks", ""))
         rate_customer(order.customer_id, values.get("star_rating"), values["settled_at"])
@@ -1117,6 +1133,9 @@ def issue_invoice(order, billed_items, session, *, at, discount_source="", star_
         customer_name=order.customer_name, customer_mobile=order.customer_mobile,
         subtotal=order.subtotal, discount_percentage=order.discount_percentage,
         discount_amount=order.discount_amount, discount_source=discount_source,
+        card_discount_percentage=order.card_discount_percentage, card_discount_amount=order.card_discount_amount,
+        manager_discount_percentage=order.manager_discount_percentage,
+        manager_discount_amount=order.manager_discount_amount,
         tax_percentage=order.tax_percentage, tax_amount=order.tax_amount,
         rounding_adjustment=order.rounding_adjustment, net_amount=order.net_amount, star_rating=star_rating,
         rating_remarks=rating_remarks or "",

@@ -30,6 +30,7 @@ from apps.rental.models import (
     CreditNoteSource,
     CreditNoteStatus,
     Customer,
+    DiscountSource,
     Gender,
     IdType,
     Invoice,
@@ -568,6 +569,24 @@ def _rate(amount, minutes):
     return f"{money.fmt(amount)}/{minutes} MINS"
 
 
+def discount_lines(invoice):
+    """The bill's discount lines: one, as always -- or, for a card and a manager
+    discount on one bill (owner, 13 Nov 2026), one each, their own amounts as
+    sent (together they may be more than discount_amount took off). `short` is
+    the receipt's label, `label` the screen's."""
+    if invoice.discount_source == DiscountSource.CARD_MANAGER:
+        return [
+            {"short": "Card Disc.", "label": "Card Discount", "amount": invoice.card_discount_amount,
+             "percentage": invoice.card_discount_percentage},
+            {"short": "Discount", "label": "Manager Discount", "amount": invoice.manager_discount_amount,
+             "percentage": invoice.manager_discount_percentage},
+        ]
+    short, label = {"card": ("Card Disc.", "Card Discount"), "complimentary": ("Complimentary", "Complimentary")}.get(
+        invoice.discount_source, ("Discount", "Discount"))
+    return [{"short": short, "label": label, "amount": invoice.discount_amount,
+             "percentage": invoice.discount_percentage}]
+
+
 def _receipt(invoice, zone):
     """The printed tax invoice, laid out as the station's receipt -- one dict
     for the print preview and the detail page. Everything comes from the
@@ -613,6 +632,7 @@ def _receipt(invoice, zone):
         "discount_amount": invoice.discount_amount, "discount_source": invoice.discount_source,
         "discount_label": {"card": "Card Disc.", "manager": "Discount", "complimentary": "Complimentary"}.get(
             invoice.discount_source, "Discount"),
+        "discount_lines": discount_lines(invoice),
         "taxable_amount": invoice.net_amount - invoice.tax_amount,      # VAT is inside the net
         "tax_percentage": invoice.tax_percentage, "tax_amount": invoice.tax_amount,
         "rounding": invoice.rounding_adjustment, "net_amount": invoice.net_amount,

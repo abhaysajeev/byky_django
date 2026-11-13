@@ -153,6 +153,7 @@ def test_an_automatic_discount_is_recorded_and_an_overpayment_refunded(client, w
     # The Swagger example is exactly what a tablet gets (bar the request id).
     expected = shape(api._SETTLED_SAMPLE)
     expected["discount"]["request_sync_id"] = "NoneType"
+    expected["card_discount"]["request_sync_id"] = "NoneType"
     assert shape(data) == expected
 
 
