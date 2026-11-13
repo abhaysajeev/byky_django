@@ -2217,10 +2217,11 @@ _MANAGER_SAMPLE = {
         "customer_mobile": "971501234567", "booked_at": "2026-10-08 16:00:00", "advance_paid": "100.000",
         "net_amount": None,
         # The money (owner, 28 Oct 2026): before settle there is no bill --
-        # tax_amount, bill_amount, closed_by and closed_at are null.
+        # tax_amount, bill_amount, closed_by and closed_at are null. opened_by /
+        # opened_at: who booked it and when (owner, 13 Nov 2026), always set.
         "fare_amount": "80.000", "deposit_amount": "100.000", "amount_received": "100.000",
         "amount_refunded": "0.000", "tax_percentage": "5.00", "tax_amount": None, "bill_amount": None,
-        "closed_by": None, "closed_at": None,
+        "closed_by": None, "closed_at": None, "opened_by": "Asha Nair", "opened_at": "2026-10-08 16:00:00",
         "vehicles": [
             {"vehicle": "MO 41", "identifier": "VB1241", "vehicle_type": "Monaco", "status": "active",
              "start_time": "2026-10-08 16:00:00", "expected_end_time": "2026-10-08 17:00:00",
