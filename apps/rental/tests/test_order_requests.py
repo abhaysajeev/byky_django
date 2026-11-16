@@ -491,7 +491,7 @@ def test_the_web_approves_as_an_amount_and_records_the_channel(client_in, token,
     assert (req.status, req.discount_value, req.decided_channel, req.decided_by.username) == (
         OrderRequestStatus.APPROVED, Decimal("20.250"), DecisionChannel.WEB, "sara.k")
     order_page = client_in.get(f"/rental/order/{booked['sync_id']}/").content.decode()
-    assert detail in order_page and "AED 20.250" in order_page
+    assert detail in order_page and "AED 20.250" in order_page      # no money setting: 3 decimals
 
 
 def test_the_web_rejects_and_revokes(client_in, token, booked):
