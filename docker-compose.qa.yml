@@ -33,6 +33,10 @@
 services:
   db:
     image: postgres:16
+    # Back by itself after a reboot, like every other service. It had no
+    # policy, so after the VPS restart of 14 Nov 2026 all three databases stayed
+    # down and the apps kept restarting against nothing.
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-byky_qa}
       POSTGRES_USER: ${POSTGRES_USER:-byky_qa}
