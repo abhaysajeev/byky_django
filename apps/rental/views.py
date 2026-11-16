@@ -524,15 +524,37 @@ def _cancellation(order, local):
 
 def request_links(order):
     """The order's latest request of each kind, for the order page: the kind,
-    the approved rule (or its state) and its page."""
+    the approved rule (or its state) and its page -- and its latest card-discount
+    claim beside them (owner, 16 Nov 2026): a card and a manager discount can
+    share a bill, and the claim lives in its own table."""
     latest = {}
     for req in order.requests.order_by("-requested_at"):
         latest.setdefault(req.kind, req)
-    return [
+    links = [
         {"kind": req.get_kind_display(), "label": rule_label(req), "status_label": req.get_status_display(),
          "applied_amount": req.applied_amount, "url": reverse("rental-request-detail", args=[req.pk])}
         for req in latest.values()
     ]
+    claim = (order.card_claims.select_related("card_type", "card_grade")
+             .order_by("-requested_at", "-created_on").first())
+    if claim is not None:
+        links.append(card_claim_link(claim))
+    return links
+
+
+def card_claim_link(claim):
+    """One card-discount claim as an order-page request row: the card, its %, its
+    state as the Requests page words it (Used once the bill took it, Closed when
+    the settle cancelled it) and, once used, what the bill took off."""
+    used = claim.status == ClaimStatus.REDEEMED
+    return {
+        "kind": "Card Discount",
+        "label": f"{claim.card_type.name} · {claim.card_grade.name} · {claim.discount_percent:.2f}%",
+        "status_label": {ClaimStatus.REDEEMED: "Used", ClaimStatus.CANCELLED: "Closed"}.get(
+            claim.status, claim.get_status_display()),
+        "applied_amount": claim.discount_amount if used else None,
+        "url": reverse("discount-approval-detail", args=[claim.pk]),
+    }
 
 
 def credit_note_link(order):
@@ -919,7 +941,8 @@ def rule_label(req):
         return ""
     if req.discount_type == "percent":
         return f"{req.discount_value.quantize(Decimal('0.01'))}%"
-    return f"AED {req.discount_value}"
+    # In the company's decimals (CR1), not the column's three: "AED 20.00".
+    return f"AED {money.fmt(req.discount_value)}"
 
 
 # Card-discount requests (apps/discount) are listed here too, like the other
