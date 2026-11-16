@@ -27,7 +27,7 @@ from apps.rental.models import (
     OrderRequestStatus,
 )
 from apps.rental.tests import test_order_requests as rq
-from apps.rental.views import discount_lines
+from apps.rental.views import discount_lines, request_links
 from core.ids import uuid7
 
 call = rq.call
@@ -288,3 +288,38 @@ def test_the_migration_copies_a_single_discount_into_its_pair(client, token, man
         Decimal("11.000"), Decimal("10.00"))
     assert (order.manager_discount_amount, invoice.card_discount_amount) == (Decimal("11.000"), None)
     assert OrderRequestKind.DISCOUNT == "discount"
+
+
+# -- The order page (owner, 16 Nov 2026) -------------------------------------------------
+
+def test_the_order_page_lists_the_card_claim_beside_the_manager_request(client, token, manager, shop, booked,
+                                                                       card):
+    manager_id = approved(client, token, manager, booked)
+    claim = card_claim(card, shop, booked)
+
+    rows = {row["kind"]: row for row in request_links(order_of(booked))}
+    assert set(rows) == {OrderRequest.objects.get(pk=manager_id).get_kind_display(), "Card Discount"}
+    card_row = rows["Card Discount"]
+    assert (card_row["status_label"], card_row["applied_amount"]) == ("Approved", None)
+    assert card_row["label"].endswith("· 10.00%")
+    assert card_row["url"] == f"/discount/approval/{claim.pk}/"
+
+    return_all(client, token, booked)
+    body = call(client, SETTLE, bill(booked, shop, tax_amount="4.190", net_amount="88.000",
+                                     payments=refund(shop, "12.000"), **both(claim, manager_id)), token=token).json()
+    assert body["code"] == "ok", body
+    card_row = next(row for row in request_links(order_of(booked)) if row["kind"] == "Card Discount")
+    assert (card_row["status_label"], card_row["applied_amount"]) == ("Used", Decimal("11.000"))
+
+
+def test_an_amount_rule_shows_in_the_company_decimals():
+    from apps.rental.views import rule_label
+    from core import money
+
+    req = OrderRequest(kind=OrderRequestKind.DISCOUNT, discount_type="amount", discount_value=Decimal("20.000"))
+    token = money.activate(money.Money(decimal_places=2))
+    try:
+        assert rule_label(req) == "AED 20.00"
+    finally:
+        money.reset(token)
+    assert rule_label(req) == "AED 20.000"                   # no setting: 3, as before
