@@ -161,9 +161,14 @@ def month_values(target_amount, achieved, work_days, first):
 
 
 def _compile(scheme):
-    variables = [(v.name, formula.parse(v.formula)) for v in scheme.variables.all()]
-    components = [(c, formula.parse(c.formula)) for c in scheme.components.all()]
-    return variables, components
+    return compile_parts([(v.name, v.formula) for v in scheme.variables.all()], list(scheme.components.all()))
+
+
+def compile_parts(variables, components):
+    """(variables, components) ready to evaluate. `components` are
+    SchemeComponent rows, or unsaved ones built from a form (Try it)."""
+    return ([(name, formula.parse(text)) for name, text in variables],
+            [(c, formula.parse(c.formula)) for c in components])
 
 
 def person_lines(scheme_parts, month, counts, role, days_worked, places):
@@ -358,9 +363,14 @@ def employee_totals(company, branches, first):
 
 
 def try_scheme(scheme, branch, day, now=None):
-    """The scheme on one real station-day, before anyone is paid: the month's
+    """A saved scheme on one real station-day (see try_parts)."""
+    return try_parts(scheme.pays_when, _compile(scheme), branch, day, now)
+
+
+def try_parts(pays_when, parts, branch, day, now=None):
+    """Formulas on one real station-day, before anyone is paid: the month's
     figures so far (or the whole month once ended), that day's roster, and
-    each person's amount with the values used. Ignores *pays when*."""
+    each person's amount. Says whether *pays when* holds, but never gates."""
     company = branch.company
     first = day.replace(day=1)
     last = targets.month_bounds(first.year, first.month)[1]
@@ -372,7 +382,6 @@ def try_scheme(scheme, branch, day, now=None):
     people = days.get(day, [])
     counts = day_counts(people)
     worked = Counter(employee.pk for p in days.values() for employee, _ in p)
-    parts = _compile(scheme)
     places = places_for(company, branch)
     rows = []
     for employee, role in people:
@@ -381,7 +390,7 @@ def try_scheme(scheme, branch, day, now=None):
                      "components": [(c.name, amount) for c, amount, _ in found],
                      "amount": sum((amount for _, amount, _ in found), ZERO)})
     try:
-        pays = bool(formula.evaluate(scheme.pays_when, month))
+        pays = bool(formula.evaluate(pays_when, month))
     except formula.FormulaError:
         pays = False
     return {"month": month, "counts": counts, "people": rows, "pays_now": pays, "target": target,

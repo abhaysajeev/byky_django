@@ -1,0 +1,75 @@
+{% extends "incentives/_base.html" %}
+{% load targets %}
+
+{% block screen_title %}Calculate{% endblock %}
+{% block crumb %}<b>Calculate</b>{% endblock %}
+{% block heading %}Calculate{% endblock %}
+{% block sub %}Each station with a sales target this month. A station pays once its month has ended and its target is met.{% endblock %}
+
+{% block actions %}
+<a class="scr-btn-small" href="{% url 'incentives-employees' %}?month={{ month_key }}">By employee</a>
+{% endblock %}
+
+{% block body %}
+{% include "incentives/_month_bar.html" %}
+
+{% if rows %}
+<div class="scr-card">
+  <dl class="scr-x-kpis">
+    <div><dt>Targets met</dt><dd>{{ totals.met }}<small>of {{ totals.stations }} stations</small></dd></div>
+    <div><dt>Calculated</dt><dd>{{ totals.runs }}<small>of {{ totals.met }} met</small></dd></div>
+    <div><dt>Approved (AED)</dt><dd>{{ totals.approved|amount }}</dd></div>
+    <div><dt>Draft (AED)</dt><dd>{{ totals.draft|amount }}</dd></div>
+  </dl>
+</div>
+
+<div class="scr-card" data-inc-calculate data-url="{{ calculate_url }}" data-month="{{ month_key }}">
+  <div class="scr-table-scroll">
+    <table class="scr-x-table">
+      <colgroup><col /><col class="w-num" /><col class="w-num" /><col class="w-progress" /><col class="w-status" /><col class="w-num" /><col class="w-actions" /></colgroup>
+      <thead>
+        <tr>
+          <th scope="col">Station</th>
+          <th scope="col" class="num">Target (AED)</th>
+          <th scope="col" class="num">Achieved</th>
+          <th scope="col">Progress</th>
+          <th scope="col">Target</th>
+          <th scope="col" class="num">Incentive</th>
+          <th scope="col"><span class="scr-x-visually-hidden">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr{% if r.run_url %} class="scr-x-row" data-href="{{ r.run_url }}"{% endif %}>
+          <td data-label="Station">{% if r.run_url %}<a class="scr-x-name" href="{{ r.run_url }}">{{ r.branch.name }}</a>{% else %}<span class="scr-x-name">{{ r.branch.name }}</span>{% endif %}</td>
+          <td data-label="Target" class="num">{{ r.target.amount|amount }}</td>
+          <td data-label="Achieved" class="num">{{ r.achieved|amount }}</td>
+          <td data-label="Progress">{% if r.target %}<div class="scr-x-progress"><span class="scr-x-track"><i style="width:{{ r.pct|bar }}%"></i></span><span class="scr-x-pct">{{ r.pct }}%</span></div>{% endif %}</td>
+          <td data-label="Target">{% include "targets/_status.html" with s=r.status %}</td>
+          <td data-label="Incentive" class="num">{% if r.run %}{{ r.run.total|amount }}<div class="muted">{% if r.run.is_approved %}Approved{% else %}Draft{% endif %}</div>{% else %}<span class="muted">—</span>{% endif %}</td>
+          <td class="actions">
+            {% if r.can_calculate and can.create %}
+              <button type="button" class="scr-btn scr-btn-primary scr-x-act" data-inc-calc data-branch="{{ r.branch.pk }}" data-name="{{ r.branch.name }}">{% if r.run %}Recalculate{% else %}Calculate{% endif %}</button>
+            {% elif r.run %}
+              <a class="scr-btn-small" href="{{ r.run_url }}">View</a>
+            {% else %}
+              <button type="button" class="scr-btn-small" disabled aria-disabled="true" title="{{ r.reason }}">{{ r.reason }}</button>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<p class="scr-x-note">Achieved is the Targets figure: settled orders by booking date, less credit notes. Calculate opens when the month has ended and the scheme's condition holds.</p>
+{% else %}
+<div class="scr-card">
+  <div class="scr-empty"><div>
+    <div class="scr-empty-title">No sales targets for {{ first|date:"F Y" }}</div>
+    <p class="scr-empty-sub">Incentives are worked out per station from its monthly sales target.</p>
+    <a class="scr-btn scr-btn-secondary scr-x-empty-action" href="{% url 'targets-manage' %}?month={{ month_key }}">Set targets</a>
+  </div></div>
+</div>
+{% endif %}
+{% endblock %}
