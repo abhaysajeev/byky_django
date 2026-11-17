@@ -24,7 +24,7 @@
 {% if rows %}
 <div class="scr-card">
   <dl class="scr-x-kpis">
-    <div><dt>{% if is_customers %}Customers target{% else %}Target{% endif %}</dt><dd>{{ totals.target|figure:is_customers }}</dd></div>
+    <div><dt>Target</dt><dd>{{ totals.target|figure:is_customers }}{% if is_customers %}<small>customers</small>{% endif %}</dd></div>
     <div><dt>Achieved</dt><dd>{{ totals.achieved|figure:is_customers }}<small>{{ totals.percent }}%</small></dd></div>
     <div><dt>On track</dt><dd>{{ totals.on_track }}<small>of {{ totals.stations }} branches</small></dd></div>
     {% if is_customers %}<div><dt>Still to win</dt><dd>{{ totals.remaining|figure:True }}<small>customers</small></dd></div>
@@ -34,7 +34,7 @@
 
 <div class="scr-card">
   <div class="scr-table-scroll">
-    <table class="scr-x-table">
+    <table class="scr-x-table scr-x-fit">
       <colgroup><col /><col class="w-num" /><col class="w-num" /><col class="w-progress" />{% if not is_customers %}<col class="w-num" />{% endif %}<col class="w-status" /></colgroup>
       <thead>
         <tr>

@@ -19,19 +19,19 @@
     <div><dt>People</dt><dd>{{ totals.people }}</dd></div>
     <div><dt>Approved (AED)</dt><dd>{{ totals.approved|amount }}</dd></div>
     <div><dt>Draft (AED)</dt><dd>{{ totals.draft|amount }}</dd></div>
-    <div><dt>Total (AED)</dt><dd>{{ totals.approved|add:totals.draft|amount }}</dd></div>
+    <div><dt>Total (AED)</dt><dd>{{ totals.approved|plus:totals.draft|amount }}</dd></div>
   </dl>
 </div>
 <div class="scr-card">
   <div class="scr-table-scroll">
-    <table class="scr-x-table">
+    <table class="scr-x-table scr-x-fit">
       <colgroup><col /><col /><col class="w-num" /><col class="w-num" /><col class="w-num" /></colgroup>
       <thead><tr><th scope="col">Employee</th><th scope="col">Stations</th><th scope="col" class="num">Days</th><th scope="col" class="num">Approved</th><th scope="col" class="num">Draft</th></tr></thead>
       <tbody>
         {% for r in rows %}
         <tr>
-          <td data-label="Employee"><span class="scr-x-name">{{ r.employee.full_name }}</span> <span class="muted">{{ r.employee.employee_code }}</span></td>
-          <td data-label="Stations" class="muted scr-x-wrap">{% for s in r.stations %}<a class="scr-x-name" href="{% url 'incentives-run' s.run.pk %}">{{ s.branch.name }}</a> {{ s.amount|amount }} · {{ s.days }}d{% if not s.run.is_approved %} (draft){% endif %}{% if not forloop.last %}<br />{% endif %}{% endfor %}</td>
+          <td data-label="Employee" class="scr-inc-person"><span class="scr-x-name">{{ r.employee.full_name }}</span> <span class="muted">{{ r.employee.employee_code }}</span></td>
+          <td data-label="Stations" class="muted scr-x-wrap">{% for s in r.stations %}<a class="scr-x-name" href="{% url 'incentives-run' s.run.pk %}">{{ s.branch.name }}</a> {{ s.amount|amount }} · {{ s.days }} day{{ s.days|pluralize }}{% if not s.run.is_approved %} · draft{% endif %}{% if not forloop.last %}<br />{% endif %}{% endfor %}</td>
           <td data-label="Days" class="num">{{ r.days }}</td>
           <td data-label="Approved" class="num">{{ r.approved|amount }}</td>
           <td data-label="Draft" class="num">{{ r.draft|amount }}</td>

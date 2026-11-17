@@ -35,40 +35,41 @@
 <div class="scr-card">
   <div class="scr-table-scroll">
     {% if by == "day" %}
-    <table class="scr-x-table">
-      <colgroup><col class="w-when" /><col /><col class="w-state" /><col /><col class="w-num" /></colgroup>
-      <thead><tr><th scope="col">Day</th><th scope="col">Employee</th><th scope="col">Role</th><th scope="col">Component</th><th scope="col" class="num">Amount</th></tr></thead>
+    {% comment %}One header row per day, then that day's people: the day is read once, not repeated down a column.{% endcomment %}
+    <table class="scr-x-table scr-inc-days">
+      <colgroup><col /><col class="w-role" /><col /><col class="w-num" /></colgroup>
+      <thead><tr><th scope="col">Employee</th><th scope="col">Role</th><th scope="col">Component</th><th scope="col" class="num">Amount</th></tr></thead>
+      {% for d in days %}
       <tbody>
-        {% for d in days %}
-          {% for p in d.people %}
-          <tr>
-            <td data-label="Day">{% if forloop.first %}{{ d.date|date:"D d M" }}{% endif %}</td>
-            <td data-label="Employee"><span class="scr-x-name">{{ p.employee.full_name }}</span> <span class="muted">{{ p.employee.employee_code }}</span></td>
-            <td data-label="Role" class="muted">{{ p.role_label }}</td>
-            <td data-label="Component" class="muted">{% for name, amount in p.components %}{{ name }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
-            <td data-label="Amount" class="num">{{ p.amount|amount }}</td>
-          </tr>
-          {% endfor %}
-        {% empty %}
-        <tr><td colspan="5"><div class="scr-empty"><div><div class="scr-empty-title">Nobody to pay</div><p class="scr-empty-sub">No one was rostered Working at this station this month, or the scheme gave everyone 0.</p></div></div></td></tr>
+        <tr class="scr-inc-dayhead"><th scope="rowgroup" colspan="4">{{ d.date|date:"D d M" }}</th></tr>
+        {% for p in d.people %}
+        <tr>
+          <td data-label="Employee" class="scr-inc-person"><span class="scr-x-name">{{ p.employee.full_name }}</span> <span class="muted">{{ p.employee.employee_code }}</span></td>
+          <td data-label="Role" class="muted">{{ p.role_label }}</td>
+          <td data-label="Component" class="muted">{% for name, amount in p.components %}{{ name }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
+          <td data-label="Amount" class="num">{{ p.amount|amount }}</td>
+        </tr>
         {% endfor %}
       </tbody>
-      {% if days %}<tfoot><tr><th scope="row" colspan="4">Total</th><td class="num">{{ run.total|amount }}</td></tr></tfoot>{% endif %}
+      {% empty %}
+      <tbody><tr><td colspan="4"><div class="scr-empty"><div><div class="scr-empty-title">Nobody to pay</div><p class="scr-empty-sub">No one was rostered Working at this station this month, or the scheme gave everyone 0.</p></div></div></td></tr></tbody>
+      {% endfor %}
+      {% if days %}<tfoot><tr><th scope="row" colspan="3">Total</th><td class="num">{{ run.total|amount }}</td></tr></tfoot>{% endif %}
     </table>
     {% else %}
-    <table class="scr-x-table">
+    <table class="scr-x-table scr-x-fit">
       <colgroup><col /><col /><col class="w-num" /><col class="w-num" /></colgroup>
       <thead><tr><th scope="col">Employee</th><th scope="col">Worked as</th><th scope="col" class="num">Days</th><th scope="col" class="num">Amount</th></tr></thead>
       <tbody>
         {% for e in employees %}
         <tr>
-          <td data-label="Employee"><span class="scr-x-name">{{ e.employee.full_name }}</span> <span class="muted">{{ e.employee.employee_code }}</span></td>
+          <td data-label="Employee" class="scr-inc-person"><span class="scr-x-name">{{ e.employee.full_name }}</span> <span class="muted">{{ e.employee.employee_code }}</span></td>
           <td data-label="Worked as" class="muted">{{ e.roles_text }}</td>
           <td data-label="Days" class="num">{{ e.days }}</td>
           <td data-label="Amount" class="num">{{ e.amount|amount }}</td>
         </tr>
         {% empty %}
-        <tr><td colspan="4"><div class="scr-empty"><div><div class="scr-empty-title">Nobody to pay</div></div></div></td></tr>
+        <tr><td colspan="4"><div class="scr-empty"><div><div class="scr-empty-title">Nobody to pay</div><p class="scr-empty-sub">No one was rostered Working at this station this month, or the scheme gave everyone 0.</p></div></div></td></tr>
         {% endfor %}
       </tbody>
       {% if employees %}<tfoot><tr><th scope="row" colspan="3">Total</th><td class="num">{{ run.total|amount }}</td></tr></tfoot>{% endif %}

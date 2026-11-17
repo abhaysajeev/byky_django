@@ -12,8 +12,8 @@
 {% block body %}
 <div class="scr-card" data-inc-schemes data-copy-url="{{ copy_url }}" data-delete-url="{{ delete_url }}">
   <div class="scr-table-scroll">
-    <table class="scr-x-table">
-      <colgroup><col /><col class="w-when" /><col /><col class="w-status" /><col class="w-actions" /></colgroup>
+    <table class="scr-x-table scr-inc-schemes">
+      <colgroup><col /><col class="w-when" /><col /><col class="w-status" /><col class="w-actions-3" /></colgroup>
       <thead><tr><th scope="col">Scheme</th><th scope="col">Applies</th><th scope="col">Stations</th><th scope="col">Status</th><th scope="col"><span class="scr-x-visually-hidden">Actions</span></th></tr></thead>
       <tbody>
         {% for row in schemes %}{% with s=row.scheme %}

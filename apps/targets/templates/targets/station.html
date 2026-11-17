@@ -29,7 +29,7 @@
 {% if target %}
 <div class="scr-card" data-tgt-month data-url="{{ data_url }}">
   <dl class="scr-x-kpis">
-    <div><dt>{% if is_customers %}Customers target{% else %}Target{% endif %}</dt><dd>{{ figures.amount|figure:is_customers }}</dd></div>
+    <div><dt>Target</dt><dd>{{ figures.amount|figure:is_customers }}{% if is_customers %}<small>customers</small>{% endif %}</dd></div>
     <div><dt>Achieved</dt><dd><span data-tgt="achieved">{{ figures.achieved|figure:is_customers }}</span><small data-tgt="percent">{{ figures.percent }}%</small></dd></div>
     <div><dt>Remaining</dt><dd data-tgt="remaining">{{ figures.remaining|figure:is_customers }}</dd></div>
     {% if is_customers %}<div><dt>Days left</dt><dd>{{ days_left }}</dd></div>

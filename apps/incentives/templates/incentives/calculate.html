@@ -25,7 +25,7 @@
 
 <div class="scr-card" data-inc-calculate data-url="{{ calculate_url }}" data-month="{{ month_key }}">
   <div class="scr-table-scroll">
-    <table class="scr-x-table">
+    <table class="scr-x-table scr-x-fit scr-inc-calc">
       <colgroup><col /><col class="w-num" /><col class="w-num" /><col class="w-progress" /><col class="w-status" /><col class="w-num" /><col class="w-actions" /></colgroup>
       <thead>
         <tr>
@@ -33,7 +33,7 @@
           <th scope="col" class="num">Target (AED)</th>
           <th scope="col" class="num">Achieved</th>
           <th scope="col">Progress</th>
-          <th scope="col">Target</th>
+          <th scope="col">Status</th>
           <th scope="col" class="num">Incentive</th>
           <th scope="col"><span class="scr-x-visually-hidden">Actions</span></th>
         </tr>
@@ -41,19 +41,20 @@
       <tbody>
         {% for r in rows %}
         <tr{% if r.run_url %} class="scr-x-row" data-href="{{ r.run_url }}"{% endif %}>
-          <td data-label="Station">{% if r.run_url %}<a class="scr-x-name" href="{{ r.run_url }}">{{ r.branch.name }}</a>{% else %}<span class="scr-x-name">{{ r.branch.name }}</span>{% endif %}</td>
+          <td data-label="Station">{% if r.run_url %}<a class="scr-x-name" href="{{ r.run_url }}" title="{{ r.branch.name }}">{{ r.branch.name }}</a>{% else %}<span class="scr-x-name" title="{{ r.branch.name }}">{{ r.branch.name }}</span>{% endif %}</td>
           <td data-label="Target" class="num">{{ r.target.amount|amount }}</td>
-          <td data-label="Achieved" class="num">{{ r.achieved|amount }}</td>
+          <td data-label="Achieved" class="num">{{ r.achieved|amount }}{% if r.target %}<div class="muted scr-inc-pct">{{ r.pct }}%</div>{% endif %}</td>
           <td data-label="Progress">{% if r.target %}<div class="scr-x-progress"><span class="scr-x-track"><i style="width:{{ r.pct|bar }}%"></i></span><span class="scr-x-pct">{{ r.pct }}%</span></div>{% endif %}</td>
-          <td data-label="Target">{% include "targets/_status.html" with s=r.status %}</td>
+          <td data-label="Status">{% include "targets/_status.html" with s=r.status %}</td>
           <td data-label="Incentive" class="num">{% if r.run %}{{ r.run.total|amount }}<div class="muted">{% if r.run.is_approved %}Approved{% else %}Draft{% endif %}</div>{% else %}<span class="muted">—</span>{% endif %}</td>
           <td class="actions">
             {% if r.can_calculate and can.create %}
-              <button type="button" class="scr-btn scr-btn-primary scr-x-act" data-inc-calc data-branch="{{ r.branch.pk }}" data-name="{{ r.branch.name }}">{% if r.run %}Recalculate{% else %}Calculate{% endif %}</button>
+              {% comment %}Row actions stay off brand red (one red action per screen): Calculate is the filled ink button, Recalculate re-does a draft and stays plain.{% endcomment %}
+              <button type="button" class="scr-btn-small{% if not r.run %} is-primary{% endif %}" data-inc-calc data-branch="{{ r.branch.pk }}" data-name="{{ r.branch.name }}">{% if r.run %}Recalculate{% else %}Calculate{% endif %}</button>
             {% elif r.run %}
               <a class="scr-btn-small" href="{{ r.run_url }}">View</a>
             {% else %}
-              <button type="button" class="scr-btn-small" disabled aria-disabled="true" title="{{ r.reason }}">{{ r.reason }}</button>
+              <span class="scr-inc-reason">{{ r.reason }}</span>
             {% endif %}
           </td>
         </tr>

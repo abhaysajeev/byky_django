@@ -127,6 +127,8 @@
   function wrap(el, withCheck) {
     var box = document.createElement('div');
     box.className = 'scr-inc-field';
+    // Shown above the field on phones, where the column labels are hidden.
+    box.dataset.label = el.getAttribute('aria-label');
     box.appendChild(el);
     if (withCheck) {
       var note = document.createElement('span');
@@ -151,7 +153,7 @@
     var row = document.createElement('div');
     row.className = 'scr-inc-row';
     row.dataset.kind = 'component';
-    row.appendChild(wrap(input('', c.name, 'Component name', { 'data-k': 'name', placeholder: 'Name, e.g. Primary cashier', maxlength: '60' })));
+    row.appendChild(wrap(input('', c.name, 'Component name', { 'data-k': 'name', placeholder: 'e.g. Primary cashier', maxlength: '60' })));
     var select = document.createElement('select');
     select.className = 'scr-drawer-input';
     select.setAttribute('aria-label', 'Applies to');
@@ -162,7 +164,7 @@
       select.appendChild(o);
     });
     row.appendChild(wrap(select));
-    row.appendChild(wrap(input('scr-inc-formula', c.formula, 'Amount formula', { 'data-k': 'formula', placeholder: 'e.g. basis * 1%' }), true));
+    row.appendChild(wrap(input('scr-inc-formula', c.formula, 'Amount per working day', { 'data-k': 'formula', placeholder: 'e.g. basis * 1%' }), true));
     row.appendChild(removeButton());
     form.querySelector('[data-inc-rows="components"]').appendChild(row);
     return row;
@@ -172,7 +174,7 @@
     var row = document.createElement('div');
     row.className = 'scr-inc-row is-var';
     row.dataset.kind = 'variable';
-    row.appendChild(wrap(input('scr-inc-formula', v.name, 'Variable name', { 'data-k': 'name', placeholder: 'name, e.g. rate', maxlength: '40' })));
+    row.appendChild(wrap(input('scr-inc-formula', v.name, 'Variable name', { 'data-k': 'name', placeholder: 'e.g. rate', maxlength: '40' })));
     row.appendChild(wrap(input('scr-inc-formula', v.formula, 'Variable formula', { 'data-k': 'formula', placeholder: 'e.g. 1% / max(tier2, 2)' }), true));
     row.appendChild(removeButton());
     form.querySelector('[data-inc-rows="variables"]').appendChild(row);
@@ -286,26 +288,41 @@
       if (!res.body.ok) { fail('Can\'t try it yet', res.body); return; }
       var b = res.body, v = b.values;
       var box = text('div', '', 'scr-inc-result');
-      box.appendChild(text('p', b.date + (b.has_target ? (b.pays_now ? ' · the condition holds' : ' · the condition does not hold (yet)') : ' · no sales target this month'), 'scr-x-note'));
-      var vals = text('div', '', 'scr-inc-values');
-      [['achieved', 'Achieved'], ['target', 'Target'], ['work_days', 'Working days'], ['basis', 'Basis'], ['cashiers', 'Cashiers'], ['labour', 'Labour'], ['tier2', 'Tier 2']].forEach(function (pair) {
-        var s = text('span', pair[1] + ' '); s.appendChild(text('b', v[pair[0]])); vals.appendChild(s);
+      // The day, then whether the scheme pays: a word in a tint, never colour alone.
+      var head = text('div', '', 'scr-inc-result-head');
+      head.appendChild(text('b', b.date));
+      head.appendChild(b.has_target
+        ? text('span', b.pays_now ? 'Would pay' : 'Would not pay yet', 'scr-x-status ' + (b.pays_now ? 'is-met' : 'is-behind'))
+        : text('span', 'No sales target this month', 'scr-x-status'));
+      box.appendChild(head);
+      var vals = text('dl', '', 'scr-inc-values');
+      [['achieved', 'Achieved', true], ['target', 'Target', true], ['work_days', 'Working days'], ['basis', 'Daily basis', true], ['cashiers', 'Cashiers'], ['labour', 'Labour'], ['tier2', 'Tier 2']].forEach(function (pair) {
+        var s = text('div', ''); s.appendChild(text('dt', pair[1]));
+        var raw = v[pair[0]];
+        s.appendChild(text('dd', pair[2] && raw !== null && raw !== '' && !isNaN(raw) ? money(raw) : raw));
+        vals.appendChild(s);
       });
       box.appendChild(vals);
       if (!b.people.length) {
         box.appendChild(text('p', b.has_roster ? 'Nobody gets anything that day.' : 'Nobody is rostered Working there that day.', 'scr-x-note'));
       } else {
         var table = document.createElement('table');
-        table.className = 'scr-x-table';
-        var head = table.createTHead().insertRow();
-        ['Employee', 'Role', 'Components', 'Amount'].forEach(function (h, i) { var th = document.createElement('th'); th.textContent = h; if (i === 3) th.className = 'num'; head.appendChild(th); });
+        table.className = 'scr-x-table scr-inc-try-table';
+        var labels = ['Employee', 'Role', 'Components', 'Amount (AED)'];
+        var cols = table.appendChild(document.createElement('colgroup'));
+        ['', 'w-role', '', 'w-num'].forEach(function (c) { var col = document.createElement('col'); if (c) col.className = c; cols.appendChild(col); });
+        var thr = table.createTHead().insertRow();
+        labels.forEach(function (h, i) { var th = document.createElement('th'); th.scope = 'col'; th.textContent = h; if (i === 3) th.className = 'num'; thr.appendChild(th); });
         var body = table.createTBody();
         b.people.forEach(function (p) {
           var r = body.insertRow();
-          r.insertCell().textContent = p.name;
-          r.insertCell().textContent = p.role;
-          r.insertCell().textContent = p.components.map(function (c) { return c[0] + ' ' + money(c[1]); }).join(', ') || '—';
-          var a = r.insertCell(); a.className = 'num'; a.textContent = money(p.amount);
+          var cells = [p.name, p.role, p.components.map(function (c) { return c[0] + ' ' + money(c[1]); }).join(', ') || '—', money(p.amount)];
+          cells.forEach(function (value, i) {
+            var td = r.insertCell();
+            td.textContent = value;
+            td.dataset.label = labels[i];
+            td.className = ['scr-inc-person', 'muted', 'muted', 'num'][i];
+          });
         });
         var wrapTable = text('div', '', 'scr-table-scroll');
         wrapTable.appendChild(table);

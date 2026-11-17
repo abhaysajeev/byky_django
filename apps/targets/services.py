@@ -424,6 +424,9 @@ def overview(branches, year, month, now=None, kind=TargetKind.SALES):
             totals["today_set"] = True
     totals["percent"] = percent(totals["achieved"], totals["target"])
     totals["stations"] = len(rows)
+    # Still to win: each branch's own shortfall added up, so a branch far above
+    # its target never hides the ones below theirs.
+    totals["remaining"] = sum((r["figures"].remaining for r in rows), ZERO)
     return {"rows": rows, "totals": totals}
 
 
