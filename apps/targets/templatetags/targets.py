@@ -58,3 +58,13 @@ def figure(value, is_customers=False):
         except (InvalidOperation, ValueError):
             return value
     return _grouped(value)
+
+
+@register.filter
+def plus(value, arg):
+    """Decimal-safe sum for display. Django's |add tries int() first, so
+    Decimal("0.00")|add:Decimal("774.90") renders 774 -- a wrong money total."""
+    try:
+        return Decimal(str(value or 0)) + Decimal(str(arg or 0))
+    except (InvalidOperation, ValueError):
+        return value

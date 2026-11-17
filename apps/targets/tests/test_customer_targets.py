@@ -87,6 +87,7 @@ def test_the_overview_counts_customers_not_money(world, staff, visit):  # noqa: 
     view = services.overview([world["adc1"]], 2026, 11, now=NOW, kind=CUSTOMERS)
     row = view["rows"][0]
     assert (row["figures"].achieved, row["status"]["key"], row["today"]) == (D("6"), "met", None)
+    assert view["totals"]["remaining"] == D("0")
 
 
 def test_an_edit_changes_only_the_count(world, staff):  # noqa: F811

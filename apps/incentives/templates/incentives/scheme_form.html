@@ -5,7 +5,7 @@
 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
 <b>{% if scheme %}{{ scheme.name }}{% else %}Add scheme{% endif %}</b>{% endblock %}
 {% block heading %}{% if scheme %}{{ scheme.name }}{% else %}Add scheme{% endif %}{% endblock %}
-{% block sub %}Who gets what for each working day at a station whose target was met. Formulas use the variables on the right.{% endblock %}
+{% block sub %}Who gets what for each working day at a station whose target was met. Formulas use the names in the Variables panel.{% endblock %}
 
 {% block actions %}
 <a class="scr-btn-small" href="{{ back_url }}">Back</a>
@@ -49,23 +49,30 @@
       <div class="scr-inc-head"><h2 class="scr-x-card-title scr-inc-h" id="inc-h-components">Components</h2>
         <button type="button" class="scr-btn-small" data-inc-add="components">Add component</button></div>
       <p class="scr-x-note">One line of pay each. A person gets every component that applies to their role that day, per working day.</p>
-      <div class="scr-inc-rows" data-inc-rows="components"></div>
+      <div class="scr-inc-rows" data-inc-rows="components">
+        {% comment %}Column labels for the rows the script adds below; hidden while there are none, and on phones, where each field carries its own.{% endcomment %}
+        <div class="scr-inc-cols" aria-hidden="true"><span>Component name</span><span>Applies to</span><span>Amount per working day</span></div>
+      </div>
     </section>
 
     <section class="scr-card scr-inc-section" aria-labelledby="inc-h-variables">
       <div class="scr-inc-head"><h2 class="scr-x-card-title scr-inc-h" id="inc-h-variables">Your variables <span class="muted">(optional)</span></h2>
         <button type="button" class="scr-btn-small" data-inc-add="variables">Add variable</button></div>
       <p class="scr-x-note">Name a calculation to reuse it, e.g. <code>rate = 1% / max(tier2, 2)</code>. A variable may use the ones above it.</p>
-      <div class="scr-inc-rows" data-inc-rows="variables"></div>
+      <div class="scr-inc-rows" data-inc-rows="variables">
+        <div class="scr-inc-cols is-var" aria-hidden="true"><span>Variable name</span><span>Variable formula</span></div>
+      </div>
     </section>
 
     <section class="scr-card scr-inc-section" aria-labelledby="inc-h-try">
       <h2 class="scr-x-card-title scr-inc-h" id="inc-h-try">Try it</h2>
       <p class="scr-x-note">Runs the formulas as they stand on a real day's roster. Nothing is saved or paid.</p>
       <div class="scr-inc-try">
-        <select class="scr-input" data-inc-try-branch aria-label="Station">{% for b in branches_list %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}</select>
-        <input class="scr-input" type="date" data-inc-try-date aria-label="Day" value="{{ business_today|date:'Y-m-d' }}" />
-        <button type="button" class="scr-btn-small" data-inc-try>Try</button>
+        <label class="scr-inc-field scr-inc-try-station"><span class="byky-label">Station</span>
+          <select class="scr-input" data-inc-try-branch>{% for b in branches_list %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}</select></label>
+        <label class="scr-inc-field"><span class="byky-label">Day</span>
+          <input class="scr-input" type="date" data-inc-try-date value="{{ business_today|date:'Y-m-d' }}" /></label>
+        <button type="button" class="scr-btn-small scr-inc-try-btn" data-inc-try><span class="scr-btn-spin"></span>Try</button>
       </div>
       <div data-inc-try-out aria-live="polite"></div>
     </section>
