@@ -18,10 +18,11 @@ TARGET = {
             "fields": [
                 {"id": "branches", "label": "Branches", "kind": "hidden"},
                 {"id": "month", "label": "Month", "kind": "hidden"},
+                {"id": "kind", "label": "Kind", "kind": "hidden"},
                 {"id": "summary", "label": "For", "kind": "text", "readonly": True, "width": 12,
                  "placeholder": " "},
                 {"id": "amount", "label": "Target amount", "kind": "number", "required": True, "width": 12,
-                 "help": "In AED. Split evenly over the month's days."},
+                 "help": "Sales: AED, split evenly over the month's days. Customers: a whole number."},
                 {"id": "remarks", "label": "Remarks", "kind": "textarea", "required": False, "width": 12,
                  "placeholder": "Optional"},
             ],

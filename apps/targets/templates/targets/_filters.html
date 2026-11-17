@@ -1,6 +1,7 @@
 {% comment %}The state filter beside a stepper. Keeps the period in a hidden field.{% endcomment %}
 <form class="scr-x-filter" method="get">
   {% if period_name %}<input type="hidden" name="{{ period_name }}" value="{{ period_value }}" />{% endif %}
+  {% if is_customers %}<input type="hidden" name="kind" value="customers" />{% endif %}
   <label class="scr-x-visually-hidden" for="tgt-state">State</label>
   <select id="tgt-state" class="scr-input" name="state" data-tgt-filter>
     <option value="">All states</option>

@@ -45,3 +45,16 @@ def bar(value):
         return max(0, min(100, float(value)))
     except (TypeError, ValueError):
         return 0
+
+
+@register.filter
+def figure(value, is_customers=False):
+    """A target figure: a whole count of customers ("1,250"), else AED (|amount)."""
+    if value is None or value == "":
+        return "—"
+    if is_customers:
+        try:
+            return f"{int(Decimal(str(value))):,}"
+        except (InvalidOperation, ValueError):
+            return value
+    return _grouped(value)

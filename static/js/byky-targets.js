@@ -47,6 +47,9 @@
     d.__bykyFill('add', null);
     setField(d, 'branches', ids.join(','));
     setField(d, 'month', month);
+    var pageNode = document.querySelector('[data-tgt-manage]');
+    var setBtn = document.querySelector('[data-tgt-set][data-kind]');
+    setField(d, 'kind', (pageNode && pageNode.dataset.kind) || (setBtn && setBtn.dataset.kind) || 'sales');
     var who = names.length > 3 ? names.length + ' branches' : names.join(', ');
     setField(d, 'summary', who + ' · ' + monthLabel);
     show(d);
