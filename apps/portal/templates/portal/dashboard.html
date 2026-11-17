@@ -6,16 +6,11 @@
 {% block title %}Dashboard{% endblock %}
 
 {% comment %}
-BYKY landing dashboard — rebuilt to match the "Byky Dashboard" design exactly.
-
-No ApexCharts / Swiper / DataTables: the sparkline, month bars, ranked bars and
-deployment gauge are plain markup plus byky-dashboard.js, drawn from the same
-{{ chart_data }} payload the old build used. views.py, seed.py, sales.py and
-geo.py are unchanged.
-
-Station Network is the one exception: it is a real Leaflet tile map, not a
-drawn chart. Station placement needs actual geography (coastline, streets,
-satellite), which a bubble plot on a blank grid cannot show.
+The landing page. Charts are plain markup and SVG drawn by byky-dashboard.js
+from {{ chart_data }}; no chart library. Station Network is the one real map
+(Leaflet, byky-station-network.js), because placing a station needs actual
+geography. Cards whose figures are not wired yet render an empty state rather
+than a zero-height chart.
 {% endcomment %}
 
 {% block vendor_css %}
@@ -44,41 +39,31 @@ satellite), which a bubble plot on a blank grid cannot show.
 {% block content %}
 <div class="bd" data-live-url="{% url 'dashboard-live' %}">
 
-  <div class="bd-head">
-    <div>
-      <h1 class="bd-title">Dashboard</h1>
-      <p class="bd-sub">{{ vehicles|intcomma }} vehicles · {{ stations }} stations · {{ emirates }} emirates</p>
-    </div>
-    <div class="bd-head-actions">
-      <div class="bd-segment">
-        <button type="button">Week</button>
-        <button type="button" class="is-on">Month</button>
-        <button type="button">Quarter</button>
-      </div>
-      <button type="button" class="bd-btn">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="m7 11 5 5 5-5"></path><path d="M4 20h16"></path></svg>
-        Export
-      </button>
-    </div>
-  </div>
+  <header class="bd-head">
+    <h1 class="bd-title">Dashboard</h1>
+    <p class="bd-sub">{{ vehicles|intcomma }} vehicles · {{ stations }} stations · {{ emirates }} emirates</p>
+  </header>
 
   <div class="bd-row">
 
-    <!-- Branch live carousel: one slide per station, busiest first -->
-    <div class="bd-hero" data-bd-carousel aria-roledescription="carousel" aria-label="Stations today">
+    <section class="bd-hero" data-bd-carousel aria-roledescription="carousel" aria-labelledby="bd-h-today">
       <div class="bd-hero-top">
         <div>
-          <h2 class="bd-hero-title">Stations Today</h2>
+          <h2 class="bd-hero-title" id="bd-h-today">Stations Today</h2>
           <p class="bd-hero-sub" data-bd-updated>Live</p>
         </div>
         {% if live.branches|length > 1 %}
         <div class="bd-car-nav">
           <button type="button" class="bd-car-btn" data-bd-prev aria-label="Previous station">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"></path></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6"></path></svg>
           </button>
           <span class="bd-car-count"><span data-bd-pos>1</span> / <span data-bd-total>{{ live.branches|length }}</span></span>
+          <button type="button" class="bd-car-btn" data-bd-pause aria-pressed="false" aria-label="Pause rotation">
+            <svg class="bd-ico-pause" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"></rect><rect x="14" y="5" width="4" height="14" rx="1"></rect></svg>
+            <svg class="bd-ico-play" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"></path></svg>
+          </button>
           <button type="button" class="bd-car-btn" data-bd-next aria-label="Next station">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
           </button>
         </div>
         {% endif %}
@@ -96,61 +81,52 @@ satellite), which a bubble plot on a blank grid cannot show.
             </div>
             <div class="bd-car-revenue">
               <span class="bd-car-amt"><small>AED</small><span data-live="revenue">{{ b.revenue }}</span></span>
-              <span class="bd-car-sub">Revenue today</span>
+              <span class="bd-car-lab">Revenue today</span>
             </div>
-            <div class="bd-car-stats">
-              <div class="bd-car-stat"><span class="bd-car-num" data-live="on_rent">{{ b.on_rent }}</span><span class="bd-car-lab">On rent</span></div>
-              <div class="bd-car-stat"><span class="bd-car-num" data-live="invoices">{{ b.invoices }}</span><span class="bd-car-lab">Invoices</span></div>
-              <div class="bd-car-stat"><span class="bd-car-num" data-live="devices">{{ b.devices }}</span><span class="bd-car-lab">Devices</span></div>
-              <div class="bd-car-stat"><span class="bd-car-num" data-live="staff">{{ b.staff }}</span><span class="bd-car-lab">On duty</span></div>
-            </div>
+            <dl class="bd-car-stats">
+              <div class="bd-car-stat"><dt class="bd-car-lab">On rent</dt><dd class="bd-car-num" data-live="on_rent">{{ b.on_rent }}</dd></div>
+              <div class="bd-car-stat"><dt class="bd-car-lab">Invoices</dt><dd class="bd-car-num" data-live="invoices">{{ b.invoices }}</dd></div>
+              <div class="bd-car-stat"><dt class="bd-car-lab">Devices</dt><dd class="bd-car-num" data-live="devices">{{ b.devices }}</dd></div>
+              <div class="bd-car-stat"><dt class="bd-car-lab">On duty</dt><dd class="bd-car-num" data-live="staff">{{ b.staff }}</dd></div>
+            </dl>
           </section>
           {% empty %}
           <section class="bd-car-slide is-on">
-            <div class="bd-car-head"><h3 class="bd-car-name">No stations yet</h3></div>
+            <h3 class="bd-car-name">No stations yet</h3>
             <p class="bd-hero-sub">Stations appear here once they are added.</p>
           </section>
           {% endfor %}
         </div>
       </div>
-    </div>
-    <!--/ Branch live carousel -->
+    </section>
 
-    <!-- Monthly Sales -->
-    <div class="bd-card bd-sales">
-      <div class="bd-sales-head">
-        <div class="bd-flexrow">
-          <div>
-            <h3 class="bd-card-h3">Monthly Sales</h3>
-            <p class="bd-card-sub">{{ monthly.title }}</p>
-          </div>
-          <span class="bd-chip">AED</span>
-        </div>
-        <div class="bd-sales-total">
-          <span class="bd-big">{{ monthly.total }}</span>
-          <span class="bd-delta is-{{ monthly.delta.direction }}" title="Against the same days last month">{% if monthly.delta.direction == "up" %}▲ {% elif monthly.delta.direction == "down" %}▼ {% endif %}{{ monthly.delta.text }}</span>
-        </div>
-        <p class="bd-note">Daily average {{ monthly.daily_avg }}</p>
-      </div>
-      <svg id="bd-spark" class="bd-spark" viewBox="0 0 300 96" preserveAspectRatio="none"></svg>
-      <div class="bd-spark-labels">
-        <span class="peak" id="bd-spark-peak">{{ monthly.peak|default:"No sales yet" }}</span>
-        {% if monthly.best_day %}<span class="aux">{{ monthly.best_day }}</span>{% endif %}
-      </div>
-    </div>
-    <!--/ Monthly Sales -->
+    <section class="bd-card bd-sales" aria-labelledby="bd-h-sales">
+      <h2 class="bd-card-title" id="bd-h-sales">Monthly Sales</h2>
+      <p class="bd-card-sub">{{ monthly.title }}</p>
+      <p class="bd-total">
+        <span class="bd-unit">AED</span><span class="bd-big">{{ monthly.total }}</span>
+        {% if monthly.delta.direction != "none" %}
+        <span class="bd-delta is-{{ monthly.delta.direction }}">{{ monthly.delta.text }} <span class="bd-delta-note">vs last month</span></span>
+        {% endif %}
+      </p>
+      <p class="bd-note">Daily average {{ monthly.daily_avg }}</p>
+      <svg id="bd-spark" class="bd-spark" viewBox="0 0 300 96" preserveAspectRatio="none" role="img" aria-label="Daily sales this month{% if monthly.peak %}. {{ monthly.peak }}{% endif %}"></svg>
+      <p class="bd-spark-labels">
+        <span class="bd-spark-peak">{{ monthly.peak|default:"No sales yet" }}</span>
+        {% if monthly.best_day %}<span>{{ monthly.best_day }}</span>{% endif %}
+      </p>
+    </section>
 
-    <!-- Vehicles Now: the overdue watch -->
-    <div class="bd-card bd-overdue" data-bd-overdue>
-      <div class="bd-flexrow">
+    <section class="bd-card bd-overdue" data-bd-overdue aria-labelledby="bd-h-now">
+      <div class="bd-card-head">
         <div>
-          <h3 class="bd-card-h3">Vehicles Now</h3>
+          <h2 class="bd-card-title" id="bd-h-now">Vehicles Now</h2>
           <p class="bd-card-sub">
             <span data-live-overdue="on_rent">{{ live.overdue.on_rent }}</span> on rent ·
             <span class="bd-od-count{% if live.overdue.overdue %} is-late{% endif %}"><span data-live-overdue="overdue">{{ live.overdue.overdue }}</span> overdue</span>
           </p>
         </div>
-        <span class="bd-live-dot" title="Live"><i></i>Live</span>
+        <span class="bd-live-dot"><i aria-hidden="true"></i>Live</span>
       </div>
       <ul class="bd-od-list" data-bd-od-list>
         {% for r in live.overdue.rows|slice:":3" %}
@@ -172,280 +148,188 @@ satellite), which a bubble plot on a blank grid cannot show.
       </ul>
       <div class="bd-od-foot">
         <span class="bd-od-page" data-bd-od-page></span>
-        <a class="bd-od-all" href="{% url 'rental-order-list' %}?status=active">View all on rent →</a>
+        <a class="bd-link" href="{% url 'rental-order-list' %}?status=active">View all on rent</a>
       </div>
-    </div>
-    <!--/ Vehicles Now -->
+    </section>
   </div>
 
   <div class="bd-row">
 
-    <!-- Revenue Reports -->
-    <div class="bd-card bd-reports">
-      <div class="bd-flexrow">
-        <div>
-          <h3 class="bd-card-h3">Revenue Reports</h3>
-          <p class="bd-card-sub">Last 12 months, AED</p>
-        </div>
-              </div>
+    <section class="bd-card bd-reports" aria-labelledby="bd-h-reports">
+      <h2 class="bd-card-title" id="bd-h-reports">Revenue Reports</h2>
+      <p class="bd-card-sub">Last 12 months, AED</p>
       <div class="bd-reports-body">
         <div class="bd-reports-left">
-          <div class="bd-reports-total">{{ sales.monthly_revenue|intcomma }}</div>
-          <div class="bd-chip" style="display:inline-block;margin-top:12px">AED / month</div>
+          <p class="bd-label">Monthly revenue</p>
+          <p class="bd-big">{% if chart_data.monthly_revenue %}{{ sales.monthly_revenue|intcomma }}{% else %}—{% endif %}</p>
         </div>
         <div class="bd-reports-right">
-          <div class="bd-callout">
-            <span class="peak" id="bd-month-peak"></span>
-            <span class="trough" id="bd-month-trough"></span>
-          </div>
-          <div class="bd-bars" id="bd-months"></div>
+          {% if chart_data.monthly_revenue %}
+          <p class="bd-callout"><span class="bd-callout-peak" id="bd-month-peak"></span><span id="bd-month-trough"></span></p>
+          <div class="bd-bars" id="bd-months" role="img" aria-label="Revenue by month, last 12 months"></div>
+          {% else %}
+          <p class="bd-empty">No monthly revenue recorded yet.</p>
+          {% endif %}
         </div>
       </div>
-      <div class="bd-statstrip">
-        <div class="bd-stat">
-          <div class="bd-stat-head">
-            <span class="bd-stat-ico" style="background:#fdeced">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#d81f26" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="8" ry="3"></ellipse><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"></path></svg>
-            </span>
-            <span class="bd-mini-lab">Revenue</span>
-          </div>
-          <div class="bd-stat-val">{{ sales.monthly_revenue|intcomma }}</div>
-          <div class="bd-track"><i style="width:{{ sales.revenue_pct }}%;background:#d81f26"></i></div>
-        </div>
-        <div class="bd-stat">
-          <div class="bd-stat-head">
-            <span class="bd-stat-ico" style="background:#eaf1fd">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#3b6fd4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"></path><path d="M9 8h6M9 12h6"></path></svg>
-            </span>
-            <span class="bd-mini-lab">Rentals</span>
-          </div>
-          <div class="bd-stat-val">{{ sales.rentals|intcomma }}</div>
-          <div class="bd-track"><i style="width:{{ sales.rentals_pct }}%;background:#3b6fd4"></i></div>
-        </div>
-        <div class="bd-stat">
-          <div class="bd-stat-head">
-            <span class="bd-stat-ico" style="background:#e9f8f0">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#1f9d63" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9V7a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v2a2.5 2.5 0 0 0 0 6v2a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-2a2.5 2.5 0 0 0 0-6"></path></svg>
-            </span>
-            <span class="bd-mini-lab">Avg Ticket</span>
-          </div>
-          <div class="bd-stat-val">{{ sales.avg_ticket }}</div>
-          <div class="bd-track"><i style="width:{{ sales.ticket_pct }}%;background:#1f9d63"></i></div>
-        </div>
-      </div>
-    </div>
-    <!--/ Revenue Reports -->
+      <dl class="bd-kpis">
+        <div><dt>Rentals</dt><dd>{% if chart_data.monthly_revenue %}{{ sales.rentals|intcomma }}{% else %}—{% endif %}</dd></div>
+        <div><dt>Avg ticket, AED</dt><dd>{% if chart_data.monthly_revenue %}{{ sales.avg_ticket }}{% else %}—{% endif %}</dd></div>
+      </dl>
+    </section>
 
-    <!-- Fleet Deployment -->
-    <div class="bd-card bd-fleet">
-      <div>
-        <h3 class="bd-card-h3">Fleet Deployment</h3>
-        <p class="bd-card-sub">Stations holding stock</p>
-      </div>
+    <section class="bd-card bd-fleet" aria-labelledby="bd-h-fleet">
+      <h2 class="bd-card-title" id="bd-h-fleet">Fleet Deployment</h2>
+      <p class="bd-card-sub">Stations holding stock</p>
       <div class="bd-fleet-body">
         <div class="bd-fleet-left">
-          <div class="bd-fleet-total">{{ stations }}</div>
-          <p class="bd-card-sub">Total stations</p>
-          <div class="bd-legend">
-            <div class="bd-legend-row">
-              <span class="bd-legend-ico" style="background:#e9f8f0">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1f9d63" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.4 2.4 4.6-4.8"></path></svg>
-              </span>
-              <div><div class="bd-legend-t">Stocked</div><div class="bd-legend-s">{{ stocked_stations }} stations</div></div>
-            </div>
-            <div class="bd-legend-row">
-              <span class="bd-legend-ico" style="background:#fdf3e3">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#e08700" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v4M12 16h.01"></path></svg>
-              </span>
-              <div><div class="bd-legend-t">Empty</div><div class="bd-legend-s">{{ empty_stations }} station{{ empty_stations|pluralize }}</div></div>
-            </div>
-            <div class="bd-legend-row">
-              <span class="bd-legend-ico" style="background:#fdeced">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#d81f26" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h8v4a4 4 0 0 1-8 0z"></path><path d="M12 12v4M9 20h6M8 5H5v2a3 3 0 0 0 3 3M16 5h3v2a3 3 0 0 1-3 3"></path></svg>
-              </span>
-              <div><div class="bd-legend-t">Largest</div><div class="bd-legend-s">{{ largest_station.name }} · {{ largest_station.vehicle_count }}</div></div>
-            </div>
+          <p class="bd-label">Total stations</p>
+          <p class="bd-big">{{ stations }}</p>
+          {% if stocked_stations or not vehicles %}
+          <dl class="bd-legend">
+            <div><dt><i class="is-on" aria-hidden="true"></i>Stocked</dt><dd>{{ stocked_stations }}</dd></div>
+            <div><dt><i aria-hidden="true"></i>Empty</dt><dd>{{ empty_stations }}</dd></div>
+            <div><dt>Largest</dt><dd>{% if largest_station.name %}{{ largest_station.name }} · {{ largest_station.vehicle_count }}{% else %}—{% endif %}</dd></div>
+          </dl>
+          {% endif %}
+        </div>
+        {% if stocked_stations or not vehicles %}
+        <div class="bd-gauge" role="img" aria-label="{{ deployment_pct }}% of stations stocked, {{ avg_per_station }} vehicles per station on average">
+          <svg id="bd-gauge" width="196" height="196" viewBox="0 0 196 196" data-pct="{{ deployment_pct }}" aria-hidden="true"></svg>
+          <div class="bd-gauge-centre" aria-hidden="true">
+            <div class="bd-label">Stocked</div>
+            <div class="bd-gauge-pct">{{ deployment_pct }}%</div>
+            <div class="bd-note">{{ avg_per_station }} vehicles per station</div>
           </div>
         </div>
-        <div class="bd-gauge-wrap">
-          <div class="bd-gauge">
-            <svg id="bd-gauge" width="196" height="196" viewBox="0 0 196 196" data-pct="{{ deployment_pct }}"></svg>
-            <div class="bd-gauge-centre">
-              <div class="bd-gauge-lab">Stocked</div>
-              <div class="bd-gauge-pct">{{ deployment_pct }}%</div>
-              <div class="bd-gauge-hint">{{ avg_per_station }} avg · {{ empty_stations }} empty</div>
-            </div>
+        {% else %}
+        {% comment %}Vehicles exist but no station counts as stocked: the per-station stock figures are not connected yet, so "all empty" would be false.{% endcomment %}
+        <p class="bd-empty bd-fleet-empty">Stock per station is not connected yet. {{ vehicles|intcomma }} vehicle{{ vehicles|pluralize }} {{ vehicles|pluralize:"is,are" }} on record.</p>
+        {% endif %}
+      </div>
+    </section>
+  </div>
+
+  <section class="bd-card bd-map-card" aria-labelledby="bd-h-network">
+    <div class="bsn" data-points="bd-map-points">
+      {{ map_points|json_script:"bd-map-points" }}
+      <div class="bd-card-head">
+        <div>
+          <h2 class="bd-card-title" id="bd-h-network">Station Network</h2>
+          <p class="bd-card-sub" data-sub>{% if not map_points %}No station has coordinates yet{% endif %}</p>
+        </div>
+        <a href="{% url 'company-branch-list' %}" class="bd-link">Station list</a>
+      </div>
+
+      {% if map_points %}
+      <div class="bsn-chips"></div>
+      <div class="bsn-split">
+        <div class="bsn-mapwrap">
+          <div class="bsn-map"></div>
+          <div class="bsn-scale" data-scale="fleet" hidden>
+            <span>Fleet</span>
+            <span class="bsn-scale-items"></span>
           </div>
+          <div class="bsn-scale" data-scale="cluster">
+            <i><em class="bsn-dot-pin"></em>Station</i>
+            <i><em class="bsn-dot-group">n</em>Nearby stations, grouped</i>
+          </div>
+        </div>
+        <div class="bsn-list">
+          <div class="bsn-list-head">
+            <b data-list-title>All stations</b>
+            <span data-list-meta></span>
+          </div>
+          <div class="bsn-rows"></div>
         </div>
       </div>
+      {% else %}
+      <p class="bd-empty bd-empty-tall">Stations show on the map once their latitude and longitude are set in the station list.</p>
+      {% endif %}
     </div>
-    <!--/ Fleet Deployment -->
-  </div>
+  </section>
 
   <div class="bd-row">
 
-    {% comment %}
-    Full width since Revenue by Emirate came out from beside it: the map was
-    the reason to look at this row, and at half width the emirates ran
-    together. The chip row below replaces what that card was for -- the
-    per-emirate cut is now a filter on the map itself.
-    {% endcomment %}
-    {% comment %}
-    Station Network -- the "Byky Station Network.html" widget, ported. Full
-    width since Revenue by Emirate came out from beside it; the emirate chips
-    took over that card's job, as a filter on the map itself.
-
-    Markup and classes are the reference's, scoped under .bsn. Behaviour lives
-    in byky-station-network.js; the tiles are the site's own Esri set.
-    {% endcomment %}
-    <!-- Station Network -->
-    <div class="bd-card bd-map-card bd-map-card-wide">
-      <div class="bsn" data-points="bd-map-points">
-        {{ map_points|json_script:"bd-map-points" }}
-
-        <div class="bd-flexrow" style="flex-wrap:wrap">
-          <div>
-            <h3 class="bd-card-h3">Station Network</h3>
-            <p class="bd-card-sub" data-sub></p>
-          </div>
-          <a href="{% url 'company-branch-list' %}" class="bd-link">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"></path></svg>
-            Station list
-          </a>
-        </div>
-
-        <div class="bsn-chips"></div>
-
-        <div class="bsn-split">
-          <div class="bsn-mapwrap">
-            <div class="bsn-map"></div>
-            {% if not map_points %}
-            <p class="bd-card-sub">No stations with coordinates yet.</p>
-            {% endif %}
-            <div class="bsn-scale" data-scale="fleet" hidden>
-              <span>Fleet</span>
-              <i><em style="width:7px;height:7px"></em>12</i>
-              <i><em style="width:12px;height:12px"></em>30</i>
-              <i><em style="width:17px;height:17px"></em>56</i>
-            </div>
-            <div class="bsn-scale" data-scale="cluster">
-              <span>Stations</span>
-              <i><em style="width:9px;height:9px"></em>1</i>
-              <i><em style="width:15px;height:15px"></em>5</i>
-              <i><em style="width:20px;height:20px"></em>10+</i>
-            </div>
-          </div>
-
-          <div class="bsn-list">
-            <div class="bsn-list-head">
-              <b data-list-title>All stations</b>
-              <span data-list-meta></span>
-            </div>
-            <div class="bsn-rows"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-    <!--/ Station Network -->
-
-  </div>
-
-  <div class="bd-row">
-
-    <!-- Revenue by Category -->
-    <div class="bd-card bd-list-card" style="flex:1 1 320px">
-      <div class="bd-flexrow">
-        <h3 class="bd-card-h3">Revenue by Category</h3>
-        <span style="font-size:11.5px;color:#9490bb;font-weight:500;flex:0 0 auto">{{ categories }} categories</span>
-      </div>
-      <div style="font-size:22px;font-weight:700;letter-spacing:-.8px;margin-top:14px" class="bd-num">{{ sales.monthly_revenue|intcomma }}</div>
+    <section class="bd-card bd-list-card" aria-labelledby="bd-h-category">
+      <h2 class="bd-card-title" id="bd-h-category">Revenue by Category</h2>
+      <p class="bd-card-sub">{{ categories }} categor{{ categories|pluralize:"y,ies" }}, AED</p>
+      {% if chart_data.revenue_categories %}
       <div class="bd-catrows" id="bd-categories"></div>
-    </div>
-    <!--/ Revenue by Category -->
+      {% else %}
+      <p class="bd-empty">No category revenue recorded yet.</p>
+      {% endif %}
+    </section>
 
-    <!-- Top Stations by Revenue -->
-    <div class="bd-card bd-list-card" style="flex:1 1 320px">
-      <div>
-        <h3 class="bd-card-h3">Top Stations by Revenue</h3>
-        <p class="bd-card-sub">Monthly, AED</p>
-      </div>
-      <div class="bd-stations">
+    <section class="bd-card bd-list-card" aria-labelledby="bd-h-top">
+      <h2 class="bd-card-title" id="bd-h-top">Top Stations by Revenue</h2>
+      <p class="bd-card-sub">Monthly, AED</p>
+      {% if top_stations_revenue %}
+      <ol class="bd-stations">
         {% for s in top_stations_revenue %}
-        <div class="bd-station">
+        <li class="bd-station">
           <span class="bd-rank">{{ forloop.counter }}</span>
-          <div style="flex:1;min-width:0">
-            <div class="bd-station-name">{{ s.name }}</div>
-            <div class="bd-station-sub">{{ s.fleet }} vehicles</div>
-          </div>
-          <span class="bd-station-val">{{ s.revenue|intcomma }}</span>
-        </div>
-        {% empty %}
-        <p class="bd-card-sub">No rental revenue recorded yet.</p>
-        {% endfor %}
-      </div>
-    </div>
-    <!--/ Top Stations by Revenue -->
-
-    <!-- Workforce by Profession -->
-    <div class="bd-card bd-list-card" style="flex:1 1 320px">
-      <div>
-        <h3 class="bd-card-h3">Workforce by Profession</h3>
-        <p class="bd-card-sub">{{ employees }} employees on record</p>
-      </div>
-      <div class="bd-people">
-        {% for role, count in by_profession %}
-        <div class="bd-person">
-          <span class="bd-person-ico" style="background:{% cycle '#fdeced' '#eaf1fd' '#e9f8f0' '#fdf3e3' '#f4f3f9' as pbg %}">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="{% cycle '#d81f26' '#3b6fd4' '#1f9d63' '#e08700' '#7d7aa0' as pfg %}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.4"></circle><path d="M5.5 20a6.5 6.5 0 0 1 13 0"></path></svg>
+          <span class="bd-station-body">
+            <span class="bd-station-name">{{ s.name }}</span>
+            <span class="bd-station-sub">{{ s.fleet }} vehicles</span>
           </span>
-          <span class="bd-person-name">{{ role }}</span>
-          <span class="bd-person-count">{{ count }}</span>
-        </div>
-        {% empty %}
-        <p class="bd-card-sub">No staff on record yet.</p>
+          <span class="bd-station-val">{{ s.revenue|intcomma }}</span>
+        </li>
         {% endfor %}
-      </div>
-    </div>
-    <!--/ Workforce by Profession -->
+      </ol>
+      {% else %}
+      <p class="bd-empty">No rental revenue recorded yet.</p>
+      {% endif %}
+    </section>
+
+    <section class="bd-card bd-list-card" aria-labelledby="bd-h-crew">
+      <h2 class="bd-card-title" id="bd-h-crew">Workforce by Profession</h2>
+      <p class="bd-card-sub">{{ employees }} employee{{ employees|pluralize }} on record</p>
+      {% if by_profession %}
+      <dl class="bd-people">
+        {% for role, count in by_profession %}
+        <div><dt>{{ role }}</dt><dd>{{ count }}</dd></div>
+        {% endfor %}
+      </dl>
+      {% else %}
+      <p class="bd-empty">No staff on record yet.</p>
+      {% endif %}
+    </section>
   </div>
 
-  <!-- Recent Rental Agreements -->
-  <div class="bd-card bd-table-card">
+  <section class="bd-card bd-table-card" aria-labelledby="bd-h-agreements">
     <div class="bd-table-head">
-      <div>
-        <h3 class="bd-card-h3">Recent Rental Agreements</h3>
-        <p class="bd-card-sub">Latest activity across the network</p>
-      </div>
-          </div>
-    <div class="bd-table-scroll">
+      <h2 class="bd-card-title" id="bd-h-agreements">Recent Rental Agreements</h2>
+      <p class="bd-card-sub">Latest across all stations</p>
+    </div>
+    <div class="bd-table-scroll" tabindex="0" role="region" aria-labelledby="bd-h-agreements">
       <table>
         <thead>
           <tr>
-            <th>Agreement</th><th>Station</th><th>Vehicle</th><th>Category</th>
-            <th class="hours-cell">Hours</th><th class="amount-cell">Amount AED</th>
-            <th>Date</th><th>Status</th>
+            <th scope="col">Agreement</th><th scope="col">Station</th><th scope="col">Vehicle</th><th scope="col">Category</th>
+            <th scope="col" class="num">Hours</th><th scope="col" class="num">Amount, AED</th>
+            <th scope="col">Date</th><th scope="col">Status</th>
           </tr>
         </thead>
         <tbody>
           {% for i in invoices %}
           <tr>
-            <td>{{ i.agreement }}</td>
+            <td class="strong">{{ i.agreement }}</td>
             <td>{{ i.station }}</td>
-            <td><span class="bd-vehicle">{{ i.vehicle }}</span></td>
-            <td><span class="bd-cat">{{ i.category }}</span></td>
-            <td class="hours-cell">{{ i.hours }}</td>
-            <td class="amount-cell">{{ i.amount|intcomma }}</td>
-            <td class="date-cell">{{ i.date }}</td>
-            <td><span class="bd-status {{ i.status|lower }}"><i></i>{{ i.status }}</span></td>
+            <td class="mono">{{ i.vehicle }}</td>
+            <td>{{ i.category }}</td>
+            <td class="num">{{ i.hours }}</td>
+            <td class="num strong">{{ i.amount|intcomma }}</td>
+            <td class="muted">{{ i.date }}</td>
+            <td><span class="bd-status is-{{ i.status|lower }}">{{ i.status }}</span></td>
           </tr>
           {% empty %}
-          <tr><td colspan="8" class="bd-card-sub">No rental agreements yet.</td></tr>
+          <tr><td colspan="8" class="bd-table-empty">No rental agreements yet.</td></tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
-  </div>
-  <!--/ Recent Rental Agreements -->
+  </section>
 
 </div>
 {% endblock %}

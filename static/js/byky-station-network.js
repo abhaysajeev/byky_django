@@ -1,22 +1,14 @@
 /**
  * Station Network -- the dashboard's map widget.
  *
- * Ported from the approved "Byky Station Network.html": its clustering,
- * pins, cluster bubbles, tooltips, size legend, emirate chips and station
- * list, kept value-for-value. Two things come from this codebase instead of
- * the reference:
+ * Clustered station pins, emirate filter chips and a ranked station list
+ * over the site's Esri basemaps (the set byky-leaflet-map.js uses: OSM's own
+ * tiles label the UAE in Arabic). Data is DashboardView.map_points; a figure
+ * the payload does not carry (fleet, on-rent, revenue) is left out, not
+ * shown as 0.
  *
- *   tiles   the site's own Esri basemaps and layer switcher, the same set
- *           byky-leaflet-map.js uses everywhere else -- OSM's raw tiles
- *           render UAE place names in Arabic, and this UI is English.
- *   data    real stations from geo.py, with indicative revenue and
- *           on-rent counts from sales.py.
- *
- * Two deliberate departures from the reference, both requested:
- *   - the right-hand list carries fleet, not revenue; revenue is on the pin.
- *   - hovering a row only highlights it. The map moves, and the station's
- *     details open, on click. The reference flew the map on hover, which
- *     made scanning the list feel like the map was fighting you.
+ * Hovering or focusing a row only highlights its pin; the map moves on
+ * click, so scanning the list never drags the map around.
  */
 
 'use strict';
@@ -81,17 +73,22 @@
     function radius(fleet) { return Math.round(7 + Math.sqrt(fleet || 0) * 1.35); }
     function bubD(n) { return Math.round(30 + Math.min(n, 12) * 2); }
 
+    var hasFleet = S.some(function (s) { return s.fleet > 0; });
+    var hasRent = S.some(function (s) { return s.on_rent != null; });
+    var hasRevenue = S.some(function (s) { return s.revenue != null; });
+    function esc(t) { var d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+    function stats(fleet, rent, rev) {
+      return '<div class="stats">' +
+        (hasFleet ? '<span class="stat"><u>Fleet</u><b>' + fmt(fleet) + '<s>vehicles</s></b></span>' : '') +
+        (hasRent ? '<span class="stat"><u>On rent</u><b>' + fmt(rent) + '<s>now</s></b></span>' : '') +
+        (hasRevenue ? '<span class="stat"><u>Revenue</u><b>' + fmt(rev) + '<s>AED</s></b></span>' : '') +
+        '</div>';
+    }
+
     function stationTip(i) {
       var s = S[i];
-      var share = groups[s.emirate].fleet ? Math.round((s.fleet / groups[s.emirate].fleet) * 100) : 0;
-      return '<div class="t">' + s.name + '</div>' +
-        '<div class="l">' + s.emirate + '</div>' +
-        '<div class="stats">' +
-          '<span class="stat"><u>Fleet</u><b>' + (s.fleet || 0) + '<s>vehicles</s></b></span>' +
-          '<span class="stat"><u>On rent</u><b>' + (s.on_rent || 0) + '<s>now</s></b></span>' +
-          '<span class="stat"><u>Revenue</u><b>' + fmt(s.revenue) + '<s>AED</s></b></span>' +
-        '</div>' +
-        '<div class="note">' + share + '% of ' + s.emirate + ' fleet · revenue and on-rent are indicative</div>';
+      return '<div class="t">' + esc(s.name) + '</div>' +
+        '<div class="l">' + esc(s.emirate) + '</div>' + stats(s.fleet, s.on_rent, s.revenue);
     }
 
     function clusterTip(idx) {
@@ -100,15 +97,11 @@
         fleet += S[i].fleet || 0; rev += S[i].revenue || 0; rent += S[i].on_rent || 0;
         ems[S[i].emirate] = 1;
       });
-      var names = Object.keys(ems);
+      var names = Object.keys(ems).map(esc);
       return '<div class="t">' + (names.length === 1 ? names[0] : names.length + ' emirates') + '</div>' +
         '<div class="l">' + (names.length === 1 ? idx.length + ' stations' : names.join(' · ')) + '</div>' +
-        '<div class="stats">' +
-          '<span class="stat"><u>Fleet</u><b>' + fleet + '<s>vehicles</s></b></span>' +
-          '<span class="stat"><u>On rent</u><b>' + rent + '<s>now</s></b></span>' +
-          '<span class="stat"><u>Revenue</u><b>' + fmt(rev) + '<s>AED</s></b></span>' +
-        '</div>' +
-        '<div class="note">Click to expand</div>';
+        stats(fleet, rent, rev) +
+        '<div class="note">Click to zoom in</div>';
     }
 
     /* Bucket into grid cells, then merge any two groups whose drawn circles
@@ -203,16 +196,30 @@
     }
     map.on('zoomend moveend', draw);
 
+    /* The fleet key draws the real pin sizes for the smallest, middle and
+       largest station shown, so it can never disagree with the map. */
+    (function fleetKey() {
+      var host = root.querySelector('.bsn-scale-items');
+      if (!host || !hasFleet) return;
+      var f = S.map(function (s) { return s.fleet || 0; }).sort(function (a, b) { return a - b; });
+      [f[0], f[Math.floor(f.length / 2)], f[f.length - 1]].filter(function (v, k, a) { return a.indexOf(v) === k; })
+        .forEach(function (v) {
+          var d = radius(v), i = document.createElement('i'), em = document.createElement('em');
+          em.style.width = em.style.height = d + 'px';
+          i.appendChild(em);
+          i.appendChild(document.createTextNode(fmt(v)));
+          host.appendChild(i);
+        });
+    })();
+
     function syncLegend(allSolo) {
-      root.querySelector('[data-scale="fleet"]').hidden = !allSolo;
+      root.querySelector('[data-scale="fleet"]').hidden = !(allSolo && hasFleet);
       root.querySelector('[data-scale="cluster"]').hidden = allSolo;
       var n = S.filter(function (s) { return !filter || s.emirate === filter; }).length;
       var sub = root.querySelector('[data-sub]');
       if (sub) {
-        sub.textContent = filter
-          ? n + ' stations in ' + filter + ' — ' + (allSolo ? 'marker size reflects fleet' : 'bubbles group nearby stations')
-          : n + ' stations across ' + emirates.length + ' emirates — ' +
-            (allSolo ? 'marker size reflects fleet' : 'bubbles group nearby stations, sized by count');
+        sub.textContent = n + ' station' + (n === 1 ? '' : 's') + ' · ' +
+          (filter || emirates.length + ' emirate' + (emirates.length === 1 ? '' : 's'));
       }
     }
 
@@ -235,8 +242,9 @@
         .sort(function (a, b) { return (b.s.fleet || 0) - (a.s.fleet || 0); });
 
       root.querySelector('[data-list-title]').textContent = filter || 'All stations';
-      root.querySelector('[data-list-meta]').textContent =
-        fmt(shown.reduce(function (a, o) { return a + (o.s.fleet || 0); }, 0)) + ' vehicles';
+      root.querySelector('[data-list-meta]').textContent = hasFleet
+        ? fmt(shown.reduce(function (a, o) { return a + (o.s.fleet || 0); }, 0)) + ' vehicles'
+        : shown.length + ' station' + (shown.length === 1 ? '' : 's');
 
       var rows = root.querySelector('.bsn-rows');
       rows.innerHTML = '';
@@ -247,13 +255,13 @@
         b.dataset.i = o.i;
         b.innerHTML = '<span class="rank">' + (k + 1) + '</span>' +
           '<span class="body"><span class="n"></span><span class="p"></span></span>' +
-          '<span class="fig"><b>' + (o.s.fleet || 0) + '</b><s>vehicles</s></span>';
+          (hasFleet ? '<span class="fig"><b>' + (o.s.fleet || 0) + '</b><s>vehicles</s></span>' : '');
         b.querySelector('.n').textContent = o.s.name;
         b.querySelector('.p').textContent = o.s.emirate;
-        /* hover highlights only -- the map stays where the reader put it */
         b.addEventListener('mouseenter', function () { setLit(o.i); });
         b.addEventListener('mouseleave', function () { setLit(null); });
-        /* click is what moves the map, and opens that station's details */
+        b.addEventListener('focus', function () { setLit(o.i); });
+        b.addEventListener('blur', function () { setLit(null); });
         b.addEventListener('click', function () {
           map.flyTo([o.s.lat, o.s.lng], 14, { duration: 0.6 });
           map.once('moveend', function () {
@@ -274,7 +282,11 @@
         var c = document.createElement('button');
         c.type = 'button';
         c.className = 'bsn-chip' + (on ? ' on' : '');
-        c.innerHTML = label + '<b>' + count + '</b>';
+        c.textContent = label;
+        c.setAttribute('aria-pressed', on ? 'true' : 'false');
+        var n = document.createElement('b');
+        n.textContent = count;
+        c.appendChild(n);
         c.onclick = function () { setFilter(value); };
         host.appendChild(c);
       }
