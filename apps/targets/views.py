@@ -18,7 +18,7 @@ from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
 from apps.targets import drawers, services
-from apps.targets.models import Target
+from apps.targets.models import Target, TargetKind
 from core.money import fmt, places_for
 from theme import drawers as theme_drawers
 from theme.views import ThemedTemplateView
@@ -64,12 +64,16 @@ def _day(value, today):
         return today
 
 
+def _kind(value):
+    return TargetKind.CUSTOMERS if value == TargetKind.CUSTOMERS else TargetKind.SALES
+
+
 def record(target):
     """The edit drawer's prefill."""
-    places = places_for(target.company, target.branch)
-    return {"pk": target.pk, "title": "Edit target", "branches": str(target.branch_id),
+    places = 0 if target.kind == TargetKind.CUSTOMERS else places_for(target.company, target.branch)
+    return {"pk": target.pk, "title": "Edit target", "branches": str(target.branch_id), "kind": target.kind,
             "month": f"{target.period_start:%Y-%m}", "amount": fmt(target.amount, places), "remarks": target.remarks,
-            "summary": f"{target.branch.name} · {target.period_start:%B %Y}"}
+            "summary": f"{target.branch.name} · {target.period_start:%B %Y} · {target.get_kind_display()}"}
 
 
 class TargetsScreenView(PagePermissionMixin, ThemedTemplateView):
@@ -87,7 +91,16 @@ class TargetsScreenView(PagePermissionMixin, ThemedTemplateView):
         branches = scoped_branches(user).filter(is_active=True)
         context["states"] = State.objects.filter(pk__in=branches.values("location__state_id")).order_by("name")
         context["chosen_state"] = _int(self.request.GET.get("state"))
+        # Sales | Customers (section 9, C4): which kind the page shows.
+        context["kind"] = _kind(self.request.GET.get("kind"))
+        context["is_customers"] = context["kind"] == TargetKind.CUSTOMERS
         return context
+
+    def kind_tabs(self, context, url_name, month_key):
+        state = f"&state={context['chosen_state']}" if context["chosen_state"] else ""
+        return [{"label": label, "on": value == context["kind"],
+                 "url": f"{reverse(url_name)}?month={month_key}&kind={value}{state}"}
+                for value, label in TargetKind.choices]
 
     def branches(self, context):
         rows = scoped_branches(self.request.user).filter(is_active=True)
@@ -99,6 +112,8 @@ class TargetsScreenView(PagePermissionMixin, ThemedTemplateView):
         year, month = _month(self.request.GET.get("month"), context["business_today"])
         first, last = services.month_bounds(year, month)
         state = f"&state={context['chosen_state']}" if context["chosen_state"] else ""
+        if context.get("kind") == TargetKind.CUSTOMERS:
+            state += "&kind=customers"
 
         def link(by):
             y, m = _shift(year, month, by)
@@ -122,7 +137,8 @@ class OverviewView(TargetsScreenView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         year, month = self.month_context(context, "targets-overview")
-        context.update(services.overview(self.branches(context), year, month))
+        context.update(services.overview(self.branches(context), year, month, kind=context["kind"]))
+        context["kind_tabs"] = self.kind_tabs(context, "targets-overview", f"{year}-{month:02d}")
         return context
 
 
@@ -158,7 +174,8 @@ class ManageView(TargetsScreenView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         year, month = self.month_context(context, "targets-manage")
-        rows = services.manage_rows(list(self.branches(context)), year, month)
+        rows = services.manage_rows(list(self.branches(context)), year, month, context["kind"])
+        context["kind_tabs"] = self.kind_tabs(context, "targets-manage", f"{year}-{month:02d}")
         for row in rows:
             if row["target"] is not None:
                 row["record_id"] = f"tgt-{row['target'].pk}"
@@ -182,16 +199,19 @@ class StationView(TargetsScreenView):
         if not 1 <= month <= 12:
             raise Http404
         first, last = services.month_bounds(year, month)
-        target = (scoped_targets(self.request.user).filter(branch=branch, period_start=first)
+        target = (scoped_targets(self.request.user).filter(branch=branch, kind=context["kind"], period_start=first)
                   .select_related("company", "branch").first())
         prev_y, prev_m = _shift(year, month, -1)
         next_y, next_m = _shift(year, month, 1)
+        kind_query = "?kind=customers" if context["is_customers"] else ""
         context.update({
             "branch": branch, "first": first, "target": target, "month_key": f"{year}-{month:02d}",
-            "prev_url": reverse("targets-station", args=[branch.pk, prev_y, prev_m]),
-            "next_url": reverse("targets-station", args=[branch.pk, next_y, next_m]),
+            "prev_url": reverse("targets-station", args=[branch.pk, prev_y, prev_m]) + kind_query,
+            "next_url": reverse("targets-station", args=[branch.pk, next_y, next_m]) + kind_query,
             "open": last >= services.today_for(branch.company),
-            "data_url": reverse("targets-month-data", args=[target.pk]) if target else "",
+            # The 60 s refresh is for a sales month's days; a customer month has none.
+            "data_url": reverse("targets-month-data", args=[target.pk]) if target and not context["is_customers"]
+            else "",
         })
         if target is not None:
             context.update(services.month_view(target))
@@ -222,8 +242,10 @@ class MonthDataView(PagePermissionMixin, View):
 # -- Writes ----------------------------------------------------------------------------------
 
 
-def _amount(value, company):
-    places = places_for(company)
+def _amount(value, company, kind=TargetKind.SALES):
+    """The posted target: AED in the company's decimals, or for customers a
+    whole number (C1)."""
+    places = 0 if kind == TargetKind.CUSTOMERS else places_for(company)
     try:
         amount = Decimal(str(value).replace(",", "").strip())
     except (InvalidOperation, ValueError):
@@ -231,6 +253,8 @@ def _amount(value, company):
     if not amount.is_finite() or amount <= 0:
         return None, "The target amount must be more than 0."
     if -amount.as_tuple().exponent > places:
+        if not places:
+            return None, "A customer target is a whole number of customers."
         return None, f"Use at most {places} decimals."
     if amount >= Decimal("1e10"):
         return None, "That amount is too large."
@@ -275,7 +299,8 @@ class TargetSaveView(WriteView):
             errors.append({"field": "Month", "message": "Choose a month."})
             year = month = None
         company = branches[0].company if branches else companies_for(request.user).first()
-        amount, problem = _amount(data.get("amount"), company)
+        kind = _kind(data.get("kind"))
+        amount, problem = _amount(data.get("amount"), company, kind)
         if problem:
             errors.append({"field": "Target amount", "message": problem})
         if errors:
@@ -285,7 +310,7 @@ class TargetSaveView(WriteView):
             for company_id in sorted({b.company_id for b in branches}):
                 mine = [b for b in branches if b.company_id == company_id]
                 done, skipped = services.create_targets(mine[0].company, mine, year, month, amount, remarks,
-                                                        request.user)
+                                                        request.user, kind=kind)
                 saved += done
                 refused += skipped
         except services.TargetError as error:
@@ -302,7 +327,7 @@ class TargetSaveView(WriteView):
         if not self.may("update"):
             return self.refused()
         target = get_object_or_404(scoped_targets(request.user).select_related("company", "branch"), pk=pk)
-        amount, problem = _amount(data.get("amount"), target.company)
+        amount, problem = _amount(data.get("amount"), target.company, target.kind)
         if problem:
             return _invalid([{"field": "Target amount", "message": problem}])
         try:

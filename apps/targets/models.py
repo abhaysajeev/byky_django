@@ -13,9 +13,18 @@ from apps.rental.models import MONEY
 from core.models import TimeStampedModel
 
 
+class TargetKind(models.TextChoices):
+    """Sales (AED, split into days) or customers (a whole number of unique
+    customers, monthly only -- design/08-targets.md section 9)."""
+
+    SALES = "sales", "Sales"
+    CUSTOMERS = "customers", "Customers"
+
+
 class Target(TimeStampedModel):
     company = models.ForeignKey("company.Company", on_delete=models.PROTECT, related_name="+")
     branch = models.ForeignKey("company.Branch", on_delete=models.PROTECT, related_name="targets")
+    kind = models.CharField(max_length=10, choices=TargetKind.choices, default=TargetKind.SALES)
     period_start = models.DateField()           # first business day of the period
     period_end = models.DateField()             # last business day, inclusive
     amount = models.DecimalField(**MONEY)
@@ -27,12 +36,17 @@ class Target(TimeStampedModel):
         constraints = [
             models.CheckConstraint(condition=Q(period_end__gte=F("period_start")), name="targets_target_period"),
             models.CheckConstraint(condition=Q(amount__gt=0), name="targets_target_amount"),
-            models.UniqueConstraint(fields=["branch", "period_start"], name="targets_target_one_per_period"),
+            models.UniqueConstraint(fields=["branch", "kind", "period_start"],
+                                    name="targets_target_one_per_kind_period"),
         ]
         indexes = [models.Index(fields=["company", "period_start"], name="targets_target_company_period")]
 
     def __str__(self):
-        return f"{self.branch} {self.period_start:%b %Y}"
+        return f"{self.branch} {self.get_kind_display()} {self.period_start:%b %Y}"
+
+    @property
+    def is_customers(self):
+        return self.kind == TargetKind.CUSTOMERS
 
 
 class TargetDay(models.Model):

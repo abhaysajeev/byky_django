@@ -12,6 +12,10 @@ screens now and the manager-app API later read the same figures.
             never a cancelled one (apps/rental/counted.py) (T6). Never stored.
 
 A day is the company's business day (Configurations: report day start, T3).
+
+Customer targets (section 9, owner 17 Nov 2026) share the table with kind
+"customers": a whole number of unique customers on the same counted orders,
+monthly only -- no days, no freezing; "On track" compares pro rata.
 """
 
 import calendar
@@ -21,13 +25,13 @@ from dataclasses import dataclass
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 
 from django.db import transaction
-from django.db.models import DateTimeField, ExpressionWrapper, F, Sum, Value
+from django.db.models import Count, DateTimeField, ExpressionWrapper, F, Sum, Value
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 
 from apps.rental.counted import counted
 from apps.rental.models import CreditNote, CreditNoteStatus, Order, OrderStatus
-from apps.targets.models import Target, TargetDay
+from apps.targets.models import Target, TargetDay, TargetKind
 from core.money import places_for
 from core.timezones import business_day_of, business_window, day_start_for, zone_for
 
@@ -131,6 +135,20 @@ def achieved_by_day(company, branch_ids, first, last):
     return dict(found)
 
 
+def customers_by_branch(company, branch_ids, first, last):
+    """{branch_id: unique customers} on the orders that count for sales (C2):
+    completed, never cancelled, booked within the business days first..last."""
+    branch_ids = list(branch_ids)
+    if not branch_ids or last < first:
+        return {}
+    since, until = business_window(company, first, last, day_start_for(company))
+    orders = counted(Order.objects.filter(
+        company=company, branch_id__in=branch_ids, status=OrderStatus.COMPLETED,
+        booked_at__gte=since, booked_at__lt=until), path="")
+    return dict(orders.values("branch_id").annotate(n=Count("customer_id", distinct=True)).order_by()
+                .values_list("branch_id", "n"))
+
+
 def _sum(achieved, branch_id, first, last):
     return sum((v for (b, d), v in achieved.items() if b == branch_id and first <= d <= last), ZERO)
 
@@ -155,7 +173,7 @@ def _freeze(target, days, achieved, today, places):
 
 def ensure_frozen(targets, today):
     """Freeze what is due for these targets of one company (lazy fill on read)."""
-    targets = [t for t in targets if t.period_start <= today]
+    targets = [t for t in targets if t.period_start <= today and t.kind == TargetKind.SALES]
     if not targets:
         return
     company = targets[0].company
@@ -196,7 +214,7 @@ def _create_days(target, places):
 
 
 @transaction.atomic
-def create_targets(company, branches, year, month, amount, remarks, user, now=None):
+def create_targets(company, branches, year, month, amount, remarks, user, now=None, kind=TargetKind.SALES):
     """Add one month's target for each station. Returns (saved, refused):
     a station that already has a target overlapping the month, or is
     inactive, is refused by name; the others are saved (design §5)."""
@@ -209,12 +227,14 @@ def create_targets(company, branches, year, month, amount, remarks, user, now=No
         if not branch.is_active:
             refused.append((branch, "the branch is inactive"))
             continue
-        if Target.objects.filter(branch=branch, period_start__lte=last, period_end__gte=first).exists():
+        if Target.objects.filter(branch=branch, kind=kind, period_start__lte=last, period_end__gte=first).exists():
             refused.append((branch, "it already has a target for this month"))
             continue
-        target = Target.objects.create(company=company, branch=branch, period_start=first, period_end=last,
-                                       amount=amount, remarks=remarks, created_by=user, modified_by=user)
-        _create_days(target, places_for(company, branch))
+        target = Target.objects.create(company=company, branch=branch, kind=kind, period_start=first,
+                                       period_end=last, amount=amount, remarks=remarks, created_by=user,
+                                       modified_by=user)
+        if kind == TargetKind.SALES:
+            _create_days(target, places_for(company, branch))
         saved.append(target)
     ensure_frozen(saved, today)
     return saved, refused
@@ -228,6 +248,10 @@ def update_target(target, amount, remarks, user, now=None):
     today = today_for(target.company, now)
     if is_locked(target, today):
         raise TargetError("Month", "This month has ended; its target can't be changed.")
+    if target.kind == TargetKind.CUSTOMERS:
+        target.amount, target.remarks, target.modified_by = amount, remarks, user
+        target.save(update_fields=["amount", "remarks", "modified_by", "modified_on"])
+        return target
     places = places_for(target.company, target.branch)
     days = list(target.days.order_by("date"))
     past = [d for d in days if d.date < today]
@@ -287,6 +311,13 @@ def month_status(target, achieved, planned_to_date, today):
     return _status("track" if achieved >= planned_to_date else "behind", MONTH_STATUS)
 
 
+def pro_rata(target, today):
+    """A customer target's share for the days before today (C3: no daily plan)."""
+    elapsed = (min(today, target.period_end + datetime.timedelta(days=1)) - target.period_start).days
+    total = (target.period_end - target.period_start).days + 1
+    return target.amount * max(elapsed, 0) / total
+
+
 def day_target(row):
     """The day's target: frozen required amount, or the plan for a day not reached yet."""
     return row.required_amount if row.required_amount is not None else row.planned_amount
@@ -301,15 +332,21 @@ def day_status(row, achieved, today):
 
 
 def achieved_for(targets, today):
-    """{target_id: achieved so far} for many targets, one query per company."""
+    """{target_id: achieved so far} for many targets, one query per company
+    and kind: AED for sales, unique customers for customers."""
     by_company = defaultdict(list)
     for t in targets:
         if t.period_start <= today:
-            by_company[t.company].append(t)
+            by_company[(t.company, t.kind)].append(t)
     out = {}
-    for company, items in by_company.items():
+    for (company, kind), items in by_company.items():
         first = min(t.period_start for t in items)
         last = min(max(t.period_end for t in items), today)
+        if kind == TargetKind.CUSTOMERS:
+            counts = customers_by_branch(company, {t.branch_id for t in items}, first, last)
+            for t in items:
+                out[t.pk] = Decimal(counts.get(t.branch_id, 0))
+            continue
         achieved = achieved_by_day(company, {t.branch_id for t in items}, first, last)
         for t in items:
             out[t.pk] = _sum(achieved, t.branch_id, t.period_start, t.period_end)
@@ -327,6 +364,12 @@ def month_view(target, now=None):
     """Everything a station's month detail (and the manager API later) shows."""
     company = target.company
     today = today_for(company, now)
+    if target.kind == TargetKind.CUSTOMERS:
+        got = achieved_for([target], today).get(target.pk, ZERO)
+        return {"target": target, "figures": figures(target.amount, got), "days": [], "today": None,
+                "days_left": max(0, (target.period_end - today).days + 1) if target.period_start <= today else 0,
+                "locked": is_locked(target, today), "started": target.period_start <= today,
+                "business_today": today, "status": month_status(target, got, pro_rata(target, today), today)}
     ensure_frozen([target], today)
     rows = list(target.days.order_by("date"))
     achieved = achieved_by_day(company, [target.branch_id], target.period_start, min(today, target.period_end))
@@ -346,16 +389,16 @@ def month_view(target, now=None):
             "status": month_status(target, total, planned_to_date, today)}
 
 
-def month_targets(branch_ids, year, month):
+def month_targets(branch_ids, year, month, kind=TargetKind.SALES):
     first, _ = month_bounds(year, month)
-    return (Target.objects.filter(branch_id__in=branch_ids, period_start=first)
+    return (Target.objects.filter(branch_id__in=branch_ids, kind=kind, period_start=first)
             .select_related("company", "branch", "modified_by"))
 
 
-def overview(branches, year, month, now=None):
+def overview(branches, year, month, now=None, kind=TargetKind.SALES):
     """Overview: every station with a target for the month, and the month's totals."""
     branches = list(branches)
-    targets = list(month_targets([b.pk for b in branches], year, month))
+    targets = list(month_targets([b.pk for b in branches], year, month, kind))
     todays = {t.company_id: today_for(t.company, now) for t in targets}
     achieved = {}
     for cid in todays:
@@ -365,7 +408,10 @@ def overview(branches, year, month, now=None):
     for t in sorted(targets, key=lambda t: t.branch.name.lower()):
         today = todays[t.company_id]
         got = achieved.get(t.pk, ZERO)
-        planned_to_date = sum((d.planned_amount for d in days[t.pk] if d.date < today), ZERO)
+        if kind == TargetKind.CUSTOMERS:
+            planned_to_date = pro_rata(t, today)
+        else:
+            planned_to_date = sum((d.planned_amount for d in days[t.pk] if d.date < today), ZERO)
         status = month_status(t, got, planned_to_date, today)
         today_row = next((d for d in days[t.pk] if d.date == today), None)
         today_goal = day_target(today_row) if today_row else None
@@ -384,7 +430,8 @@ def overview(branches, year, month, now=None):
 def daily(branches, day, now=None):
     """Daily Progress: every station whose target covers `day`."""
     branches = list(branches)
-    targets = list(Target.objects.filter(branch__in=branches, period_start__lte=day, period_end__gte=day)
+    targets = list(Target.objects.filter(branch__in=branches, kind=TargetKind.SALES, period_start__lte=day,
+                                         period_end__gte=day)
                    .select_related("company", "branch"))
     by_company = defaultdict(list)
     for t in targets:
@@ -419,7 +466,7 @@ def daily(branches, day, now=None):
     return {"rows": rows, "totals": totals}
 
 
-def manage_rows(branches, year, month):
+def manage_rows(branches, year, month, kind=TargetKind.SALES):
     """Set Targets: every station, with its target for the month or none."""
-    by_branch = {t.branch_id: t for t in month_targets([b.pk for b in branches], year, month)}
+    by_branch = {t.branch_id: t for t in month_targets([b.pk for b in branches], year, month, kind)}
     return [{"branch": b, "target": by_branch.get(b.pk)} for b in branches]

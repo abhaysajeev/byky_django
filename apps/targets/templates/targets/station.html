@@ -2,11 +2,11 @@
 {% load targets %}
 
 {% block screen_title %}{{ branch.name }}{% endblock %}
-{% block crumb %}<a href="{% url 'targets-overview' %}?month={{ month_key }}">Overview</a>
+{% block crumb %}<a href="{% url 'targets-overview' %}?month={{ month_key }}&kind={{ kind }}">Overview</a>
 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
 <b>{{ branch.name }}</b>{% endblock %}
 {% block heading %}{{ branch.name }}{% endblock %}
-{% block sub %}{{ branch.location.state.name }}{% if status %} · {{ status.label }}{% endif %}{% endblock %}
+{% block sub %}{{ branch.location.state.name }} · {% if is_customers %}Customer target{% else %}Sales target{% endif %}{% if status %} · {{ status.label }}{% endif %}{% endblock %}
 
 {% block actions %}
 {% if target and not locked %}
@@ -16,7 +16,7 @@
   {{ record|json_script:"tgt-record" }}
 </div>
 {% elif not target and open and can.create and branch.is_active %}
-<button type="button" class="scr-btn scr-btn-primary" data-tgt-set data-branch="{{ branch.pk }}" data-name="{{ branch.name }}" data-month="{{ month_key }}" data-month-label="{{ first|date:'F Y' }}">Set target</button>
+<button type="button" class="scr-btn scr-btn-primary" data-tgt-set data-kind="{{ kind }}" data-branch="{{ branch.pk }}" data-name="{{ branch.name }}" data-month="{{ month_key }}" data-month-label="{{ first|date:'F Y' }}">Set target</button>
 {% endif %}
 {% endblock %}
 
@@ -29,10 +29,11 @@
 {% if target %}
 <div class="scr-card" data-tgt-month data-url="{{ data_url }}">
   <dl class="scr-x-kpis">
-    <div><dt>Target</dt><dd>{{ figures.amount|amount }}</dd></div>
-    <div><dt>Achieved</dt><dd><span data-tgt="achieved">{{ figures.achieved|amount }}</span><small data-tgt="percent">{{ figures.percent }}%</small></dd></div>
-    <div><dt>Remaining</dt><dd data-tgt="remaining">{{ figures.remaining|amount }}</dd></div>
-    <div><dt>Today's target</dt><dd>{% if today %}<span data-tgt="today_target">{{ today.target|amount }}</span>{% else %}—{% endif %}<small><span data-tgt="days_left">{{ days_left }}</span> day{{ days_left|pluralize }} left</small></dd></div>
+    <div><dt>{% if is_customers %}Customers target{% else %}Target{% endif %}</dt><dd>{{ figures.amount|figure:is_customers }}</dd></div>
+    <div><dt>Achieved</dt><dd><span data-tgt="achieved">{{ figures.achieved|figure:is_customers }}</span><small data-tgt="percent">{{ figures.percent }}%</small></dd></div>
+    <div><dt>Remaining</dt><dd data-tgt="remaining">{{ figures.remaining|figure:is_customers }}</dd></div>
+    {% if is_customers %}<div><dt>Days left</dt><dd>{{ days_left }}</dd></div>
+    {% else %}<div><dt>Today's target</dt><dd>{% if today %}<span data-tgt="today_target">{{ today.target|amount }}</span>{% else %}—{% endif %}<small><span data-tgt="days_left">{{ days_left }}</span> day{{ days_left|pluralize }} left</small></dd></div>{% endif %}
   </dl>
   <div class="scr-x-month-progress">
     <span class="scr-x-track is-wide"><i data-tgt="bar" style="width:{{ figures.percent|bar }}%"></i></span>
@@ -40,6 +41,7 @@
   {% if target.remarks %}<p class="scr-x-remarks">{{ target.remarks }}</p>{% endif %}
 </div>
 
+{% if days %}
 <div class="scr-card">
   <div class="scr-table-scroll">
     <table class="scr-x-table scr-x-days">
@@ -68,6 +70,9 @@
   </div>
 </div>
 <p class="scr-x-note">Even split: {{ days.0.planned|amount }} a day. A day's target is fixed when the day starts.</p>
+{% else %}
+<p class="scr-x-note">Counts each customer once, on settled orders booked this month. A customer target has no daily plan.</p>
+{% endif %}
 {% else %}
 <div class="scr-card">
   {% include "targets/_empty.html" with title="No target for this month" text="Set one to see this branch's daily progress." hide_link=True %}
