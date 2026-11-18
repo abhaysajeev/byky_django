@@ -590,7 +590,7 @@ def reports_sample(name):
 
 # -- Vehicle master (owner, 18 Nov 2026) -------------------------------------------------------
 
-MASTER = "/api/v1/manager/vehicles/master"
+MASTER = "/api/v1/manager/vehicles"     # shares the operator app's path (apps/fleet/api.py)
 
 
 def test_the_master_lists_every_vehicle_at_the_active_stations(client, world, token, manager, shop, dubai):
@@ -631,9 +631,12 @@ def test_the_master_is_filtered_and_paged(client, world, manager, shop):
     assert refused["code"] == "invalid_request"
 
 
-def test_the_master_is_for_the_manager_app_only(client, token):
+def test_the_operator_token_on_the_manager_path_is_refused_and_its_own_path_is_unchanged(client, token, shop):
     assert call(client, MASTER, {}, token=token).json()["code"] == "wrong_channel"
+    own = call(client, "/api/v1/operator/vehicles", {}, token=token).json()
+    assert own["code"] == "ok" and "categories" in own["data"]          # the station's nested list, as before
 
 
 def test_the_master_is_in_the_api_docs(client, db):
-    assert "/api/v1/{app}/vehicles/master" in client.get("/api/schema/").content.decode()
+    schema = client.get("/api/schema/").content.decode()
+    assert "/api/v1/{app}/vehicles/master" not in schema and "vehicle master" in schema
