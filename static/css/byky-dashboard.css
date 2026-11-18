@@ -25,6 +25,9 @@
   --bd-warn: #8a5300;
   --bd-warn-tint: #fdf3e3;
   --bd-bad-tint: #fdeced;
+  --bd-line-strong: #d3d0e6;  /* hover edge of a quiet control */
+  --bd-map-bg: #eef0f3;       /* the map before its tiles arrive */
+  --bd-spinner: #111;         /* the owner asked for a black spinner */
   --bd-pad: 20px;
 
   font-family: 'Sora', sans-serif;
@@ -221,83 +224,146 @@
 .bd-people dd { font-weight: 600; font-variant-numeric: tabular-nums; }
 
 /* ── Station Network widget (.bsn, behaviour in byky-station-network.js) ──
-   Leaflet renders tooltips into its own panes inside the map, still within
-   .bd, so the tokens above reach them. */
+   Map on the left, the chosen station's summary and the station list on the
+   right. Leaflet renders its tooltips and markers inside .bd, so the tokens
+   above reach them. Pins are brand red; the chosen one turns ink. */
 .bsn { display: flex; flex-direction: column; }
+.bsn-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .bsn-chips { display: flex; gap: 6px; flex-wrap: wrap; padding-top: 16px; }
 .bsn-chip {
   border: 1px solid var(--bd-line); background: #fff; color: var(--bd-body);
   font-size: 12px; font-weight: 500; padding: 6px 12px; border-radius: 99px;
   cursor: pointer; white-space: nowrap; transition: border-color 0.15s, background 0.15s, color 0.15s;
 }
-.bsn-chip:hover { border-color: #d3d0e6; }
+.bsn-chip:hover { border-color: var(--bd-line-strong); }
 /* selected filter in ink, as .scr-x tabs do: red is for the pins */
 .bsn-chip.on { border-color: var(--bd-ink); background: var(--bd-ink); color: #fff; font-weight: 600; }
 .bsn-chip b { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--bd-muted); margin-left: 6px; }
 .bsn-chip.on b { color: rgba(255, 255, 255, 0.8); }
 
 .bsn-split { display: flex; flex-wrap: wrap; gap: 20px; padding-top: 16px; align-items: stretch; }
-.bsn-mapwrap { flex: 1 1 520px; min-width: 0; position: relative; border: 1px solid var(--bd-line-soft); border-radius: 12px; overflow: hidden; }
+.bsn-mapwrap { scroll-margin-top: 84px; flex: 1 1 520px; min-width: 0; position: relative; border: 1px solid var(--bd-line-soft); border-radius: 12px; overflow: hidden; isolation: isolate; }
 /* Leaflet cannot size itself from content; it needs a real height */
-.bsn-map { height: 452px; width: 100%; background: #eef0f6; z-index: 1; }
+.bsn-map { height: 600px; width: 100%; background: var(--bd-map-bg); z-index: 1; }
 .bsn-map.leaflet-container { font-family: 'Sora', sans-serif; }
 .bsn-mapwrap .leaflet-control-attribution { font-size: 10px; background: rgba(255, 255, 255, 0.85); color: var(--bd-muted); }
 .bsn-mapwrap .leaflet-control-attribution a { color: var(--bd-muted); }
 .bsn-mapwrap .leaflet-bar { border: 1px solid var(--bd-line); box-shadow: none; border-radius: 10px; overflow: hidden; }
-.bsn-mapwrap .leaflet-bar a { width: 30px; height: 30px; line-height: 30px; color: var(--bd-body); border-bottom-color: var(--bd-line-soft); }
+.bsn-mapwrap .leaflet-bar a { width: 32px; height: 32px; line-height: 32px; color: var(--bd-body); border-bottom-color: var(--bd-line-soft); }
 .bsn-mapwrap .leaflet-bar a:hover { color: var(--bd-ink); }
+.bsn-mapwrap .bsn-overview a { display: grid; place-items: center; }
+.bsn-mapwrap .leaflet-control-layers { border: 1px solid var(--bd-line); box-shadow: none; border-radius: 10px; }
+.bsn-mapwrap .leaflet-control-layers-expanded { padding: 8px 12px; font-size: 12px; color: var(--bd-body); }
+.bsn-mapwrap .leaflet-bar a:focus-visible, .bsn-mapwrap .leaflet-control-layers-toggle:focus-visible { outline: 2px solid var(--bd-ink); outline-offset: -2px; }
 
-.bsn .stn { position: relative; display: grid; place-items: center; }
-.bsn .stn i { display: block; border-radius: 50%; background: var(--bd-brand); border: 2px solid #fff; box-shadow: 0 1px 4px rgba(26, 22, 64, 0.35); transition: transform 0.15s; }
-.bsn .stn:hover i, .bsn .stn.lit i { transform: scale(1.24); }
-.bsn .stn.lit i { background: var(--bd-ink); }
-.bsn .stn.dim { opacity: 0.3; }
-.bsn .cl-wrap { position: relative; display: grid; place-items: center; }
-.bsn .cl {
-  display: grid; place-items: center; border-radius: 50%; background: var(--bd-brand); color: #fff;
-  border: 2px solid #fff; box-shadow: 0 0 0 6px rgba(194, 20, 26, 0.14);
-  font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+/* the move veil: the map blurs under a pale wash with a small black spinner. In over 170ms,
+   held while the new tiles load, out over 260ms, so tiles never pop in. */
+.bsn-veil {
+  position: absolute; inset: 0; z-index: 900; display: grid; place-items: center;
+  background: rgba(246, 246, 250, 0.58);
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity 0.26s cubic-bezier(0.23, 1, 0.32, 1), visibility 0s linear 0.26s;
 }
+.bsn-mapwrap.is-moving .bsn-veil, .bsn-mapwrap.is-cut .bsn-veil {
+  opacity: 1; visibility: visible; pointer-events: auto;
+  transition: opacity 0.17s ease-out, visibility 0s;
+}
+.bsn-spin {
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 2px solid rgba(17, 17, 17, 0.14); border-top-color: var(--bd-spinner);
+  animation: bsn-spin 0.7s linear infinite;
+}
+@keyframes bsn-spin { to { transform: rotate(360deg); } }
+/* arriving: the new frame settles from a hair closer in as the veil lifts */
+.bsn-map { transition: transform 0.36s cubic-bezier(0.23, 1, 0.32, 1), filter 0.3s ease-out; }
+.bsn-mapwrap.is-moving .bsn-map { transform: scale(1.025); filter: blur(10px); transition: transform 0s, filter 0.17s ease-out; }
+
+/* pins: one SVG for every station; the name rides beside it at street zoom */
+.bsn .bsn-mark { background: none; border: 0; }
+.bsn .stn { position: relative; width: 28px; height: 36px; cursor: pointer; }
+.bsn .stn-pin { display: block; overflow: visible; transform-origin: 14px 35px; transition: transform 0.18s cubic-bezier(0.23, 1, 0.32, 1); filter: drop-shadow(0 2px 2px rgba(26, 22, 64, 0.28)); }
+.bsn .stn-body { fill: var(--bd-brand); stroke: #fff; stroke-width: 1.6; }
+.bsn .stn-bike { stroke: #fff; }
+.bsn .stn:hover .stn-pin, .bsn .stn.lit .stn-pin { transform: scale(1.12); }
+.bsn .stn.sel .stn-pin { transform: scale(1.22); }
+.bsn .stn.sel .stn-body { fill: var(--bd-ink); }
+.bsn .stn-label {
+  display: none; position: absolute; left: 31px; top: 5px; max-width: 200px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 11.5px; font-weight: 600; line-height: 1; color: var(--bd-ink);
+  background: rgba(255, 255, 255, 0.94); border: 1px solid var(--bd-line); border-radius: 6px; padding: 5px 7px;
+  box-shadow: 0 1px 2px rgba(26, 22, 64, 0.08); pointer-events: none;
+}
+.bsn .show-labels .stn-label, .bsn .stn.sel .stn-label { display: block; }
+.bsn .stn.sel .stn-label { background: var(--bd-ink); border-color: var(--bd-ink); color: #fff; left: 34px; }
+/* a quiet group: white pill, a small pin, the count in ink */
+.bsn .grp {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 26px; min-width: 44px; padding: 0 9px;
+  background: #fff; border: 1px solid var(--bd-line); border-radius: 99px; cursor: pointer;
+  box-shadow: 0 2px 6px -2px rgba(26, 22, 64, 0.25); transition: border-color 0.15s;
+}
+.bsn .grp svg { fill: var(--bd-brand); flex: 0 0 auto; }
+.bsn .grp b { font-size: 12px; font-weight: 700; color: var(--bd-ink); font-variant-numeric: tabular-nums; line-height: 1; }
+.bsn .grp:hover { border-color: var(--bd-ink); }
 
 .leaflet-tooltip.bsn-tip {
   background: #fff; border: 1px solid var(--bd-line); border-radius: 12px;
-  box-shadow: 0 12px 28px -16px rgba(26, 22, 64, 0.4); padding: 12px 14px;
+  box-shadow: 0 12px 28px -16px rgba(26, 22, 64, 0.4); padding: 10px 12px;
   font-family: 'Sora', sans-serif; white-space: nowrap; color: var(--bd-ink);
 }
 .leaflet-tooltip.bsn-tip::before { display: none; }
 .bsn-tip .t { font-size: 13px; font-weight: 600; }
 .bsn-tip .l { font-size: 12px; color: var(--bd-muted); margin-top: 2px; }
-.bsn-tip .stats { display: flex; gap: 18px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--bd-line-soft); }
+.bsn-tip .stats { display: flex; gap: 16px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--bd-line-soft); }
 .bsn-tip .stat { display: flex; flex-direction: column; gap: 2px; }
 .bsn-tip .stat u { text-decoration: none; font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--bd-muted); }
 .bsn-tip .stat b { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.bsn-tip .stat b s { text-decoration: none; font-size: 11px; font-weight: 500; color: var(--bd-muted); margin-left: 3px; }
-.bsn-tip .note { font-size: 11px; color: var(--bd-muted); margin-top: 8px; }
+.bsn-tip .note { font-size: 11px; color: var(--bd-muted); margin-top: 6px; }
 
-/* size legend; over Leaflet's panes (400) */
-.bsn-scale {
-  position: absolute; left: 12px; bottom: 12px; z-index: 400; display: flex; align-items: center;
-  gap: 12px; background: rgba(255, 255, 255, 0.94); border: 1px solid var(--bd-line-soft); border-radius: 10px; padding: 7px 12px;
+/* ── the side: the chosen station's summary over the station list ──── */
+.bsn-side { flex: 0 0 340px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.bsn-sum { position: relative; border: 1px solid var(--bd-line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+.bsn-sum-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: -6px; }
+.bsn-sum-id { min-width: 0; }
+.bd .bsn-sum-name { font-size: 16px; font-weight: 700; letter-spacing: -0.2px; line-height: 1.3; overflow-wrap: anywhere; text-wrap: balance; }
+.bd .bsn-sum-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 4px; font-size: 12px; color: var(--bd-muted); font-variant-numeric: tabular-nums; }
+.bsn-state { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 99px; }
+.bsn-state[hidden] { display: none; }
+.bsn-state.is-open { background: var(--bd-good-tint); color: var(--bd-good); }
+.bsn-state.is-closed { background: var(--bd-tint); color: var(--bd-body); }
+.bsn-step { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+.bsn-step-btn {
+  width: 32px; height: 32px; border-radius: 99px; border: 1px solid var(--bd-line); background: #fff; color: var(--bd-ink);
+  display: grid; place-items: center; padding: 0; cursor: pointer; transition: border-color 0.15s, background 0.15s;
 }
-.bsn-scale[hidden] { display: none; }
-.bsn-scale span { font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--bd-muted); }
-.bsn-scale i { display: flex; align-items: center; gap: 6px; font-style: normal; font-size: 12px; color: var(--bd-body); font-variant-numeric: tabular-nums; }
-.bsn-scale em { display: block; border-radius: 50%; background: var(--bd-brand); border: 1.5px solid #fff; box-shadow: 0 0 0 1px rgba(26, 22, 64, 0.1); }
-.bsn-scale-items { display: contents; }
-.bsn-scale .bsn-dot-pin { width: 10px; height: 10px; }
-.bsn-scale .bsn-dot-group { width: 18px; height: 18px; display: grid; place-items: center; font-style: normal; font-size: 9px; font-weight: 700; color: #fff; }
+.bsn-step-btn:hover:not(:disabled) { border-color: var(--bd-ink); }
+.bsn-step-btn:active:not(:disabled) { background: var(--bd-tint); }
+.bsn-step-btn:disabled { color: var(--bd-faint); cursor: default; }
+.bsn-sum-rev { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.bsn-sum-rev > div { min-width: 0; }
+.bd .bsn-sum-amt { display: flex; align-items: baseline; gap: 6px; margin-top: 4px; font-size: 24px; font-weight: 700; letter-spacing: -0.7px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.bsn-sum-amt small { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; color: var(--bd-muted); }
+.bd .bsn-sum-inv { flex: 0 0 auto; font-size: 12px; color: var(--bd-muted); font-variant-numeric: tabular-nums; padding-bottom: 2px; }
+.bsn-sum-inv b { font-weight: 700; color: var(--bd-ink); }
+/* four figures in one row; two-line labels keep the numbers on one baseline */
+.bd .bsn-figs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding-top: 12px; border-top: 1px solid var(--bd-line-soft); }
+.bsn-figs > div { display: flex; flex-direction: column; justify-content: space-between; min-width: 0; }
+.bsn-figs dt { font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; line-height: 1.25; text-transform: uppercase; color: var(--bd-muted); }
+.bd .bsn-figs dd { font-size: 17px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.bsn-sum-links { display: flex; flex-wrap: wrap; gap: 6px 18px; }
 
-.bsn-list { flex: 0 0 320px; min-width: 0; display: flex; flex-direction: column; }
-.bsn-list-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--bd-line-soft); }
+.bsn-list { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.bsn-list-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--bd-line-soft); }
 .bsn-list-head b { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--bd-muted); }
 .bsn-list-head span { font-size: 12px; color: var(--bd-muted); font-variant-numeric: tabular-nums; }
-.bsn-rows { flex: 1; overflow-y: auto; max-height: 410px; scrollbar-width: thin; scrollbar-color: #e4e3ee transparent; }
+.bsn-rows { position: relative; flex: 1 1 0; min-height: 132px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--bd-off) transparent; }
 .bsn-row {
-  display: flex; align-items: center; gap: 12px; padding: 10px 8px; border-radius: 10px;
-  cursor: pointer; border: none; background: none; width: 100%; text-align: left; color: var(--bd-ink);
+  display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 10px;
+  cursor: pointer; border: none; background: none; width: 100%; text-align: left; color: var(--bd-ink); outline-offset: -2px;
   transition: background 0.15s;
 }
 .bsn-row:hover, .bsn-row.lit { background: var(--bd-soft); }
+.bsn-row.sel { background: var(--bd-tint); box-shadow: inset 3px 0 0 var(--bd-ink); }
 .bsn-row .rank { width: 22px; flex: 0 0 auto; font-size: 12px; font-weight: 600; color: var(--bd-muted); font-variant-numeric: tabular-nums; }
 .bsn-row .body { flex: 1; min-width: 0; }
 .bsn-row .n { display: block; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -307,9 +373,17 @@
 .bsn-row .fig s { display: block; text-decoration: none; font-size: 11px; color: var(--bd-muted); }
 
 /* ── narrow screens ───────────────────────────────────────────────── */
-@media (max-width: 900px) {
-  .bsn-list { flex: 1 1 100%; }
-  .bsn-rows { max-height: 280px; }
+@media (max-width: 1100px) {
+  /* the side drops under the map: summary and list sit side by side */
+  .bsn-side { flex: 1 1 100%; flex-direction: row; align-items: stretch; }
+  .bsn-sum { flex: 1 1 0; min-width: 0; }
+  .bsn-list { flex: 1 1 0; min-width: 0; }
+  .bsn-rows { max-height: 300px; }
+  .bsn-map { height: 460px; }
+}
+@media (max-width: 720px) {
+  .bsn-side { flex-direction: column; }
+  .bsn-rows { flex: none; max-height: 300px; }
 }
 @media (max-width: 640px) {
   .bd { --bd-pad: 16px; }
@@ -317,10 +391,16 @@
   .bd-car-amt { font-size: 24px; }
   .bd-car-num { font-size: 16px; }
   .bd-car-lab { font-size: 11px; }
-  .bsn-map { height: 320px; }
+  .bsn-map { height: 360px; }
+  .bsn-step-btn { width: 40px; height: 40px; }
   .bd-kpis > div + div { padding-inline-start: 16px; margin-inline-start: 16px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .bd *, .bd *::before, .bd *::after { transition: none !important; }
+  /* the map jumps; the veil only fades out, and the spinner stays still */
+  .bd .bsn-mapwrap .bsn-veil { transition: opacity 0.16s linear, visibility 0s linear 0.16s !important; }
+  .bd .bsn-mapwrap.is-cut .bsn-veil { transition: none !important; }
+  .bd .bsn-spin { animation: none; border-color: transparent; }
+  .bd .bsn-mapwrap.is-moving .bsn-map { transform: none; filter: none; }
 }

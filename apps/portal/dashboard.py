@@ -27,6 +27,7 @@ from apps.company.models import BranchWorkingTime
 from apps.company.scoping import branches_for
 from apps.crew.models import Attendance, PunchType
 from apps.devices.models import DeviceMapping, DeviceStatus
+from apps.fleet.scoping import vehicles_for
 from apps.rental import scoping as rental_scoping
 from apps.rental.counted import counted
 from apps.rental.models import OrderItem, OrderItemStatus
@@ -117,8 +118,10 @@ def _since_each_start(field, branch_field, days):
 
 def branch_live(user, now=None):
     """One slide per active station, busiest first: vehicles on rent now,
-    today's invoices and revenue (what customers paid), tablets seen today and
-    staff punched in and not yet out."""
+    today's invoices and revenue (what customers paid), tablets seen today,
+    staff punched in and not yet out, and the station's fleet (active
+    vehicles whose current branch it is). The Station Network map reads the
+    same rows by `id`."""
     now = now or timezone.now()
     zone = _zone(user)
     branches = list(branches_for(user).filter(is_active=True).order_by("name").values("id", "name"))
@@ -158,6 +161,12 @@ def branch_live(user, now=None):
         .values_list("station", "n")
     )
 
+    fleet = dict(
+        vehicles_for(user).filter(is_active=True, current_branch_id__in=ids)
+        .values("current_branch_id").annotate(n=Count("id"))
+        .values_list("current_branch_id", "n")
+    )
+
     slides = []
     for branch in branches:
         bid = branch["id"]
@@ -173,12 +182,43 @@ def branch_live(user, now=None):
             "revenue": _aed(revenue),
             "devices": devices.get(bid, 0),
             "staff": staff.get(bid, 0),
+            "fleet": fleet.get(bid, 0),
             "_revenue": revenue,
         })
     slides.sort(key=lambda s: (-s["on_rent"], -s["_revenue"], s["name"]))
     for slide in slides:
         del slide["_revenue"]
     return slides
+
+
+# -- The Station Network map -------------------------------------------------------------
+
+LIVE_FIELDS = ("fleet", "on_rent", "invoices", "revenue", "devices", "staff", "hours", "state")
+
+
+def map_points(user, branches_live):
+    """Active stations that have coordinates, each carrying its live figures
+    from `branches_live` (branch_live's rows), so the map opens with the same
+    numbers the carousel shows. The page then refreshes them by `id` from
+    /dashboard/live/."""
+    live = {row["id"]: row for row in branches_live}
+    points = []
+    for branch in (
+        branches_for(user).select_related("location__state")
+        .filter(is_active=True, latitude__isnull=False, longitude__isnull=False)
+        .order_by("name")
+    ):
+        row = live.get(branch.pk, {})
+        point = {
+            "id": branch.pk,
+            "name": branch.name,
+            "emirate": branch.location.state.name,
+            "lat": float(branch.latitude),
+            "lng": float(branch.longitude),
+        }
+        point.update({field: row.get(field) for field in LIVE_FIELDS})
+        points.append(point)
+    return points
 
 
 # -- Monthly Sales ------------------------------------------------------------------

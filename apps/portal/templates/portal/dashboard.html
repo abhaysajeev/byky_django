@@ -25,15 +25,15 @@ than a zero-height chart.
 
 {% block page_css %}
 {{ block.super }}
-<link rel="stylesheet" href="{% static 'css/byky-dashboard.css' %}" />
+<link rel="stylesheet" href="{% static 'css/byky-dashboard.css' %}?v=20261118c" />
 {% endblock page_css %}
 
 {% block page_js %}
 {{ block.super }}
 {{ chart_data|json_script:"byky-chart-data" }}
 {{ live|json_script:"bd-live" }}
-<script src="{% static 'js/byky-dashboard.js' %}"></script>
-<script src="{% static 'js/byky-station-network.js' %}"></script>
+<script src="{% static 'js/byky-dashboard.js' %}?v=20261118c"></script>
+<script src="{% static 'js/byky-station-network.js' %}?v=20261118c"></script>
 {% endblock page_js %}
 
 {% block content %}
@@ -154,7 +154,8 @@ than a zero-height chart.
   </div>
 
   <section class="bd-card bd-map-card" aria-labelledby="bd-h-network">
-    <div class="bsn" data-points="bd-map-points">
+    <div class="bsn" data-points="bd-map-points"
+         data-orders-url="{% url 'rental-order-list' %}" data-monitor-url="{% url 'rental-live' %}">
       {{ map_points|json_script:"bd-map-points" }}
       <div class="bd-card-head">
         <div>
@@ -165,25 +166,65 @@ than a zero-height chart.
       </div>
 
       {% if map_points %}
-      <div class="bsn-chips"></div>
+      <div class="bsn-chips" role="group" aria-label="Show stations in"></div>
       <div class="bsn-split">
         <div class="bsn-mapwrap">
-          <div class="bsn-map"></div>
-          <div class="bsn-scale" data-scale="fleet" hidden>
-            <span>Fleet</span>
-            <span class="bsn-scale-items"></span>
-          </div>
-          <div class="bsn-scale" data-scale="cluster">
-            <i><em class="bsn-dot-pin"></em>Station</i>
-            <i><em class="bsn-dot-group">n</em>Nearby stations, grouped</i>
-          </div>
+          <div class="bsn-map" role="region" aria-label="Station map" aria-describedby="bsn-map-note"></div>
+          <p class="bsn-sr" id="bsn-map-note">Every station on this map is in the station list beside it, with its figures. Choosing a station there moves the map to it.</p>
+          <div class="bsn-veil" aria-hidden="true"><span class="bsn-spin"></span></div>
         </div>
-        <div class="bsn-list">
-          <div class="bsn-list-head">
-            <b data-list-title>All stations</b>
-            <span data-list-meta></span>
+
+        <div class="bsn-side">
+          <div class="bsn-sum" aria-labelledby="bsn-sum-name" role="group">
+            <div class="bsn-sum-head">
+              <span class="bd-label" data-s="pos"></span>
+              <div class="bsn-step">
+                <button type="button" class="bsn-step-btn" data-step="-1" aria-label="Previous station">
+                  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M15 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <button type="button" class="bsn-step-btn" data-step="1" aria-label="Next station">
+                  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="bsn-sum-id">
+              <h3 class="bsn-sum-name" id="bsn-sum-name" data-s="name"></h3>
+              <p class="bsn-sum-meta">
+                <span data-s="emirate"></span>
+                <span class="bsn-state" data-s="state" hidden></span>
+                <span class="bsn-hours" data-s="hours"></span>
+              </p>
+            </div>
+
+            <div class="bsn-sum-rev">
+              <div>
+                <span class="bd-label">Revenue today</span>
+                <p class="bsn-sum-amt"><small>AED</small><span data-f="revenue"></span></p>
+              </div>
+              <p class="bsn-sum-inv"><b data-f="invoices"></b> <span data-f="invoices-word"></span> today</p>
+            </div>
+
+            <dl class="bsn-figs">
+              <div><dt>On rent now</dt><dd data-f="on_rent"></dd></div>
+              <div><dt>Fleet</dt><dd data-f="fleet"></dd></div>
+              <div><dt>Devices online</dt><dd data-f="devices"></dd></div>
+              <div><dt>Staff on duty</dt><dd data-f="staff"></dd></div>
+            </dl>
+
+            <div class="bsn-sum-links">
+              <a class="bd-link" data-s="orders" href="{% url 'rental-order-list' %}">Station orders<span class="bsn-sr" data-s="orders-at"></span></a>
+              <a class="bd-link" href="{% url 'rental-live' %}">Live monitoring</a>
+            </div>
+            <p class="bsn-sr" aria-live="polite" data-announce></p>
           </div>
-          <div class="bsn-rows"></div>
+
+          <div class="bsn-list">
+            <div class="bsn-list-head">
+              <b data-list-title>All stations</b>
+              <span data-list-meta></span>
+            </div>
+            <div class="bsn-rows" role="listbox" aria-label="Stations, busiest first"></div>
+          </div>
         </div>
       </div>
       {% else %}
