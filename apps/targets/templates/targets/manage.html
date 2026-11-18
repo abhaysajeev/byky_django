@@ -1,0 +1,71 @@
+{% extends "targets/_base.html" %}
+{% load targets %}
+
+{% block screen_title %}Set Targets{% endblock %}
+{% block crumb %}<b>Set Targets</b>{% endblock %}
+{% block heading %}Set Targets{% endblock %}
+{% block sub %}One {% if is_customers %}customer{% else %}sales{% endif %} target per branch per month. A month that has ended can't be changed.{% endblock %}
+
+{% block body %}
+<div class="scr-x-bar">
+  <nav class="scr-x-tabs" aria-label="Target kind">
+  {% for k in kind_tabs %}<a class="scr-x-tab{% if k.on %} is-on{% endif %}" href="{{ k.url }}"{% if k.on %} aria-current="page"{% endif %}>{{ k.label }}</a>{% endfor %}
+</nav>
+  {% include "targets/_stepper.html" with group_label="Month" unit="month" label=first|date:"F Y" %}
+  {% if not is_current %}<a class="scr-x-today" href="{% url 'targets-manage' %}?kind={{ kind }}{% if chosen_state %}&state={{ chosen_state }}{% endif %}">This month</a>{% endif %}
+  <span class="scr-x-spacer"></span>
+  {% include "targets/_filters.html" with period_name="month" period_value=first|date:"Y-m" %}
+</div>
+
+{% if ended %}<div class="scr-x-banner">{{ first|date:"F Y" }} has ended. Its targets are shown for reference and can't be changed.</div>{% endif %}
+
+<div class="scr-card" data-tgt-manage data-kind="{{ kind }}" data-month="{{ month_key }}" data-month-label="{{ first|date:'F Y' }}" data-scr-delete-url="{{ delete_url }}" data-scr-noun="Target">
+  {% if can.create and not ended %}
+  <div class="scr-x-selection" data-tgt-selection hidden>
+    <span data-tgt-selection-count>0 selected</span>
+    <button type="button" class="scr-btn scr-btn-primary" data-tgt-set-selected>Set target</button>
+    <button type="button" class="scr-btn-small" data-tgt-clear>Clear</button>
+  </div>
+  {% endif %}
+  <div class="scr-table-scroll">
+    <table class="scr-x-table scr-x-fit">
+      <colgroup>{% if can.create and not ended %}<col class="w-check" />{% endif %}<col /><col class="w-state" /><col class="w-num" /><col /><col class="w-actions" /></colgroup>
+      <thead>
+        <tr>
+          {% if can.create and not ended %}<th scope="col" class="check"><input type="checkbox" aria-label="Select all branches without a target" data-tgt-all /></th>{% endif %}
+          <th scope="col">Branch</th>
+          <th scope="col">State</th>
+          <th scope="col" class="num">{% if is_customers %}Target (customers){% else %}Target (AED){% endif %}</th>
+          <th scope="col">Remarks</th>
+          <th scope="col"><span class="scr-x-visually-hidden">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr class="scr-row" data-pk="{{ r.target.pk|default:'' }}"{% if r.target %} data-record-id="{{ r.record_id }}"{% endif %}>
+          {% if can.create and not ended %}<td class="check">{% if not r.target %}<input type="checkbox" value="{{ r.branch.pk }}" data-name="{{ r.branch.name }}" aria-label="Select {{ r.branch.name }}" data-tgt-pick />{% endif %}</td>{% endif %}
+          <td data-label="Branch"><span class="scr-co-name scr-x-name">{{ r.branch.name }}</span></td>
+          <td data-label="State" class="muted">{{ r.branch.location.state.name }}</td>
+          <td data-label="Target" class="num">{% if r.target %}{{ r.target.amount|figure:is_customers }}{% else %}<span class="muted">Not set</span>{% endif %}</td>
+          <td data-label="Remarks" class="muted truncate">{{ r.target.remarks|default:"" }}</td>
+          <td class="actions">
+            {% if r.target %}
+              {{ r.record|json_script:r.record_id }}
+              <a class="scr-btn-small" href="{% url 'targets-station' r.branch.pk year month %}?kind={{ kind }}">View</a>
+              {% if not ended and can.update or not ended and can.delete %}
+              {% include "byky/partials/row_actions.html" with edit_open="target:edit" perm=can %}
+              {% endif %}
+            {% elif can.create and not ended %}
+              <button type="button" class="scr-btn-small" data-tgt-set data-branch="{{ r.branch.pk }}" data-name="{{ r.branch.name }}">Set target</button>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6">{% include "targets/_empty.html" with title="No branches" text="Active branches you can see appear here." hide_link=True %}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="scr-x-foot">{{ set_count }} of {{ rows|length }} branch{{ rows|length|pluralize:"es" }} have a {% if is_customers %}customer{% else %}sales{% endif %} target for {{ first|date:"F Y" }}.</div>
+</div>
+{% endblock %}

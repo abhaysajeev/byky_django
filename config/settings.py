@@ -73,6 +73,8 @@ LOCAL_APPS = [
     "apps.photos",
     "apps.notifications",
     "apps.tracking",
+    "apps.targets",
+    "apps.incentives",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -277,6 +279,8 @@ SPECTACULAR_SETTINGS = {
         "LeaveStatusFilterEnum": "apps.crew.serializers.LEAVE_STATUS_FILTER",
         # Asset-check "status" (apps/fleet): the serializers offer bare values.
         "AssetCheckStatusEnum": "apps.fleet.models.AssetCheckStatus.values",
+        # The manager targets calls' "kind": sales | customers (apps/targets/api.py).
+        "TargetKindEnum": "apps.targets.models.TargetKind.values",
     },
 }
 
@@ -406,9 +410,15 @@ CELERY_BEAT_SCHEDULE = {
     "photos-purge-unattached": {"task": "apps.photos.tasks.purge_unattached", "schedule": crontab(hour=3, minute=15)},
     # A preview the upload could not queue (Redis down) is made here instead.
     "photos-missing-previews": {"task": "apps.photos.tasks.make_missing_previews", "schedule": crontab(minute=40)},
+    # Cart holds that expired or whose tablet signed out (apps/rental/holds.py).
+    # Reads already ignore them; this keeps the one-open-hold index tidy.
+    "rental-release-stale-holds": {"task": "apps.rental.tasks.release_stale_holds",
+                                   "schedule": crontab(minute="*/5")},
     # Notifications the change could not queue (Redis down), and retries due.
     "notifications-send-due": {"task": "apps.notifications.tasks.send_due", "schedule": crontab()},
     "notifications-purge": {"task": "apps.notifications.tasks.purge", "schedule": crontab(hour=3, minute=45)},
+    # Each target's required amount for the day, frozen soon after the business day starts.
+    "targets-freeze-due": {"task": "apps.targets.tasks.freeze_due", "schedule": crontab(minute="*/15")},
 }
 
 # -- Push notifications (apps/notifications) ---------------------------------------------

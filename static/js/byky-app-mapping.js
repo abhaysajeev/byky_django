@@ -137,8 +137,20 @@
       .map(function (r) { return r.dataset.id; });
   }
 
+  // Manager and employee phones have no station: All branches only
+  // (services.check_scope). The branch choice is not offered for them.
+  function branchScoped(forApp) {
+    var panel = document.querySelector('[data-map-app="' + forApp + '"]');
+    return !panel || panel.dataset.branchScoped === '1';
+  }
+
   function openMap(forApp, forScope, branchIds, forCompany, companyName) {
     app = forApp || currentApp;
+    var byBranch = branchScoped(app);
+    if (!byBranch) forScope = 'all';
+    scopes.forEach(function (s) {
+      if (s.value === 'branch') s.closest('label').hidden = !byBranch;
+    });
     companyId = String(forCompany || '');
     if (!companyId) {
       // The page's own "Map Release" button names no company. With one company

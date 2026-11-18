@@ -572,3 +572,48 @@ def test_nothing_is_written_or_published_when_nothing_changed(station, monkeypat
     result = engine.run_cycle(at(60))
 
     assert (result["written"], sent) == (0, [])
+
+
+# -- a vehicle's own range (Observe calibration, owner 18 Nov 2026) -------------------------------
+
+def own_range(station, enter, leave):
+    from apps.tracking.models import (
+        Calibration,
+        CalibrationMethod,
+        CalibrationStatus,
+        VehicleBaseline,
+    )
+
+    session = Calibration.objects.create(reader=station["reader"], method=CalibrationMethod.OBSERVE,
+                                         status=CalibrationStatus.APPROVED, started_at=T0, tags=[])
+    VehicleBaseline.objects.create(reader=station["reader"], tag=TAG, vehicle=station["bike"], low_rssi=enter,
+                                   high_rssi=enter + 10, mid_rssi=enter + 5, enter_rssi=enter, leave_rssi=leave,
+                                   samples=60, calibration=session)
+
+
+def test_a_weak_tag_is_present_by_its_own_range(station):
+    tick(station, 0)
+    limits(station, enter=-50, leave=-60)              # the antenna says -70 is out...
+    own_range(station, enter=-72, leave=-75)           # ...but this bike always reads about -70
+    for seconds in (30, 200, 330, 400):
+        heard(station, seconds, avg=-70)
+        assert tick(station, seconds).state == P.PRESENT
+
+
+def test_far_below_its_own_range_goes_missing(station):
+    tick(station, 0)
+    own_range(station, enter=-45, leave=-48)           # no antenna limits at all
+    heard(station, 30, avg=-58)
+    assert tick(station, 30).state == P.PRESENT        # not for long enough yet
+    heard(station, 330, avg=-58)
+    row = tick(station, 330)
+    assert (row.state, row.reason) == (P.MISSING, engine.WEAK_SIGNAL)
+
+
+def test_a_bike_without_its_own_range_keeps_the_antenna_limits(station):
+    tick(station, 0)
+    limits(station, enter=-50, leave=-60)
+    heard(station, 30, avg=-70)
+    tick(station, 30)
+    heard(station, 330, avg=-70)
+    assert tick(station, 330).state == P.MISSING

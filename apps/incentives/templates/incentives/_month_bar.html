@@ -1,0 +1,7 @@
+{% comment %}Month stepper + state filter, shared by the month pages.{% endcomment %}
+<div class="scr-x-bar">
+  {% include "targets/_stepper.html" with group_label="Month" unit="month" label=first|date:"F Y" %}
+  {% if not is_current %}<a class="scr-x-today" href="{{ this_url }}">This month</a>{% endif %}
+  <span class="scr-x-spacer"></span>
+  {% include "targets/_filters.html" with period_name="month" period_value=month_key %}
+</div>

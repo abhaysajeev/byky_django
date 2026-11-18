@@ -37,7 +37,7 @@ _VEHICLES_SAMPLE = {
                         {"vehicle_id": 2007, "vehicle_identifier": "VB0321", "vehicle_code": "BRG07",
                          "vehicle_name": "BRG 07", "rfid_epc": "35440575", "uom": "Number", "is_available": True,
                          "on_rent": False, "rental": None, "under_maintenance": False, "service_request_no": None, "warehouse_service": False,
-                         "on_test_ride": False, "test_ride": None, "can_rent": True},
+                         "on_test_ride": False, "test_ride": None, "cart_hold": None, "can_rent": True},
                     ],
                 },
                 {
@@ -49,7 +49,7 @@ _VEHICLES_SAMPLE = {
                          "on_rent": True, "rental": {"order_no": "ADCOR60182000231",
                                                      "expected_end_time": "2026-09-24 07:00:00"},
                          "under_maintenance": False, "service_request_no": None, "warehouse_service": False,
-                         "on_test_ride": False, "test_ride": None, "can_rent": False},
+                         "on_test_ride": False, "test_ride": None, "cart_hold": None, "can_rent": False},
                     ],
                 },
                 {
@@ -59,11 +59,11 @@ _VEHICLES_SAMPLE = {
                         {"vehicle_id": 1041, "vehicle_identifier": "VB1241", "vehicle_code": "MO41",
                          "vehicle_name": "MO 41", "rfid_epc": "36543595", "uom": "Number", "is_available": True,
                          "on_rent": False, "rental": None, "under_maintenance": False, "service_request_no": None, "warehouse_service": False,
-                         "on_test_ride": False, "test_ride": None, "can_rent": True},
+                         "on_test_ride": False, "test_ride": None, "cart_hold": None, "can_rent": True},
                         {"vehicle_id": 1042, "vehicle_identifier": "VB1242", "vehicle_code": "MO42",
                          "vehicle_name": "MO 42", "rfid_epc": "", "uom": "Number", "is_available": False,
                          "on_rent": False, "rental": None, "under_maintenance": False, "service_request_no": None, "warehouse_service": False,
-                         "on_test_ride": False, "test_ride": None, "can_rent": False},
+                         "on_test_ride": False, "test_ride": None, "cart_hold": None, "can_rent": False},
                     ],
                 },
             ],
@@ -72,7 +72,16 @@ _VEHICLES_SAMPLE = {
 }
 
 _DESCRIPTION = """
-Every vehicle at this station, nested **category -> vehicle type -> vehicles**. Call it at
+**Two apps share this path.** `/api/v1/manager/vehicles` is the manager app's
+**vehicle master**: every active, approved vehicle at the company's active
+stations, flat -- `vehicle_id`, `vehicle_identifier`, `vehicle_code`,
+`vehicle_name`, `rfid_epc`, type, category, brand, `is_direct_rent`,
+`is_available`, `on_rent` and `branch` (with its state); filters `state_id`,
+`branch_id`, `vehicle_type_id`, `search` (name, code, identifier or RFID);
+`page` and `page_size` (default 500, up to 2000); answer `{vehicles, page,
+pages, page_size, total_vehicles}`. Everything below is the operator app's.
+
+**Operator app:** every vehicle at this station, nested **category -> vehicle type -> vehicles**. Call it at
 login and whenever the app refreshes its fleet; each answer **replaces** what the app holds
 for the same filters.
 
@@ -105,8 +114,13 @@ taken from the access token's session.
 - `on_test_ride`: the vehicle is out on a free test ride (`test-rides`); `test_ride` then
   gives `test_ride_id`, `test_no` and `expected_end_time`, else `null`. It cannot be rented
   until the ride is ended -- or the booking names it (`test_ride_id`).
+- `cart_hold` (multi-device stations): the vehicle is in a tablet's cart (`cart/add`) --
+  `{mine, device_letter, username, expires_at}`, `mine: true` for this tablet's own --
+  else `null`. Another tablet's hold makes it unrentable here until it is released or
+  expires (booking it is refused `vehicle_in_other_cart`).
 - `can_rent` = `is_available` and not `on_rent` and not `on_test_ride` and not
-  `warehouse_service` -- the one flag to grey a vehicle out by.
+  `warehouse_service` and not in another tablet's cart -- the one flag to grey a vehicle
+  out by.
   `is_available` alone is the manual switch (maintenance, held back); a rental never
   changes it. A booking is still refused if the vehicle was rented from another tablet
   since this list was fetched (`vehicle_already_rented`).
@@ -123,7 +137,7 @@ class VehiclesView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
-        tags=["Operator Vehicles"],
+        tags=["Operator Vehicles", "Manager Masters"],
         summary="The vehicles at this station, by category and vehicle type",
         description=_DESCRIPTION,
         request=envelope_request("VehiclesEnvelope", VehiclesRequest, request_data_required=False),
@@ -141,6 +155,11 @@ class VehiclesView(APIView):
         ),
     )
     def post(self, request, app):
+        if app == Channel.MANAGER:
+            # The manager app's vehicle master shares this path (owner, 18 Nov 2026).
+            from apps.rental.manager_api import VehicleMasterView
+
+            return VehicleMasterView.as_view()(request._request, app=app)
         if app != Channel.OPERATOR:
             return envelope("wrong_channel", "Not allowed on this app.", http_status=403)
         branch, refused = session_station(request)
@@ -154,7 +173,7 @@ class VehiclesView(APIView):
 
         try:
             data = services.device_vehicles(branch, vehicle_category_id=values.get("vehicle_category_id"),
-                                            vehicle_type_id=values.get("vehicle_type_id"))
+                                            vehicle_type_id=values.get("vehicle_type_id"), session=request.auth)
         except services.UnknownCategory:
             return envelope("unknown_vehicle_category", "That vehicle category is not set up for this station.",
                             http_status=400)

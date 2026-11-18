@@ -1,0 +1,38 @@
+{% extends "incentives/_base.html" %}
+
+{% block screen_title %}Schemes{% endblock %}
+{% block crumb %}<b>Schemes</b>{% endblock %}
+{% block heading %}Schemes{% endblock %}
+{% block sub %}The formulas an incentive is worked out with. A scheme applies from its date; one naming a station wins over an all-stations one.{% endblock %}
+
+{% block actions %}
+{% if can.create %}<a class="scr-btn scr-btn-primary" href="{% url 'incentives-scheme-add' %}">Add scheme</a>{% endif %}
+{% endblock %}
+
+{% block body %}
+<div class="scr-card" data-inc-schemes data-copy-url="{{ copy_url }}" data-delete-url="{{ delete_url }}">
+  <div class="scr-table-scroll">
+    <table class="scr-x-table scr-inc-schemes">
+      <colgroup><col /><col class="w-when" /><col /><col class="w-status" /><col class="w-actions-3" /></colgroup>
+      <thead><tr><th scope="col">Scheme</th><th scope="col">Applies</th><th scope="col">Stations</th><th scope="col">Status</th><th scope="col"><span class="scr-x-visually-hidden">Actions</span></th></tr></thead>
+      <tbody>
+        {% for row in schemes %}{% with s=row.scheme %}
+        <tr data-pk="{{ s.pk }}" data-name="{{ s.name }}">
+          <td data-label="Scheme"><a class="scr-x-name" href="{% url 'incentives-scheme-edit' s.pk %}">{{ s.name }}</a>{% if s.notes %}<div class="muted scr-x-wrap">{{ s.notes }}</div>{% endif %}</td>
+          <td data-label="Applies" class="muted">From {{ s.effective_from|date:"d M Y" }}{% if s.effective_to %} to {{ s.effective_to|date:"d M Y" }}{% endif %}</td>
+          <td data-label="Stations" class="muted scr-x-wrap">{% for b in row.stations %}{{ b.name }}{% if not forloop.last %}, {% endif %}{% empty %}All stations{% endfor %}</td>
+          <td data-label="Status">{% if s.is_active %}<span class="scr-x-status is-met">Active</span>{% else %}<span class="scr-x-status is-idle">Off</span>{% endif %}{% if row.used %} <span class="scr-x-status is-idle">In use</span>{% endif %}</td>
+          <td class="actions">
+            <a class="scr-btn-small" href="{% url 'incentives-scheme-edit' s.pk %}">{% if row.used or not can.update %}View{% else %}Edit{% endif %}</a>
+            {% if can.create %}<button type="button" class="scr-btn-small" data-inc-copy>Copy</button>{% endif %}
+            {% if can.delete and not row.used %}<button type="button" class="scr-btn-small" data-inc-delete>Delete</button>{% endif %}
+          </td>
+        </tr>
+        {% endwith %}{% empty %}
+        <tr><td colspan="5"><div class="scr-empty"><div><div class="scr-empty-title">No schemes yet</div><p class="scr-empty-sub">Add one to start calculating incentives.</p></div></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -5,7 +5,7 @@ URL converter in config/urls.py; the views narrow it to `operator` or
 
 from django.urls import path
 
-from apps.rental import api, manager_api, test_ride_api
+from apps.rental import api, cart_api, manager_api, test_ride_api
 
 urlpatterns = [
     path("customers/lookup", api.CustomerLookupView.as_view(), name="api-app-customer-lookup"),
@@ -18,7 +18,11 @@ urlpatterns = [
     path("test-rides/end", test_ride_api.TestRideEndView.as_view(), name="api-app-test-ride-end"),
     path("test-rides/cancel", test_ride_api.TestRideCancelView.as_view(), name="api-app-test-ride-cancel"),
     path("test-rides/list", test_ride_api.TestRideListView.as_view(), name="api-app-test-ride-list"),
-    path("invoices/recent", api.InvoiceRecentView.as_view(), name="api-app-invoice-recent"),
+    path("cart/add", cart_api.CartAddView.as_view(), name="api-app-cart-add"),
+    path("cart/remove", cart_api.CartRemoveView.as_view(), name="api-app-cart-remove"),
+    path("cart/clear", cart_api.CartClearView.as_view(), name="api-app-cart-clear"),
+    path("cart/status", cart_api.CartStatusView.as_view(), name="api-app-cart-status"),
+    path("invoices/recent",api.InvoiceRecentView.as_view(), name="api-app-invoice-recent"),
     path("invoices/detail", api.InvoiceDetailView.as_view(), name="api-app-invoice-detail"),
     path("orders/return", api.OrderReturnView.as_view(), name="api-app-order-return"),
     path("orders/settle", api.OrderSettleView.as_view(), name="api-app-order-settle"),
@@ -44,8 +48,7 @@ urlpatterns = [
     path("categories", manager_api.CategoriesView.as_view(), name="api-app-categories"),
     path("vehicle-types", manager_api.VehicleTypesView.as_view(), name="api-app-vehicle-types"),
     # Not "vehicles": that is the operator app's vehicles at its station (apps/fleet).
-    path("vehicles/list", manager_api.VehicleListView.as_view(), name="api-app-vehicle-list"),
-    path("reports/collections/states", manager_api.CollectionsByStateView.as_view(),
+    path("vehicles/list", manager_api.VehicleListView.as_view(), name="api-app-vehicle-list"),    path("reports/collections/states", manager_api.CollectionsByStateView.as_view(),
          name="api-app-collections-states"),
     path("reports/collections/branches", manager_api.CollectionsByBranchView.as_view(),
          name="api-app-collections-branches"),
