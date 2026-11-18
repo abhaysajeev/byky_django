@@ -109,8 +109,8 @@
 .bd-car-revenue { display: flex; flex-direction: column; gap: 4px; }
 .bd-car-amt { display: flex; align-items: baseline; gap: 6px; font-size: 28px; font-weight: 700; letter-spacing: -0.8px; line-height: 1.1; font-variant-numeric: tabular-nums; }
 .bd-car-amt small { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; color: rgba(255, 255, 255, 0.86); }
-/* the divider sits clear of the revenue figure and of the counts below it */
-.bd-car-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 12px; padding-top: 18px; border-top: 1px solid rgba(255, 255, 255, 0.22); }
+/* the divider sits clear of the revenue figure and of the counts below it (.bd prefix: the .bd dl reset would zero the spacing) */
+.bd .bd-car-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 22px; padding-top: 20px; border-top: 1px solid rgba(255, 255, 255, 0.22); }
 .bd-car-stat { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .bd-car-lab { font-size: 11.5px; color: rgba(255, 255, 255, 0.86); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bd-car-num { font-size: 18px; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; transition: opacity 0.4s; }
@@ -358,11 +358,12 @@
 .bsn-list-head span { font-size: 12px; color: var(--bd-muted); font-variant-numeric: tabular-nums; }
 .bsn-rows { position: relative; flex: 1 1 0; min-height: 132px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--bd-off) transparent; }
 .bsn-row {
-  display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 10px;
+  display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 0;
   cursor: pointer; border: none; background: none; width: 100%; text-align: left; color: var(--bd-ink); outline-offset: -2px;
   transition: background 0.15s;
 }
 .bsn-row:hover, .bsn-row.lit { background: var(--bd-soft); }
+/* a straight 3px bar on the left, as Live Monitoring marks a running order -- square rows, so it never curves */
 .bsn-row.sel { background: var(--bd-tint); box-shadow: inset 3px 0 0 var(--bd-ink); }
 .bsn-row .rank { width: 22px; flex: 0 0 auto; font-size: 12px; font-weight: 600; color: var(--bd-muted); font-variant-numeric: tabular-nums; }
 .bsn-row .body { flex: 1; min-width: 0; }
