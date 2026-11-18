@@ -45,8 +45,12 @@ RENTAL_SVG = (
 DISCOUNT_SVG = "M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 10h18M7 15h4"
 # A column chart on its baseline -- the client's web reports.
 REPORTS_SVG = "M4 20h16M7 16v-5M12 16V6M17 16v-8"
+# A coin with a rising arrow -- the staff incentive paid on a met target.
+INCENTIVES_SVG = "M9 21a6 6 0 1 0 0-12 6 6 0 0 0 0 12M9 13v4M15 3h6v6M21 3l-7 7"
 # An antenna mast with its signal arcs -- the RFID readers.
 TRACKING_SVG = "M12 13a2 2 0 1 0 0-4 2 2 0 0 0 0 4M12 13v8M8.5 7.5a5 5 0 0 0 0 7M15.5 7.5a5 5 0 0 1 0 7M5.5 4.5a9 9 0 0 0 0 13M18.5 4.5a9 9 0 0 1 0 13"
+# A target: three rings and the centre -- station targets.
+TARGETS_SVG = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10M12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2"
 
 # code, name, menu header (blank = no divider), sort order, is_flat, svg, svg2
 MODULES = [
@@ -59,7 +63,9 @@ MODULES = [
     ("rental", "Rental", "Operations", 60, False, RENTAL_SVG, ""),
     ("discount", "Discount Card", "Operations", 65, False, DISCOUNT_SVG, ""),
     ("tracking", "Tracking", "Operations", 68, False, TRACKING_SVG, ""),
-    ("reports", "Reports", "Operations", 70, False, REPORTS_SVG, ""),
+    ("targets", "Targets", "Operations", 69, False, TARGETS_SVG, ""),
+    ("incentives", "Incentives", "Operations", 70, False, INCENTIVES_SVG, ""),
+    ("reports", "Reports", "Operations", 72, False, REPORTS_SVG, ""),
     ("system", "Users & Roles", "System", 90, False, SYSTEM_SVG, ""),
     ("monitoring", "Logs", "System", 95, False, LOGS_SVG, ""),
 ]
@@ -187,6 +193,22 @@ PAGES = [
     ("tracking.raw", "tracking", "Raw Readings", "tracking-raw", ["read"], 5, False),
     ("tracking.settings", "tracking", "Tracking Settings", "tracking-settings", ["read", "update"], 6, False),
     ("tracking.privileges", "tracking", "Privileges", "tracking-privileges", ["read", "update"], 9, False),
+
+    # Station targets (design/08-targets.md §6). A station's month detail opens from Overview
+    # and shares its read right; setting, editing and removing need Set Targets.
+    ("targets.overview", "targets", "Overview", "targets-overview", ["read"], 1, False),
+    ("targets.daily", "targets", "Daily Progress", "targets-daily", ["read"], 2, False),
+    ("targets.manage", "targets", "Set Targets", "targets-manage", ["create", "read", "update", "delete"], 3, False),
+    ("targets.privileges", "targets", "Privileges", "targets-privileges", ["read", "update"], 9, False),
+
+    # Staff incentives on a met sales target (design/09-incentives.md section 8).
+    # Calculate: create = calculate / recalculate a draft, approve = make it final,
+    # print = Excel. A run opens from Calculate and uses its read right.
+    ("incentives.calculate", "incentives", "Calculate", "incentives-calculate",
+     ["create", "read", "approve", "print"], 1, False),
+    ("incentives.employees", "incentives", "By Employee", "incentives-employees", ["read", "print"], 2, False),
+    ("incentives.schemes", "incentives", "Schemes", "incentives-schemes", CRUD, 3, False),
+    ("incentives.privileges", "incentives", "Privileges", "incentives-privileges", ["read", "update"], 9, False),
 
     # The client's web reports (apps/reports): read to see, print to export to Excel.
     ("reports.rent_summary", "reports", "Rent Summary", "reports-rent-summary", ["read", "print"], 1, False),

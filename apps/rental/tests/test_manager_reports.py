@@ -586,3 +586,57 @@ def test_vehicles_are_paged(client, manager, fleet, monkeypatch):
 def reports_sample(name):
     from apps.rental import manager_api
     return getattr(manager_api, name)
+
+
+# -- Vehicle master (owner, 18 Nov 2026) -------------------------------------------------------
+
+MASTER = "/api/v1/manager/vehicles"     # shares the operator app's path (apps/fleet/api.py)
+
+
+def test_the_master_lists_every_vehicle_at_the_active_stations(client, world, token, manager, shop, dubai):
+    mo41 = shop["mo41"]
+    mo41.rfid_epc = "E2806894000050ABCDEF"
+    mo41.save()
+    parked_at_closed = Vehicle.objects.create(company=world["company"], vehicle_code="OLD 1", vehicle_name="OLD 1",
+                                              vehicle_type=world["monaco"], uom=mo41.uom,
+                                              current_branch=dubai["closed"], approval_status=APPROVED)
+    book(client, world, shop, token, vehicles=("dc02",))                    # DC 02 out on rent
+
+    data = get(client, manager, MASTER)
+    rows = {v["vehicle_id"]: v for v in data["vehicles"]}
+    assert parked_at_closed.pk not in rows                                  # closed station: left out
+    expected = {mo41.pk, shop["dc02"].pk, shop["mo42"].pk, shop["away"].pk}
+    assert expected <= set(rows) and data["total_vehicles"] == len(rows)
+    row = rows[mo41.pk]
+    assert (row["vehicle_code"], row["vehicle_name"], row["rfid_epc"]) == ("MO 41", "MO 41", "E2806894000050ABCDEF")
+    assert row["vehicle_identifier"] == mo41.identifier and row["vehicle_type"] == world["monaco"].vehicle_type_name
+    assert row["branch"]["branch_id"] == world["adc1"].pk and row["branch"]["state"] == "Abu Dhabi"
+    assert (row["on_rent"], rows[shop["dc02"].pk]["on_rent"]) == (False, True)
+    assert shape(row) == shape(reports_sample("_MASTER_SAMPLE")["vehicles"][0])
+    assert set(data) == {"vehicles", "page", "pages", "page_size", "total_vehicles"}
+
+
+def test_the_master_is_filtered_and_paged(client, world, manager, shop):
+    shop["mo42"].rfid_epc = "E28000AA77"
+    shop["mo42"].save()
+    at_adc2 = get(client, manager, MASTER, branch_id=world["adc2"].pk)["vehicles"]
+    assert [v["vehicle_id"] for v in at_adc2] == [shop["away"].pk]
+    by_tag = get(client, manager, MASTER, search=" aa77 ")["vehicles"]
+    assert [v["vehicle_id"] for v in by_tag] == [shop["mo42"].pk]
+    in_state = get(client, manager, MASTER, state_id=world["adc1"].location.state_id)["total_vehicles"]
+    assert in_state == get(client, manager, MASTER)["total_vehicles"]
+    first = get(client, manager, MASTER, page_size=2)
+    assert (len(first["vehicles"]), first["pages"]) == (2, -(-first["total_vehicles"] // 2))
+    refused = call(client, MASTER, {"page_size": 5000}, token=manager).json()
+    assert refused["code"] == "invalid_request"
+
+
+def test_the_operator_token_on_the_manager_path_is_refused_and_its_own_path_is_unchanged(client, token, shop):
+    assert call(client, MASTER, {}, token=token).json()["code"] == "wrong_channel"
+    own = call(client, "/api/v1/operator/vehicles", {}, token=token).json()
+    assert own["code"] == "ok" and "categories" in own["data"]          # the station's nested list, as before
+
+
+def test_the_master_is_in_the_api_docs(client, db):
+    schema = client.get("/api/schema/").content.decode()
+    assert "/api/v1/{app}/vehicles/master" not in schema and "vehicle master" in schema

@@ -224,6 +224,12 @@ def update_decision_for_installation(
     (section 9A.3a); outside its hours, or with no hours set, the answer is
     "no update" plus a `reason` the API turns into its code. A mandatory
     release is never held back.
+
+    The hold is for the operator tablet only (owner, 18 Nov 2026): it keeps a
+    station's till from updating mid-rental. Manager and employee phones are
+    never mapped to a branch (device mapping is operator only), so for them
+    the hold read "working time not set" forever and no "Any time" release
+    ever reached them -- they get it straight away.
     """
     try:
         company_id, branch_id = _company_and_branch(installation_id, company_code)
@@ -238,7 +244,7 @@ def update_decision_for_installation(
         company_id=company_id, channel=channel, branch_id=branch_id,
         version_code=version_code, version_name=version_name,
     )
-    if decision.get("update_required") and not decision.get("is_mandatory"):
+    if decision.get("update_required") and not decision.get("is_mandatory") and channel == Channel.OPERATOR:
         held = _outside_working_time(branch_id, at)
         if held:
             return {**NO_UPDATE, "reason": held}
@@ -962,6 +968,21 @@ def close_mapping(devices_qs, pk, *, user, now=None):
 # higher than the last is refused (section 7.1).
 
 APP_CHANNELS = (Channel.OPERATOR, Channel.MANAGER, Channel.EMPLOYEE)
+
+# Only operator tablets are mapped to a station (device mapping is operator
+# only), so only their update check knows a branch. Manager and employee phones
+# read the All-branches release alone: a branch mapping for them could never be
+# offered (owner, 18 Nov 2026 -- QA's employee 1.0.12 mapped to one branch
+# reached no phone).
+BRANCH_SCOPED_CHANNELS = (Channel.OPERATOR,)
+PHONE_SCOPE_MESSAGE = ("Manager and employee phones are not mapped to a station, so they only "
+                       "follow the All-branches release.")
+
+
+def check_scope(channel, scope):
+    """Refuse a per-branch mapping for an app whose devices have no branch."""
+    if scope == ReleaseScope.BRANCH and channel not in BRANCH_SCOPED_CHANNELS:
+        raise DeviceActionError(PHONE_SCOPE_MESSAGE, "Target")
 URL_MAX = 500
 VERSION_CODE_MAX = 2147483647    # PositiveIntegerField's ceiling in Postgres
 _URL = URLValidator()
@@ -1275,6 +1296,7 @@ def map_release(releases_qs, release_pk, *, user, scope, branches, targets):
     try:
         with transaction.atomic():
             release = _locked_release(releases_qs, release_pk)
+            check_scope(release.channel, scope)
             if not release.is_active:
                 raise DeviceActionError(f"{release} is withdrawn. Restore it before mapping it.", "Release")
             same_app = AppReleaseMapping.objects.select_for_update().filter(

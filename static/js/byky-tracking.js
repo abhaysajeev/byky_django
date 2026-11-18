@@ -240,6 +240,13 @@
     }, 10000);
   }
 
+  /* a whole table row opens its branch (Status Board) */
+  document.addEventListener('click', function (e) {
+    var row = e.target.closest('tr[data-href]');
+    if (!row || e.target.closest('a, button, input, select, label')) return;
+    window.location.href = row.dataset.href;
+  });
+
   document.addEventListener('change', function (e) {
     var filter = e.target.closest('[data-tracking-filter]');
     if (filter) {
