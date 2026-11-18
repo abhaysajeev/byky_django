@@ -811,6 +811,8 @@ class AppMappingView(DeviceScreenView):
             apps.append({
                 "value": channel.value,
                 "label": channel.label,
+                # Phones have no station: All branches only (services.check_scope).
+                "branch_scoped": channel in services.BRANCH_SCOPED_CHANNELS,
                 "blocks": blocks,
                 "own_count": sum(b["own_count"] for b in blocks),
                 "rows_count": sum(len(b["rows"]) for b in blocks),
@@ -963,6 +965,7 @@ class MappingWriteView(ReleaseWriteView):
         scope = data.get("scope")
         if scope not in ReleaseScope.values:
             raise services.DeviceActionError("Choose All branches or selected branches.", "Target")
+        services.check_scope(release.channel, scope)
         branches = list(
             branches_for(user).filter(is_active=True, company_id=release.company_id).order_by("name")
         )

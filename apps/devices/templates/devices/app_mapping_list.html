@@ -51,12 +51,12 @@
     </div>
 
     {% for a in apps %}
-    <div class="scr-panel" data-tabgroup="app-mapping" data-tab="{{ a.value }}" data-map-app="{{ a.value }}" data-map-app-label="{{ a.label }}" data-scr-noun-singular="branch" data-scr-noun-plural="branches"{% if not forloop.first %} hidden{% endif %}>
+    <div class="scr-panel" data-tabgroup="app-mapping" data-tab="{{ a.value }}" data-map-app="{{ a.value }}" data-map-app-label="{{ a.label }}" data-branch-scoped="{% if a.branch_scoped %}1{% endif %}" data-scr-noun-singular="branch" data-scr-noun-plural="branches"{% if not forloop.first %} hidden{% endif %}>
 
       {% for blk in a.blocks %}
       <div class="scr-rel-default{% if not blk.all %} is-empty{% elif not blk.all.release.is_active %} is-withdrawn{% endif %}">
         <div class="scr-rel-default-info">
-          <div class="scr-rel-default-kicker">All branches (default){% if multi_company %} · {{ blk.company.name }}{% endif %}</div>
+          <div class="scr-rel-default-kicker">{% if a.branch_scoped %}All branches (default){% else %}All phones{% endif %}{% if multi_company %} · {{ blk.company.name }}{% endif %}</div>
           {% if blk.all %}
           <div class="scr-rel-default-title">
             {{ blk.all.release.version_name }} <span class="scr-code">{{ blk.all.release.version_code }}</span>
@@ -64,13 +64,15 @@
             {% if not blk.all.release.is_active %}<span class="scr-badge scr-badge-inactive"><i></i>Withdrawn</span>{% endif %}
           </div>
           <div class="scr-rel-default-line">
-            {% if blk.all.release.is_active %}Every branch without its own mapping is offered this build.{% else %}This build is withdrawn, so branches without their own mapping are offered no update.{% endif %}
+            {% if not a.branch_scoped %}{% if blk.all.release.is_active %}Every {{ a.label }} phone is offered this build.{% else %}This build is withdrawn, so no phone is offered an update.{% endif %}
+            {% elif blk.all.release.is_active %}Every branch without its own mapping is offered this build.{% else %}This build is withdrawn, so branches without their own mapping are offered no update.{% endif %}
             Mapped {{ blk.all.created_on|date:"d M Y, H:i" }}{% if blk.all_by %} by {{ blk.all_by }}{% endif %}.
           </div>
           {% else %}
           <div class="scr-rel-default-title">No default release</div>
-          <div class="scr-rel-default-line">Branches without their own mapping are offered no update ({{ blk.none_count }} now).</div>
+          <div class="scr-rel-default-line">{% if a.branch_scoped %}Branches without their own mapping are offered no update ({{ blk.none_count }} now).{% else %}No phone is offered an update until one is set.{% endif %}</div>
           {% endif %}
+          {% if not a.branch_scoped %}<div class="scr-rel-default-line">Phones are not tied to a station, so they all follow this one release. Mapping a build to a branch is for the operator tablets only.</div>{% endif %}
         </div>
         <div class="scr-rel-default-actions">
           {% if perm.create %}
@@ -85,6 +87,45 @@
       </div>
       {% endfor %}
 
+      {% if not a.branch_scoped %}
+      {% if a.own_count %}
+      <div class="scr-table-scroll scr-sb">
+        <table>
+          <thead>
+            <tr>
+              <th>Old branch mapping</th>
+              {% if multi_company %}<th>Company</th>{% endif %}
+              <th>Build</th>
+              <th>Status</th>
+              <th>Mapped</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for blk in a.blocks %}{% for r in blk.rows %}{% if r.own_mapping %}
+            <tr class="scr-row">
+              <td style="font-weight:600">{{ r.branch.name }} <span class="scr-code">{{ r.branch.short_code }}</span></td>
+              {% if multi_company %}<td class="scr-contact">{{ blk.company.short_code }}</td>{% endif %}
+              <td>{{ r.own_mapping.release.version_name }} <span class="scr-rel-muted">({{ r.own_mapping.release.version_code }})</span></td>
+              <td><span class="scr-badge scr-badge-pending" title="Phones have no station, so this mapping reaches no phone"><i></i>Not offered</span></td>
+              <td>
+                <div class="scr-contact">{{ r.own_mapping.created_on|date:"d M Y, H:i" }}</div>
+                <div class="scr-contact-sub">{{ r.own_by|default:"—" }}</div>
+              </td>
+              <td>
+                {% if perm.update %}
+                <button type="button" class="scr-btn-danger" data-map-remove data-pk="{{ r.own_mapping.pk }}" data-kind="branch"
+                        data-title="Remove {{ r.branch.name }}'s {{ a.label }} mapping?"
+                        data-note="It reaches no phone: {{ a.label|lower }} phones only follow the All-branches release.">Remove</button>
+                {% endif %}
+              </td>
+            </tr>
+            {% endif %}{% endfor %}{% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+      {% else %}
       <div class="scr-toolbar">
         <div class="scr-search">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
@@ -237,6 +278,7 @@
           </button>
         </div>
       </div>
+      {% endif %}
     </div>
     {% endfor %}
 
