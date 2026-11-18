@@ -405,3 +405,49 @@
   .bd .bsn-spin { animation: none; border-color: transparent; }
   .bd .bsn-mapwrap.is-moving .bsn-map { transform: none; filter: none; }
 }
+
+/* Station Network date picker (owner, 18 Nov 2026): one compact field above
+   the station summary; the summary dims briefly while a day loads. */
+.bsn-date { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.bsn-date-row { display: flex; align-items: center; gap: 8px; }
+.bsn-date-input { height: 36px; padding: 0 10px; border: 1px solid var(--bd-line-strong); border-radius: 10px; background: #fff;
+  color: var(--bd-ink); font: inherit; font-size: 13px; font-variant-numeric: tabular-nums; }
+.bsn-date-input:hover { border-color: var(--bd-muted); }
+.bsn-date-input:focus-visible { outline: 2px solid var(--bd-ink); outline-offset: 1px; }
+.bsn-date-today { height: 36px; padding: 0 12px; border: 0; border-radius: 10px; background: var(--bd-tint); color: var(--bd-ink);
+  font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.bsn-date-today:hover { background: var(--bd-soft); }
+.bsn-date-today:focus-visible { outline: 2px solid var(--bd-ink); outline-offset: 1px; }
+.bsn-date-today[hidden] { display: none; }
+.bsn-sum.is-loading { opacity: 0.55; transition: opacity 0.15s; }
+@media (prefers-reduced-motion: reduce) { .bsn-sum.is-loading { transition: none; } }
+
+/* Dashboard grid (owner, 18 Nov 2026). Wide: Stations Today, Monthly Sales and
+   Vehicles Now share the first line (5 / 3 / 4 of 12 columns). Once they no
+   longer fit side by side, Vehicles Now goes full width BELOW Station Network,
+   so the map stays next to the live figures. Sized by the dashboard's own width
+   (the sidebar can be open or collapsed), hence a container query. */
+.bd { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); container-type: inline-size; }
+.bd > * { grid-column: 1 / -1; order: 4; }
+.bd > .bd-head { order: 0; }
+.bd > .bd-row-first { display: contents; }
+.bd-row-first > .bd-hero { grid-column: 1 / 6; order: 1; }
+.bd-row-first > .bd-sales { grid-column: 6 / 9; order: 1; }
+.bd-row-first > .bd-overdue { grid-column: 9 / 13; order: 1; }
+.bd > .bd-map-card { order: 2; }
+@container (max-width: 1041px) {
+  .bd-row-first > .bd-hero { grid-column: 1 / 8; }
+  .bd-row-first > .bd-sales { grid-column: 8 / 13; }
+  .bd-row-first > .bd-overdue { grid-column: 1 / -1; order: 3; }
+}
+@container (max-width: 719px) {
+  .bd-row-first > .bd-hero, .bd-row-first > .bd-sales { grid-column: 1 / -1; }
+}
+/* The chips and the date filter share one line above the map; on wide screens
+   the station column is exactly the map's height (its list scrolls inside). */
+.bsn-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px 16px; flex-wrap: wrap;
+  padding-top: 16px; }
+.bsn-bar .bsn-chips { padding-top: 0; }
+.bsn-bar .bsn-date { margin-bottom: 0; justify-content: flex-end; }
+@media (min-width: 1101px) { .bsn-side { height: 602px; } }   /* .bsn-map 600px + its 1px border */
+@media (max-width: 720px) { .bsn-bar .bsn-date { flex: 1 1 100%; justify-content: space-between; } }
