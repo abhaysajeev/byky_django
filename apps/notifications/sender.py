@@ -45,6 +45,17 @@ class FcmSender:
 
         # A Notification row, or a station-sync push (apps/rental/station_sync.py)
         # that also sets how long it may wait and what it collapses with.
+        if getattr(notification, "silent", False):
+            # Data only: the app is told, no tray entry (cart changes, 18 Nov 2026).
+            return messaging.Message(
+                token=token,
+                data={key: str(value) for key, value in notification.data.items()},
+                android=messaging.AndroidConfig(
+                    priority="high",
+                    ttl=timedelta(seconds=getattr(notification, "ttl_seconds", None) or settings.PUSH_TTL_SECONDS),
+                    collapse_key=getattr(notification, "collapse_key", None),
+                ),
+            )
         return messaging.Message(
             token=token,
             notification=messaging.Notification(title=notification.title, body=notification.body),

@@ -13,6 +13,20 @@ def station_push(order_id, action, device_id, item_id, at):
     return station_sync.push(order_id, action, device_id, item_id, datetime.datetime.fromisoformat(at))
 
 
+@shared_task(name="apps.rental.tasks.station_cart_push", ignore_result=True)
+def station_cart_push(branch_id, vehicle_id, action, device_id, at):
+    """Tell the station's other tablets a vehicle went in or out of a cart (station_sync)."""
+    return station_sync.cart_push(branch_id, vehicle_id, action, device_id, datetime.datetime.fromisoformat(at))
+
+
+@shared_task(name="apps.rental.tasks.release_stale_holds", ignore_result=True)
+def release_stale_holds():
+    """Release cart holds that expired or whose tablet signed out (holds.release_stale)."""
+    from apps.rental import holds
+
+    return {str(k): v for k, v in holds.release_stale().items()}
+
+
 @shared_task(name="apps.rental.tasks.station_request_push", ignore_result=True)
 def station_request_push(request_type, subject_id, action, status, left_out, at):
     """Tell the order's station's other tablets a request on it changed (station_sync)."""

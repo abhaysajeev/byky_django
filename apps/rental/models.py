@@ -1010,3 +1010,61 @@ class TestRide(TimeStampedModel):
 
     def __str__(self):
         return self.test_no
+
+
+class HoldRelease(models.TextChoices):
+    """Why a cart hold ended (apps/rental/holds.py)."""
+
+    REMOVED = "removed", "Removed from the cart"
+    CLEARED = "cleared", "Cart cleared"
+    BOOKED = "booked", "Booked"
+    EXPIRED = "expired", "Expired"
+    LOGOUT = "logout", "Tablet signed out"
+
+
+class VehicleHold(TimeStampedModel):
+    """A vehicle in one operator tablet's cart at a multi-device station
+    (apps/rental/holds.py). While it is live no other tablet there can cart or
+    book that vehicle.
+
+    Owner, 18 Nov 2026: multi-device stations only (Branch.is_multi_device);
+    10 minutes from the tablet's last cart call; booking by another tablet is
+    refused. No legacy counterpart -- the legacy had no cart.
+
+    Live = not released, not expired, its session still signed in. Expired and
+    signed-out holds are released lazily (holds.release_stale), so the unique
+    index below holds one open row per vehicle."""
+
+    id = models.UUIDField(primary_key=True, editable=False)    # the tablet's sync_id
+    company = models.ForeignKey("company.Company", on_delete=models.PROTECT, related_name="+")
+    branch = models.ForeignKey("company.Branch", on_delete=models.PROTECT, related_name="+")
+    vehicle = models.ForeignKey("fleet.Vehicle", on_delete=models.PROTECT, related_name="holds")
+    device = models.ForeignKey("devices.Device", on_delete=models.PROTECT, related_name="+")
+    session = models.ForeignKey("portal.AppSession", on_delete=models.PROTECT, related_name="+")
+    user = models.ForeignKey("core.User", on_delete=models.PROTECT, related_name="+")
+    device_added_at = models.DateTimeField(null=True, blank=True)   # tablet time, for the record
+    added_at = models.DateTimeField()                               # server time
+    expires_at = models.DateTimeField()                             # server time
+    released_at = models.DateTimeField(null=True, blank=True)
+    release_reason = models.CharField(max_length=10, choices=HoldRelease.choices, blank=True)
+
+    class Meta:
+        db_table = "vehicle_hold"
+        ordering = ["added_at"]
+        constraints = [
+            # One open hold per vehicle.
+            models.UniqueConstraint(fields=["vehicle"], condition=models.Q(released_at__isnull=True),
+                                    name="uniq_open_hold_per_vehicle"),
+            models.CheckConstraint(
+                condition=(models.Q(released_at__isnull=True, release_reason="")
+                           | models.Q(released_at__isnull=False) & ~models.Q(release_reason="")),
+                name="vehicle_hold_release_consistent",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["branch", "released_at"], name="vehicle_hold_branch_open"),
+            models.Index(fields=["session", "released_at"], name="vehicle_hold_session_open"),
+        ]
+
+    def __str__(self):
+        return f"{self.vehicle_id} held by device {self.device_id}"

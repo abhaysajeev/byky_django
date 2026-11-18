@@ -409,6 +409,10 @@ CELERY_BEAT_SCHEDULE = {
     # Notifications the change could not queue (Redis down), and retries due.
     "notifications-send-due": {"task": "apps.notifications.tasks.send_due", "schedule": crontab()},
     "notifications-purge": {"task": "apps.notifications.tasks.purge", "schedule": crontab(hour=3, minute=45)},
+    # Cart holds that expired or whose tablet signed out (apps/rental/holds.py).
+    # Reads already ignore them; this keeps the one-open-hold index tidy.
+    "rental-release-stale-holds": {"task": "apps.rental.tasks.release_stale_holds",
+                                   "schedule": crontab(minute="*/5")},
 }
 
 # -- Push notifications (apps/notifications) ---------------------------------------------
