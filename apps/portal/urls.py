@@ -8,6 +8,7 @@ urlpatterns = [
     path("account/password/", views.change_password_view, name="account-password"),
     path("dashboard/", views.DashboardView.as_view(), name="dashboard"),
     path("dashboard/live/", views.dashboard_live_view, name="dashboard-live"),
+    path("dashboard/stations/", views.dashboard_stations_view, name="dashboard-stations"),
 
     # Screens
     path("portal/role/list/", screens.RoleListView.as_view(), name="portal-role-list"),

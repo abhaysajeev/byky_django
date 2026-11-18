@@ -70,15 +70,16 @@
 .byky-menu-item.open > .byky-menu-link .menu-caret svg{transform:rotate(90deg)}
 
 /* active page */
-.byky-menu-item.active > .byky-menu-link:not(.byky-menu-toggle){background:linear-gradient(100deg,#c2141a 0%,#e8272e 55%,#f04a50 100%);color:#fff;font-weight:600;font-size:14.5px;padding:12px 13px;border-radius:11px;box-shadow:0 6px 16px -7px rgba(216,31,38,.5)}
-.byky-menu-item.active > .byky-menu-link:not(.byky-menu-toggle):hover{box-shadow:0 10px 22px -8px rgba(216,31,38,.6);transform:translateY(-1px)}
-.byky-menu-item.active > .byky-menu-link:not(.byky-menu-toggle) .byky-menu-icon{color:#fff}
-.byky-menu-item.active > .byky-menu-link:not(.byky-menu-toggle) .menu-badge{background:rgba(255,255,255,.22);color:#fff}
+/* active link: the sidebar's standard soft tint (owner, 18 Nov 2026: no gradient, glow or lift) */
+.byky-menu-item.active > .byky-menu-link:not(.byky-menu-toggle){background:#fdf3f3;color:#d81f26;font-weight:600;font-size:14.5px;padding:12px 13px;border-radius:11px;box-shadow:none}
+.byky-menu-item.active > .byky-menu-link:not(.byky-menu-toggle):hover{box-shadow:none;transform:none;background:#fdf3f3}
+.byky-menu-item.active > .byky-menu-link:not(.byky-menu-toggle) .byky-menu-icon{color:#d81f26}
+.byky-menu-item.active > .byky-menu-link:not(.byky-menu-toggle) .menu-badge{background:#fbe3e4;color:#c2141a}
 /* A not-yet-built leaf (e.g. Test Vehicle Details) renders as a plain span, not a link -- dimmed and inert rather than a dead href="#". */
 .byky-menu-link-disabled{opacity:.45;cursor:not-allowed}
 .byky-menu-link-disabled:hover{background:transparent;color:#4b4770}
 .byky-menu-link-disabled .menu-badge{opacity:1;background:#f4f3f9;color:#a9a6c4}
-.byky-menu-item.active > .byky-menu-link:not(.byky-menu-toggle) .menu-caret{color:#fff}
+.byky-menu-item.active > .byky-menu-link:not(.byky-menu-toggle) .menu-caret{color:#d81f26}
 
 /* A standalone top-level leaf with no submenu (e.g. Print Invoice) uses the
    plain "submodule selected" tint instead of the loud Dashboard-style pill --
