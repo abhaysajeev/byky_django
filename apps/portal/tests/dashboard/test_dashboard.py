@@ -285,3 +285,50 @@ def test_the_live_endpoint_tells_a_signed_out_page_to_stop(client):
 
     assert response.status_code == 401
     assert response.json() == {"detail": "Signed out."}
+
+
+# -- The Station Network map ------------------------------------------------------------------
+
+
+def place(branch, lat="24.470000", lng="54.330000"):
+    branch.latitude, branch.longitude = Decimal(lat), Decimal(lng)
+    branch.save(update_fields=["latitude", "longitude"])
+
+
+def test_each_station_counts_its_active_vehicles_as_its_fleet(user, world, shop):
+    zoo = second_station(world)
+    shop["dc02"].is_active = False                                      # retired bikes are not fleet
+    shop["dc02"].save(update_fields=["is_active"])
+
+    slides = {s["name"]: s for s in dashboard.branch_live(user)}
+
+    assert slides["Abu Dhabi Corniche 1"]["fleet"] == 1
+    assert slides[zoo.name]["fleet"] == 0
+
+
+def test_map_points_are_the_located_stations_with_their_live_figures(user, world, shop):
+    place(world["adc1"])
+    second_station(world)                                               # no coordinates: not on the map
+    make_order(world, shop, "OUT-1")
+    bill(world, shop, timezone.now(), "60.000")
+
+    points = dashboard.map_points(user, dashboard.branch_live(user))
+
+    assert len(points) == 1
+    point = points[0]
+    assert (point["id"], point["name"], point["lat"], point["lng"]) == (
+        world["adc1"].pk, "Abu Dhabi Corniche 1", 24.47, 54.33)
+    assert (point["fleet"], point["on_rent"], point["invoices"], point["revenue"]) == (2, 1, 1, "60.000")
+    assert set(point) >= {"emirate", "devices", "staff", "hours", "state"}
+
+
+def test_the_page_and_the_live_endpoint_share_station_ids(client_in, world, shop):
+    place(world["adc1"])
+
+    page = client_in.get("/dashboard/")
+    data = client_in.get("/dashboard/live/").json()
+
+    point = page.context["map_points"][0]
+    assert (point["id"], point["fleet"]) == (world["adc1"].pk, 2)
+    assert (data["branches"][0]["id"], data["branches"][0]["fleet"]) == (world["adc1"].pk, 2)
+    assert 'id="bd-map-points"' in page.content.decode()

@@ -148,20 +148,8 @@ class DashboardView(PagePermissionMixin, ThemedTemplateView):
 
         branches = scoping.branches_for(self.request.user)
         stations = branches.filter(is_active=True).count()
-        points = [
-            {
-                "name": branch.name,
-                "emirate": branch.location.state.name,
-                "fleet": 0,
-                "lat": float(branch.latitude),
-                "lng": float(branch.longitude),
-            }
-            for branch in branches.select_related("location__state").filter(
-                is_active=True, latitude__isnull=False, longitude__isnull=False
-            )
-        ]
-
         live = dashboard.live_payload(self.request.user)
+        points = dashboard.map_points(self.request.user, live["branches"])
         monthly = dashboard.monthly_sales(self.request.user)
         context.update({
             # The first row is live: the branch carousel and the overdue watch
