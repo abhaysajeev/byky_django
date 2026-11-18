@@ -19,11 +19,12 @@ from django.db import connection, transaction
 from django.utils import timezone
 
 from apps.company.models import Branch
+from apps.company.services import CLOSED, branch_open_state
 from apps.fleet.models import Vehicle
 from apps.fleet.service_requests import in_warehouse_service
 from apps.rental.models import TestRide, TestRideStatus
 from apps.rental.services import active_rentals
-from apps.tracking import ops
+from apps.tracking import alerts, ops
 from apps.tracking.models import (
     Antenna,
     BranchTrackingSettings,
@@ -52,7 +53,8 @@ GUARD_SHARE = 0.8
 
 NOT_SEEN = "not_seen"
 WEAK_SIGNAL = "weak_signal"
-TEST_OVERDUE = "test_overdue"     # legacy AntennaDataTracking:62-72 (E4)
+# Outside the station's working hours nothing is tracked (owner, 12 Nov 2026).
+STATION_CLOSED = "station_closed"
 READER_OFFLINE = "reader_offline"
 NO_READER = "no_reader"
 NO_NEW_READS = "no_new_reads"
@@ -99,6 +101,13 @@ def timings_by_branch(branch_ids):
     return result
 
 
+def closed_branches(branches, now):
+    """The stations outside their working hours now (Branch Working Time). A
+    station with no working hours saved is tracked all day: nobody has said
+    when it closes, and staying silent would hide it."""
+    return frozenset(b.pk for b in branches if branch_open_state(b, now) == CLOSED)
+
+
 class Facts(NamedTuple):
     """What one vehicle's decision depends on."""
     now: datetime.datetime
@@ -114,6 +123,7 @@ class Facts(NamedTuple):
     limits: tuple | None                        # (enter_rssi, leave_rssi) of the antenna
     timings: Timings
     moved: bool                                 # its branch changed since last cycle
+    closed: bool = False                        # outside the station's working hours
 
 
 class Verdict(NamedTuple):
@@ -129,11 +139,13 @@ def decide(prev, f):
     if f.rented:
         return Verdict(P.ON_RENT, "", clock)
     if f.test_end is not None:
-        if f.test_end >= f.now:
-            return Verdict(P.ON_TEST, "", clock)
-        return Verdict(P.MISSING, TEST_OVERDUE, clock)
+        # A test ride past its time stays on test (owner, 12 Nov 2026): the
+        # legacy counted it as missing (E4); it is no longer an alert.
+        return Verdict(P.ON_TEST, "", clock)
     if f.in_service:
         return Verdict(P.IN_SERVICE, "", clock)
+    if f.closed:
+        return Verdict(P.UNKNOWN, STATION_CLOSED, clock)
     if f.calibrating:
         return Verdict(P.UNKNOWN, CALIBRATING, clock)
     if not f.has_reader:
@@ -143,7 +155,7 @@ def decide(prev, f):
 
     # The clock restarts when the vehicle stops being excused: a bike back from
     # rent has not been heard for an hour, and that is not a reason to flag it.
-    restarted = prev is None or prev.state in EXCUSED or prev.reason == TEST_OVERDUE or f.moved or clock is None
+    restarted = prev is None or prev.state in EXCUSED or f.moved or clock is None
     if restarted:
         clock = f.now
     base = max(f.own_seen, clock) if f.own_seen else clock
@@ -187,8 +199,10 @@ def _contact(reader):
     return max(times) if times else None
 
 
-def _update_readers(by_branch, timings, now, branches):
-    """Note who went offline or came back; returns the events."""
+def _update_readers(by_branch, timings, now, branches, closed=frozenset()):
+    """Note who went offline or came back; returns the events. A closed
+    station's reader is followed but raises nothing: a reader switched off
+    at night is not news."""
     events, changed = [], []
     for branch_id, readers in by_branch.items():
         offline_after = timings[branch_id].offline
@@ -199,6 +213,8 @@ def _update_readers(by_branch, timings, now, branches):
                 continue
             r.online, r.online_changed_at = online, now
             changed.append(r)
+            if branch_id in closed:
+                continue
             events.append(PresenceEvent(
                 company_id=branches[branch_id], branch_id=branch_id, reader=r, at=now,
                 kind=EventKind.READER_ONLINE if online else EventKind.READER_OFFLINE,
@@ -232,7 +248,7 @@ def _apply_silence_guard(rows, readers, seen, timing, now):
     A held bike stays held until it is heard itself, while most of the station
     is still quiet; once the station is back, a bike that really left goes on to
     Missing by the normal rule, so one stolen bike is never hidden."""
-    group = [r for r in rows if r.verdict.state in (P.PRESENT, P.MISSING) and r.verdict.reason != TEST_OVERDUE]
+    group = [r for r in rows if r.verdict.state in (P.PRESENT, P.MISSING)]
     if len(group) < GUARD_MIN_BIKES or not readers:
         return rows, False
 
@@ -303,8 +319,10 @@ def _cycle(now):
     by_branch, branch_of = _branch_readers()
     branch_ids |= set(by_branch)
     timings = timings_by_branch(branch_ids)
-    companies = dict(Branch.objects.filter(pk__in=branch_ids).values_list("pk", "company_id"))
-    events = _update_readers(by_branch, timings, now, companies)
+    branches = {b.pk: b for b in Branch.objects.filter(pk__in=branch_ids).select_related("company")}
+    companies = {pk: b.company_id for pk, b in branches.items()}
+    closed = closed_branches(branches.values(), now)
+    events = _update_readers(by_branch, timings, now, companies, closed)
 
     seen = {t.tag: t for t in TagLastSeen.objects.filter(tag__in=set(tags.values()))}
     limits = {(a.reader_id, a.port): (a.enter_rssi, a.leave_rssi) for a in Antenna.objects.filter(
@@ -333,7 +351,8 @@ def _cycle(now):
             reader_online=any(r.online for r in readers), reader_contact=max(contacts) if contacts else None,
             own_seen=own_seen, rssi_avg=last.rssi_avg if own else None,
             limits=limits.get((last.reader_id, last.port)) if own else None,
-            timings=timings[branch_id], moved=prev is not None and prev.branch_id != branch_id))
+            timings=timings[branch_id], moved=prev is not None and prev.branch_id != branch_id,
+            closed=branch_id in closed))
         per_branch.setdefault(branch_id, []).append(Row(v, prev, own_seen, verdict))
 
     new_rows, updates, counts = [], [], {}
@@ -342,7 +361,7 @@ def _cycle(now):
         timing = timings[branch_id]
         readers = by_branch.get(branch_id, [])
         rows, entered = _apply_silence_guard(rows, readers, seen, timing, now)
-        if entered:
+        if entered and branch_id not in closed:
             events.append(PresenceEvent(company_id=companies[branch_id], branch_id=branch_id, reader=readers[0], at=now,
                                         kind=EventKind.READER_SILENT, alerts=timing.alerts_on))
         for row in rows:
@@ -355,12 +374,15 @@ def _cycle(now):
             heard_by = heard_at if verdict.state == P.MISSING and heard_at != branch_id else None
             state_changed = prev is None or prev.state != verdict.state
 
-            if state_changed and (prev is not None or verdict.state == P.MISSING):
+            # Closing and opening are not events: they would fill the history twice a day.
+            opening_or_closing = verdict.reason == STATION_CLOSED or (prev is not None
+                                                                       and prev.reason == STATION_CLOSED)
+            if state_changed and not opening_or_closing and (prev is not None or verdict.state == P.MISSING):
                 events.append(PresenceEvent(
                     company_id=v["company_id"], branch_id=branch_id, vehicle_id=pk, kind=EventKind.STATE, at=now,
                     from_state=prev.state if prev else "", to_state=verdict.state, reason=verdict.reason,
                     alerts=timing.alerts_on and verdict.state == P.MISSING))
-            if low and not (prev and prev.low_battery):
+            if low and not (prev and prev.low_battery) and branch_id not in closed:
                 events.append(PresenceEvent(
                     company_id=v["company_id"], branch_id=branch_id, vehicle_id=pk, kind=EventKind.LOW_BATTERY, at=now,
                     alerts=timing.alerts_on))
@@ -391,6 +413,7 @@ def _cycle(now):
         VehiclePresence.objects.filter(pk__in=gone).delete()
     if events:
         PresenceEvent.objects.bulk_create(events, batch_size=500)
+        alerts.after_cycle(events, now, {b for b, t in timings.items() if t.alerts_on} - closed)
 
     # The socket only says "look again"; the page asks over HTTP, so what a user
     # may see is decided in one place. Only a real change says it.

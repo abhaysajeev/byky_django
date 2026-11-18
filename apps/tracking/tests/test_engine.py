@@ -103,12 +103,10 @@ def test_in_time_test_ride_is_excused(world, station):
     assert tick(station, 500).state == P.ON_TEST
 
 
-def test_overdue_test_ride_counts_as_missing(world, station):
+def test_overdue_test_ride_stays_on_test(world, station):
     on_test(world, station, 60)
 
-    row = tick(station, 61)
-
-    assert (row.state, row.reason) == (P.MISSING, engine.TEST_OVERDUE)
+    assert tick(station, 61).state == P.ON_TEST
 
 
 def test_warehouse_service_is_excused(station, monkeypatch):
