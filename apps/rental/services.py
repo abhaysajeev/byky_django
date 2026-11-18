@@ -19,7 +19,7 @@ from apps.fare import package_device
 from apps.fare.models import Fare, Package
 from apps.fleet import service_requests
 from apps.fleet.models import Vehicle
-from apps.rental import live, station_sync, test_rides
+from apps.rental import holds, live, station_sync, test_rides
 from apps.rental.counted import counted
 from apps.rental.models import (
     MONEY_IN,
@@ -123,6 +123,8 @@ ORDER_ERRORS = {
     "vehicle_on_test_ride": (409, "A vehicle in this order is out on a test ride -- end it first.", False),
     # An approved service request whose issue type needs warehouse service (owner, 29 Oct 2026).
     "vehicle_in_warehouse_service": (409, "A vehicle in this order is in warehouse service.", False),
+    # Another tablet at this multi-device station has it in its cart (holds.py).
+    "vehicle_in_other_cart": (409, "A vehicle in this order is in another tablet's cart.", False),
     "unknown_test_ride": (404, "No test ride with that id at this station.", False),
     "test_ride_closed": (409, "That test ride is already ended, rented or cancelled.", False),
     "vehicle_repeated": (400, "The same vehicle is in this order twice.", False),
@@ -544,7 +546,7 @@ def mark_return_pending(company_id, request_data):
 # -- Orders: booking -------------------------------------------------------------
 
 
-def create_rental_order(session, values, request_data, reply_for):
+def create_rental_order(session, values, request_data, reply_for, *, replay=False):
     """One rental booking -- the order, its vehicle lines and any advance
     payments, in one call. Returns (reply data, created); created is False for
     a resend of a call already done, which the app treats as success.
@@ -572,7 +574,7 @@ def create_rental_order(session, values, request_data, reply_for):
             raise OrderRefused("sync_id_conflict")
         return run_once(
             event_id=sync_id, company=session.branch.company, request_data=request_data,
-            apply=lambda: _book(session, values, reply_for),
+            apply=lambda: _book(session, values, reply_for, replay=replay),
         )
     except OrderRefused:
         count_receipt(session, values["order_no"])
@@ -591,7 +593,7 @@ def count_receipt(session, order_no):
         devices_services.raise_counter_from(session.device, session.branch, BillKind.ORDER, order_no)
 
 
-def _book(session, values, reply_for):
+def _book(session, values, reply_for, *, replay=False):
     branch, user, device = session.branch, session.user, session.device
     company = branch.company
     items_input, payments_input = values["items"], values.get("payments") or []
@@ -611,7 +613,8 @@ def _book(session, values, reply_for):
     # A rental after a test ride names it: the ride is closed as rented and
     # linked to this order (legacy Save_Order_Booking:437-482, @TestNo).
     test_ride = test_rides.for_booking(session, values["test_ride_id"]) if values.get("test_ride_id") else None
-    refs = _line_refs(company, branch, items_input, test_ride=test_ride, order_id=values["sync_id"])
+    refs = _line_refs(company, branch, items_input, test_ride=test_ride, order_id=values["sync_id"],
+                      session=session, replay=replay)
     modes = _payment_modes(company, payments_input)
 
     order = Order.objects.create(
@@ -624,6 +627,7 @@ def _book(session, values, reply_for):
         created_by=user, modified_by=user,
     )
     _new_lines(order, items_input, refs, user)
+    holds.release_booked(session, refs[0])
     _record_payments(session, order, payments_input, modes)
     devices_services.raise_counter_from(device, branch, BillKind.ORDER, order.order_no)
     if test_ride is not None:
@@ -637,7 +641,7 @@ def _book(session, values, reply_for):
     return order, event, reply_for(order)
 
 
-def _line_refs(company, branch, items_input, *, test_ride=None, order_id=None):
+def _line_refs(company, branch, items_input, *, test_ride=None, order_id=None, session=None, replay=False):
     """(vehicles, fares, offers) by id for new vehicle lines -- or the refusal.
     Each vehicle this company's, at this station, in the call once, not on
     another active line and not out on a test ride (but `test_ride`, the one
@@ -669,6 +673,14 @@ def _line_refs(company, branch, items_input, *, test_ride=None, order_id=None):
         held = min(in_warehouse)
         raise OrderRefused("vehicle_in_warehouse_service",
                            f"Vehicle {held} is in warehouse service ({in_warehouse[held]}).")
+    # In another tablet's cart at a multi-device station (holds.py). A replay
+    # of a parked call is never refused for it: the bike already left.
+    try:
+        holds.check_booking(session, vehicle_list, replay=replay)
+    except holds.HoldRefused as refusal:
+        raise OrderRefused("vehicle_in_other_cart",
+                           f"Vehicle {refusal.data['vehicle_id']} is in another tablet's cart.",
+                           refusal.data) from None
     fares = _by_id(Fare, company, {item["fare_id"] for item in items_input if item.get("fare_id")},
                    "unknown_fare", "fare")
     # A package (sent as offer_id: the tablet API kept the old name).
@@ -767,7 +779,7 @@ def return_item(session, values, request_data, reply_for):
 # -- Orders: add, replace, remove a vehicle -------------------------------------------
 
 
-def add_item(session, values, request_data, reply_for):
+def add_item(session, values, request_data, reply_for, *, replay=False):
     """Another vehicle joins an active order. Returns (reply, done_now).
 
     The new line goes through the same checks as a booked one. Money taken for
@@ -778,9 +790,11 @@ def add_item(session, values, request_data, reply_for):
     def apply():
         order = _open_order(session, values["order_id"])
         item, payments = values["item"], values.get("payments") or []
-        refs = _line_refs(order.company, session.branch, [item], order_id=order.pk)
+        refs = _line_refs(order.company, session.branch, [item], order_id=order.pk,
+                          session=session, replay=replay)
         modes = _payment_modes(order.company, payments)
         [line] = _new_lines(order, [item], refs, session.user)
+        holds.release_booked(session, refs[0])
         _record_payments(session, order, payments, modes)
         order.refresh_from_db()
         event = {
@@ -806,7 +820,7 @@ def _active_line(order, item_id, at):
     return line
 
 
-def replace_item(session, values, request_data, reply_for):
+def replace_item(session, values, request_data, reply_for, *, replay=False):
     """A vehicle swapped for another (order_lifecycle_design.md 3.2). Returns
     (reply, done_now).
 
@@ -824,8 +838,10 @@ def replace_item(session, values, request_data, reply_for):
         old.status, old.end_time, old.reason = OrderItemStatus.REPLACED, values["replaced_at"], values["reason"]
         old.modified_by = session.user
         old.save()
-        refs = _line_refs(order.company, session.branch, [new_item], order_id=order.pk)
+        refs = _line_refs(order.company, session.branch, [new_item], order_id=order.pk,
+                          session=session, replay=replay)
         [line] = _new_lines(order, [new_item], refs, session.user, replaced_item=old)
+        holds.release_booked(session, refs[0])
         event = {
             "action": OrderAction.REPLACE, "item": old, "new_item": line, "happened_at": values["replaced_at"],
             "device": session.device, "user": session.user,
