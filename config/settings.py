@@ -279,6 +279,8 @@ SPECTACULAR_SETTINGS = {
         "LeaveStatusFilterEnum": "apps.crew.serializers.LEAVE_STATUS_FILTER",
         # Asset-check "status" (apps/fleet): the serializers offer bare values.
         "AssetCheckStatusEnum": "apps.fleet.models.AssetCheckStatus.values",
+        # The manager targets calls' "kind": sales | customers (apps/targets/api.py).
+        "TargetKindEnum": "apps.targets.models.TargetKind.values",
     },
 }
 
