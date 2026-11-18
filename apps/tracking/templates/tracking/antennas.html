@@ -3,7 +3,7 @@
 {% block screen_title %}Antennas &amp; Calibration{% endblock %}
 {% block crumb %}Antennas &amp; Calibration{% endblock %}
 {% block heading %}Antennas &amp; Calibration{% endblock %}
-{% block sub %}Each antenna's limits decide inside from outside. With no limits, any read counts as present.{% endblock %}
+{% block sub %}Each antenna's limits, or each vehicle's own range, decide inside from outside. With neither, any read counts as present.{% endblock %}
 
 {% block body %}
 {% if not reader %}
@@ -17,11 +17,12 @@
     </select>
   </div>
   <span class="scr-x-spacer"></span>
-  {% if has_limits %}<span class="scr-x-status is-met">Limits set</span>{% else %}<span class="scr-x-status is-idle">No limits</span>{% endif %}
+  {% if baseline_count %}<span class="scr-x-status is-met">{{ baseline_count }} vehicle range{{ baseline_count|pluralize }}</span>{% endif %}
+  {% if has_limits %}<span class="scr-x-status is-met">Antenna limits set</span>{% elif not baseline_count %}<span class="scr-x-status is-idle">No limits</span>{% endif %}
 </div>
 
 <div class="scr-card">
-  <div class="scr-x-card-head"><h2 class="scr-x-card-title">Antennas</h2><p class="scr-x-card-sub">Signal strength in dBm. A bike reading at or above "Back inside" is in; below "Out below" it is out.</p></div>
+  <div class="scr-x-card-head"><h2 class="scr-x-card-title">Antennas</h2><p class="scr-x-card-sub">Signal strength in dBm. A bike reading at or above "Back inside" is in; below "Out below" it is out. A vehicle with its own range (Observe) is judged by that instead.</p></div>
   <div class="scr-table-scroll">
     <table class="scr-x-table">
       <colgroup><col class="w-count" /><col class="w-select" /><col class="w-num" /><col class="w-num" /><col class="w-num" /><col /></colgroup>
@@ -51,20 +52,34 @@
 <div class="scr-card">
   <div class="scr-x-card-head scr-x-card-head-row">
     <div><h2 class="scr-x-card-title">Calibration</h2>
-      <p class="scr-x-card-sub">{% if not session %}Park the bikes on the boundary, pick them here and press Start. They need to stay parked for about 5 minutes.{% elif session.status == "open" %}Keep the bikes parked on the boundary until each one has enough readings.{% else %}Proposed limits from the session of {{ session.started_at|date:"j M H:i" }}, with an allowance of {{ session.result.allowance_db }} dB. Nothing changes until they are approved.{% endif %}</p></div>
-    {% if has_limits and perm.approve %}<button type="button" class="scr-btn-small is-danger" data-post="{% url 'tracking-calibration' reader.pk 'clear' %}" data-confirm="Clear this reader's limits? Any read will count as present.">Clear limits</button>{% endif %}
+      <p class="scr-x-card-sub">{% if not session %}Two ways: observe a past period of normal parking (no parking needed), or park bikes on the boundary.{% elif session.status == "open" %}Keep the bikes parked on the boundary until each one has enough readings.{% elif session.method == "observe" %}Each vehicle's range from {{ session.started_at|date:"j M H:i" }} to {{ session.ended_at|date:"j M H:i" }}, with an allowance of {{ session.result.allowance_db }} dB. Approving replaces this reader's earlier vehicle ranges; nothing changes until then.{% else %}Proposed limits from the session of {{ session.started_at|date:"j M H:i" }}, with an allowance of {{ session.result.allowance_db }} dB. Nothing changes until they are approved.{% endif %}</p></div>
+    {% if has_limits or baseline_count %}{% if perm.approve %}<button type="button" class="scr-btn-small is-danger" data-post="{% url 'tracking-calibration' reader.pk 'clear' %}" data-confirm="Clear this reader's antenna limits and vehicle ranges? Any read will count as present.">Clear limits</button>{% endif %}{% endif %}
   </div>
   <div class="scr-x-card-body">
   {% if not session %}
+    <h3 class="scr-x-card-title">Observe a past period</h3>
+    <p class="scr-x-note">Choose a stretch of normal operation from the last {{ retention_days }} day{{ retention_days|pluralize }}, at least {{ observe_minutes }} minutes. Every tagged bike at this station gets its own range from the readings already stored; times a bike was rented or on a test ride are left out. It then shows as missing once its signal stays well below its own normal.</p>
     {% if perm.update %}
-    <form data-tracking-form data-url="{% url 'tracking-calibration' reader.pk 'start' %}" class="scr-x-cal-form">
+    <form data-tracking-form data-url="{% url 'tracking-calibration' reader.pk 'observe' %}">
+      <div class="scr-x-form-grid" style="margin-top:12px">
+        <label class="scr-x-field"><span class="scr-label">From</span><input type="datetime-local" class="scr-input" name="window_from" value="{{ observe_from }}" min="{{ observe_min }}" max="{{ observe_to }}" required></label>
+        <label class="scr-x-field"><span class="scr-label">To</span><input type="datetime-local" class="scr-input" name="window_to" value="{{ observe_to }}" min="{{ observe_min }}" max="{{ observe_to }}" required></label>
+      </div>
+      <div class="scr-x-actions"><button type="submit" class="scr-btn scr-btn-primary">Observe</button></div>
+    </form>
+    {% endif %}
+
+    <h3 class="scr-x-card-title" style="margin-top:28px">Or park bikes on the boundary</h3>
+    <p class="scr-x-note">Park the bikes on the boundary, pick them here and press Start. They need to stay parked for about 5 minutes. This sets one limit per antenna.</p>
+    {% if perm.update %}
+    <form data-tracking-form data-url="{% url 'tracking-calibration' reader.pk 'start' %}" class="scr-x-cal-form" style="margin-top:12px">
       <div class="scr-combo scr-x-combo" data-bike-picker>
         <label class="scr-x-visually-hidden" for="cal-search">Search vehicle or RFID tag</label>
         <input id="cal-search" type="text" class="scr-input scr-combo-input" placeholder="Search vehicle or RFID tag" autocomplete="off">
         <div class="scr-combo-list" hidden></div>
       </div>
       <div class="scr-track-chips" data-bike-chips></div>
-      <div class="scr-x-actions"><button type="submit" class="scr-btn scr-btn-primary">Start calibration</button></div>
+      <div class="scr-x-actions"><button type="submit" class="scr-btn scr-btn-secondary">Start calibration</button></div>
     </form>
     {{ bike_options|json_script:"bike-options" }}
     {% endif %}
@@ -89,6 +104,28 @@
         <button type="button" class="scr-btn scr-btn-secondary" data-post="{% url 'tracking-calibration' reader.pk 'discard' %}" data-confirm="Discard this session?">Discard</button>
       </div>
       {% endif %}
+    </div>
+
+  {% elif session.method == "observe" %}
+    <div class="scr-table-scroll">
+      <table class="scr-x-table">
+        <colgroup><col /><col class="w-tag" /><col class="w-num" /><col class="w-num" /><col class="w-num" /><col class="w-num" /><col class="w-num" /></colgroup>
+        <thead><tr><th scope="col">Vehicle</th><th scope="col">RFID tag</th><th scope="col" class="num">Low</th><th scope="col" class="num">High</th><th scope="col" class="num">Average</th><th scope="col" class="num">Missing below</th><th scope="col" class="num">Samples</th></tr></thead>
+        <tbody>
+          {% for tag, v in session.result.vehicles.items %}
+          <tr><td data-label="Vehicle"><span class="scr-x-name">{{ v.name }}</span></td><td data-label="RFID tag" class="mono">{{ tag }}</td><td data-label="Low" class="num">{{ v.low_rssi }}</td><td data-label="High" class="num">{{ v.high_rssi }}</td><td data-label="Average" class="num">{{ v.mid_rssi }}</td><td data-label="Missing below" class="num">{{ v.leave_rssi }}</td><td data-label="Samples" class="num">{{ v.samples }}</td></tr>
+          {% empty %}
+          <tr><td colspan="7" class="muted wrap">No vehicle had enough readings in this period. Discard it and choose a longer or busier one.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if session.result.skipped %}
+    <p class="scr-x-note" style="margin-top:12px">Too few readings (under {{ session.result.min_samples }}), so they keep the antenna limits: {% for s in session.result.skipped %}{{ s.name }} ({{ s.samples }}){% if not forloop.last %}, {% endif %}{% endfor %}.</p>
+    {% endif %}
+    <div class="scr-x-actions">
+      {% if perm.approve and session.result.can_approve %}<button type="button" class="scr-btn scr-btn-primary" data-post="{% url 'tracking-calibration' reader.pk 'approve' %}" data-confirm="Approve these vehicle ranges for this reader?">Approve ranges</button>{% endif %}
+      {% if perm.update %}<button type="button" class="scr-btn scr-btn-secondary" data-post="{% url 'tracking-calibration' reader.pk 'discard' %}" data-confirm="Discard this session?">Discard</button>{% endif %}
     </div>
 
   {% else %}
@@ -116,9 +153,9 @@
   <div class="scr-x-card-head"><h2 class="scr-x-card-title">Earlier sessions</h2></div>
   <div class="scr-table-scroll">
     <table class="scr-x-table">
-      <colgroup><col class="w-when" /><col class="w-status" /><col /></colgroup>
-      <thead><tr><th scope="col">Started</th><th scope="col">Status</th><th scope="col">Check after approval</th></tr></thead>
-      <tbody>{% for s in history %}<tr><td data-label="Started" class="muted">{{ s.started_at|date:"j M Y, H:i" }}</td><td data-label="Status">{{ s.get_status_display }}</td><td data-label="Check after approval" class="muted wrap">{{ s.check_result|default:"—" }}</td></tr>{% endfor %}</tbody>
+      <colgroup><col class="w-when" /><col /><col class="w-status" /><col /></colgroup>
+      <thead><tr><th scope="col">Started</th><th scope="col">Method</th><th scope="col">Status</th><th scope="col">Check after approval</th></tr></thead>
+      <tbody>{% for s in history %}<tr><td data-label="Started" class="muted">{{ s.started_at|date:"j M Y, H:i" }}</td><td data-label="Method">{{ s.get_method_display }}</td><td data-label="Status">{{ s.get_status_display }}</td><td data-label="Check after approval" class="muted wrap">{{ s.check_result|default:"—" }}</td></tr>{% endfor %}</tbody>
     </table>
   </div>
 </div>

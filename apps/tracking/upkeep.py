@@ -18,11 +18,13 @@ from apps.tracking import engine, ops, partitions
 from apps.tracking.models import (
     Antenna,
     Calibration,
+    CalibrationMethod,
     CalibrationStatus,
     PresenceState,
     RawFrame,
     TagLastSeen,
     TrackingSettings,
+    VehicleBaseline,
     VehiclePresence,
 )
 
@@ -129,9 +131,12 @@ def check_new_calibrations(now):
         states = {engine.tag_of(epc): state for epc, state in states.items()}
         limits = {a.port: a for a in Antenna.objects.filter(reader_id=calibration.reader_id,
                                                             enter_rssi__isnull=False)}
+        # An Observe calibration fixed each vehicle's own range: check against that.
+        own = ({b.tag: b for b in VehicleBaseline.objects.filter(reader_id=calibration.reader_id)}
+               if calibration.method == CalibrationMethod.OBSERVE else {})
         parked = parked_ok = rented = rented_ok = 0
         for last in TagLastSeen.objects.filter(reader_id=calibration.reader_id):
-            antenna = limits.get(last.port)
+            antenna = own.get(last.tag) if own else limits.get(last.port)
             if antenna is None:
                 continue
             state = states.get(last.tag)
