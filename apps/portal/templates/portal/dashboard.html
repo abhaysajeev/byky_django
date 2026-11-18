@@ -25,15 +25,15 @@ than a zero-height chart.
 
 {% block page_css %}
 {{ block.super }}
-<link rel="stylesheet" href="{% static 'css/byky-dashboard.css' %}?v=20261118c" />
+<link rel="stylesheet" href="{% static 'css/byky-dashboard.css' %}?v=20261118f" />
 {% endblock page_css %}
 
 {% block page_js %}
 {{ block.super }}
 {{ chart_data|json_script:"byky-chart-data" }}
 {{ live|json_script:"bd-live" }}
-<script src="{% static 'js/byky-dashboard.js' %}?v=20261118c"></script>
-<script src="{% static 'js/byky-station-network.js' %}?v=20261118c"></script>
+<script src="{% static 'js/byky-dashboard.js' %}?v=20261118f"></script>
+<script src="{% static 'js/byky-station-network.js' %}?v=20261118f"></script>
 {% endblock page_js %}
 
 {% block content %}
@@ -221,7 +221,6 @@ than a zero-height chart.
           <div class="bsn-list">
             <div class="bsn-list-head">
               <b data-list-title>All stations</b>
-              <span data-list-meta></span>
             </div>
             <div class="bsn-rows" role="listbox" aria-label="Stations, busiest first"></div>
           </div>
