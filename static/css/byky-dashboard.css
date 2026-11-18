@@ -106,8 +106,9 @@
 .bd-car-revenue { display: flex; flex-direction: column; gap: 4px; }
 .bd-car-amt { display: flex; align-items: baseline; gap: 6px; font-size: 28px; font-weight: 700; letter-spacing: -0.8px; line-height: 1.1; font-variant-numeric: tabular-nums; }
 .bd-car-amt small { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; color: rgba(255, 255, 255, 0.86); }
-.bd-car-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.22); }
-.bd-car-stat { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+/* the divider sits clear of the revenue figure and of the counts below it */
+.bd-car-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 12px; padding-top: 18px; border-top: 1px solid rgba(255, 255, 255, 0.22); }
+.bd-car-stat { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .bd-car-lab { font-size: 11.5px; color: rgba(255, 255, 255, 0.86); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bd-car-num { font-size: 18px; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; transition: opacity 0.4s; }
 /* a figure the poller just changed dims for a moment, so the eye finds it */
@@ -218,29 +219,6 @@
 .bd-people > div:first-child { border-top: 0; }
 .bd-people dt { color: var(--bd-body); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bd-people dd { font-weight: 600; font-variant-numeric: tabular-nums; }
-
-/* ── Recent Rental Agreements ─────────────────────────────────────── */
-.bd-table-card { padding: 0; overflow: hidden; }
-.bd-table-head { padding: var(--bd-pad) var(--bd-pad) 16px; }
-.bd-table-scroll { overflow-x: auto; scrollbar-width: thin; scrollbar-color: #e4e3ee transparent; }
-.bd thead tr { background: var(--bd-soft); border-block: 1px solid var(--bd-line-soft); }
-.bd th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--bd-muted); padding: 11px 16px; white-space: nowrap; }
-.bd tbody tr { border-bottom: 1px solid var(--bd-line-soft); }
-.bd tbody tr:last-child { border-bottom: 0; }
-.bd td { padding: 13px 16px; font-size: 13px; color: var(--bd-body); white-space: nowrap; }
-.bd th:first-child, .bd td:first-child { padding-inline-start: var(--bd-pad); }
-.bd th:last-child, .bd td:last-child { padding-inline-end: var(--bd-pad); }
-.bd .num { text-align: right; font-variant-numeric: tabular-nums; }
-.bd td.strong { font-weight: 600; color: var(--bd-ink); }
-.bd td.muted { color: var(--bd-muted); }
-.bd td.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
-.bd td.bd-table-empty { padding: 28px var(--bd-pad); text-align: center; color: var(--bd-muted); white-space: normal; }
-/* the table scrolls sideways on narrow screens; keep the message in view */
-@media (max-width: 767px) { .bd td.bd-table-empty { text-align: left; } }
-/* status: a word, tinted -- the .scr-x-status look */
-.bd-status { display: inline-block; padding: 3px 9px; border-radius: 99px; font-size: 11.5px; font-weight: 600; background: var(--bd-tint); color: var(--bd-muted); }
-.bd-status.is-paid { background: var(--bd-good-tint); color: var(--bd-good); }
-.bd-status.is-pending { background: var(--bd-warn-tint); color: var(--bd-warn); }
 
 /* ── Station Network widget (.bsn, behaviour in byky-station-network.js) ──
    Leaflet renders tooltips into its own panes inside the map, still within
