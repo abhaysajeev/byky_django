@@ -62,10 +62,10 @@ __all__ = ["DecisionChannel"]      # the manager API and the web name channels t
 TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 PAGE_SIZE = 50
 
-# Card-discount claims that hold an order against a manager discount or a complimentary.
-CARD_CLAIM_LIVE = (ClaimStatus.PENDING, ClaimStatus.APPROVED)
-
-# The kinds that take money off a running order's bill -- at most one per order.
+# The kinds that take money off a running order's bill, one live of each per
+# order. A manager discount and a card discount stand together on one bill; a
+# complimentary may be asked for over either, and once approved it replaces
+# them (replace_with_complimentary) and refuses new ones (owner, 13 Nov 2026).
 BILL_KINDS = (OrderRequestKind.DISCOUNT, OrderRequestKind.COMPLIMENTARY)
 # Revocable while the order runs.
 REVOCABLE = BILL_KINDS
@@ -79,10 +79,6 @@ _LIVE_REFUSALS = {
     OrderRequestKind.REPRINT: ("reprint_request_pending", "reprint_approved"),
     OrderRequestKind.ORDER_REPRINT: ("order_reprint_request_pending", "order_reprint_approved"),
     OrderRequestKind.CANCEL: ("cancel_request_pending", "cancel_approved"),
-}
-_HELD_BY = {
-    OrderRequestKind.DISCOUNT: "discount_requested",
-    OrderRequestKind.COMPLIMENTARY: "complimentary_requested",
 }
 
 
@@ -144,18 +140,43 @@ def request_json(req, zone):
 
 def _refuse_if_held(order, kind):
     """The refusal when the order already has a live request of this kind, or
-    -- for a bill kind -- another bill kind or a card discount."""
+    -- for a manager discount -- an approved complimentary. A card discount, a
+    pending complimentary or a manager discount no longer holds the order
+    against the other bill kinds (owner, 13 Nov 2026)."""
     live = {req.kind: req for req in order.requests.filter(status__in=REQUEST_LIVE)}
     if kind in live:
         pending, approved = _LIVE_REFUSALS[kind]
         raise OrderRefused(pending if live[kind].status == OrderRequestStatus.PENDING else approved)
-    if kind not in BILL_KINDS:
-        return
-    for other in BILL_KINDS:
-        if other != kind and other in live:
-            raise OrderRefused(_HELD_BY[other])
-    if CardDiscountClaim.objects.filter(order=order, status__in=CARD_CLAIM_LIVE).exists():
-        raise OrderRefused("card_discount_requested")
+    if kind == OrderRequestKind.DISCOUNT and complimentary_approved(order):
+        raise OrderRefused("complimentary_approved")
+
+
+def complimentary_approved(order):
+    """Is the order approved as complimentary? Then no discount may be asked
+    for or approved until that approval is revoked."""
+    return order.requests.filter(kind=OrderRequestKind.COMPLIMENTARY, status=OrderRequestStatus.APPROVED).exists()
+
+
+REPLACED_NOTE = "Replaced by complimentary"
+
+
+def replace_with_complimentary(order, user, channel, now):
+    """A complimentary was just approved on `order` (locked by the caller): the
+    order's approved manager discount and card claims are revoked, the pending
+    ones closed, recorded against the manager who approved it (owner, 13 Nov
+    2026). No push for these -- the tablet reads them in the status calls."""
+    discounts = order.requests.filter(kind=OrderRequestKind.DISCOUNT)
+    discounts.filter(status=OrderRequestStatus.APPROVED).update(
+        status=OrderRequestStatus.REVOKED, revoked_by=user, revoked_channel=channel, revoked_at=now,
+        revoke_note=REPLACED_NOTE, modified_by=user, modified_on=now)
+    discounts.filter(status=OrderRequestStatus.PENDING).update(
+        status=OrderRequestStatus.CLOSED, closed_at=now, modified_by=user, modified_on=now)
+    claims = CardDiscountClaim.objects.filter(order=order)
+    claims.filter(status=ClaimStatus.APPROVED).update(
+        status=ClaimStatus.REVOKED, revoked_by=user, revoked_channel=channel, revoked_at=now,
+        revoke_note=REPLACED_NOTE, modified_by=user, modified_on=now)
+    claims.filter(status=ClaimStatus.PENDING).update(
+        status=ClaimStatus.CANCELLED, decided_at=now, remarks=REPLACED_NOTE, modified_by=user, modified_on=now)
 
 
 def create_request(session, values, request_data):
@@ -470,12 +491,16 @@ def approve(user, request_id, company_ids, channel, discount_type=None, value=No
         if not _order_open_for(req, order):
             raise RequestRefused("order_closed", "This order is already completed or cancelled.")
         if req.kind == OrderRequestKind.DISCOUNT:
+            if complimentary_approved(order):
+                raise RequestRefused("complimentary_approved", "This order is already approved as complimentary.")
             req.discount_type, req.discount_value = parse_rule(discount_type, value)
         now = timezone.now()
         req.status = OrderRequestStatus.APPROVED
         req.decided_by, req.decided_channel, req.decided_at = user, channel, now
         req.decision_note, req.modified_by = (note or "").strip(), user
         req.save()
+        if req.kind == OrderRequestKind.COMPLIMENTARY:
+            replace_with_complimentary(order, user, channel, now)
         notifications.notify(req, Action.APPROVED)
         station_sync.request_changed(req, Action.APPROVED)
         if req.kind == OrderRequestKind.CANCEL:
@@ -690,7 +715,9 @@ def _billing(order, zone):
     """The order's money as the manager app shows it (owner, 28 Oct 2026;
     legacy GetOrderWithID_ForRequestApproval: FareAmount, DepositAmount,
     AmountReceived, TaxPercentage, TransNo). Before settle there is no bill:
-    tax_amount, bill_amount, closed_by and closed_at are null."""
+    tax_amount, bill_amount, closed_by and closed_at are null -- and so are the
+    discounts: discount_amount (what the bill took off in all) and the card and
+    manager discounts it carried (owner, 13 Nov 2026)."""
     from apps.rental import money
 
     if not counts(order):
@@ -698,8 +725,8 @@ def _billing(order, zone):
         # counted.py): zeros, not nulls, so the app's number fields still work.
         zero = _money(Decimal("0"))
         return {"fare_amount": zero, "deposit_amount": zero, "amount_received": zero, "amount_refunded": zero,
-                "tax_percentage": None, "tax_amount": None, "bill_amount": None, "closed_by": None,
-                "closed_at": None}
+                "tax_percentage": None, "tax_amount": None, "discount_amount": None, "card_discount_amount": None,
+                "manager_discount_amount": None, "bill_amount": None, "closed_by": None, "closed_at": None}
     invoice = getattr(order, "invoice", None) if order.status == OrderStatus.COMPLETED else None
     if invoice is not None:
         tax_percentage = invoice.tax_percentage
@@ -710,6 +737,9 @@ def _billing(order, zone):
         "amount_received": _money(order.amount_received), "amount_refunded": _money(order.amount_refunded),
         "tax_percentage": _percent(tax_percentage),
         "tax_amount": _money(invoice.tax_amount) if invoice else None,
+        "discount_amount": _money(invoice.discount_amount) if invoice else None,
+        "card_discount_amount": _money(invoice.card_discount_amount) if invoice else None,
+        "manager_discount_amount": _money(invoice.manager_discount_amount) if invoice else None,
         "bill_amount": _money(invoice.net_amount) if invoice else None,
         "closed_by": _name(invoice.issued_by) if invoice else None,
         "closed_at": _local(invoice.issued_at, zone) if invoice else None,
@@ -732,6 +762,10 @@ def _order_block(order, zone, now):
         "advance_paid": str(order.paid_amount) if counts(order) else _money(Decimal("0")),
         "net_amount": _money(order.net_amount) if counts(order) else None,
         **_billing(order, zone),
+        # Who booked it and when, beside who settled it (owner, 13 Nov 2026) --
+        # as open_by on the operator's orders and Live Monitoring. Not money,
+        # so a cancelled order keeps them.
+        "opened_by": _name(order.created_by), "opened_at": _local(order.booked_at, zone),
         "vehicles": _lines(order, zone, now),
     }
 
@@ -750,7 +784,7 @@ def manager_json(req, zone, now):
 
 def _manager_rows():
     return (OrderRequest.objects
-            .select_related("order", "order__invoice__issued_by", "branch", "company", "requested_by",
+            .select_related("order", "order__invoice__issued_by", "order__created_by", "branch", "company", "requested_by",
                             "decided_by", "revoked_by")
             .prefetch_related("order__items__vehicle__vehicle_type", "order__payments"))
 
@@ -839,7 +873,7 @@ def _manager_rows_of(keys):
             loaded[("request", req.pk)] = {**manager_json(req, zone_of(req), now), "details": request_details(req)}
     if CREDIT_NOTE in wanted:
         for note in (CreditNote.objects.filter(pk__in=wanted[CREDIT_NOTE])
-                     .select_related("order", "order__invoice__issued_by", "invoice", "branch", "company",
+                     .select_related("order", "order__invoice__issued_by", "order__created_by", "invoice", "branch", "company",
                                      "requested_by", "decided_by")
                      .prefetch_related(orders, "order__payments")):
             zone = zone_of(note)
@@ -851,7 +885,7 @@ def _manager_rows_of(keys):
             })
     if CARD_DISCOUNT in wanted:
         for claim in (CardDiscountClaim.objects.filter(pk__in=wanted[CARD_DISCOUNT])
-                      .select_related("order", "order__invoice__issued_by", "branch", "company", "requested_by",
+                      .select_related("order", "order__invoice__issued_by", "order__created_by", "branch", "company", "requested_by",
                                       "decided_by", "card_type", "card_grade")
                       .prefetch_related(orders, "order__payments")):
             zone = zone_of(claim)

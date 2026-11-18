@@ -30,6 +30,7 @@ from apps.rental.models import (
     CreditNoteSource,
     CreditNoteStatus,
     Customer,
+    DiscountSource,
     Gender,
     IdType,
     Invoice,
@@ -523,15 +524,37 @@ def _cancellation(order, local):
 
 def request_links(order):
     """The order's latest request of each kind, for the order page: the kind,
-    the approved rule (or its state) and its page."""
+    the approved rule (or its state) and its page -- and its latest card-discount
+    claim beside them (owner, 16 Nov 2026): a card and a manager discount can
+    share a bill, and the claim lives in its own table."""
     latest = {}
     for req in order.requests.order_by("-requested_at"):
         latest.setdefault(req.kind, req)
-    return [
+    links = [
         {"kind": req.get_kind_display(), "label": rule_label(req), "status_label": req.get_status_display(),
          "applied_amount": req.applied_amount, "url": reverse("rental-request-detail", args=[req.pk])}
         for req in latest.values()
     ]
+    claim = (order.card_claims.select_related("card_type", "card_grade")
+             .order_by("-requested_at", "-created_on").first())
+    if claim is not None:
+        links.append(card_claim_link(claim))
+    return links
+
+
+def card_claim_link(claim):
+    """One card-discount claim as an order-page request row: the card, its %, its
+    state as the Requests page words it (Used once the bill took it, Closed when
+    the settle cancelled it) and, once used, what the bill took off."""
+    used = claim.status == ClaimStatus.REDEEMED
+    return {
+        "kind": "Card Discount",
+        "label": f"{claim.card_type.name} · {claim.card_grade.name} · {claim.discount_percent:.2f}%",
+        "status_label": {ClaimStatus.REDEEMED: "Used", ClaimStatus.CANCELLED: "Closed"}.get(
+            claim.status, claim.get_status_display()),
+        "applied_amount": claim.discount_amount if used else None,
+        "url": reverse("discount-approval-detail", args=[claim.pk]),
+    }
 
 
 def credit_note_link(order):
@@ -566,6 +589,24 @@ def _rate(amount, minutes):
     if amount is None or not minutes:
         return "—"
     return f"{money.fmt(amount)}/{minutes} MINS"
+
+
+def discount_lines(invoice):
+    """The bill's discount lines: one, as always -- or, for a card and a manager
+    discount on one bill (owner, 13 Nov 2026), one each, their own amounts as
+    sent (together they may be more than discount_amount took off). `short` is
+    the receipt's label, `label` the screen's."""
+    if invoice.discount_source == DiscountSource.CARD_MANAGER:
+        return [
+            {"short": "Card Disc.", "label": "Card Discount", "amount": invoice.card_discount_amount,
+             "percentage": invoice.card_discount_percentage},
+            {"short": "Discount", "label": "Manager Discount", "amount": invoice.manager_discount_amount,
+             "percentage": invoice.manager_discount_percentage},
+        ]
+    short, label = {"card": ("Card Disc.", "Card Discount"), "complimentary": ("Complimentary", "Complimentary")}.get(
+        invoice.discount_source, ("Discount", "Discount"))
+    return [{"short": short, "label": label, "amount": invoice.discount_amount,
+             "percentage": invoice.discount_percentage}]
 
 
 def _receipt(invoice, zone):
@@ -613,6 +654,7 @@ def _receipt(invoice, zone):
         "discount_amount": invoice.discount_amount, "discount_source": invoice.discount_source,
         "discount_label": {"card": "Card Disc.", "manager": "Discount", "complimentary": "Complimentary"}.get(
             invoice.discount_source, "Discount"),
+        "discount_lines": discount_lines(invoice),
         "taxable_amount": invoice.net_amount - invoice.tax_amount,      # VAT is inside the net
         "tax_percentage": invoice.tax_percentage, "tax_amount": invoice.tax_amount,
         "rounding": invoice.rounding_adjustment, "net_amount": invoice.net_amount,
@@ -899,7 +941,8 @@ def rule_label(req):
         return ""
     if req.discount_type == "percent":
         return f"{req.discount_value.quantize(Decimal('0.01'))}%"
-    return f"AED {req.discount_value}"
+    # In the company's decimals (CR1), not the column's three: "AED 20.00".
+    return f"AED {money.fmt(req.discount_value)}"
 
 
 # Card-discount requests (apps/discount) are listed here too, like the other

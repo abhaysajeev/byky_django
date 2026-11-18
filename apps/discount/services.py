@@ -34,12 +34,12 @@ from apps.photos.models import PhotoPurpose
 from apps.rental import station_sync
 from apps.rental.counted import counted
 from apps.rental.models import (
-    REQUEST_LIVE,
     Customer,
     DecisionChannel,
     Order,
     OrderRequest,
     OrderRequestKind,
+    OrderRequestStatus,
     OrderStatus,
 )
 from core.ids import uuid7
@@ -219,9 +219,15 @@ def decide_claim(user, claim, approve, remarks="", channel=DecisionChannel.WEB):
     """Approve or reject a pending claim -- on the web, or in the manager app
     (`channel`). Anything else is already decided."""
     with transaction.atomic():
+        # The order first, the way the settle and a complimentary approval take
+        # it, so a decision and those take turns.
+        Order.objects.select_for_update().filter(pk=claim.order_id).first()
         claim = type(claim).objects.select_for_update().get(pk=claim.pk)
         if claim.status != ClaimStatus.PENDING:
             raise NotPending()
+        if approve and OrderRequest.objects.filter(order_id=claim.order_id, kind=OrderRequestKind.COMPLIMENTARY,
+                                                   status=OrderRequestStatus.APPROVED).exists():
+            raise DiscountRefused(*COMPLIMENTARY_APPROVED)
         claim.status = ClaimStatus.APPROVED if approve else ClaimStatus.REJECTED
         claim.decided_at = timezone.now()
         claim.decided_by = user
@@ -266,6 +272,10 @@ class DiscountRefused(Exception):
     def __init__(self, code, message, status):
         super().__init__(code)
         self.code, self.message, self.status = code, message, status
+
+
+# An approved complimentary replaces every discount (owner, 13 Nov 2026).
+COMPLIMENTARY_APPROVED = ("complimentary_approved", "This order is already approved as complimentary.", 409)
 
 
 def _customer_by_full_number(company, full_number):
@@ -354,13 +364,11 @@ def _request_approval(session, values, company, sync_id):
     order = Order.objects.select_for_update().filter(pk=values["order_id"], company=company).first()
     if order is None:
         raise DiscountRefused("unknown_order", "No order with that id.", 404)
-    held = set(OrderRequest.objects.filter(
-        order=order, kind__in=[OrderRequestKind.DISCOUNT, OrderRequestKind.COMPLIMENTARY], status__in=REQUEST_LIVE,
-    ).values_list("kind", flat=True))
-    if OrderRequestKind.DISCOUNT in held:
-        raise DiscountRefused("discount_requested", "This order already has a manager discount request.", 409)
-    if OrderRequestKind.COMPLIMENTARY in held:
-        raise DiscountRefused("complimentary_requested", "This order already has a complimentary request.", 409)
+    # A card discount stands with a manager discount and under a pending
+    # complimentary; only an approved complimentary refuses it (owner, 13 Nov 2026).
+    if OrderRequest.objects.filter(order=order, kind=OrderRequestKind.COMPLIMENTARY,
+                                   status=OrderRequestStatus.APPROVED).exists():
+        raise DiscountRefused(*COMPLIMENTARY_APPROVED)
     customer = _customer_by_full_number(company, values["full_number"])
     discount = (CardDiscount.objects.select_related("card_grade__card_type")
                 .filter(pk=values["card_discount_id"], company=company).first())

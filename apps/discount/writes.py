@@ -48,6 +48,9 @@ class _ClaimDecision(WriteView):
             return JsonResponse({"ok": False, "code": "invalid",
                                  "errors": [{"field": "", "message": "This request is already decided."}]},
                                 status=400)
+        except services.DiscountRefused as refused:               # e.g. complimentary_approved
+            return JsonResponse({"ok": False, "code": "invalid",
+                                 "errors": [{"field": "", "message": refused.message}]}, status=400)
         return JsonResponse({"ok": True, "message": self.done})
 
 

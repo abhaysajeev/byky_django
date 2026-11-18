@@ -97,7 +97,7 @@
           <div class="scr-detail-row"><span class="scr-detail-label">Customer</span><span class="scr-detail-value">{{ order.customer_name|default:"—" }}{% if order.customer_mobile %} · {{ order.customer_mobile }}{% endif %}</span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">Advance Paid</span><span class="scr-detail-value">AED {{ order.paid_amount|money }}</span></div>
           {% if order.net_amount is not None %}
-          <div class="scr-detail-row"><span class="scr-detail-label">Bill</span><span class="scr-detail-value">Subtotal AED {{ order.subtotal|money }} · discount AED {{ order.discount_amount|money }} · net AED {{ order.net_amount|money }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Bill</span><span class="scr-detail-value">Subtotal AED {{ order.subtotal|money }} · discount AED {{ order.discount_amount|money }}{% if order.card_discount_amount is not None and order.manager_discount_amount is not None %} (card AED {{ order.card_discount_amount|money }} + manager AED {{ order.manager_discount_amount|money }}){% endif %} · net AED {{ order.net_amount|money }}</span></div>
           {% endif %}
         </div>
       </div>

@@ -79,7 +79,10 @@
         {% else %}
         <div class="scr-detail-rows">
           <div class="scr-detail-row"><span class="scr-detail-label">Subtotal</span><span class="scr-detail-value">AED {{ order.subtotal|money }}</span></div>
-          <div class="scr-detail-row"><span class="scr-detail-label">Card Discount</span><span class="scr-detail-value">{% if order.discount_claim_id %}{{ discount_card }} · {{ order.discount_percentage }}% · −AED {{ order.discount_amount|money }}{% else %}—{% endif %}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Card Discount</span><span class="scr-detail-value">{% if order.discount_claim_id %}{{ discount_card }} · {% if order.card_discount_percentage %}{{ order.card_discount_percentage }}% · {% endif %}−AED {{ order.card_discount_amount|money }}{% else %}—{% endif %}</span></div>
+          {% if order.manager_discount_amount is not None %}
+          <div class="scr-detail-row"><span class="scr-detail-label">Manager Discount</span><span class="scr-detail-value">{% if order.manager_discount_percentage %}{{ order.manager_discount_percentage }}% · {% endif %}−AED {{ order.manager_discount_amount|money }}</span></div>
+          {% endif %}
           <div class="scr-detail-row"><span class="scr-detail-label">Rounding</span><span class="scr-detail-value">AED {{ order.rounding_adjustment|money }}</span></div>
           <div class="scr-detail-row scr-detail-net"><span class="scr-detail-label"><b>Net</b></span><span class="scr-detail-value"><b>AED {{ order.net_amount|money }}</b></span></div>
           <div class="scr-detail-row"><span class="scr-detail-label">VAT (included)</span><span class="scr-detail-value">{{ order.tax_percentage }}% · AED {{ order.tax_amount|money }}</span></div>

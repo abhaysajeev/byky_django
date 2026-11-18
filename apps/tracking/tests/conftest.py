@@ -17,8 +17,20 @@ def _empty_readings(request):
         yield
         return
     request.getfixturevalue("transactional_db" if marker.kwargs.get("transaction") else "db")
+    _restore_pages()
     with connection.cursor() as cursor:
         cursor.execute("TRUNCATE tracking_reading")
     yield
     with connection.cursor() as cursor:
         cursor.execute("TRUNCATE tracking_reading")
+
+
+def _restore_pages():
+    """The flush after a transactional test also empties the page registry the
+    migrations wrote, so a later test on that worker would find no tracking
+    pages (and its admin no rights on them). Write it back when it is gone."""
+    from apps.portal.models import Page
+    from apps.portal.page_sync import sync
+
+    if not Page.objects.exists():
+        sync()

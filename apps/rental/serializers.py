@@ -438,10 +438,11 @@ class OrderSettleRequest(serializers.Serializer):
         return payments
 
     def validate(self, values):
-        sent = [key for key in ("card_discount", "manager_discount", "complimentary") if values.get(key)]
-        if len(sent) > 1:
+        # A card and a manager discount may go together (owner, 13 Nov 2026); a
+        # complimentary goes alone.
+        if values.get("complimentary") and (values.get("card_discount") or values.get("manager_discount")):
             raise serializers.ValidationError(
-                {sent[-1]: "send one: card_discount, manager_discount or complimentary"})
+                {"complimentary": "send it alone: not with card_discount or manager_discount"})
         return values
 
 
