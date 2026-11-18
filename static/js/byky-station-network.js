@@ -316,11 +316,6 @@
         var v = f === 'on_rent' && past ? s.rentals : s[f];
         q('[data-f="' + f + '"]').textContent = v == null ? '—' : fmt(v);
       });
-      var state = q('[data-s="state"]');
-      state.hidden = past || !(s.state === 'open' || s.state === 'closed');
-      state.className = 'bsn-state is-' + s.state;
-      state.textContent = s.state === 'open' ? 'Open' : 'Closed';
-      q('[data-s="hours"]').textContent = s.hours || '';
     }
 
     function fillSummary() {
@@ -331,9 +326,6 @@
       q('[data-s="pos"]').textContent = 'Station ' + (k + 1) + ' of ' + shown.length;
       var lone = shown.length < 2;
       sum.querySelectorAll('[data-step]').forEach(function (b) { b.disabled = lone; });
-      var orders = q('[data-s="orders"]');
-      orders.href = root.dataset.ordersUrl + '?branch=' + encodeURIComponent(s.id);
-      q('[data-s="orders-at"]').textContent = ' at ' + s.name;
       fillFigures();
     }
 
