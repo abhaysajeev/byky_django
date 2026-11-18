@@ -397,3 +397,65 @@ def test_what_the_screens_map_is_what_a_tablet_is_told(signed_in, client, compan
     post(signed_in, "/devices/releases/save/", {"pk": pk, "update_type": "anytime",
                                                "download_url": "http://a.test/1.apk"})
     assert update_check(client, "tab-1", 100)["code"] == "working_time_not_set"
+
+
+# -- Phones follow All branches only (owner, 18 Nov 2026) ------------------------------------
+# Manager and employee phones are never mapped to a station, so their update
+# check has no branch: a branch mapping for them could never be offered.
+
+PHONES = [Channel.MANAGER, Channel.EMPLOYEE]
+
+
+@pytest.mark.parametrize("channel", PHONES)
+def test_a_phone_app_cannot_be_mapped_to_a_branch(admin, company, branch, releases, channel):
+    rel = add(admin, company, 7, channel=channel, update_type=UpdateType.MANDATORY)
+    with pytest.raises(services.DeviceActionError, match="All-branches release"):
+        mapped(releases, admin, rel, branch)
+    assert not AppReleaseMapping.objects.exists()
+
+
+@pytest.mark.parametrize("channel", PHONES)
+def test_a_phone_app_maps_to_all_branches_and_every_phone_is_told(admin, company, releases, channel):
+    rel = add(admin, company, 7, channel=channel, update_type=UpdateType.MANDATORY)
+    mapped(releases, admin, rel)
+    decision = services.update_decision_for_installation(
+        installation_id="phone-never-registered", channel=channel, version_code=6,
+    )
+    assert (decision["update_required"], decision["is_mandatory"]) == (True, True)
+
+
+def test_the_operator_app_still_maps_to_a_branch(admin, company, branch, releases):
+    rel = add(admin, company, 7)
+    assert mapped(releases, admin, rel, branch) == 1
+    assert offered(company, branch) == 7
+
+
+@pytest.mark.parametrize("url", ["/devices/release-mapping/preview/", "/devices/release-mapping/save/"])
+def test_the_endpoints_refuse_a_branch_mapping_for_a_phone_app(signed_in, company, branch, url):
+    rel = AppRelease.objects.create(
+        company=company, channel=Channel.EMPLOYEE, version_name="1.0.12", version_code=12,
+        update_type=UpdateType.MANDATORY, download_url="http://a.test/e.apk",
+    )
+    reply = post(signed_in, url, {"release": rel.pk, "scope": "branch", "branches": [branch.pk],
+                                  "confirmed": True})
+    assert reply.status_code == 400
+    assert "All-branches release" in json.dumps(reply.json())
+    assert not AppReleaseMapping.objects.exists()
+
+
+def test_phone_tabs_offer_no_branch_mapping_but_list_an_old_one_to_remove(signed_in, company, branch):
+    rel = AppRelease.objects.create(
+        company=company, channel=Channel.EMPLOYEE, version_name="1.0.12", version_code=12,
+        update_type=UpdateType.MANDATORY, download_url="http://a.test/e.apk",
+    )
+    old = AppReleaseMapping.objects.create(release=rel, company=company, channel=Channel.EMPLOYEE,
+                                           scope=ReleaseScope.BRANCH, branch=branch)
+    html = signed_in.get("/devices/release-mapping/").content.decode()
+
+    assert 'data-branch-scoped="1"' in html
+    employee = html.split('data-map-app="employee"', 1)[1].split('data-tab="history"', 1)[0]
+    assert 'data-branch-scoped=""' in employee
+    assert "Phones are not tied to a station" in employee
+    assert "data-map-selected" not in employee and "data-map-check" not in employee
+    assert "Not offered" in employee
+    assert f'data-map-remove data-pk="{old.pk}"' in employee
