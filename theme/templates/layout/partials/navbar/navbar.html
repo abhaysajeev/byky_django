@@ -15,9 +15,7 @@ Removed from the Vuexy original: language switcher, quick-link shortcuts, the
 notifications dropdown, and the My Profile / Settings / Billing / Pricing / FAQ
 items, which pointed at demo pages that no longer exist.
 
-The search pill is a span, not an input: an approved part of the header design,
-inert for the wireframe. Log out is likewise UI only -- there is no
-authentication in this phase (CLAUDE.md section 1), so it signs nothing out.
+The search pill finds and opens a sidebar page (byky-nav-search.js).
 {% endcomment %}
 
 {% if navbar_detached %}
@@ -57,9 +55,20 @@ authentication in this phase (CLAUDE.md section 1), so it signs nothing out.
 
     <div class="navbar-nav-right d-flex align-items-center justify-content-end w-100" id="navbar-collapse">
 
-      <div class="byky-nav-search">
+      {% comment %}
+      Page search: finds a sidebar page by name or module and opens it.
+      nav_pages is the sidebar's own list (theme/context_processors.py), so it
+      offers only pages this role can open. byky-nav-search.js does the
+      matching, the dropdown and the keys (ARIA combobox).
+      {% endcomment %}
+      {{ nav_pages|json_script:"byky-nav-pages" }}
+      <div class="byky-nav-search" data-nav-search>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
-        <span>Search vehicles, riders, stations&hellip;</span>
+        <input type="search" class="byky-nav-search-input" placeholder="Search" autocomplete="off" spellcheck="false"
+               role="combobox" aria-label="Search pages" aria-autocomplete="list" aria-expanded="false"
+               aria-controls="byky-nav-results" data-nav-search-input />
+        <kbd class="byky-nav-search-kbd" aria-hidden="true">Ctrl K</kbd>
+        <div class="byky-nav-results" id="byky-nav-results" role="listbox" aria-label="Pages" hidden></div>
       </div>
       <div style="flex:1"></div>
 
@@ -180,7 +189,15 @@ which posts to account-password (portal.views.change_password_view).
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg>
     </button>
   </div>
+  {% comment %}
+  A form of its own (never submitted -- the buttons are type="button" and
+  byky-change-password.js posts), with the account's username in it. Without
+  both, Chrome groups these password fields with the navbar search, takes the
+  search for the username field and autofills the user name into it.
+  {% endcomment %}
+  <form class="byky-cp-form" action="javascript:void(0)" novalidate>
   <div class="scr-modal-body byky-cp-fields">
+    <input type="text" name="username" autocomplete="username" value="{{ request.user.username }}" hidden readonly tabindex="-1" aria-hidden="true" />
     <div class="byky-field">
       <label class="byky-label" for="byky-cp-current"><span>Current Password</span><em class="byky-req">*</em></label>
       <input type="password" id="byky-cp-current" class="byky-input" data-cp-field="current" autocomplete="current-password" placeholder="Enter your current password" />
@@ -198,6 +215,7 @@ which posts to account-password (portal.views.change_password_view).
     </div>
     <p class="scr-help is-error" data-cp-error="" hidden></p>
   </div>
+  </form>
   <div class="scr-modal-foot byky-cp-foot">
     <button type="button" class="scr-btn-secondary" data-cp-close>Cancel</button>
     <button type="button" class="scr-btn-primary" data-cp-save>Update Password</button>

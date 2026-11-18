@@ -2,6 +2,7 @@
 copy's CSRF cookie name."""
 
 from django.conf import settings
+from django.urls import reverse
 
 from theme.menu import build_menu
 
@@ -18,7 +19,24 @@ def sidebar_menu(request):
     Built from the signed-in role's readable pages, so the menu and the
     permissions can never drift apart (design/rbac.md).
     """
-    return {"menu_data": build_menu(getattr(request, "user", None))}
+    menu = build_menu(getattr(request, "user", None))
+    return {"menu_data": menu, "nav_pages": nav_pages(menu)}
+
+
+def nav_pages(menu):
+    """The navbar search's list: every page the sidebar shows, as
+    {name, module, url}. Walked from the menu itself, so search offers exactly
+    the pages the role can open -- no second query, no second permission check."""
+    pages = []
+    for item in menu["menu"]:
+        if "submenu" in item:
+            pages.extend(
+                {"name": sub["name"], "module": item["name"], "url": reverse(sub["url"])}
+                for sub in item["submenu"]
+            )
+        elif "url" in item:
+            pages.append({"name": item["name"], "module": item.get("module", ""), "url": reverse(item["url"])})
+    return pages
 
 
 def alert_feed(request):
