@@ -33,6 +33,8 @@ urlpatterns = [
     path("api/v1/<app:app>/", include("apps.sync.api_urls")),
     path("api/v1/<app:app>/", include("apps.photos.api_urls")),
     path("api/v1/<app:app>/", include("apps.tracking.api_urls")),
+    path("api/v1/<app:app>/", include("apps.targets.api_urls")),
+    path("api/v1/<app:app>/", include("apps.incentives.api_urls")),
     # Must come before the catch-all below, or it swallows these too.
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
