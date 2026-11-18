@@ -27,7 +27,7 @@ REVIEWED = {
     "apps/discount/services.py": (10, "card_usage counted(); the rest change one claim"),
     "apps/discount/views.py": (5, "redemptions + redeemed count counted(); one claim's detail"),
     "apps/discount/writes.py": (1, "one claim's decision"),
-    "apps/portal/dashboard.py": (2, "station today + monthly sales counted()"),
+    "apps/portal/dashboard.py": (3, "station today, a past station day, monthly sales: all counted()"),
     "apps/rental/api.py": (3, "one order / one invoice for the tablet; void invoice refused"),
     "apps/rental/approvals.py": (4, "credit-note lists (records, with void flag) and pending counts"),
     "apps/rental/credit_notes.py": (7, "one note at a time; refused on a cancelled order"),

@@ -419,6 +419,49 @@ def test_a_tablet_with_no_branch_has_no_working_time(client, company):
     assert assert_envelope(ask(client, "never-seen", version_code=80))["code"] == "working_time_not_set"
 
 
+# -- The working-hours hold is the operator tablet's only (owner, 18 Nov 2026) ---------
+
+
+@pytest.mark.parametrize("app", ["manager", "employee"])
+def test_a_phone_app_with_no_branch_gets_an_any_time_release_at_once(client, company, app):
+    """Manager and employee phones are never mapped to a branch, so the hold
+    used to answer working_time_not_set forever."""
+    from django.utils import timezone
+
+    from apps.devices.models import Device, DeviceStatus
+
+    Device.objects.create(company=company, installation_id=f"{app}-phone", platform="android", channel=app,
+                          status=DeviceStatus.APPROVED, approved_at=timezone.now())
+    map_to(release(company, 18, channel=app))
+
+    response = call(client, {"installation_id": f"{app}-phone", "version_code": 17},
+                    url=f"/api/v1/{app}/app/update-check")
+
+    assert assert_envelope(response)["code"] == "update_available"
+
+
+@pytest.mark.parametrize("app", ["manager", "employee"])
+def test_a_phone_app_is_not_held_by_the_hours_of_a_station_either(client, company, placed, sunday_at, app):
+    """Even an installation that also holds a station mapping (a shared phone)
+    is not held for the manager or employee app."""
+    map_to(release(company, 18, channel=app))
+    sunday_shift(placed)
+    sunday_at(20)
+
+    response = call(client, {"installation_id": "dubai-tablet", "version_code": 17},
+                    url=f"/api/v1/{app}/app/update-check")
+
+    assert assert_envelope(response)["code"] == "update_available"
+
+
+def test_the_operator_tablet_is_still_held_outside_hours(client, company, placed, sunday_at):
+    map_to(release(company, 81))
+    sunday_shift(placed)
+    sunday_at(20)
+
+    assert assert_envelope(ask(client, "dubai-tablet", version_code=80))["code"] == "outside_working_hours"
+
+
 def test_nothing_to_update_is_up_to_date_whatever_the_hours(client, company, placed):
     """The working-time codes only appear when an update is being held back."""
     map_to(release(company, 81))

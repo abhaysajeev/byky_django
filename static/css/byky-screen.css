@@ -1185,6 +1185,7 @@ textarea.scr-mon-json { display: block; width: 100%; min-height: 420px; resize: 
 .scr-help.is-error { color: #c2141a; }
 
 /* Change Password, the header's dialog on every screen (navbar.html). */
+.byky-cp-form { display: contents; }   /* only scopes the fields for the password manager */
 .byky-cp-fields { display: flex; flex-direction: column; gap: 14px; }
 .byky-cp-fields .scr-help { margin-top: 4px; }
 .byky-cp-foot { justify-content: flex-end; }

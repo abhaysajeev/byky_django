@@ -76,6 +76,7 @@ def build_menu(user):
                     "slug": page.url_name,
                     "svg": page.svg,
                     "svg2": page.svg2,
+                    "module": module.name,
                 }
                 for page in group
             )

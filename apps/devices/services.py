@@ -224,6 +224,12 @@ def update_decision_for_installation(
     (section 9A.3a); outside its hours, or with no hours set, the answer is
     "no update" plus a `reason` the API turns into its code. A mandatory
     release is never held back.
+
+    The hold is for the operator tablet only (owner, 18 Nov 2026): it keeps a
+    station's till from updating mid-rental. Manager and employee phones are
+    never mapped to a branch (device mapping is operator only), so for them
+    the hold read "working time not set" forever and no "Any time" release
+    ever reached them -- they get it straight away.
     """
     try:
         company_id, branch_id = _company_and_branch(installation_id, company_code)
@@ -238,7 +244,7 @@ def update_decision_for_installation(
         company_id=company_id, channel=channel, branch_id=branch_id,
         version_code=version_code, version_name=version_name,
     )
-    if decision.get("update_required") and not decision.get("is_mandatory"):
+    if decision.get("update_required") and not decision.get("is_mandatory") and channel == Channel.OPERATOR:
         held = _outside_working_time(branch_id, at)
         if held:
             return {**NO_UPDATE, "reason": held}
