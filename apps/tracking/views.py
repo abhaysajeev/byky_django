@@ -41,8 +41,10 @@ from apps.tracking.models import (
     Reading,
     TagLastSeen,
     TrackingSettings,
+    VehicleBaseline,
     VehiclePresence,
 )
+from core.timezones import zone_for
 from theme.views import ThemedTemplateView
 
 ACTIONS = ("create", "read", "update", "approve")
@@ -472,6 +474,18 @@ class AntennasView(TrackingScreenView):
             context["bike_options"] = [
                 {"id": v.pk, "name": v.vehicle_name, "tag": engine.tag_of(v.rfid_epc)}
                 for v in calibration.choosable(chosen)]
+            # Observe: a past period, the last 3 hours by default (company time).
+            zone = zone_for(chosen.company) if chosen.company_id else timezone.get_current_timezone()
+            now = timezone.localtime(timezone.now(), zone).replace(second=0, microsecond=0)
+            context.update({
+                "observe_to": now.strftime("%Y-%m-%dT%H:%M"),
+                "observe_from": (now - datetime.timedelta(hours=3)).strftime("%Y-%m-%dT%H:%M"),
+                "observe_min": (now - datetime.timedelta(days=calibration._retention_days(chosen)))
+                .strftime("%Y-%m-%dT%H:%M"),
+                "retention_days": calibration._retention_days(chosen),
+                "observe_minutes": calibration.MIN_OBSERVE_MINUTES,
+            })
+        context["baseline_count"] = VehicleBaseline.objects.filter(reader=chosen).count()
         return context
 
 
@@ -520,6 +534,13 @@ class CalibrationView(writes.WriteView):
         if action == "start":
             calibration.start(reader, data.get("vehicles") or [], user=self.request.user)
             return "Listening. Keep the bikes parked on the boundary."
+        if action == "observe":
+            zone = zone_for(reader.company)
+            session = calibration.observe(reader, _local_moment(data.get("window_from"), zone),
+                                          _local_moment(data.get("window_to"), zone), user=self.request.user)
+            found, skipped = len(session.result["vehicles"]), len(session.result["skipped"])
+            return (f"Worked out {found} vehicle{'s' if found != 1 else ''}'s range"
+                    + (f"; {skipped} had too few readings" if skipped else "") + ". Review and approve.")
         if action == "clear":
             calibration.clear_limits(reader)
             return "Limits cleared. Any read now counts as present."
@@ -548,6 +569,17 @@ def _moment(value):
         return None
     if moment is not None and timezone.is_naive(moment):
         moment = timezone.make_aware(moment, timezone.get_current_timezone())
+    return moment
+
+
+def _local_moment(value, zone):
+    """`YYYY-MM-DDTHH:MM` from a date-time field, read in the company's zone; None if unreadable."""
+    try:
+        moment = datetime.datetime.fromisoformat(value) if value else None
+    except (TypeError, ValueError):
+        return None
+    if moment is not None and timezone.is_naive(moment):
+        moment = timezone.make_aware(moment, zone)
     return moment
 
 
