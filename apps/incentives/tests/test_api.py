@@ -8,7 +8,13 @@ from decimal import Decimal
 import pytest
 
 from apps.crew.models import CashierType, DutyRoster, DutyRosterDayType
-from apps.crew.tests.test_attendance import manager, operator, staff_app, world  # noqa: F401
+from apps.crew.tests.test_attendance import (  # noqa: F401
+    fresh_throttle,
+    manager,
+    operator,
+    staff_app,
+    world,
+)
 from apps.fare.tests.test_api import call
 from apps.incentives import services
 from apps.incentives.models import AppliesTo, Scheme

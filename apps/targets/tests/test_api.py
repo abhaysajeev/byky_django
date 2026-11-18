@@ -12,6 +12,7 @@ import pytest
 from apps.company.models import Branch
 from apps.crew.tests.test_attendance import (  # noqa: F401
     PASSWORD,
+    fresh_throttle,
     login,
     manager,
     operator,
