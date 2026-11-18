@@ -696,6 +696,17 @@ class ManagerVehiclesRequest(serializers.Serializer):
     page = whole_number_field(min_value=1, required=False, default=1)
 
 
+class ManagerVehicleMasterRequest(serializers.Serializer):
+    """The vehicle master at the active stations, every filter optional."""
+
+    state_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    branch_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    vehicle_type_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    search = serializers.CharField(max_length=50, required=False, allow_blank=True, allow_null=True, default="")
+    page = whole_number_field(min_value=1, required=False, default=1)
+    page_size = whole_number_field(min_value=1, max_value=2000, required=False, default=500)
+
+
 class DateRangeRequest(serializers.Serializer):
     """Both dates required, company time, both included."""
 

@@ -40,6 +40,7 @@ from apps.rental.serializers import (
     ManagerCreditNoteRejectRequest,
     ManagerPendingCountsRequest,
     ManagerStatesRequest,
+    ManagerVehicleMasterRequest,
     ManagerVehiclesRequest,
     ManagerVehicleTypesRequest,
 )
@@ -243,9 +244,64 @@ class VehicleListView(_ManagerView):
                                             "total_vehicles": page.paginator.count})
 
 
+_MASTER_SAMPLE = {
+    "vehicles": [{
+        "vehicle_id": 412, "vehicle_identifier": "VB0412", "vehicle_code": "MO41", "vehicle_name": "MO 41",
+        "rfid_epc": "E28068940000501B2C3D4E5F", "vehicle_type_id": 4, "vehicle_type": "Monaco",
+        "category_id": 2, "category": "Two Wheel", "brand": "Byky", "is_direct_rent": False,
+        "is_available": True, "on_rent": False,
+        "branch": {"branch_id": 27, "code": "CPG1", "name": "CREEK PARK GATE 1", "state_id": 2, "state": "Dubai"},
+    }],
+    "page": 1, "pages": 1, "page_size": 500, "total_vehicles": 1,
+}
+
+
+class VehicleMasterView(_ManagerView):
+    """POST /api/v1/{app}/vehicles/master -- manager app only."""
+
+    form_class = ManagerVehicleMasterRequest
+
+    @extend_schema(
+        tags=["Manager Masters"],
+        summary="Vehicle master: every vehicle at the active stations",
+        description="""
+Every **active, approved** vehicle standing at an **active** station of your
+company: `vehicle_id`, `vehicle_identifier` (`VB0412`), `vehicle_code`,
+`vehicle_name`, `rfid_epc` (`""` when no tag is assigned), its type,
+category and brand, `is_available` (the manual switch), `on_rent` (out on an
+active order now) and its `branch` with the state. A vehicle with no station,
+or at a closed station, is not listed.
+
+By station, then name. Filters, all optional: `state_id`, `branch_id`,
+`vehicle_type_id`, `search` (up to 50 characters: name, code, identifier or
+RFID, ignoring case). Paged: `page` (from 1), `page_size` (default 500, up to
+2000) -- one page is usually the whole fleet. `request_data` may be empty.
+""",
+        request=envelope_request("ManagerVehicleMasterEnvelope", ManagerVehicleMasterRequest,
+                                 request_data_required=False),
+        responses=envelope_responses(
+            (200, "ok", "Vehicles.", _MASTER_SAMPLE),
+            (400, "invalid_request", "page_size must be at most 2000.",
+             {"errors": {"page_size": "must be at most 2000"}}),
+            *_COMMON,
+        ),
+    )
+    def post(self, request, app):
+        values, companies, _, refused = self.values(request, app)
+        if refused:
+            return refused
+        rows, page = reports.vehicle_master(
+            companies, state_id=values.get("state_id"), branch_id=values.get("branch_id"),
+            vehicle_type_id=values.get("vehicle_type_id"), search=(values.get("search") or "").strip(),
+            page=values["page"], page_size=values["page_size"])
+        return envelope("ok", "Vehicles.", {"vehicles": rows, "page": page.number,
+                                            "pages": page.paginator.num_pages, "page_size": values["page_size"],
+                                            "total_vehicles": page.paginator.count})
+
+
 # -- Collections ----------------------------------------------------------------------
 
-_TOTAL = {"orders": 1033, "net_amount": "45210.250", "credit_notes": "120.000"}
+_TOTAL ={"orders": 1033, "net_amount": "45210.250", "credit_notes": "120.000"}
 _BY_STATE_SAMPLE = {
     "from_date": "2026-10-01", "to_date": "2026-10-08",
     "states": [

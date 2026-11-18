@@ -131,6 +131,48 @@ def vehicles(company_ids, vehicle_type_id=None, search="", page=1):
             for v in paged.object_list], paged
 
 
+def vehicle_master(company_ids, *, state_id=None, branch_id=None, vehicle_type_id=None, search="", page=1,
+                   page_size=500):
+    """(rows, page) -- every active, approved vehicle standing at an active
+    station of the company, with its code, RFID tag, type, category and
+    station: the manager app's vehicle master (owner, 18 Nov 2026). A vehicle
+    with no station, or at a closed one, is left out. `on_rent` is whether it
+    is out on an active order now (apps/rental/services.active_rentals)."""
+    from apps.rental.services import active_rentals
+
+    rows = (_live(Vehicle.objects.filter(company_id__in=company_ids, current_branch__is_active=True))
+            .select_related("vehicle_type__category", "vehicle_type__brand", "current_branch__location__state"))
+    if state_id:
+        rows = rows.filter(current_branch__location__state_id=state_id)
+    if branch_id:
+        rows = rows.filter(current_branch_id=branch_id)
+    if vehicle_type_id:
+        rows = rows.filter(vehicle_type_id=vehicle_type_id)
+    if search:
+        rows = rows.filter(Q(vehicle_name__icontains=search) | Q(vehicle_code__icontains=search)
+                           | Q(identifier__icontains=search) | Q(rfid_epc__icontains=search))
+    paged = Paginator(rows.order_by("current_branch__name", "vehicle_name", "identifier_no"),
+                      page_size).get_page(page)
+    vehicles = list(paged.object_list)
+    out_now = active_rentals([v.pk for v in vehicles])
+    out = []
+    for v in vehicles:
+        vehicle_type, branch = v.vehicle_type, v.current_branch
+        state = branch.location.state if branch.location_id else None
+        out.append({
+            "vehicle_id": v.pk, "vehicle_identifier": v.identifier, "vehicle_code": v.vehicle_code,
+            "vehicle_name": v.vehicle_name, "rfid_epc": v.rfid_epc,
+            "vehicle_type_id": vehicle_type.pk, "vehicle_type": vehicle_type.vehicle_type_name,
+            "category_id": vehicle_type.category_id, "category": vehicle_type.category.category_name,
+            "brand": vehicle_type.brand.brand_name if vehicle_type.brand_id else "",
+            "is_direct_rent": vehicle_type.is_direct_rent, "is_available": v.is_available,
+            "on_rent": v.pk in out_now,
+            "branch": {"branch_id": branch.pk, "code": branch.short_code, "name": branch.name,
+                       "state_id": state.pk if state else None, "state": state.name if state else ""},
+        })
+    return out, paged
+
+
 # -- Collections ----------------------------------------------------------------------
 
 
