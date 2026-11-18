@@ -25,15 +25,15 @@ than a zero-height chart.
 
 {% block page_css %}
 {{ block.super }}
-<link rel="stylesheet" href="{% static 'css/byky-dashboard.css' %}?v=20261118i" />
+<link rel="stylesheet" href="{% static 'css/byky-dashboard.css' %}?v=20261118j" />
 {% endblock page_css %}
 
 {% block page_js %}
 {{ block.super }}
 {{ chart_data|json_script:"byky-chart-data" }}
 {{ live|json_script:"bd-live" }}
-<script src="{% static 'js/byky-dashboard.js' %}?v=20261118i"></script>
-<script src="{% static 'js/byky-station-network.js' %}?v=20261118i"></script>
+<script src="{% static 'js/byky-dashboard.js' %}?v=20261118j"></script>
+<script src="{% static 'js/byky-station-network.js' %}?v=20261118j"></script>
 {% endblock page_js %}
 
 {% block content %}
@@ -202,8 +202,6 @@ than a zero-height chart.
               <h3 class="bsn-sum-name" id="bsn-sum-name" data-s="name"></h3>
               <p class="bsn-sum-meta">
                 <span data-s="emirate"></span>
-                <span class="bsn-state" data-s="state" hidden></span>
-                <span class="bsn-hours" data-s="hours"></span>
               </p>
             </div>
 
@@ -222,10 +220,6 @@ than a zero-height chart.
               <div><dt data-s="staff-label">Staff on duty</dt><dd data-f="staff"></dd></div>
             </dl>
 
-            <div class="bsn-sum-links">
-              <a class="bd-link" data-s="orders" href="{% url 'rental-order-list' %}">Station orders<span class="bsn-sr" data-s="orders-at"></span></a>
-              <a class="bd-link" href="{% url 'rental-live' %}">Live monitoring</a>
-            </div>
             <p class="bsn-sr" aria-live="polite" data-announce></p>
           </div>
 
