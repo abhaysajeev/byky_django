@@ -49,9 +49,13 @@ def record(session, values):
         photo = None
         if values.get("photo_id"):
             try:
-                photo = photo_services.attachable(values["photo_id"], company, PhotoPurpose.ASSET_CHECK)
+                # One photo may cover several assets (owner, 18 Nov 2026): it can be on
+                # many checks -- but only checks at this station.
+                photo = photo_services.attachable(values["photo_id"], company, PhotoPurpose.ASSET_CHECK, shared=True)
             except photo_services.PhotoRefused as refusal:
                 raise CheckRefused(refusal.code, refusal.message, refusal.status) from None
+            if AssetCheck.objects.filter(photo=photo).exclude(branch=branch).exists():
+                raise CheckRefused("photo_in_use", "That photo is on another station's asset check.")
         check = AssetCheck(
             id=sync_id, company=company, branch=branch, asset=asset, status=values["status"],
             remarks=(values.get("remarks") or "").strip(), photo=photo, device=session.device,
