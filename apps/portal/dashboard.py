@@ -191,6 +191,70 @@ def branch_live(user, now=None):
     return slides
 
 
+def branch_day(user, day, now=None):
+    """Each active station's figures for one past business day (the Station
+    Network date picker, owner 18 Nov 2026), on the reports' business-day
+    window (Configurations: report day start):
+
+      revenue / invoices  bills issued that day, voided ones never counted
+      rentals             orders booked that day, cancelled ones never counted
+      staff               people who punched in at the station that day
+      fleet               the station's vehicles now (there is no history)
+
+    `on_rent` and `devices` are "now" figures with no history: None.
+    `today` -> branch_live(), so the picker never disagrees with the live card."""
+    from core.timezones import business_window, day_start_for
+
+    now = now or timezone.now()
+    zone = _zone(user)
+    company = money.company_for_user(user)
+    if day >= now.astimezone(zone).date():
+        return branch_live(user, now)
+    branches = list(branches_for(user).filter(is_active=True).order_by("name").values("id", "name"))
+    if not branches:
+        return []
+    ids = [b["id"] for b in branches]
+    start, end = business_window(company, day, day, day_start_for(company)) if company else (
+        _midnight(day, zone), _midnight(day + datetime.timedelta(days=1), zone))
+
+    billed = {
+        row["branch_id"]: row
+        for row in counted(rental_scoping.invoices_for(user))
+        .filter(branch_id__in=ids, issued_at__gte=start, issued_at__lt=end)
+        .values("branch_id").annotate(n=Count("id"), total=Sum("net_amount"))
+    }
+    rentals = dict(
+        counted(rental_scoping.orders_for(user), path="")
+        .filter(branch_id__in=ids, booked_at__gte=start, booked_at__lt=end)
+        .values("branch_id").annotate(n=Count("id")).values_list("branch_id", "n")
+    )
+    staff = dict(
+        Attendance.objects.filter(punch_type=PunchType.PUNCH_IN, rms_scan_time__gte=start, rms_scan_time__lt=end)
+        .annotate(station=Coalesce("rms_branch_id", "employee_branch_id"))
+        .filter(station__in=ids)
+        .values("station").annotate(n=Count("employee_id", distinct=True))
+        .values_list("station", "n")
+    )
+    fleet = dict(
+        vehicles_for(user).filter(is_active=True, current_branch_id__in=ids)
+        .values("current_branch_id").annotate(n=Count("id"))
+        .values_list("current_branch_id", "n")
+    )
+    # That weekday's opening hours, as a word; open/closed "now" means nothing for a past day.
+    days = branch_days(ids, _midnight(day, zone) + datetime.timedelta(hours=12), zone)
+    rows = []
+    for branch in branches:
+        bid = branch["id"]
+        bill = billed.get(bid, {})
+        rows.append({
+            "id": bid, "name": branch["name"], "hours": days[bid]["hours"], "state": "",
+            "on_rent": None, "devices": None, "rentals": rentals.get(bid, 0),
+            "invoices": bill.get("n", 0), "revenue": _aed(bill.get("total")),
+            "staff": staff.get(bid, 0), "fleet": fleet.get(bid, 0),
+        })
+    return rows
+
+
 # -- The Station Network map -------------------------------------------------------------
 
 LIVE_FIELDS = ("fleet", "on_rent", "invoices", "revenue", "devices", "staff", "hours", "state")

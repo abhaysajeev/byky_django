@@ -303,14 +303,21 @@
       if (sel == null) return;
       var s = S[sel];
       q('[data-f="revenue"]').textContent = s.revenue == null ? '—' : s.revenue;
+      // A past day: rentals booked that day stand where "on rent now" is.
+      var past = day !== today;
+      q('[data-s="rev-label"]').textContent = past ? 'Revenue' : 'Revenue today';
+      q('[data-s="inv-when"]').textContent = past ? '' : ' today';
+      q('[data-s="rent-label"]').textContent = past ? 'Rentals' : 'On rent now';
+      q('[data-s="staff-label"]').textContent = past ? 'Staff that day' : 'Staff on duty';
       var inv = num(s.invoices);
       q('[data-f="invoices"]').textContent = fmt(inv);
       q('[data-f="invoices-word"]').textContent = plural(inv, 'invoice', 'invoices');
       ['on_rent', 'fleet', 'devices', 'staff'].forEach(function (f) {
-        q('[data-f="' + f + '"]').textContent = s[f] == null ? '—' : fmt(s[f]);
+        var v = f === 'on_rent' && past ? s.rentals : s[f];
+        q('[data-f="' + f + '"]').textContent = v == null ? '—' : fmt(v);
       });
       var state = q('[data-s="state"]');
-      state.hidden = !(s.state === 'open' || s.state === 'closed');
+      state.hidden = past || !(s.state === 'open' || s.state === 'closed');
       state.className = 'bsn-state is-' + s.state;
       state.textContent = s.state === 'open' ? 'Open' : 'Closed';
       q('[data-s="hours"]').textContent = s.hours || '';
@@ -483,8 +490,48 @@
       });
     }
 
+    /* ── the date picker: today (live) or a past business day ───────── */
+    var today = root.dataset.today, day = today;
+    var picker = root.querySelector('[data-date]');
+    var backToday = root.querySelector('[data-date-today]');
+    var asked = 0;
+    function applyRows(rows) {
+      rows.forEach(function (r) {
+        var i = byId[r.id];
+        if (i == null) return;
+        ['fleet', 'on_rent', 'invoices', 'revenue', 'devices', 'staff', 'hours', 'state', 'rentals'].forEach(function (f) {
+          if (f in r) S[i][f] = r[f];
+        });
+      });
+      fillFigures();
+      root.querySelectorAll('.bsn-row').forEach(function (b) {
+        b.querySelector('.fig').innerHTML = rowFigure(S[Number(b.dataset.i)]);
+        b.querySelector('.p').textContent = rowMeta(S[Number(b.dataset.i)]);
+      });
+    }
+    function loadDay(value) {
+      if (!value || value > today) { picker.value = day; return; }
+      var mine = ++asked;
+      sum.classList.add('is-loading');
+      fetch(root.dataset.stationsUrl + '?date=' + encodeURIComponent(value),
+            { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+        .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+        .then(function (data) {
+          if (mine !== asked) return;              // a newer pick won
+          day = data.date;
+          backToday.hidden = data.is_today;
+          applyRows(data.branches || []);
+          say.textContent = 'Figures for ' + (data.is_today ? 'today' : picker.value) + '.';
+        })
+        .catch(function () { if (mine === asked) picker.value = day; })
+        .then(function () { if (mine === asked) sum.classList.remove('is-loading'); });
+    }
+    picker.addEventListener('change', function () { loadDay(picker.value); });
+    backToday.addEventListener('click', function () { picker.value = today; loadDay(today); });
+
     /* ── live figures: text only, nothing redrawn or reordered ─────── */
     document.addEventListener('bd:live', function (e) {
+      if (day !== today) return;                 // a past day is shown: the live poll waits
       var rows = (e.detail && e.detail.branches) || [];
       rows.forEach(function (r) {
         var i = byId[r.id];
