@@ -25,15 +25,15 @@ than a zero-height chart.
 
 {% block page_css %}
 {{ block.super }}
-<link rel="stylesheet" href="{% static 'css/byky-dashboard.css' %}?v=20261118f" />
+<link rel="stylesheet" href="{% static 'css/byky-dashboard.css' %}?v=20261118i" />
 {% endblock page_css %}
 
 {% block page_js %}
 {{ block.super }}
 {{ chart_data|json_script:"byky-chart-data" }}
 {{ live|json_script:"bd-live" }}
-<script src="{% static 'js/byky-dashboard.js' %}?v=20261118f"></script>
-<script src="{% static 'js/byky-station-network.js' %}?v=20261118f"></script>
+<script src="{% static 'js/byky-dashboard.js' %}?v=20261118i"></script>
+<script src="{% static 'js/byky-station-network.js' %}?v=20261118i"></script>
 {% endblock page_js %}
 
 {% block content %}
@@ -44,7 +44,7 @@ than a zero-height chart.
     <p class="bd-sub">{{ vehicles|intcomma }} vehicles · {{ stations }} stations · {{ emirates }} emirates</p>
   </header>
 
-  <div class="bd-row">
+  <div class="bd-row bd-row-first">
 
     <section class="bd-hero" data-bd-carousel aria-roledescription="carousel" aria-labelledby="bd-h-today">
       <div class="bd-hero-top">
@@ -155,7 +155,8 @@ than a zero-height chart.
 
   <section class="bd-card bd-map-card" aria-labelledby="bd-h-network">
     <div class="bsn" data-points="bd-map-points"
-         data-orders-url="{% url 'rental-order-list' %}" data-monitor-url="{% url 'rental-live' %}">
+         data-orders-url="{% url 'rental-order-list' %}" data-monitor-url="{% url 'rental-live' %}"
+         data-stations-url="{% url 'dashboard-stations' %}" data-today="{{ map_today }}">
       {{ map_points|json_script:"bd-map-points" }}
       <div class="bd-card-head">
         <div>
@@ -166,7 +167,17 @@ than a zero-height chart.
       </div>
 
       {% if map_points %}
-      <div class="bsn-chips" role="group" aria-label="Show stations in"></div>
+      <div class="bsn-bar">
+        <div class="bsn-chips" role="group" aria-label="Show stations in"></div>
+        {% comment %}The day the station figures are for: today (live) by default, or a past business day.{% endcomment %}
+        <div class="bsn-date">
+          <label class="bd-label" for="bsn-date">Figures for</label>
+          <div class="bsn-date-row">
+            <input type="date" id="bsn-date" class="bsn-date-input" value="{{ map_today }}" max="{{ map_today }}" data-date />
+            <button type="button" class="bsn-date-today" data-date-today hidden>Today</button>
+          </div>
+        </div>
+      </div>
       <div class="bsn-split">
         <div class="bsn-mapwrap">
           <div class="bsn-map" role="region" aria-label="Station map" aria-describedby="bsn-map-note"></div>
@@ -198,17 +209,17 @@ than a zero-height chart.
 
             <div class="bsn-sum-rev">
               <div>
-                <span class="bd-label">Revenue today</span>
+                <span class="bd-label" data-s="rev-label">Revenue today</span>
                 <p class="bsn-sum-amt"><small>AED</small><span data-f="revenue"></span></p>
               </div>
-              <p class="bsn-sum-inv"><b data-f="invoices"></b> <span data-f="invoices-word"></span> today</p>
+              <p class="bsn-sum-inv"><b data-f="invoices"></b> <span data-f="invoices-word"></span><span data-s="inv-when"> today</span></p>
             </div>
 
             <dl class="bsn-figs">
-              <div><dt>On rent now</dt><dd data-f="on_rent"></dd></div>
+              <div><dt data-s="rent-label">On rent now</dt><dd data-f="on_rent"></dd></div>
               <div><dt>Fleet</dt><dd data-f="fleet"></dd></div>
               <div><dt>Devices online</dt><dd data-f="devices"></dd></div>
-              <div><dt>Staff on duty</dt><dd data-f="staff"></dd></div>
+              <div><dt data-s="staff-label">Staff on duty</dt><dd data-f="staff"></dd></div>
             </dl>
 
             <div class="bsn-sum-links">

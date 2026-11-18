@@ -4,11 +4,13 @@ The templates here are deliberately plain: the real UI shell arrives with the
 first screen port (.claude/skills/port-ui/SKILL.md).
 """
 
+import datetime
 import json
 
 from django.contrib import messages
 from django.http import JsonResponse
 from django.shortcuts import redirect, render
+from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_http_methods
@@ -183,6 +185,8 @@ class DashboardView(PagePermissionMixin, ThemedTemplateView):
             "top_stations_revenue": [],
             "by_profession": [],
             "map_points": points,
+            # The Station Network date picker's default and upper bound (business today).
+            "map_today": timezone.now().astimezone(dashboard._zone(self.request.user)).date().isoformat(),
             # The month's days include those with no sales (zeros); the
             # sparkline draws an all-zero month as a flat line. The other
             # series stay empty until their cards are wired.
@@ -207,3 +211,23 @@ def dashboard_live_view(request):
     if not request.user:
         return JsonResponse({"detail": "Signed out."}, status=401)
     return JsonResponse(dashboard.live_payload(request.user))
+
+
+@never_cache
+@require_http_methods(["GET"])
+def dashboard_stations_view(request):
+    """Station Network figures for one business day (?date=YYYY-MM-DD, default
+    today): today is the live payload's rows, a past day its own totals
+    (dashboard.branch_day). A future day is refused: nothing has happened."""
+    if not request.user:
+        return JsonResponse({"detail": "Signed out."}, status=401)
+    today = timezone.now().astimezone(dashboard._zone(request.user)).date()
+    raw = request.GET.get("date") or today.isoformat()
+    try:
+        day = datetime.date.fromisoformat(raw)
+    except ValueError:
+        return JsonResponse({"detail": "Choose a date."}, status=400)
+    if day > today:
+        return JsonResponse({"detail": "There are no figures for a future date."}, status=400)
+    return JsonResponse({"date": day.isoformat(), "is_today": day == today,
+                         "branches": dashboard.branch_day(request.user, day)})
