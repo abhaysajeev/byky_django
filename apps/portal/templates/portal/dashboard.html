@@ -153,6 +153,45 @@ than a zero-height chart.
     </section>
   </div>
 
+  <section class="bd-card bd-map-card" aria-labelledby="bd-h-network">
+    <div class="bsn" data-points="bd-map-points">
+      {{ map_points|json_script:"bd-map-points" }}
+      <div class="bd-card-head">
+        <div>
+          <h2 class="bd-card-title" id="bd-h-network">Station Network</h2>
+          <p class="bd-card-sub" data-sub>{% if not map_points %}No station has coordinates yet{% endif %}</p>
+        </div>
+        <a href="{% url 'company-branch-list' %}" class="bd-link">Station list</a>
+      </div>
+
+      {% if map_points %}
+      <div class="bsn-chips"></div>
+      <div class="bsn-split">
+        <div class="bsn-mapwrap">
+          <div class="bsn-map"></div>
+          <div class="bsn-scale" data-scale="fleet" hidden>
+            <span>Fleet</span>
+            <span class="bsn-scale-items"></span>
+          </div>
+          <div class="bsn-scale" data-scale="cluster">
+            <i><em class="bsn-dot-pin"></em>Station</i>
+            <i><em class="bsn-dot-group">n</em>Nearby stations, grouped</i>
+          </div>
+        </div>
+        <div class="bsn-list">
+          <div class="bsn-list-head">
+            <b data-list-title>All stations</b>
+            <span data-list-meta></span>
+          </div>
+          <div class="bsn-rows"></div>
+        </div>
+      </div>
+      {% else %}
+      <p class="bd-empty bd-empty-tall">Stations show on the map once their latitude and longitude are set in the station list.</p>
+      {% endif %}
+    </div>
+  </section>
+
   <div class="bd-row">
 
     <section class="bd-card bd-reports" aria-labelledby="bd-h-reports">
@@ -210,45 +249,6 @@ than a zero-height chart.
     </section>
   </div>
 
-  <section class="bd-card bd-map-card" aria-labelledby="bd-h-network">
-    <div class="bsn" data-points="bd-map-points">
-      {{ map_points|json_script:"bd-map-points" }}
-      <div class="bd-card-head">
-        <div>
-          <h2 class="bd-card-title" id="bd-h-network">Station Network</h2>
-          <p class="bd-card-sub" data-sub>{% if not map_points %}No station has coordinates yet{% endif %}</p>
-        </div>
-        <a href="{% url 'company-branch-list' %}" class="bd-link">Station list</a>
-      </div>
-
-      {% if map_points %}
-      <div class="bsn-chips"></div>
-      <div class="bsn-split">
-        <div class="bsn-mapwrap">
-          <div class="bsn-map"></div>
-          <div class="bsn-scale" data-scale="fleet" hidden>
-            <span>Fleet</span>
-            <span class="bsn-scale-items"></span>
-          </div>
-          <div class="bsn-scale" data-scale="cluster">
-            <i><em class="bsn-dot-pin"></em>Station</i>
-            <i><em class="bsn-dot-group">n</em>Nearby stations, grouped</i>
-          </div>
-        </div>
-        <div class="bsn-list">
-          <div class="bsn-list-head">
-            <b data-list-title>All stations</b>
-            <span data-list-meta></span>
-          </div>
-          <div class="bsn-rows"></div>
-        </div>
-      </div>
-      {% else %}
-      <p class="bd-empty bd-empty-tall">Stations show on the map once their latitude and longitude are set in the station list.</p>
-      {% endif %}
-    </div>
-  </section>
-
   <div class="bd-row">
 
     <section class="bd-card bd-list-card" aria-labelledby="bd-h-category">
@@ -296,40 +296,6 @@ than a zero-height chart.
       {% endif %}
     </section>
   </div>
-
-  <section class="bd-card bd-table-card" aria-labelledby="bd-h-agreements">
-    <div class="bd-table-head">
-      <h2 class="bd-card-title" id="bd-h-agreements">Recent Rental Agreements</h2>
-      <p class="bd-card-sub">Latest across all stations</p>
-    </div>
-    <div class="bd-table-scroll" tabindex="0" role="region" aria-labelledby="bd-h-agreements">
-      <table>
-        <thead>
-          <tr>
-            <th scope="col">Agreement</th><th scope="col">Station</th><th scope="col">Vehicle</th><th scope="col">Category</th>
-            <th scope="col" class="num">Hours</th><th scope="col" class="num">Amount, AED</th>
-            <th scope="col">Date</th><th scope="col">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for i in invoices %}
-          <tr>
-            <td class="strong">{{ i.agreement }}</td>
-            <td>{{ i.station }}</td>
-            <td class="mono">{{ i.vehicle }}</td>
-            <td>{{ i.category }}</td>
-            <td class="num">{{ i.hours }}</td>
-            <td class="num strong">{{ i.amount|intcomma }}</td>
-            <td class="muted">{{ i.date }}</td>
-            <td><span class="bd-status is-{{ i.status|lower }}">{{ i.status }}</span></td>
-          </tr>
-          {% empty %}
-          <tr><td colspan="8" class="bd-table-empty">No rental agreements yet.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
 
 </div>
 {% endblock %}

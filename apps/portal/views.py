@@ -194,7 +194,6 @@ class DashboardView(PagePermissionMixin, ThemedTemplateView):
             },
             "top_stations_revenue": [],
             "by_profession": [],
-            "invoices": [],
             "map_points": points,
             # The month's days include those with no sales (zeros); the
             # sparkline draws an all-zero month as a flat line. The other
