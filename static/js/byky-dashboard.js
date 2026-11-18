@@ -272,6 +272,8 @@
           last = Date.now();
           if (carousel) carousel.update(data.branches || []);
           if (overdue) overdue.update(data.overdue || { on_rent: 0, overdue: 0, rows: [] });
+          // Other widgets (the Station Network map) read the same rows.
+          try { document.dispatchEvent(new CustomEvent('bd:live', { detail: data })); } catch (e) { /* old browser */ }
         })
         .catch(function (err) { if (!stopped && err.name !== 'AbortError') fails++; })
         .then(function () {
