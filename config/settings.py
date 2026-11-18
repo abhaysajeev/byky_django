@@ -73,6 +73,8 @@ LOCAL_APPS = [
     "apps.photos",
     "apps.notifications",
     "apps.tracking",
+    "apps.targets",
+    "apps.incentives",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -413,6 +415,8 @@ CELERY_BEAT_SCHEDULE = {
     # Notifications the change could not queue (Redis down), and retries due.
     "notifications-send-due": {"task": "apps.notifications.tasks.send_due", "schedule": crontab()},
     "notifications-purge": {"task": "apps.notifications.tasks.purge", "schedule": crontab(hour=3, minute=45)},
+    # Each target's required amount for the day, frozen soon after the business day starts.
+    "targets-freeze-due": {"task": "apps.targets.tasks.freeze_due", "schedule": crontab(minute="*/15")},
 }
 
 # -- Push notifications (apps/notifications) ---------------------------------------------

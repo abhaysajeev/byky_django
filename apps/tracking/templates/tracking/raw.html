@@ -3,38 +3,52 @@
 {% block screen_title %}Raw Readings{% endblock %}
 {% block crumb %}Raw Readings{% endblock %}
 {% block heading %}Raw Readings{% endblock %}
-{% block sub %}What a reader sent, for troubleshooting and calibration. At most 24 hours per search.{% endblock %}
+{% block sub %}What a reader sent, for troubleshooting and calibration. A search covers at most 24 hours.{% endblock %}
 
 {% block body %}
-<div class="scr-card">
-  {% if chosen_reader %}
-  <div class="scr-toolbar">
-    <select class="scr-input" name="reader" aria-label="Reader" data-tracking-filter style="flex:0 0 auto;width:220px">
+{% if chosen_reader %}
+<div class="scr-x-bar">
+  <div class="scr-x-filter">
+    <label class="scr-x-visually-hidden" for="raw-reader">Reader</label>
+    <select id="raw-reader" class="scr-input" name="reader" data-tracking-filter>
       {% for r in readers %}<option value="{{ r.pk }}"{% if r.pk == chosen_reader.pk %} selected{% endif %}>{{ r.name|default:r.device_id }}</option>{% endfor %}
     </select>
-    <input class="scr-input" name="tag" value="{{ tag }}" maxlength="8" placeholder="Tag" aria-label="Tag" data-tracking-filter style="flex:0 0 auto;width:130px">
-    <input class="scr-input" type="datetime-local" name="from" value="{{ from }}" aria-label="From" data-tracking-filter style="flex:0 0 auto;width:220px">
-    <input class="scr-input" type="datetime-local" name="to" value="{{ to }}" aria-label="To" data-tracking-filter style="flex:0 0 auto;width:220px">
   </div>
-  {% if too_long %}<div class="scr-banner"><span class="scr-banner-text">A search covers at most 24 hours, so the start was moved.</span></div>{% endif %}
-  {% if timed_out %}<div class="scr-banner"><span class="scr-banner-text">That search took too long. Narrow it to a tag or a shorter time.</span></div>{% endif %}
-  {% if not chosen_reader.keep_raw %}<div class="scr-banner"><span class="scr-banner-text">Keep raw readings is off for this reader, so only readings from a calibration are saved. Turn it on from the Readers page.</span></div>{% endif %}
-  <div class="scr-table-scroll scr-sb">
-    <table>
-      <thead><tr><th>Received</th><th>Port</th><th>Tag</th><th>RSSI</th><th>Reader clock</th><th>Staying</th><th>Entry</th><th>Low battery</th></tr></thead>
+  <div class="scr-x-filter scr-x-filter-sm">
+    <label class="scr-x-visually-hidden" for="raw-tag">Tag</label>
+    <input id="raw-tag" class="scr-input" name="tag" value="{{ tag }}" maxlength="8" placeholder="Tag" data-tracking-filter>
+  </div>
+  <div class="scr-x-filter scr-x-dates">
+    <label class="scr-x-visually-hidden" for="raw-from">From</label>
+    <input id="raw-from" class="scr-input" type="datetime-local" name="from" value="{{ from }}" data-tracking-filter>
+    <span class="muted" aria-hidden="true">to</span>
+    <label class="scr-x-visually-hidden" for="raw-to">To</label>
+    <input id="raw-to" class="scr-input" type="datetime-local" name="to" value="{{ to }}" data-tracking-filter>
+  </div>
+</div>
+{% if too_long %}<div class="scr-x-banner">A search covers at most 24 hours, so the start was moved.</div>{% endif %}
+{% if timed_out %}<div class="scr-x-banner">That search took too long. Narrow it to a tag or a shorter time.</div>{% endif %}
+{% if not chosen_reader.keep_raw %}<div class="scr-x-banner">Keep raw readings is off for this reader, so only readings from a calibration are saved. Turn it on from the Readers page.</div>{% endif %}
+
+<div class="scr-card">
+  <div class="scr-table-scroll">
+    <table class="scr-x-table">
+      <colgroup><col class="w-time" /><col class="w-count" /><col class="w-tag" /><col class="w-count" /><col class="w-time" /><col class="w-flag" /><col class="w-flag" /><col class="w-flag" /></colgroup>
+      <thead><tr><th scope="col">Received</th><th scope="col" class="num">Port</th><th scope="col">Tag</th><th scope="col" class="num">RSSI</th><th scope="col">Reader clock</th><th scope="col">Staying</th><th scope="col">Entry</th><th scope="col">Low battery</th></tr></thead>
       <tbody>
         {% for row in rows %}
-        <tr class="scr-row">
-          <td class="scr-contact">{{ row.received_at|date:"d M H:i:s" }}</td>
-          <td>{{ row.port }}</td><td><span class="scr-code">{{ row.tag }}</span></td><td>{{ row.rssi }}</td>
-          <td class="scr-contact">{{ row.reader_time|date:"d M H:i:s"|default:"—" }}</td>
-          <td>{{ row.staying|yesno:"Yes,No" }}</td><td>{{ row.entry|yesno:"Yes,No" }}</td><td>{{ row.low_battery|yesno:"Yes,No" }}</td>
+        <tr>
+          <td data-label="Received" class="muted">{{ row.received_at|date:"j M H:i:s" }}</td>
+          <td data-label="Port" class="num">{{ row.port }}</td>
+          <td data-label="Tag" class="mono">{{ row.tag }}</td>
+          <td data-label="RSSI" class="num">{{ row.rssi }}</td>
+          <td data-label="Reader clock" class="muted">{{ row.reader_time|date:"j M H:i:s"|default:"—" }}</td>
+          <td data-label="Staying">{{ row.staying|yesno:"Yes,No" }}</td>
+          <td data-label="Entry">{{ row.entry|yesno:"Yes,No" }}</td>
+          <td data-label="Low battery">{{ row.low_battery|yesno:"Yes,No" }}</td>
         </tr>
         {% empty %}
-        <tr><td colspan="8" style="padding:0"><div class="scr-empty"><div>
-          <div class="scr-empty-title">No readings in this period</div>
-          <p class="scr-empty-sub">Try a longer time range. Raw readings are kept for the days set in Tracking Settings.</p>
-        </div></div></td></tr>
+        <tr><td colspan="8">{% include "tracking/_empty.html" with title="No readings in this period" text="Try a longer time range. Raw readings are kept for the days set in Tracking Settings." %}</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -42,12 +56,12 @@
   <div class="scr-pager">
     <span class="scr-pager-info">Page {{ page_no }}</span>
     <div class="scr-pager-nav">
-      {% if prev_query %}<a class="scr-btn-secondary scr-btn-small" href="?{{ prev_query }}">Newer</a>{% endif %}
-      {% if next_query %}<a class="scr-btn-secondary scr-btn-small" href="?{{ next_query }}">Older</a>{% endif %}
+      {% if prev_query %}<a class="scr-btn-small" href="?{{ prev_query }}">Newer</a>{% endif %}
+      {% if next_query %}<a class="scr-btn-small" href="?{{ next_query }}">Older</a>{% endif %}
     </div>
   </div>
-  {% else %}
-  <div class="scr-empty"><div><div class="scr-empty-title">No readers yet</div></div></div>
-  {% endif %}
 </div>
+{% else %}
+<div class="scr-card">{% include "tracking/_empty.html" with title="No readers yet" %}</div>
+{% endif %}
 {% endblock %}

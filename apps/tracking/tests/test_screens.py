@@ -311,7 +311,7 @@ def test_a_bike_with_no_such_tag_at_this_station_is_refused(world, parked):
                                       name="Nine", branch_type=BranchType.STATION)
     away = make_bike(world, "MO 99", "AAAAAAAA", branch=elsewhere)
 
-    with pytest.raises(calibration.CalibrationError, match="this reader's station"):
+    with pytest.raises(calibration.CalibrationError, match="this reader's branch"):
         calibration.start(parked["reader"], [away.pk])
 
 

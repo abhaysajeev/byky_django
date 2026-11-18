@@ -1,0 +1,92 @@
+{% extends "incentives/_base.html" %}
+
+{% block screen_title %}{% if scheme %}{{ scheme.name }}{% else %}Add scheme{% endif %}{% endblock %}
+{% block crumb %}<a href="{{ back_url }}">Schemes</a>
+<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
+<b>{% if scheme %}{{ scheme.name }}{% else %}Add scheme{% endif %}</b>{% endblock %}
+{% block heading %}{% if scheme %}{{ scheme.name }}{% else %}Add scheme{% endif %}{% endblock %}
+{% block sub %}Who gets what for each working day at a station whose target was met. Formulas use the names in the Variables panel.{% endblock %}
+
+{% block actions %}
+<a class="scr-btn-small" href="{{ back_url }}">Back</a>
+{% if not locked %}{% if scheme and can.update or not scheme and can.create %}<button type="button" class="scr-btn scr-btn-primary" data-inc-save><span class="scr-btn-spin"></span>Save scheme</button>{% endif %}{% endif %}
+{% endblock %}
+
+{% block body %}
+{% if locked %}<div class="scr-x-banner">An approved month uses this scheme, so it can't change. Copy it from Schemes and change the copy.</div>{% endif %}
+{{ data|json_script:"inc-scheme" }}
+{{ catalogue|json_script:"inc-catalogue" }}
+{{ applies_to|json_script:"inc-applies" }}
+{{ month_names|json_script:"inc-month-names" }}
+
+<div class="scr-inc-layout" data-inc-form data-save-url="{{ save_url }}" data-check-url="{{ check_url }}" data-try-url="{{ try_url }}"{% if locked %} data-locked{% endif %}>
+  <div class="scr-inc-main">
+    <section class="scr-card scr-inc-section" aria-labelledby="inc-h-scheme">
+      <h2 class="scr-x-card-title scr-inc-h" id="inc-h-scheme">Scheme</h2>
+      <div class="scr-inc-grid">
+        <label class="scr-inc-field scr-inc-wide"><span class="byky-label">Name</span>
+          <input class="scr-drawer-input" data-inc="name" maxlength="100" autocomplete="off" /></label>
+        <label class="scr-inc-field"><span class="byky-label">Effective from</span>
+          <input class="scr-drawer-input" type="date" data-inc="effective_from" /></label>
+        <label class="scr-inc-field"><span class="byky-label">Effective to <span class="muted">(optional)</span></span>
+          <input class="scr-drawer-input" type="date" data-inc="effective_to" /></label>
+        <div class="scr-inc-field scr-inc-wide"><span class="byky-label" id="inc-stations-label">Stations</span>
+          <div class="scr-inc-stations" role="group" aria-labelledby="inc-stations-label" data-inc-stations>
+            {% for b in branches_list %}<label class="scr-inc-chip"><input type="checkbox" value="{{ b.id }}" /> {{ b.name }}</label>{% endfor %}
+          </div>
+          <p class="scr-x-note">None ticked = every station.</p>
+        </div>
+        <label class="scr-inc-field scr-inc-wide"><span class="byky-label">Pays when</span>
+          <input class="scr-drawer-input scr-inc-formula" data-inc="pays_when" data-scope="pays_when" spellcheck="false" autocomplete="off" />
+          <span class="scr-inc-check" data-check-for="pays_when" aria-live="polite"></span></label>
+        <label class="scr-inc-field scr-inc-wide scr-inc-switch"><input type="checkbox" data-inc="is_active" /> <span>Active — used by Calculate for the months it covers</span></label>
+        <label class="scr-inc-field scr-inc-wide"><span class="byky-label">Notes <span class="muted">(optional)</span></span>
+          <input class="scr-drawer-input" data-inc="notes" maxlength="300" autocomplete="off" /></label>
+      </div>
+    </section>
+
+    <section class="scr-card scr-inc-section" aria-labelledby="inc-h-components">
+      <div class="scr-inc-head"><h2 class="scr-x-card-title scr-inc-h" id="inc-h-components">Components</h2>
+        <button type="button" class="scr-btn-small" data-inc-add="components">Add component</button></div>
+      <p class="scr-x-note">One line of pay each. A person gets every component that applies to their role that day, per working day.</p>
+      <div class="scr-inc-rows" data-inc-rows="components">
+        {% comment %}Column labels for the rows the script adds below; hidden while there are none, and on phones, where each field carries its own.{% endcomment %}
+        <div class="scr-inc-cols" aria-hidden="true"><span>Component name</span><span>Applies to</span><span>Amount per working day</span></div>
+      </div>
+    </section>
+
+    <section class="scr-card scr-inc-section" aria-labelledby="inc-h-variables">
+      <div class="scr-inc-head"><h2 class="scr-x-card-title scr-inc-h" id="inc-h-variables">Your variables <span class="muted">(optional)</span></h2>
+        <button type="button" class="scr-btn-small" data-inc-add="variables">Add variable</button></div>
+      <p class="scr-x-note">Name a calculation to reuse it, e.g. <code>rate = 1% / max(tier2, 2)</code>. A variable may use the ones above it.</p>
+      <div class="scr-inc-rows" data-inc-rows="variables">
+        <div class="scr-inc-cols is-var" aria-hidden="true"><span>Variable name</span><span>Variable formula</span></div>
+      </div>
+    </section>
+
+    <section class="scr-card scr-inc-section" aria-labelledby="inc-h-try">
+      <h2 class="scr-x-card-title scr-inc-h" id="inc-h-try">Try it</h2>
+      <p class="scr-x-note">Runs the formulas as they stand on a real day's roster. Nothing is saved or paid.</p>
+      <div class="scr-inc-try">
+        <label class="scr-inc-field scr-inc-try-station"><span class="byky-label">Station</span>
+          <select class="scr-input" data-inc-try-branch>{% for b in branches_list %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}</select></label>
+        <label class="scr-inc-field"><span class="byky-label">Day</span>
+          <input class="scr-input" type="date" data-inc-try-date value="{{ business_today|date:'Y-m-d' }}" /></label>
+        <button type="button" class="scr-btn-small scr-inc-try-btn" data-inc-try><span class="scr-btn-spin"></span>Try</button>
+      </div>
+      <div data-inc-try-out aria-live="polite"></div>
+    </section>
+  </div>
+
+  <aside class="scr-card scr-inc-aside" aria-labelledby="inc-h-vars">
+    <h2 class="scr-x-card-title scr-inc-h" id="inc-h-vars">Variables</h2>
+    <p class="scr-x-note">Click one to put it in the formula you were last in.</p>
+    <ul class="scr-inc-vars">
+      {% for v in catalogue %}
+      <li><button type="button" class="scr-inc-var" data-inc-insert="{{ v.name }}"><code>{{ v.name }}</code><span>{{ v.label }}</span></button><p>{{ v.help }}</p></li>
+      {% endfor %}
+    </ul>
+    <p class="scr-x-note"><b>Also:</b> <code>1%</code> = 0.01 · <code>+ - * /</code> · <code>min max round abs</code> · <code>&gt;= &lt;= ==</code> · <code>and or not</code> · <code>a if condition else b</code> · text in quotes, e.g. <code>role == "labour"</code>.</p>
+  </aside>
+</div>
+{% endblock %}
