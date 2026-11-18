@@ -1,7 +1,8 @@
-/* BYKY dashboard — the parts of the design that must be computed from data:
-   sparkline, month bars, emirate/category bars, deployment gauge, station map,
-   plus the live first row (branch carousel, overdue watch) and its poller.
-   Reads #byky-chart-data and #bd-live from the page. No vendor libraries. */
+/* BYKY dashboard: the live first row (branch carousel, overdue watch and
+   their poller) and the marks drawn from data (sparkline, month bars,
+   category bars, deployment gauge). Colours live in byky-dashboard.css; this
+   file only sets classes. Reads #byky-chart-data and #bd-live. No vendor
+   libraries. Station Network is byky-station-network.js. */
 (function () {
   'use strict';
 
@@ -17,13 +18,14 @@
     for (var k in attrs) n.setAttribute(k, attrs[k]);
     return n;
   };
-  var RED = '#d81f26', MID = '#ef767b', PALE = '#f6b8bb';
 
   /* ── live: branch carousel, overdue watch and one poller ─────── */
   var liveNode = document.getElementById('bd-live');
   var live = liveNode ? JSON.parse(liveNode.textContent) : null;
   var REDUCED = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   var SLIDE_MS = 7000;
+  // One switch stops both rotations (WCAG 2.2.2): the carousel's Pause button.
+  var userPaused = false;
 
   // Branch carousel: one slide per station, busiest first. The slides are
   // stacked in one grid cell and only two are ever painted: the one leaving
@@ -35,7 +37,7 @@
     var track = box.querySelector('[data-bd-track]');
     var pos = box.querySelector('[data-bd-pos]');
     var i = 0, timer = null, hold = false, running = true, nextOrder = null, moving = [];
-    var MOTION = { duration: 700, easing: 'cubic-bezier(0.33, 0, 0.2, 1)' };
+    var MOTION = { duration: 320, easing: 'cubic-bezier(0.23, 1, 0.32, 1)' };
 
     function slides() { return track.querySelectorAll('.bd-car-slide'); }
     function reorder(ids) {
@@ -62,21 +64,17 @@
       if (to === from) return;
       to.classList.add('is-on');
       if (REDUCED || !from.animate) { from.classList.remove('is-on'); return; }
-      // A short glide with motion blur: the leaving station blurs and fades as
-      // it moves off, the arriving one sharpens into place.
-      var still = { transform: 'translateX(0)', opacity: 1, filter: 'blur(0)' };
-      var out = from.animate([still, {
-        transform: 'translateX(' + (-32 * dir) + '%)', opacity: 0, filter: 'blur(8px)'
-      }], MOTION);
-      var into = to.animate([{
-        transform: 'translateX(' + (32 * dir) + '%)', opacity: 0, filter: 'blur(8px)'
-      }, still], MOTION);
+      // A short slide in the direction of travel, so next and previous read
+      // as moving along one row of stations.
+      var still = { transform: 'translateX(0)', opacity: 1 };
+      var out = from.animate([still, { transform: 'translateX(' + (-12 * dir) + '%)', opacity: 0 }], MOTION);
+      var into = to.animate([{ transform: 'translateX(' + (12 * dir) + '%)', opacity: 0 }, still], MOTION);
       moving = [out, into];
       out.onfinish = function () { if (from !== slides()[i]) from.classList.remove('is-on'); };
     }
     function schedule() {
       clearTimeout(timer);
-      if (running && !hold && !REDUCED && slides().length > 1) {
+      if (running && !hold && !userPaused && !REDUCED && slides().length > 1) {
         timer = setTimeout(function () { go(i + 1, 1); schedule(); }, SLIDE_MS);
       }
     }
@@ -93,6 +91,16 @@
     box.addEventListener('mouseleave', function () { hold = false; schedule(); });
     box.addEventListener('focusin', function () { hold = true; schedule(); });
     box.addEventListener('focusout', function () { hold = false; schedule(); });
+
+    var pause = box.querySelector('[data-bd-pause]');
+    if (pause && REDUCED) pause.hidden = true;            // nothing rotates then
+    if (pause) pause.addEventListener('click', function () {
+      userPaused = !userPaused;
+      pause.setAttribute('aria-pressed', String(userPaused));
+      pause.setAttribute('aria-label', userPaused ? 'Resume rotation' : 'Pause rotation');
+      schedule();
+      if (overdue) overdue.run(true);
+    });
 
     function setText(el, value) {
       value = String(value);
@@ -128,9 +136,9 @@
     };
   })();
 
-  // Overdue watch: pages of 3 (what the card's height holds), swapped in place
-  // with the carousel (SLIDE_MS) when there are more. How long each vehicle
-  // has been overdue is not shown until the tablets' clock offset is fixed.
+  // Overdue watch: pages of 3 (what the card's height holds), turned on the
+  // carousel's beat when there are more. How long each vehicle has been
+  // overdue is left out: the tablets' clocks are not reliable enough yet.
   var overdue = (function () {
     var box = root.querySelector('[data-bd-overdue]');
     if (!box || !live) return null;
@@ -188,7 +196,7 @@
     }
     function schedule() {
       clearTimeout(timer);
-      if (running && !hold && pages() > 1) {
+      if (running && !hold && !userPaused && pages() > 1) {
         timer = setTimeout(function () { page = (page + 1) % pages(); render(); schedule(); }, SLIDE_MS);
       }
     }
@@ -205,6 +213,9 @@
 
     box.addEventListener('mouseenter', function () { hold = true; schedule(); });
     box.addEventListener('mouseleave', function () { hold = false; schedule(); });
+    // re-rendering drops focus, so a keyboard user on a row holds the page too
+    box.addEventListener('focusin', function () { hold = true; schedule(); });
+    box.addEventListener('focusout', function () { hold = false; schedule(); });
     render();
     schedule();
     return {
@@ -261,6 +272,8 @@
           last = Date.now();
           if (carousel) carousel.update(data.branches || []);
           if (overdue) overdue.update(data.overdue || { on_rent: 0, overdue: 0, rows: [] });
+          // Other widgets (the Station Network map) read the same rows.
+          try { document.dispatchEvent(new CustomEvent('bd:live', { detail: data })); } catch (e) { /* old browser */ }
         })
         .catch(function (err) { if (!stopped && err.name !== 'AbortError') fails++; })
         .then(function () {
@@ -308,14 +321,6 @@
     schedule(MINUTE);
   })();
 
-  /* ── segmented range control (visual state only) ─────────────── */
-  root.querySelectorAll('.bd-segment button').forEach(function (b) {
-    b.addEventListener('click', function () {
-      b.parentNode.querySelectorAll('button').forEach(function (o) { o.classList.remove('is-on'); });
-      b.classList.add('is-on');
-    });
-  });
-
   /* ── monthly sales sparkline ─────────────────────────────────── */
   // One point per day of the month so far, quiet days included. The peak
   // and best-day labels come from the server.
@@ -331,26 +336,16 @@
     });
     var line = pts.map(function (p, i) { return (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1); }).join(' ');
 
-    var defs = el('defs');
-    var grad = el('linearGradient', { id: 'bdSparkFill', x1: '0', y1: '0', x2: '0', y2: '1' });
-    grad.appendChild(el('stop', { offset: '0%', 'stop-color': RED, 'stop-opacity': '.24' }));
-    grad.appendChild(el('stop', { offset: '100%', 'stop-color': RED, 'stop-opacity': '0' }));
-    defs.appendChild(grad);
-    svg.appendChild(defs);
-    svg.appendChild(el('path', { d: line + ' L298 96 L2 96 Z', fill: 'url(#bdSparkFill)' }));
-    svg.appendChild(el('path', {
-      d: line, fill: 'none', stroke: RED, 'stroke-width': '1.8',
-      'stroke-linecap': 'round', 'stroke-linejoin': 'round'
-    }));
+    svg.appendChild(el('path', { d: line + ' L298 96 L2 96 Z', class: 'bd-spark-area' }));
 
+    // The peak day, marked where the peak label below names it.
     var peakIdx = 0;
     series.forEach(function (v, i) { if (v > series[peakIdx]) peakIdx = i; });
-    if (series[peakIdx] <= 0) return;
-    var px = pts[peakIdx][0].toFixed(1), py = pts[peakIdx][1].toFixed(1);
-    var g = el('g', { class: 'bd-spark-marker' });
-    g.appendChild(el('line', { x1: px, y1: '0', x2: px, y2: '96', stroke: '#1a1640', 'stroke-width': '.8', 'stroke-dasharray': '3 3', opacity: '.28' }));
-    g.appendChild(el('circle', { cx: px, cy: py, r: '3.6', fill: RED, stroke: '#fff', 'stroke-width': '2' }));
-    svg.appendChild(g);
+    if (series[peakIdx] > 0) {
+      var px = pts[peakIdx][0].toFixed(1);
+      svg.appendChild(el('line', { x1: px, y1: '0', x2: px, y2: '96', class: 'bd-spark-peak-line' }));
+    }
+    svg.appendChild(el('path', { d: line, class: 'bd-spark-line' }));
   })();
 
   /* ── revenue reports: 12 month bars ──────────────────────────── */
@@ -365,7 +360,7 @@
       wrap.title = labels[i] + ' · AED ' + fmt(v);
       var bar = document.createElement('i');
       bar.style.height = Math.round((v / max) * 112) + 'px';
-      bar.style.background = v >= max * 0.93 ? RED : (v <= min * 1.07 ? PALE : MID);
+      if (i === vals.indexOf(max)) wrap.classList.add('is-peak');
       var lab = document.createElement('span');
       lab.textContent = labels[i];
       wrap.appendChild(bar);
@@ -376,6 +371,8 @@
     var peak = root.querySelector('#bd-month-peak'), trough = root.querySelector('#bd-month-trough');
     if (peak) peak.textContent = labels[pi] + ' peak · ' + fmt(max);
     if (trough) trough.textContent = labels[ti] + ' trough · ' + fmt(min);
+    host.setAttribute('aria-label', 'Revenue by month, AED: ' +
+      vals.map(function (v, k) { return labels[k] + ' ' + fmt(v); }).join(', '));
   })();
 
   /* ── revenue by category ─────────────────────────────────────── */
@@ -393,7 +390,7 @@
       row.querySelector('.val').textContent = fmt(vals[i]);
       var bar = row.querySelector('.bar i');
       bar.style.width = Math.max(1.2, (vals[i] / max) * 100) + '%';
-      bar.style.background = i === 0 ? RED : (i < 4 ? MID : PALE);
+      if (i === 0) row.classList.add('is-top');
       host.appendChild(row);
     });
   })();
@@ -410,14 +407,8 @@
       svg.appendChild(el('line', {
         x1: (98 + Math.cos(a) * 68).toFixed(1), y1: (98 + Math.sin(a) * 68).toFixed(1),
         x2: (98 + Math.cos(a) * 86).toFixed(1), y2: (98 + Math.sin(a) * 86).toFixed(1),
-        stroke: f <= pct ? (f > 0.7 ? RED : '#e8474d') : '#f2dcdc',
-        'stroke-width': '5', 'stroke-linecap': 'round'
+        class: 'bd-gauge-tick' + (pct > 0 && f <= pct ? ' is-on' : '')
       }));
     }
   })();
-
-  /* Station Network is a real Leaflet tile map (byky-leaflet-map.js), not
-     drawn here -- placing a station needs actual geography, which a bubble
-     plot on a blank grid cannot show. data.map_points still feeds it, via
-     the map_points json_script node in the template. */
 })();
