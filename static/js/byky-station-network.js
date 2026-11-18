@@ -391,9 +391,6 @@
     }
     function drawList() {
       root.querySelector('[data-list-title]').textContent = filter || 'All stations';
-      var total = shown.reduce(function (a, i) { return a + num(S[i].fleet); }, 0);
-      root.querySelector('[data-list-meta]').textContent =
-        shown.length + ' ' + plural(shown.length, 'station', 'stations') + ' · ' + fmt(total) + ' vehicles';
 
       var rows = root.querySelector('.bsn-rows');
       rows.innerHTML = '';
@@ -501,9 +498,6 @@
         b.querySelector('.fig').innerHTML = rowFigure(S[Number(b.dataset.i)]);
         b.querySelector('.p').textContent = rowMeta(S[Number(b.dataset.i)]);
       });
-      var total = shown.reduce(function (a, i) { return a + num(S[i].fleet); }, 0);
-      root.querySelector('[data-list-meta]').textContent =
-        shown.length + ' ' + plural(shown.length, 'station', 'stations') + ' · ' + fmt(total) + ' vehicles';
     });
 
     /* ── first frame: one station at street zoom ───────────────────── */
