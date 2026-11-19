@@ -39,6 +39,7 @@ def test_the_detail_shows_the_request_and_the_customers_history(client_in, world
     body = client_in.get(f"/discount/approval/{pending.pk}/").content.decode()
     assert "ORD-1001" in body and "ORD-0900" in body            # this request and the earlier one
     assert "No photo" in body
+    assert 'data-decision-go><span class="scr-btn-spin"' in body          # spins while it is sent
     assert "used 1" in body                                     # one redemption of this discount
     assert f"/discount/approval/{earlier.pk}/" in body
 
@@ -47,6 +48,7 @@ def test_the_detail_shows_the_request_and_the_customers_history(client_in, world
 def test_a_pending_request_is_decided_once(client_in, world, pending, action, status):
     body = post(client_in, f"/discount/approval/{pending.pk}/{action}/", {"remarks": "  checked card  "}).json()
     assert body["ok"] is True
+    assert body["redirect"] == "/rental/request/list/?tab=pending"      # owner, 19 Nov 2026
     pending.refresh_from_db()
     assert pending.status == status and pending.remarks == "checked card"
     assert pending.decided_by.username == "sara.k" and pending.decided_at is not None
@@ -54,6 +56,7 @@ def test_a_pending_request_is_decided_once(client_in, world, pending, action, st
     again = post(client_in, f"/discount/approval/{pending.pk}/approve/", {})
     assert again.status_code == 400
     assert again.json()["errors"][0]["message"] == "This request is already decided."
+    assert "redirect" not in again.json()
 
 
 def test_deciding_needs_the_approve_permission(client_in, world, pending):
