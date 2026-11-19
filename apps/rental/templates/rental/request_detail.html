@@ -162,7 +162,7 @@
     </div>
     <div class="scr-modal-foot">
       <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
-      <button type="button" class="scr-btn-primary" data-rq-go="approve">Approve</button>
+      <button type="button" class="scr-btn-primary" data-rq-go="approve"><span class="scr-btn-spin" aria-hidden="true"></span>Approve</button>
     </div>
   </div>
 
@@ -185,7 +185,7 @@
     </div>
     <div class="scr-modal-foot">
       <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
-      <button type="button" class="scr-btn-danger" data-rq-go="reject">Reject</button>
+      <button type="button" class="scr-btn-danger" data-rq-go="reject"><span class="scr-btn-spin" aria-hidden="true"></span>Reject</button>
     </div>
   </div>
   {% elif req.status == "approved" and order_running and revocable %}
@@ -208,7 +208,7 @@
     </div>
     <div class="scr-modal-foot">
       <button type="button" class="scr-btn-secondary" data-scr-modal-close>Cancel</button>
-      <button type="button" class="scr-btn-danger" data-rq-go="revoke">Revoke</button>
+      <button type="button" class="scr-btn-danger" data-rq-go="revoke"><span class="scr-btn-spin" aria-hidden="true"></span>Revoke</button>
     </div>
   </div>
   {% endif %}
