@@ -134,17 +134,59 @@
     return '<tr class="scr-live-group"><td colspan="' + COLS + '"><b>' + label + '</b>' + n + '</td></tr>';
   }
 
+  /* Paged in the browser, 50 orders a page (client, 20 Nov 2026): the list is
+     merged live from pushes, so the server cannot page it. Running orders come
+     first, then closed; a band keeps its full count on every page it spans. */
+  var PER_PAGE = 50;
+  var livePage = 1;
+  var pager = null;
+  var CHEV = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ' +
+             'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="';
+  function pagerHost() {
+    if (pager) return pager;
+    var scroll = host.closest('.scr-table-scroll');
+    pager = document.createElement('div');
+    pager.className = 'scr-pager scr-live-pager';
+    pager.innerHTML = '<span class="scr-pager-info"></span><div class="scr-pager-nav">' +
+      '<button type="button" class="scr-pager-btn" data-live-page="prev" aria-label="Previous page">' + CHEV + 'm14 6-6 6 6 6"></path></svg></button>' +
+      '<span class="scr-pager-current"></span>' +
+      '<button type="button" class="scr-pager-btn" data-live-page="next" aria-label="Next page">' + CHEV + 'm10 6 6 6-6 6"></path></svg></button></div>';
+    scroll.parentNode.insertBefore(pager, scroll.nextSibling);
+    pager.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-live-page]');
+      if (!b || b.disabled) return;
+      livePage += b.dataset.livePage === 'next' ? 1 : -1;
+      render();
+      host.closest('.scr-live-list').scrollIntoView({ block: 'start', behavior: 'smooth' });
+    });
+    return pager;
+  }
+
   function render(marks) {
     var all = Object.keys(rows).map(function (id) { return rows[id]; });
     var running = all.filter(function (r) { return r.status === 'active'; })
       .sort(function (a, b) { return b.start < a.start ? -1 : 1; });
     var closed = all.filter(function (r) { return r.status !== 'active'; })
       .sort(function (a, b) { return (b.last_at || '') < (a.last_at || '') ? -1 : 1; });
+    var ordered = running.concat(closed);
+    var pages = Math.max(1, Math.ceil(ordered.length / PER_PAGE));
+    livePage = Math.min(Math.max(livePage, 1), pages);
+    var start = (livePage - 1) * PER_PAGE;
+    var slice = ordered.slice(start, start + PER_PAGE);
     var html = '';
-    if (running.length) html += band('Running', running.length) + running.map(rowHtml).join('');
-    if (closed.length) html += band('Closed', closed.length) + closed.map(rowHtml).join('');
+    var onRunning = slice.filter(function (r) { return r.status === 'active'; });
+    var onClosed = slice.filter(function (r) { return r.status !== 'active'; });
+    if (onRunning.length) html += band('Running', running.length) + onRunning.map(rowHtml).join('');
+    if (onClosed.length) html += band('Closed', closed.length) + onClosed.map(rowHtml).join('');
     host.innerHTML = html || '<tr class="scr-live-empty-row"><td colspan="' + COLS + '"><div class="scr-live-empty">' +
       (isToday ? 'No orders yet today.' : 'No orders that day.') + '</div></td></tr>';
+    var p = pagerHost();
+    p.hidden = ordered.length <= PER_PAGE;
+    p.querySelector('.scr-pager-info').textContent = ordered.length
+      ? 'Showing ' + (start + 1) + '–' + (start + slice.length) + ' of ' + ordered.length : '';
+    p.querySelector('.scr-pager-current').textContent = livePage + ' / ' + pages;
+    p.querySelector('[data-live-page="prev"]').disabled = livePage <= 1;
+    p.querySelector('[data-live-page="next"]').disabled = livePage >= pages;
     Object.keys(marks || {}).forEach(function (id) {
       var el = host.querySelector('[data-id="' + id + '"]');
       if (el) el.classList.add(marks[id] === 'new' ? 'is-new' : 'is-changed');
@@ -175,6 +217,7 @@
     payload.rows.forEach(function (r) { rows[r.id] = r; });
     held = {};
     pill.hidden = true;
+    livePage = 1;                                  // new filters, or a fresh day: from the top
     totals(payload);
     render();
   }

@@ -23,7 +23,7 @@
   </dl>
 </div>
 
-<div class="scr-card" data-inc-calculate data-url="{{ calculate_url }}" data-month="{{ month_key }}">
+<div class="scr-card" data-scr-page-size="50" data-scr-noun-singular="station" data-inc-calculate data-url="{{ calculate_url }}" data-month="{{ month_key }}">
   <div class="scr-table-scroll">
     <table class="scr-x-table scr-x-fit scr-inc-calc">
       <colgroup><col /><col class="w-num" /><col class="w-num" /><col class="w-progress" /><col class="w-status" /><col class="w-num" /><col class="w-actions" /></colgroup>
@@ -40,7 +40,7 @@
       </thead>
       <tbody>
         {% for r in rows %}
-        <tr{% if r.run_url %} class="scr-x-row" data-href="{{ r.run_url }}"{% endif %}>
+        <tr class="scr-row{% if r.run_url %} scr-x-row" data-href="{{ r.run_url }}{% endif %}">
           <td data-label="Station">{% if r.run_url %}<a class="scr-x-name" href="{{ r.run_url }}" title="{{ r.branch.name }}">{{ r.branch.name }}</a>{% else %}<span class="scr-x-name" title="{{ r.branch.name }}">{{ r.branch.name }}</span>{% endif %}</td>
           <td data-label="Target" class="num">{{ r.target.amount|amount }}</td>
           <td data-label="Achieved" class="num">{{ r.achieved|amount }}{% if r.target %}<div class="muted scr-inc-pct">{{ r.pct }}%</div>{% endif %}</td>
