@@ -80,21 +80,29 @@
     if (parts.veil) parts.veil.hidden = true;
   }
 
+  /* A dialog whose button is still sending (.is-saving) is not closed by the
+     user -- Escape, the veil or a close button -- until the server answers.
+     Pages closing it from code (BykyCrud.close) are not affected. */
+  function sending(name) {
+    var box = document.querySelector('[data-scr-modal="' + name + '"]');
+    return !!(box && box.querySelector('.is-saving'));
+  }
+
   document.addEventListener('click', function (e) {
     var closer = e.target.closest('[data-scr-modal-close]');
     if (closer) {
       var box = closer.closest('[data-scr-modal]');
-      if (box) close(box.dataset.scrModal);
+      if (box && !sending(box.dataset.scrModal)) close(box.dataset.scrModal);
       return;
     }
     var veil = e.target.closest('[data-scr-modal-veil]');
-    if (veil) close(veil.dataset.scrModalVeil);
+    if (veil && !sending(veil.dataset.scrModalVeil)) close(veil.dataset.scrModalVeil);
   });
 
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape') return;
     document.querySelectorAll('[data-scr-modal]:not([hidden])').forEach(function (box) {
-      close(box.dataset.scrModal);
+      if (!sending(box.dataset.scrModal)) close(box.dataset.scrModal);
     });
   });
 
