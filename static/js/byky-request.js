@@ -40,6 +40,17 @@
     });
   });
 
+  /* While a decision is being sent: the button spins and the dialog cannot be
+     closed or sent twice (owner, 19 Nov 2026). On success it stays busy until
+     the next page loads; on a refusal it is released so the error can be read
+     and the decision retried. */
+  function busy(go, modal, on) {
+    go.disabled = on;
+    go.classList.toggle('is-saving', on);
+    if (on) go.setAttribute('aria-busy', 'true'); else go.removeAttribute('aria-busy');
+    modal.querySelectorAll('[data-scr-modal-close]').forEach(function (close) { close.disabled = on; });
+  }
+
   root.querySelectorAll('[data-rq-go]').forEach(function (go) {
     go.addEventListener('click', function () {
       if (go.disabled) return;
@@ -55,7 +66,7 @@
         payload.discount_value = value.value.trim();
       }
 
-      go.disabled = true;
+      busy(go, modal, true);
       window.BykyCrud.post(url, payload).then(function (result) {
         var body = result.body || {};
         if (body.ok) {
@@ -63,9 +74,13 @@
           window.location.href = body.redirect || window.location.href;
           return;
         }
-        go.disabled = false;
+        busy(go, modal, false);
         window.BykyCrud.showMessages({ title: 'Could not complete',
           items: body.errors || [{ field: '', message: 'Something went wrong.' }] });
+      }).catch(function () {                       // no connection: release and say so
+        busy(go, modal, false);
+        window.BykyCrud.showMessages({ title: 'Could not complete',
+          items: [{ field: '', message: 'The server could not be reached. Check the connection and try again.' }] });
       });
     });
   });
