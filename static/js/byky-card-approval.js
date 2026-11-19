@@ -11,6 +11,7 @@
 
   var title = modal.querySelector('[data-decision-title]');
   var go = modal.querySelector('[data-decision-go]');
+  var goText = go.querySelector('[data-decision-text]') || go;
   var remarks = modal.querySelector('[data-decision-remarks]');
   var label = modal.querySelector('[data-decision-label]');
   var decision = 'approve';
@@ -21,17 +22,27 @@
     button.addEventListener('click', function () {
       decision = button.dataset.decision;
       title.textContent = TITLES[decision];
-      go.textContent = BUTTONS[decision];
+      goText.textContent = BUTTONS[decision];
       go.className = decision === 'approve' ? 'scr-btn-primary' : 'scr-btn-danger';
       if (label) label.textContent = decision === 'revoke' ? 'Reason (optional)' : 'Remarks';
       remarks.value = '';
     });
   });
 
+  /* While a decision is being sent: the button spins and the dialog cannot be
+     closed or sent twice (owner, 19 Nov 2026). On success it stays busy until
+     the next page loads; on a refusal it is released. */
+  function busy(on) {
+    go.disabled = on;
+    go.classList.toggle('is-saving', on);
+    if (on) go.setAttribute('aria-busy', 'true'); else go.removeAttribute('aria-busy');
+    modal.querySelectorAll('[data-scr-modal-close]').forEach(function (close) { close.disabled = on; });
+  }
+
   go.addEventListener('click', function () {
     if (go.disabled) return;
     var text = remarks.value.trim();
-    go.disabled = true;
+    busy(true);
     var url = { approve: root.dataset.approveUrl, reject: root.dataset.rejectUrl,
                 revoke: root.dataset.revokeUrl }[decision];
     var payload = decision === 'revoke' ? { note: text } : { remarks: text };
@@ -39,12 +50,17 @@
       var body = result.body || {};
       if (body.ok) {
         window.BykyCrud.toastAfterReload(body.message);
-        window.location.reload();
+        // Approve and Reject go back to the Pending list; Revoke stays here.
+        if (body.redirect) window.location.href = body.redirect; else window.location.reload();
         return;
       }
-      go.disabled = false;
+      busy(false);
       window.BykyCrud.showMessages({ title: 'Could not complete',
         items: body.errors || [{ field: '', message: 'Something went wrong.' }] });
+    }).catch(function () {                         // no connection: release and say so
+      busy(false);
+      window.BykyCrud.showMessages({ title: 'Could not complete',
+        items: [{ field: '', message: 'The server could not be reached. Check the connection and try again.' }] });
     });
   });
 })();

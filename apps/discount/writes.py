@@ -8,6 +8,7 @@ from apps.company.writes import WriteView, _payload
 from apps.discount import services
 from apps.discount.models import CardDiscount, CardDiscountClaim
 from apps.discount.scoping import claims_for
+from apps.rental.writes import pending_list_url
 
 
 class CardDiscountSave(WriteView):
@@ -51,7 +52,8 @@ class _ClaimDecision(WriteView):
         except services.DiscountRefused as refused:               # e.g. complimentary_approved
             return JsonResponse({"ok": False, "code": "invalid",
                                  "errors": [{"field": "", "message": refused.message}]}, status=400)
-        return JsonResponse({"ok": True, "message": self.done})
+        # Back to the Requests list's Pending tab (owner, 19 Nov 2026).
+        return JsonResponse({"ok": True, "message": self.done, "redirect": pending_list_url()})
 
 
 class ClaimApprove(_ClaimDecision):

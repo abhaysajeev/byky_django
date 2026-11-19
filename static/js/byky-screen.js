@@ -543,6 +543,7 @@
   });
   function closeModal(modal) {
     if (!modal) return;
+    if (modal.querySelector('.is-saving')) return;     // still sending: stays open until it answers
     var name = modal.dataset.scrModal;
     var veil = name && document.querySelector('[data-scr-modal-veil="' + name + '"]');
     if (veil) veil.hidden = true;
