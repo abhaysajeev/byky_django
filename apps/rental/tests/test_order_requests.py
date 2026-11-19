@@ -481,12 +481,16 @@ def test_the_web_list_has_a_tab_per_state(client_in, client, token, manager, boo
 def test_the_web_approves_as_an_amount_and_records_the_channel(client_in, token, booked):
     data = asked(client_in, token, booked)
     detail = f"/rental/request/{data['request_sync_id']}/"
-    assert "Approve discount" in client_in.get(detail).content.decode()
+    page = client_in.get(detail).content.decode()
+    assert "Approve discount" in page
+    assert 'data-rq-go="approve"><span class="scr-btn-spin"' in page        # spins while it is sent
 
     response = client_in.post(f"{detail}approve/", {"discount_type": "amount", "discount_value": "20.250"},
                               content_type="application/json")
 
     assert response.json()["ok"], response.json()
+    # Back to the Pending tab, not the approved request (owner, 19 Nov 2026).
+    assert response.json()["redirect"] == "/rental/request/list/?tab=pending"
     req = OrderRequest.objects.get()
     assert (req.status, req.discount_value, req.decided_channel, req.decided_by.username) == (
         OrderRequestStatus.APPROVED, Decimal("20.250"), DecisionChannel.WEB, "sara.k")
@@ -497,7 +501,8 @@ def test_the_web_approves_as_an_amount_and_records_the_channel(client_in, token,
 def test_the_web_rejects_and_revokes(client_in, token, booked):
     first = asked(client_in, token, booked)
     url = f"/rental/request/{first['request_sync_id']}/"
-    assert client_in.post(f"{url}reject/", {"note": "No"}, content_type="application/json").json()["ok"]
+    rejected = client_in.post(f"{url}reject/", {"note": "No"}, content_type="application/json").json()
+    assert rejected["ok"] and rejected["redirect"] == "/rental/request/list/?tab=pending"
     second = asked(client_in, token, booked)
     url = f"/rental/request/{second['request_sync_id']}/"
     client_in.post(f"{url}approve/", {"discount_type": "percent", "discount_value": "5"},
@@ -506,9 +511,11 @@ def test_the_web_rejects_and_revokes(client_in, token, booked):
     response = client_in.post(f"{url}revoke/", {"note": "Oops"}, content_type="application/json")
 
     assert response.json()["ok"]
+    assert response.json()["redirect"] == url                     # a revoke stays on its request
     assert OrderRequest.objects.get(pk=second["request_sync_id"]).revoked_channel == DecisionChannel.WEB
     again = client_in.post(f"{url}revoke/", {}, content_type="application/json").json()
     assert again["errors"][0]["message"] == "Only an approved request can be revoked."
+    assert "redirect" not in again                                 # a refusal stays put
 
 
 def test_the_web_needs_approve_to_decide(client_in, token, booked):

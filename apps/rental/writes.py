@@ -126,8 +126,10 @@ class _RequestWrite(WriteView):
     def company_ids(self):
         return list(companies_for(self.request.user).values_list("id", flat=True))
 
-    def answer(self, act, message):
-        """`message` is the text, or a function of the request that gives it."""
+    def answer(self, act, message, redirect=None):
+        """`message` is the text, or a function of the request that gives it.
+        `redirect` is where the page goes next -- the request's own page unless
+        given (Approve and Reject go back to the Pending list, owner 19 Nov 2026)."""
         if not self.may("approve"):
             return self.refused()
         try:
@@ -136,7 +138,13 @@ class _RequestWrite(WriteView):
             return JsonResponse({"ok": False, "code": "invalid", "errors": [{"field": "", "message": refused.message}]},
                                 status=400)
         return JsonResponse({"ok": True, "message": message(req) if callable(message) else message,
-                             "redirect": reverse("rental-request-detail", args=[req.pk])})
+                             "redirect": redirect or reverse("rental-request-detail", args=[req.pk])})
+
+
+def pending_list_url():
+    """Where Approve and Reject land: the Requests list on its Pending tab,
+    without filters (owner, 19 Nov 2026)."""
+    return reverse("rental-request-list") + "?tab=pending"
 
 
 _APPROVED = {
@@ -154,7 +162,8 @@ class RequestApprove(_RequestWrite):
     def post(self, request, pk):
         return self.answer(lambda data: order_requests.approve(
             request.user, pk, self.company_ids(), DecisionChannel.WEB, data.get("discount_type"),
-            data.get("discount_value"), str(data.get("note") or "")), lambda req: _APPROVED[req.kind])
+            data.get("discount_value"), str(data.get("note") or "")), lambda req: _APPROVED[req.kind],
+            redirect=pending_list_url())
 
 
 class OrderCancel(_RequestWrite):
@@ -193,7 +202,7 @@ class RequestReject(_RequestWrite):
     def post(self, request, pk):
         return self.answer(lambda data: order_requests.reject(
             request.user, pk, self.company_ids(), DecisionChannel.WEB, str(data.get("note") or "")),
-            "Request rejected.")
+            "Request rejected.", redirect=pending_list_url())
 
 
 class RequestRevoke(_RequestWrite):

@@ -4,6 +4,20 @@
 
 {% block title %}Requests - Rental{% endblock title %}
 
+{% comment %}
+SweetAlert shows the "Request approved." toast: Approve and Reject land here
+on the Pending tab (owner, 19 Nov 2026), and byky-crud.js toasts only when Swal is loaded.
+{% endcomment %}
+{% block vendor_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'vendor/libs/sweetalert2/sweetalert2.css' %}" />
+{% endblock vendor_css %}
+
+{% block vendor_js %}
+{{ block.super }}
+<script src="{% static 'vendor/libs/sweetalert2/sweetalert2.js' %}"></script>
+{% endblock vendor_js %}
+
 {% block page_css %}
 {{ block.super }}
 <link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
