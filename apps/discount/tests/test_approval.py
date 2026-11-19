@@ -199,3 +199,40 @@ def test_an_approved_request_is_revoked_without_a_reason(client_in, world, pendi
     assert body == {"ok": True, "message": "Approval revoked."}
     pending.refresh_from_db()
     assert (pending.status, pending.revoke_note) == ("revoked", "")
+
+
+def test_the_detail_shows_the_orders_vehicles_and_fares(client_in, world, pending):
+    """Client, 20 Nov 2026: under the card photo, each vehicle of the order with
+    its fare; a replaced line is not billed, so it is left out."""
+    import datetime as dt
+    from decimal import Decimal as D
+
+    from apps.fleet.models import UOM, Brand, Category, Vehicle, VehicleType
+    from apps.rental.models import OrderItem, OrderItemStatus
+
+    company = world["ours"]
+    kind = VehicleType.objects.create(
+        company=company, vehicle_type_name="Monaco", tax_percentage=D("5.00"),
+        category=Category.objects.create(company=company, category_code="BYKY", category_name="Byky"),
+        brand=Brand.objects.create(company=company, brand_code="BYK", brand_name="Byky"))
+    uom = UOM.objects.create(company=company, uom_code="NO", uom_name="Number")
+    order = pending.order
+    start = timezone.now()
+
+    def line(name, status, total):
+        bike = Vehicle.objects.create(company=company, vehicle_code=name, vehicle_name=name, vehicle_type=kind,
+                                      uom=uom, current_branch=order.branch)
+        return OrderItem.objects.create(
+            id=uuid.uuid4(), order=order, vehicle=bike, status=status, package_minutes=60, start_time=start,
+            expected_end_time=start + dt.timedelta(hours=1), base_fare=D("50.000"), total_amount=total)
+
+    line("MO 41", OrderItemStatus.RETURNED, D("60.000"))
+    line("MO 42", OrderItemStatus.REPLACED, None)
+
+    page = client_in.get(f"/discount/approval/{pending.pk}/")
+
+    body = page.content.decode()
+    assert [i["vehicle"] for i in page.context["items"]] == ["MO 41"]
+    assert "Vehicles" in body and "MO 41" in body and "Monaco" in body
+    assert "AED 50.000" in body and "AED 60.000" in body
+    assert "MO 42" not in body

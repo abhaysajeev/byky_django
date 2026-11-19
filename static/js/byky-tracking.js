@@ -240,12 +240,52 @@
     }, 10000);
   }
 
-  /* a whole table row opens its branch (Status Board) */
+  /* a whole table row opens its station (Status Tracking) */
   document.addEventListener('click', function (e) {
     var row = e.target.closest('tr[data-href]');
     if (!row || e.target.closest('a, button, input, select, label')) return;
     window.location.href = row.dataset.href;
   });
+
+  /* Status Tracking: the missing star opens the station's missing vehicles */
+  document.addEventListener('click', function (e) {
+    var star = e.target.closest('[data-missing-url]');
+    if (!star) return;
+    var box = modal('status-missing', true);
+    if (!box) return;
+    var body = box.querySelector('[data-missing-body]');
+    box.querySelector('[data-missing-station]').textContent = star.dataset.missingName || '';
+    body.innerHTML = '<p class="scr-x-note">Loading…</p>';
+    fetch(star.dataset.missingUrl, { credentials: 'same-origin' }).then(function (r) {
+      return r.ok ? r.text() : Promise.reject(r.status);
+    }).then(function (html) { body.innerHTML = html; }).catch(function () {
+      body.innerHTML = '<p class="scr-x-note">Could not load the missing vehicles. Try again.</p>';
+    });
+  });
+
+  /* Status Tracking search: Country narrows Emirate and Station, Emirate narrows Station */
+  var search = document.querySelector('[data-status-search]');
+  if (search) {
+    var country = search.querySelector('[data-status-country]');
+    var state = search.querySelector('[data-status-state]');
+    var station = search.querySelector('[data-status-station]');
+    var narrow = function () {
+      Array.prototype.forEach.call(state.options, function (o) {
+        if (!o.value) return;
+        o.hidden = !!country.value && o.dataset.country !== country.value;
+        if (o.hidden && o.selected) state.value = '';
+      });
+      Array.prototype.forEach.call(station.options, function (o) {
+        if (!o.value) return;
+        o.hidden = (!!country.value && o.dataset.country !== country.value) ||
+                   (!!state.value && o.dataset.state !== state.value);
+        if (o.hidden && o.selected) station.value = '';
+      });
+    };
+    country.addEventListener('change', narrow);
+    state.addEventListener('change', narrow);
+    narrow();
+  }
 
   document.addEventListener('change', function (e) {
     var filter = e.target.closest('[data-tracking-filter]');
@@ -313,7 +353,10 @@
 
     var toggle = e.target.closest('[data-tracking-toggle]');
     if (toggle && !toggle.disabled) {
-      send(toggle.dataset.url, { enabled: !toggle.classList.contains('is-on') }, toggle);
+      // The server-rendered state, not the class: byky-screen.js has already
+      // flipped .is-on on this click, so reading it sent the old value back and
+      // a switch could never be turned off (client, 20 Nov 2026).
+      send(toggle.dataset.url, { enabled: toggle.getAttribute('aria-checked') !== 'true' }, toggle);
       return;
     }
 
@@ -372,7 +415,16 @@
     }).then(function (html) {
       if (!html) return;
       var fresh = new DOMParser().parseFromString(html, 'text/html').querySelector('[data-tracking-live]');
-      if (fresh) live.innerHTML = fresh.innerHTML;
+      if (!fresh) return;
+      // Don't swap under an open menu or dialog, and keep what was typed in a search box.
+      if (live.querySelector('.scr-menu:not([hidden])') || document.querySelector('.scr-menu-layer .scr-menu:not([hidden])')) return;
+      var typed = Array.prototype.map.call(live.querySelectorAll('.scr-search input'), function (i) { return i.value; });
+      live.innerHTML = fresh.innerHTML;
+      Array.prototype.forEach.call(live.querySelectorAll('.scr-search input'), function (input, n) {
+        if (typed[n]) input.value = typed[n];
+      });
+      // Its "..." menus and paged lists need byky-screen.js again (Reader CPU Approval).
+      if (window.BykyScreen) window.BykyScreen.rewire(live);
     }).catch(function () { /* the next tick tries again */ });
   }
 

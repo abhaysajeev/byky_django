@@ -4,6 +4,7 @@ from apps.tracking import views
 
 urlpatterns = [
     path("status/", views.StatusView.as_view(), name="tracking-status"),
+    path("status/<int:branch_id>/missing/", views.StatusMissingView.as_view(), name="tracking-status-missing"),
     path("alerts/", views.AlertsView.as_view(), name="tracking-alerts"),
     path("alerts/<int:pk>/acknowledge/", views.AcknowledgeView.as_view(), name="tracking-alert-acknowledge"),
 

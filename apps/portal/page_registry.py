@@ -182,11 +182,11 @@ PAGES = [
 
     # Antenna Tracking (design/07-tracking.md). Read on Missing & Alerts is also
     # what shows a user the navbar bell (section 7.1).
-    ("tracking.status", "tracking", "Status Board", "tracking-status", ["read"], 1, False),
+    ("tracking.status", "tracking", "Status Tracking", "tracking-status", ["read"], 1, False),
     # update = acknowledge an alert.
     ("tracking.alerts", "tracking", "Missing & Alerts", "tracking-alerts", ["read", "update"], 2, False),
     # approve = approve or block a reader; create = add one in advance by its id.
-    ("tracking.readers", "tracking", "Readers", "tracking-readers", ["create", "read", "update", "approve"], 3, False),
+    ("tracking.readers", "tracking", "Reader CPU Approval", "tracking-readers", ["create", "read", "update", "approve"], 3, False),
     # update = run a calibration; approve = approve its limits.
     ("tracking.antennas", "tracking", "Antennas & Calibration", "tracking-antennas",
      ["read", "update", "approve"], 4, False),

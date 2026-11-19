@@ -1,10 +1,10 @@
 {% extends "tracking/_base.html" %}
 {% load static %}
 
-{% block screen_title %}Readers{% endblock %}
-{% block crumb %}Readers{% endblock %}
-{% block heading %}Readers{% endblock %}
-{% block sub %}A new reader appears as Pending. Approve it and give it a branch before its data counts.{% endblock %}
+{% block screen_title %}Reader CPU Approval{% endblock %}
+{% block crumb %}Reader CPU Approval{% endblock %}
+{% block heading %}Reader CPU Approval{% endblock %}
+{% block sub %}A new reader CPU appears as Pending. Approve it and give it a branch before its data counts.{% endblock %}
 
 {% block page_js %}
 <script src="{% static 'js/byky-screen.js' %}"></script>
@@ -26,7 +26,14 @@
     </dl>
   </div>
 
-  <div class="scr-card">
+  <div class="scr-card" data-scr-page-size="50" data-scr-noun-singular="reader" data-scr-noun-plural="readers">
+    <div class="scr-toolbar">
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="search" autocomplete="off" placeholder="Search CPU ID, name or branch" aria-label="Search CPU ID, name or branch" />
+      </div>
+      <span class="scr-toolbar-count">{{ rows|length }} reader{{ rows|length|pluralize }}</span>
+    </div>
     <div class="scr-table-scroll">
       <table class="scr-x-table">
         <colgroup><col /><col class="w-branch" /><col class="w-status" /><col class="w-time" /><col class="w-switch" /><col class="w-actions-sm" /></colgroup>
@@ -34,7 +41,7 @@
         <tbody>
           {% for row in rows %}
           {% with r=row.r %}
-          <tr class="scr-row">
+          <tr class="scr-row" data-search="{{ r.device_id }} {{ r.name|lower }} {{ row.branch.name|lower }}">
             <td data-label="Reader"><span class="scr-x-name">{{ r.name|default:"Unnamed reader" }}</span><span class="scr-x-sub mono">{{ r.device_id }}</span></td>
             <td data-label="Branch">{{ row.branch.name|default:"—" }}</td>
             <td data-label="Status"><span class="scr-x-status is-{{ row.status.key }}">{{ row.status.label }}</span></td>
