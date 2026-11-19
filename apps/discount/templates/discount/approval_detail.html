@@ -1,5 +1,6 @@
 {% extends layout_path %}
 {% load static %}
+{% load money %}
 
 {% block title %}Card Discount Request - Discount Card{% endblock title %}
 
@@ -81,6 +82,7 @@
       </div>
     </div>
 
+    <div class="scr-mon-side">
     <div class="scr-card">
       <div class="scr-form-head"><div class="scr-form-title-row"><h2 class="scr-form-title">Card Photo</h2></div></div>
       <div class="scr-form-body scr-mon-body">
@@ -99,6 +101,38 @@
         </div>
         {% endif %}
       </div>
+    </div>
+
+    {% comment %}The order's vehicles and the fare on each (client, 20 Nov 2026).{% endcomment %}
+    <div class="scr-card">
+      <div class="scr-form-head"><div class="scr-form-title-row"><h2 class="scr-form-title">Vehicles</h2><span class="scr-badge scr-badge-inactive">{{ items|length }}</span></div></div>
+      <div class="scr-form-body scr-mon-body scr-veh-cards">
+        {% for i in items %}
+        <div class="scr-veh-card">
+          <div class="scr-veh-card-head">
+            <div><div class="scr-co-name">{{ i.vehicle }}</div><div class="scr-contact-sub">{{ i.identifier }} · {{ i.vehicle_type }}</div></div>
+            {% include "rental/partials/order_status.html" with status=i.status %}
+          </div>
+          <dl class="scr-veh-grid">
+            <div><dt>Package</dt><dd>{{ i.package_minutes }} min{% if i.run_minutes is not None %}<small>ran {{ i.run_minutes }} min</small>{% endif %}</dd></div>
+            <div><dt>Start → Back</dt><dd>{{ i.start_time|date:"H:i" }} → {% if i.end_time %}{{ i.end_time|date:"H:i" }}{% else %}out{% endif %}</dd></div>
+            <div><dt>Base fare</dt><dd>AED {{ i.base_fare|money }}</dd></div>
+            <div><dt>Overtime</dt><dd>{% if i.overtime_amount is None %}—{% else %}AED {{ i.overtime_amount|money }}{% endif %}</dd></div>
+            <div class="is-total"><dt>Total</dt><dd>{% if i.total_amount is None %}—{% else %}AED {{ i.total_amount|money }}{% endif %}</dd></div>
+          </dl>
+          {% if i.fare_lines or i.package or i.free_item %}
+          <div class="scr-veh-fare">
+            {% for line in i.fare_lines %}<div>{{ line }}</div>{% endfor %}
+            {% if i.package %}<div>Package: {{ i.package }}</div>{% endif %}
+            {% if i.free_item %}<span class="scr-badge scr-badge-active"><i></i>Free</span>{% endif %}
+          </div>
+          {% endif %}
+        </div>
+        {% empty %}
+        <p class="scr-contact-sub">No vehicles on this order.</p>
+        {% endfor %}
+      </div>
+    </div>
     </div>
   </div>
 
