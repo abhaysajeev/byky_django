@@ -39,7 +39,7 @@
         <label class="scr-inc-field"><span class="byky-label">Effective to <span class="muted">(optional)</span></span>
           <input class="scr-drawer-input" type="date" data-inc="effective_to" /></label>
         <div class="scr-inc-field scr-inc-wide"><span class="byky-label" id="inc-branches-label">Branches</span>
-          {% include "byky/partials/multi_select.html" with multi_id="inc-branches" field="branches" options=branch_options chosen=data.branches placeholder="All branches on the profile" searchable=True search_label="Search branches" label_id="inc-branches-label" empty_text="This profile has no branches yet." %}
+          {% include "byky/partials/multi_select.html" with multi_id="inc-branches" field="branches" options=branch_options chosen=data.branches placeholder="All branches on the profile" searchable=True select_all=True search_label="Search branches" label_id="inc-branches-label" empty_text="This profile has no branches yet." %}
           <p class="scr-x-note">None chosen = every branch on the profile.</p>
         </div>
         <label class="scr-inc-field scr-inc-wide"><span class="byky-label">Pays when</span>

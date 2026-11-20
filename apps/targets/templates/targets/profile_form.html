@@ -9,7 +9,7 @@
 
 {% block actions %}
 <a class="scr-btn-small" href="{{ back_url }}">Back</a>
-{% if can_delete_profile and can.delete %}<button type="button" class="scr-btn-small" data-tgt-profile-delete data-url="{{ delete_profile_url }}" data-name="{{ profile.name }}">Delete</button>{% endif %}
+{% if profile and can.delete %}<button type="button" class="scr-btn-small" data-tgt-profile-delete data-url="{{ delete_profile_url }}" data-name="{{ profile.name }}">Delete</button>{% endif %}
 {% if profile and can.update or not profile and can.create %}<button type="button" class="scr-btn scr-btn-primary" data-tgt-profile-save><span class="scr-btn-spin"></span>Save profile</button>{% endif %}
 {% endblock %}
 
@@ -48,36 +48,17 @@
           <select class="scr-drawer-input" data-tp-fy="to">{% for f in fy_choices %}<option value="{{ f.value }}">{{ f.label }}</option>{% endfor %}</select></label>
         <p class="scr-x-note scr-inc-wide" data-tp-type-help></p>
 
-        <label class="scr-inc-field"><span class="byky-label">Status</span>
-          <select class="scr-drawer-input" data-tp="status">
-            {% for value, label in statuses %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
-          </select></label>
-        <label class="scr-inc-field"><span class="byky-label">Remarks <span class="muted">(optional)</span></span>
+        <label class="scr-inc-field scr-inc-wide"><span class="byky-label">Remarks <span class="muted">(optional)</span></span>
           <input class="scr-drawer-input" data-tp="remarks" maxlength="200" autocomplete="off" /></label>
-        <p class="scr-x-note scr-inc-wide">Only an active profile makes targets. Draft lets you set it up first; archived stops it and keeps its history.</p>
+        <label class="scr-inc-field scr-inc-wide scr-inc-switch"><input type="checkbox" data-tp="is_active" /> <span>Active — makes targets for its branches</span></label>
+        <p class="scr-x-note scr-inc-wide">Leave it off while you set it up. Switching it off later stops new periods; targets it already made stay as history.</p>
       </div>
     </section>
 
     <section class="scr-card scr-inc-section" aria-labelledby="tp-h-branches">
-      <h2 class="scr-x-card-title scr-inc-h" id="tp-h-branches">Branches</h2>
-      <div class="scr-inc-grid">
-        <div class="scr-inc-field scr-inc-wide"><span class="byky-label" id="tp-branches-label">Branches</span>
-          {% include "byky/partials/multi_select.html" with multi_id="tp-branches" field="branches" options=branch_options chosen=chosen_branches placeholder="Choose branches" searchable=True search_label="Search branches" label_id="tp-branches-label" empty_text="No branches in your company." %}
-        </div>
-        <div class="scr-inc-field"><span class="byky-label" data-tp-amount-label>Amount for all chosen</span>
-          <div class="scr-tp-apply">
-            <input class="scr-drawer-input" inputmode="decimal" data-tp-apply-amount autocomplete="off" />
-            <button type="button" class="scr-btn-small" data-tp-apply>Apply to all</button>
-          </div></div>
-      </div>
-      <div class="scr-table-scroll scr-tp-amounts" data-tp-amounts hidden>
-        <table class="scr-x-table">
-          <colgroup><col /><col class="w-num" /></colgroup>
-          <thead><tr><th scope="col">Branch</th><th scope="col" class="num" data-tp-amount-head>Target</th></tr></thead>
-          <tbody data-tp-amount-rows></tbody>
-        </table>
-      </div>
-      <p class="scr-x-note" data-tp-amount-help></p>
+      <div class="scr-inc-head"><h2 class="scr-x-card-title scr-inc-h" id="tp-h-branches">Branches</h2>
+        {% if profile %}<a class="scr-btn-small" href="{{ mapping_url }}">Target Branch Mapping</a>{% endif %}</div>
+      <p class="scr-x-note">{% if profile %}{{ branch_count }} branch{{ branch_count|pluralize:"es" }} mapped. Which branches this profile covers, and how much each, is set on Target Branch Mapping.{% else %}Save the profile, then choose its branches and amounts on Target Branch Mapping.{% endif %}</p>
     </section>
 
     <section class="scr-card scr-inc-section" aria-labelledby="tp-h-weights" data-tp-weights hidden>

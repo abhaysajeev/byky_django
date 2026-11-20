@@ -31,7 +31,7 @@ def forwards(apps, schema_editor):
         earliest = min(targets, key=lambda t: (t.created_on is None, t.created_on))
         profile = Profile.objects.create(
             company_id=company_id, name=name, metric=kind, period_type="monthly", starts_on=first,
-            ends_on=last, status="active", remarks="Created when targets moved to profiles.",
+            ends_on=last, is_active=True, remarks="Created when targets moved to profiles.",
             created_by_id=earliest.created_by_id, modified_by_id=earliest.modified_by_id)
         latest = {}
         for t in targets:

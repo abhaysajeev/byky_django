@@ -324,6 +324,13 @@
 }
 .byky-multi-search-input:focus { outline: none; border-color: #d81f26; box-shadow: 0 0 0 3px rgba(216, 31, 38, 0.1); }
 .byky-multi-opt[hidden] { display: none; }
+.byky-multi-bulk { display: flex; gap: 6px; padding: 2px 4px 6px; border-bottom: 1px solid #f0eff7; margin-bottom: 4px; }
+.byky-multi-bulk-btn {
+  border: 1px solid #e8e7f2; background: #fff; color: #4b4770; border-radius: 7px; padding: 4px 10px;
+  font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.byky-multi-bulk-btn:hover { background: #f6f5fc; color: #1a1640; }
+.byky-multi-bulk-btn:focus-visible { outline: none; border-color: #d81f26; box-shadow: 0 0 0 3px rgba(216, 31, 38, 0.1); }
 .byky-multi-opt:focus-within { background: #f6f5fc; }
 .byky-multi-searchable .byky-multi-menu,
 .byky-multi[data-searchable] .byky-multi-menu { max-height: 280px; }

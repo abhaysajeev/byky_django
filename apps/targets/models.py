@@ -36,15 +36,6 @@ class PeriodType(models.TextChoices):
     ANNUAL = "annual", "Annual"
 
 
-class ProfileStatus(models.TextChoices):
-    """Only an active profile makes targets and is offered in pickers;
-    archived keeps its history (11 §5)."""
-
-    DRAFT = "draft", "Draft"
-    ACTIVE = "active", "Active"
-    ARCHIVED = "archived", "Archived"
-
-
 class TargetProfile(TimeStampedModel):
     company = models.ForeignKey("company.Company", on_delete=models.PROTECT, related_name="target_profiles")
     name = models.CharField(max_length=100)
@@ -54,7 +45,10 @@ class TargetProfile(TimeStampedModel):
     # Annual: the financial years they fall in (11 §4).
     starts_on = models.DateField()
     ends_on = models.DateField()
-    status = models.CharField(max_length=10, choices=ProfileStatus.choices, default=ProfileStatus.DRAFT)
+    # One switch (owner, 20 Nov 2026): only an active profile makes targets.
+    # Off before it has made any = still being set up; off afterwards = it
+    # makes no new periods and keeps its history (existing targets stay).
+    is_active = models.BooleanField(default=False)
     remarks = models.CharField(max_length=200, blank=True)
 
     class Meta:

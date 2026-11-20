@@ -22,7 +22,7 @@ def _sales_profile(apps, company_id, user_id, day):
     nxt = (first + datetime.timedelta(days=32)).replace(day=1)
     return Profile.objects.create(
         company_id=company_id, name=name, metric="sales", period_type="monthly", starts_on=first,
-        ends_on=nxt - datetime.timedelta(days=1), status="draft",
+        ends_on=nxt - datetime.timedelta(days=1), is_active=False,
         remarks="Created when targets moved to profiles.", created_by_id=user_id, modified_by_id=user_id)
 
 

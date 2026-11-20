@@ -1,0 +1,55 @@
+{% extends "targets/_base.html" %}
+
+{% block screen_title %}Target Branch Mapping{% endblock %}
+{% block crumb %}<b>Target Branch Mapping</b>{% endblock %}
+{% block heading %}Target Branch Mapping{% endblock %}
+{% block sub %}Which branches a target profile covers, and how much for each. Saving makes or updates their targets when the profile is active.{% endblock %}
+
+{% block actions %}
+{% if profile %}<a class="scr-btn-small" href="{{ edit_url }}">Edit profile</a>
+{% if can.update %}<button type="button" class="scr-btn scr-btn-primary" data-tgt-map-save><span class="scr-btn-spin"></span>Save mapping</button>{% endif %}{% endif %}
+{% endblock %}
+
+{% block body %}
+{% if profile %}
+<div class="scr-x-bar">
+  {% include "targets/_profile_picker.html" %}
+  <span class="scr-x-spacer"></span>
+  <span class="scr-x-muted">{{ profile.get_metric_display }} · {{ profile.get_period_type_display }} · {{ range_label }}</span>
+  {% if profile.is_active %}<span class="scr-x-status is-met">Active</span>{% else %}<span class="scr-x-status is-idle">Off</span>{% endif %}
+</div>
+{% if not profile.is_active %}<div class="scr-x-banner">“{{ profile.name }}” is switched off, so mapping a branch makes no targets yet. Switch it on in <a href="{{ edit_url }}">Edit profile</a>.</div>{% endif %}
+
+{{ data|json_script:"tgt-mapping" }}
+<div class="scr-inc-layout scr-tp-layout" data-tgt-mapping data-save-url="{{ save_url }}">
+  <div class="scr-inc-main">
+    <section class="scr-card scr-inc-section" aria-labelledby="tm-h-branches">
+      <h2 class="scr-x-card-title scr-inc-h" id="tm-h-branches">Branches</h2>
+      <div class="scr-inc-grid">
+        <div class="scr-inc-field scr-inc-wide"><span class="byky-label" id="tm-branches-label">Branches</span>
+          {% include "byky/partials/multi_select.html" with multi_id="tm-branches" field="branches" options=branch_options chosen=chosen_branches placeholder="Choose branches" searchable=True select_all=True search_label="Search branches" label_id="tm-branches-label" empty_text="No branches in your company." %}
+        </div>
+        <div class="scr-inc-field"><span class="byky-label" data-tm-amount-label>Amount for all chosen</span>
+          <div class="scr-tp-apply">
+            <input class="scr-drawer-input" inputmode="decimal" data-tm-apply-amount autocomplete="off" aria-labelledby="tm-apply-label" />
+            <button type="button" class="scr-btn-small" data-tm-apply id="tm-apply-label">Apply to all</button>
+          </div></div>
+      </div>
+      <div class="scr-table-scroll scr-tp-amounts" data-tm-amounts hidden>
+        <table class="scr-x-table">
+          <colgroup><col /><col class="w-num" /></colgroup>
+          <thead><tr><th scope="col">Branch</th><th scope="col" class="num" data-tm-amount-head>Target</th></tr></thead>
+          <tbody data-tm-amount-rows></tbody>
+        </table>
+      </div>
+      <p class="scr-x-note" data-tm-amount-help></p>
+      <p class="scr-x-note">Taking a branch off removes its targets that haven't started; started ones stay as history.</p>
+    </section>
+  </div>
+</div>
+{% else %}
+<div class="scr-card">
+  {% include "targets/_empty.html" with title="No target profiles yet" text="Add a profile first, then map its branches here." %}
+</div>
+{% endif %}
+{% endblock %}

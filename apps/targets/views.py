@@ -8,6 +8,7 @@ import datetime
 from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
+from django.db.models import Q
 from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
@@ -23,7 +24,6 @@ from apps.targets import drawers, services
 from apps.targets import periods as P
 from apps.targets.models import (
     PeriodType,
-    ProfileStatus,
     Target,
     TargetKind,
     TargetProfile,
@@ -33,7 +33,7 @@ from core.money import fmt, places_for
 from theme import drawers as theme_drawers
 from theme.views import ThemedTemplateView
 
-OVERVIEW, DAILY, PROFILES = "targets.overview", "targets.daily", "targets.profiles"
+OVERVIEW, DAILY, PROFILES, MAPPING = "targets.overview", "targets.daily", "targets.profiles", "targets.mapping"
 # The order a station's targets and the profile picker list types in.
 TYPE_ORDER = {PeriodType.MONTHLY: 0, PeriodType.ANNUAL: 1, PeriodType.CUSTOM: 2, PeriodType.DAILY: 3}
 
@@ -56,6 +56,12 @@ def scoped_targets(user):
 
 def scoped_profiles(user):
     return TargetProfile.objects.filter(company__in=companies_for(user)).select_related("company")
+
+
+def with_targets(profiles):
+    """Profiles worth picking on a figures page: active ones, and switched-off
+    ones that have targets (their history)."""
+    return profiles.filter(Q(is_active=True) | Q(pk__in=Target.objects.values("profile_id"))).distinct()
 
 
 def _month(value, today):
@@ -89,7 +95,7 @@ def record(target):
 
 def profile_option(profile):
     return {"id": profile.pk, "name": profile.name, "metric": profile.get_metric_display(),
-            "type": profile.get_period_type_display(), "status": profile.status}
+            "type": profile.get_period_type_display(), "is_active": profile.is_active}
 
 
 class TargetsScreenView(PagePermissionMixin, ThemedTemplateView):
@@ -118,16 +124,16 @@ class TargetsScreenView(PagePermissionMixin, ThemedTemplateView):
     def pick_profile(self, context, wanted_kind=None):
         """The profile a page shows: ?profile=, else the active ones covering
         today -- monthly first, sales first (or customers when asked), by name."""
-        profiles = list(scoped_profiles(self.request.user).exclude(status=ProfileStatus.DRAFT))
+        profiles = list(with_targets(scoped_profiles(self.request.user)))
         today = context["business_today"]
         chosen = next((p for p in profiles if p.pk == _int(self.request.GET.get("profile"))), None)
         if chosen is None:
             def rank(p):
                 covers = p.starts_on <= today <= p.ends_on
-                return (not covers, p.status != ProfileStatus.ACTIVE, p.metric != (wanted_kind or TargetKind.SALES),
+                return (not covers, not p.is_active, p.metric != (wanted_kind or TargetKind.SALES),
                         TYPE_ORDER.get(p.period_type, 9), p.name.lower())
             chosen = min(profiles, key=rank) if profiles else None
-        profiles.sort(key=lambda p: (p.status != ProfileStatus.ACTIVE, TYPE_ORDER.get(p.period_type, 9),
+        profiles.sort(key=lambda p: (not p.is_active, TYPE_ORDER.get(p.period_type, 9),
                                      p.name.lower()))
         context["profiles"] = [profile_option(p) for p in profiles]
         context["profile"] = chosen
@@ -196,7 +202,7 @@ class DailyView(TargetsScreenView):
         today = context["business_today"]
         day = _day(self.request.GET.get("date"), today)
         multi_day = [p for p in scoped_profiles(self.request.user)
-                     .filter(metric=TargetKind.SALES).exclude(status=ProfileStatus.DRAFT)
+                     .filter(metric=TargetKind.SALES, pk__in=Target.objects.values("profile_id"))
                      .exclude(period_type=PeriodType.DAILY).order_by("name")]
         chosen = next((p for p in multi_day if p.pk == _int(self.request.GET.get("profile"))), None)
         context["profile"] = chosen
@@ -333,18 +339,18 @@ class ProfilesView(TargetsScreenView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         found = scoped_profiles(self.request.user).prefetch_related("assignments")
-        status = self.request.GET.get("status") or "current"
-        if status == "current":
-            found = found.exclude(status=ProfileStatus.ARCHIVED)
-        elif status in ProfileStatus.values:
-            found = found.filter(status=status)
-        found = sorted(found, key=lambda p: (p.status == ProfileStatus.ARCHIVED, -p.starts_on.toordinal(),
-                                             p.name.lower()))
+        show = self.request.GET.get("show") or "all"
+        if show == "active":
+            found = found.filter(is_active=True)
+        elif show == "off":
+            found = found.filter(is_active=False)
+        found = sorted(found, key=lambda p: (not p.is_active, -p.starts_on.toordinal(), p.name.lower()))
         base = reverse("targets-profiles")
-        context["status_tabs"] = [{"label": label, "on": value == status, "url": f"{base}?status={value}"}
-                                  for value, label in (("current", "Current"), ("draft", "Draft"),
-                                                       ("archived", "Archived"))]
+        context["status_tabs"] = [{"label": label, "on": value == show, "url": f"{base}?show={value}"}
+                                  for value, label in (("all", "All"), ("active", "Active"), ("off", "Off"))]
         context["rows"] = services.profile_rows(found)
+        context["delete_url"] = reverse("targets-profile-delete", args=[0])
+        context["can_map"] = has_permission(self.request.user, MAPPING, "read")
         context["can_profiles"] = context["can"]
         return context
 
@@ -361,8 +367,8 @@ def _fy_choices(start_month, today):
 
 
 class ProfileFormView(TargetsScreenView):
-    """Add or edit a profile: its details, its branches with their amounts,
-    and an annual profile's month weights (11 §6)."""
+    """Add or edit a profile: its details and an annual profile's month
+    weights (11 §6). Its branches and amounts are on Target Branch Mapping."""
 
     template_name = "targets/profile_form.html"
     page_code = PROFILES
@@ -376,25 +382,21 @@ class ProfileFormView(TargetsScreenView):
         company = profile.company if profile else companies_for(self.request.user).order_by("name").first()
         start_month = P.fy_start_month(company) if company else 1
         today = context["business_today"]
-        branches = scoped_branches(self.request.user).filter(company=company).order_by("name") if company else []
-        assignments = list(profile.assignments.select_related("branch")) if profile else []
-        places = places_for(company) if company else 2
         weights = (services.weights_of(profile) if profile else None) or P.default_weights(
             P.financial_year(profile.starts_on if profile else today, start_month)[0])
         month_names = [P.add_months(datetime.date(2000, start_month, 1), i).strftime("%B") for i in range(12)]
         context.update({
             "profile": profile, "company": company,
             "locked": sorted(services.profile_locked_fields(profile)) if profile else [],
-            "branch_options": [{"id": b.pk, "name": b.name} for b in branches if b.is_active
-                               or any(a.branch_id == b.pk for a in assignments)],
-            "chosen_branches": [a.branch_id for a in assignments if a.active],
+            "mapping_url": f"{reverse('targets-mapping')}?profile={profile.pk}" if profile else "",
+            "branch_count": profile.assignments.filter(active=True).count() if profile else 0,
             "fy_choices": _fy_choices(start_month, today),
             "fy_start_name": month_names[0],
             "back_url": reverse("targets-profiles"),
             "save_url": reverse("targets-profile-save"),
             "delete_profile_url": reverse("targets-profile-delete", args=[profile.pk]) if profile else "",
             "can_delete_profile": bool(profile and services.can_delete_profile(profile)),
-            "metrics": TargetKind.choices, "types": PeriodType.choices, "statuses": ProfileStatus.choices,
+            "metrics": TargetKind.choices, "types": PeriodType.choices,
             "data": {
                 "pk": profile.pk if profile else None,
                 "name": profile.name if profile else "",
@@ -402,12 +404,8 @@ class ProfileFormView(TargetsScreenView):
                 "period_type": profile.period_type if profile else PeriodType.MONTHLY,
                 "starts_on": (profile.starts_on if profile else today.replace(day=1)).isoformat(),
                 "ends_on": (profile.ends_on if profile else P.month_bounds(today.year, today.month)[1]).isoformat(),
-                "status": profile.status if profile else ProfileStatus.DRAFT,
+                "is_active": profile.is_active if profile else False,
                 "remarks": profile.remarks if profile else "",
-                "places": places,
-                "assignments": [{"id": a.branch_id, "name": a.branch.name, "active": a.active,
-                                 "amount": fmt(a.amount, 0 if profile.is_customers else places)}
-                                for a in assignments],
                 "weights": {str(k): str(v) for k, v in weights.items()},
                 "month_names": month_names,
                 "default_weights": {str(k): str(v) for k, v in P.default_weights(
@@ -455,10 +453,11 @@ def _date(value):
 
 
 class ProfileSaveView(WriteView):
-    """POST {pk?, name, metric, period_type, starts_on, ends_on, status,
-    remarks, branches: [{id, amount}], weights: {1..12: %}}. Saves the
-    profile, its stations and weights, then (when active) makes or updates
-    its targets; refused stations are named."""
+    """POST {pk?, name, metric, period_type, starts_on, ends_on, is_active,
+    remarks, weights: {1..12: %}}. Saves the profile and its weights, then
+    (when active) makes or updates its targets for the branches mapped on
+    Target Branch Mapping; refused stations are named. A new profile goes on
+    to its mapping."""
 
     model = TargetProfile
     page_code = PROFILES
@@ -481,7 +480,7 @@ class ProfileSaveView(WriteView):
             errors.append({"field": "Name", "message": "Another profile already has this name."})
         metric = data.get("metric") if data.get("metric") in TargetKind.values else None
         period_type = data.get("period_type") if data.get("period_type") in PeriodType.values else None
-        status = data.get("status") if data.get("status") in ProfileStatus.values else ProfileStatus.DRAFT
+        is_active = bool(data.get("is_active"))
         if metric is None:
             errors.append({"field": "Metric", "message": "Choose sales or customers."})
         if period_type is None:
@@ -505,17 +504,6 @@ class ProfileSaveView(WriteView):
             elif profile and not services.shrink_allowed(profile, starts_on, ends_on):
                 errors.append({"field": "Period", "message": "Periods that have started can't be cut off; the "
                                                              "range can only grow."})
-        rows, seen = [], set()
-        branches = {b.pk: b for b in scoped_branches(request.user).filter(company=company)}
-        for item in data.get("branches") or []:
-            branch = branches.get(_int((item or {}).get("id")))
-            if branch is None or branch.pk in seen:
-                continue
-            seen.add(branch.pk)
-            amount, problem = _amount((item or {}).get("amount"), company, metric or TargetKind.SALES)
-            if problem:
-                errors.append({"field": branch.name, "message": problem})
-            rows.append((branch, amount))
         weights = None
         if period_type == PeriodType.ANNUAL:
             try:
@@ -525,49 +513,39 @@ class ProfileSaveView(WriteView):
             if not P.weights_valid(weights):
                 errors.append({"field": "Month weights", "message": "The 12 month weights must each be 0 or more "
                                                                     "and add up to 100%."})
-        if status == ProfileStatus.ACTIVE and not rows:
-            errors.append({"field": "Branches", "message": "Add at least one branch before making it active."})
         if errors:
             return _invalid(errors)
+        new = profile is None
         with transaction.atomic():
-            profile = self._save(request, profile, company, name, metric, period_type, starts_on, ends_on, status,
-                                 str(data.get("remarks") or "").strip()[:200], rows, weights)
+            profile = self._save(request, profile, company, name, metric, period_type, starts_on, ends_on, is_active,
+                                 str(data.get("remarks") or "").strip()[:200], weights)
             made, changed, refused = services.sync_profile(profile, request.user)
+        mapping = f"{reverse('targets-mapping')}?profile={profile.pk}"
         return JsonResponse({"ok": True, "pk": profile.pk, "message": self._message(profile, made, changed, refused),
                              "refused": [{"branch": r.branch.name, "reason": r.reason} for r in refused],
-                             "redirect": reverse("targets-profile-edit", args=[profile.pk])})
+                             "redirect": mapping if new else reverse("targets-profile-edit", args=[profile.pk])})
 
-    def _save(self, request, profile, company, name, metric, period_type, starts_on, ends_on, status, remarks,
-              rows, weights):
+    def _save(self, request, profile, company, name, metric, period_type, starts_on, ends_on, is_active, remarks,
+              weights):
         user = request.user
         if profile is None:
             profile = TargetProfile(company=company, created_by=user)
         profile.name, profile.metric, profile.period_type = name, metric, period_type
-        profile.starts_on, profile.ends_on, profile.status = starts_on, ends_on, status
+        profile.starts_on, profile.ends_on, profile.is_active = starts_on, ends_on, is_active
         profile.remarks, profile.modified_by = remarks, user
         profile.save()
         if weights is not None:
             services.set_weights(profile, weights)
         services.drop_outside(profile)
-        wanted = {branch.pk: amount for branch, amount in rows}
-        for assignment in list(profile.assignments.select_related("branch")):
-            if assignment.branch_id not in wanted:
-                if assignment.active:
-                    services.remove_branch(profile, assignment.branch)
-                continue
-            amount = wanted.pop(assignment.branch_id)
-            if assignment.amount != amount or not assignment.active:
-                assignment.amount, assignment.active = amount, True
-                assignment.save(update_fields=["amount", "active"])
-        TargetProfileBranch.objects.bulk_create([TargetProfileBranch(profile=profile, branch_id=b, amount=a)
-                                                 for b, a in wanted.items()])
         return profile
 
     @staticmethod
-    def _message(profile, made, changed, refused):
-        if profile.status != ProfileStatus.ACTIVE:
-            return f"“{profile.name}” saved as {profile.get_status_display().lower()}; it makes no targets."
-        parts = [f"“{profile.name}” saved."]
+    def _message(profile, made, changed, refused, what="saved"):
+        if not profile.is_active:
+            return f"“{profile.name}” {what}. It is switched off, so it makes no new targets."
+        if not profile.assignments.filter(active=True).exists():
+            return f"“{profile.name}” {what}. Map its branches on Target Branch Mapping to give them targets."
+        parts = [f"“{profile.name}” {what}."]
         if made:
             parts.append(f"{made} target{'s' if made != 1 else ''} made.")
         if changed:
@@ -585,14 +563,90 @@ class ProfileDeleteView(WriteView):
         if not self.may("delete"):
             return self.refused()
         profile = get_object_or_404(scoped_profiles(request.user), pk=pk)
-        if not services.can_delete_profile(profile):
-            return _invalid([{"field": "Profile", "message": "This profile has started, or has an incentive "
-                                                             "scheme; archive it instead."}])
-        name = profile.name
-        with transaction.atomic():
-            profile.targets.all().delete()                # none has started (checked above)
-            profile.delete()
+        try:
+            name = services.delete_profile(profile)
+        except services.TargetError as error:
+            return _invalid([{"field": profile.name, "message": error.message}])
         return JsonResponse({"ok": True, "message": f"“{name}” deleted.", "redirect": reverse("targets-profiles")})
+
+
+# -- Target Branch Mapping ----------------------------------------------------------------------
+
+
+class MappingView(TargetsScreenView):
+    """Pick a profile, then its branches (searchable, with Select all) and the
+    amount for each (owner, 20 Nov 2026: a page of its own)."""
+
+    template_name = "targets/mapping.html"
+    page_code = MAPPING
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        context["can"] = {a: has_permission(user, MAPPING, a) for a in ("create", "update", "delete")}
+        profiles = sorted(scoped_profiles(user), key=lambda p: (not p.is_active, TYPE_ORDER.get(p.period_type, 9),
+                                                               p.name.lower()))
+        profile = next((p for p in profiles if p.pk == _int(self.request.GET.get("profile"))), None)
+        if profile is None and profiles:
+            profile = profiles[0]
+        context.update({"profiles": [profile_option(p) for p in profiles], "profile": profile,
+                        "save_url": reverse("targets-mapping-save")})
+        if profile is None:
+            return context
+        places = 0 if profile.is_customers else places_for(profile.company)
+        assignments = list(profile.assignments.select_related("branch"))
+        on = {a.branch_id: a for a in assignments if a.active}
+        branches = (scoped_branches(user).filter(company=profile.company).order_by("name"))
+        context.update({
+            "range_label": P.range_label(profile), "is_customers": profile.is_customers,
+            "branch_options": [{"id": b.pk, "name": b.name} for b in branches if b.is_active or b.pk in on],
+            "chosen_branches": list(on),
+            "edit_url": reverse("targets-profile-edit", args=[profile.pk]),
+            "data": {"profile": profile.pk, "type": profile.period_type, "is_active": profile.is_active,
+                     "is_customers": profile.is_customers,
+                     "assignments": [{"id": a.branch_id, "name": a.branch.name, "amount": fmt(a.amount, places)}
+                                     for a in on.values()]},
+        })
+        return context
+
+
+class MappingSaveView(WriteView):
+    """POST {profile, branches: [{id, amount}]}: the profile's branches become
+    exactly these, then its targets follow (made, re-amounted; a branch taken
+    off keeps its started targets as history). Refusals are named."""
+
+    model = TargetProfileBranch
+    page_code = MAPPING
+
+    def post(self, request):
+        if not self.may("update"):
+            return self.refused()
+        data = _payload(request)
+        profile = get_object_or_404(scoped_profiles(request.user), pk=_int(data.get("profile")))
+        errors, rows, seen = [], [], set()
+        branches = {b.pk: b for b in scoped_branches(request.user).filter(company=profile.company)}
+        for item in data.get("branches") or []:
+            branch = branches.get(_int((item or {}).get("id")))
+            if branch is None:
+                errors.append({"field": "Branches", "message": "Choose only your company's branches."})
+                continue
+            if branch.pk in seen:
+                continue
+            seen.add(branch.pk)
+            amount, problem = _amount((item or {}).get("amount"), profile.company, profile.metric)
+            if problem:
+                errors.append({"field": branch.name, "message": problem})
+            rows.append((branch, amount))
+        if errors:
+            return _invalid(errors)
+        try:
+            made, changed, refused = services.set_branches(profile, rows, request.user)
+        except services.TargetError as error:
+            return _invalid([{"field": error.field, "message": error.message}])
+        return JsonResponse({"ok": True, "message": ProfileSaveView._message(profile, made, changed, refused,
+                                                                             what="mapped"),
+                             "refused": [{"branch": r.branch.name, "reason": r.reason} for r in refused],
+                             "redirect": f"{reverse('targets-mapping')}?profile={profile.pk}"})
 
 
 # -- Editing one period -----------------------------------------------------------------------

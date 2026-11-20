@@ -17,7 +17,7 @@ from apps.crew.tests.test_attendance import (  # noqa: F401
 )
 from apps.fare.tests.test_api import call
 from apps.targets import services
-from apps.targets.models import PeriodType, ProfileStatus, TargetProfile, TargetProfileBranch
+from apps.targets.models import PeriodType, TargetProfile, TargetProfileBranch
 from apps.targets.tests.test_api import (  # noqa: F401
     BRANCH,
     BRANCHES,
@@ -39,7 +39,7 @@ def special(world, boss, day=10, amount="500"):
     when = datetime.date(2026, 11, day)
     profile = TargetProfile.objects.create(company=world["company"], name="Gate special", metric="sales",
                                            period_type=PeriodType.DAILY, starts_on=when, ends_on=when,
-                                           status=ProfileStatus.ACTIVE)
+                                           is_active=True)
     TargetProfileBranch.objects.create(profile=profile, branch=world["auh1"], amount=D(amount))
     services.sync_profile(profile, boss, now=at(11, 1))
     return profile

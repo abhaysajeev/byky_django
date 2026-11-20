@@ -33,7 +33,7 @@ from apps.company.models import Branch
 from apps.company.scoping import companies_for
 from apps.portal.authentication import AppJWTAuthentication
 from apps.targets import periods, services
-from apps.targets.models import PeriodType, ProfileStatus, Target, TargetKind, TargetProfile
+from apps.targets.models import PeriodType, Target, TargetKind, TargetProfile
 from core import money
 from core.api import REQUIRED, envelope, manager_only, request_parts, station_of, whole_number_field
 from core.enums import Channel
@@ -536,7 +536,7 @@ def manager_profiles(company_ids, year, month, now=None):
     it and its station count."""
     first, last = services.month_bounds(year, month)
     found = (TargetProfile.objects.filter(company_id__in=company_ids, starts_on__lte=last, ends_on__gte=first)
-             .exclude(status=ProfileStatus.DRAFT).order_by("name"))
+             .order_by("name"))
     out = []
     for profile in found:
         spans = [(a, b) for a, b in periods.profile_periods(profile) if a <= last and b >= first]
@@ -544,7 +544,7 @@ def manager_profiles(company_ids, year, month, now=None):
                     .values("branch_id").distinct().count())
         if not stations:
             continue
-        out.append({**profile_json(profile), "status": profile.status, "branch_count": stations,
+        out.append({**profile_json(profile), "is_active": profile.is_active, "branch_count": stations,
                     "periods": [{"from_date": a.isoformat(), "to_date": b.isoformat(),
                                  "label": periods.period_label(profile.period_type, a, b)} for a, b in spans]})
     out.sort(key=lambda p: (_TYPE_ORDER.get(p["type"], 9), p["name"].lower()))
@@ -572,7 +572,7 @@ that touch the month. Pass a `profile_id` (and a `date` from a period) to
                                  request_data_required=False),
         responses=envelope_responses(
             (200, "ok", "Profiles.", {"period": _PERIOD, "profiles": [
-                {**_PROFILE_SAMPLE, "status": "active", "branch_count": 4,
+                {**_PROFILE_SAMPLE, "is_active": True, "branch_count": 4,
                  "periods": [{"from_date": "2026-12-02", "to_date": "2026-12-02", "label": "2 Dec 2026"}]}]}),
             *_COMMON,
         ),

@@ -91,6 +91,32 @@
       });
     }
 
+    /* Optional Select all / Clear (data-select-all). With text in the search
+       box they act on the matching options only -- "Select all" after typing
+       "dubai" picks every Dubai branch. One change event for the lot. */
+    if (multi.hasAttribute('data-select-all')) {
+      var bar = document.createElement('div');
+      bar.className = 'byky-multi-bulk';
+      [['Select all', true], ['Clear', false]].forEach(function (pair) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'byky-multi-bulk-btn';
+        b.textContent = pair[0];
+        b.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var changed = false;
+          visible().forEach(function (opt) {
+            var box = opt.querySelector('input[type="checkbox"]');
+            if (box && !box.disabled && box.checked !== pair[1]) { box.checked = pair[1]; changed = true; }
+          });
+          if (changed) menu.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        bar.appendChild(b);
+      });
+      var after = menu.querySelector('.byky-multi-search');
+      menu.insertBefore(bar, after ? after.nextSibling : menu.firstChild);
+    }
+
     function options() { return [].slice.call(menu.querySelectorAll('.byky-multi-opt')); }
     function visible() { return options().filter(function (o) { return !o.hidden; }); }
     function filter() {
