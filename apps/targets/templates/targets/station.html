@@ -1,0 +1,59 @@
+{% extends "targets/_base.html" %}
+{% load targets %}
+
+{% block screen_title %}{{ branch.name }}{% endblock %}
+{% block crumb %}<a href="{% url 'targets-overview' %}">Overview</a>
+<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
+<b>{{ branch.name }}</b>{% endblock %}
+{% block heading %}{{ branch.name }}{% endblock %}
+{% block sub %}{{ branch.location.state.name }} · every target on this branch that touches {{ first|date:"F Y" }}{% endblock %}
+
+{% block body %}
+<div class="scr-x-bar">
+  {% include "targets/_stepper.html" with group_label="Month" unit="month" label=first|date:"F Y" %}
+  {% if not is_current %}<a class="scr-x-today" href="{{ today_url }}">This month</a>{% endif %}
+</div>
+
+{% if rows %}
+<div class="scr-card">
+  <div class="scr-table-scroll">
+    <table class="scr-x-table scr-x-fit">
+      <colgroup><col /><col class="w-type" /><col /><col class="w-num" /><col class="w-num" /><col class="w-progress" /><col class="w-status" /></colgroup>
+      <thead>
+        <tr>
+          <th scope="col">Profile</th>
+          <th scope="col">Type</th>
+          <th scope="col">Period</th>
+          <th scope="col" class="num">Target</th>
+          <th scope="col" class="num">Achieved</th>
+          <th scope="col">Progress</th>
+          <th scope="col">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        {% with t=r.target %}
+        <tr class="scr-x-row" data-href="{% url 'targets-target' t.pk %}">
+          <td data-label="Profile"><a class="scr-x-name" href="{% url 'targets-target' t.pk %}">{{ t.profile.name }}</a></td>
+          <td data-label="Type">{{ t.get_period_type_display }} <span class="scr-x-muted">· {{ t.get_kind_display|lower }}</span></td>
+          <td data-label="Period" title="{{ r.label }}">{{ r.label }}</td>
+          <td data-label="Target" class="num">{{ t.amount|figure:t.is_customers }}</td>
+          <td data-label="Achieved" class="num">{{ r.figures.achieved|figure:t.is_customers }}</td>
+          <td data-label="Progress">
+            <div class="scr-x-progress"><span class="scr-x-track"><i style="width:{{ r.figures.percent|bar }}%"></i></span><span class="scr-x-pct">{{ r.figures.percent }}%</span></div>
+          </td>
+          <td data-label="Status">{% include "targets/_status.html" with s=r.status %}</td>
+        </tr>
+        {% endwith %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<p class="scr-x-note">Profiles are independent: the same orders count toward each one. Targets are AED unless the type says customers.</p>
+{% else %}
+<div class="scr-card">
+  {% include "targets/_empty.html" with title="No targets touch this month" text="Add this branch to a profile on Target Profiles to give it targets." %}
+</div>
+{% endif %}
+{% endblock %}

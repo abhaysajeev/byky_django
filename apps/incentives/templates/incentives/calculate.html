@@ -1,0 +1,92 @@
+{% extends "incentives/_base.html" %}
+{% load targets %}
+
+{% block screen_title %}Calculate{% endblock %}
+{% block crumb %}<b>Calculate</b>{% endblock %}
+{% block heading %}Calculate{% endblock %}
+{% block sub %}Each station with a target in the profile's period. A station pays once the period has ended and its scheme's condition holds.{% endblock %}
+
+{% block actions %}
+<a class="scr-btn-small" href="{% url 'incentives-employees' %}{% if period %}?month={{ period.end|date:'Y-m' }}{% endif %}">By employee</a>
+{% endblock %}
+
+{% block body %}
+{% if profile %}
+<div class="scr-x-bar">
+  {% include "targets/_profile_picker.html" %}
+  {% if periods %}
+  <form class="scr-x-filter" method="get">
+    <input type="hidden" name="profile" value="{{ profile.pk }}" />
+    {% if chosen_state %}<input type="hidden" name="state" value="{{ chosen_state }}" />{% endif %}
+    <label class="scr-x-visually-hidden" for="inc-period">Period</label>
+    <select id="inc-period" class="scr-input scr-x-profile-select" name="period" data-tgt-filter>
+      {% for p in periods %}<option value="{{ p.value }}"{% if p.on %} selected{% endif %}>{{ p.label }}{% if not p.ended %} (running){% endif %}</option>{% endfor %}
+    </select>
+  </form>
+  {% endif %}
+  <span class="scr-x-spacer"></span>
+  {% include "targets/_filters.html" with period_name="period" period_value=first|date:"Y-m-d" %}
+</div>
+{% endif %}
+
+{% if rows %}
+<div class="scr-card">
+  <dl class="scr-x-kpis">
+    <div><dt>Targets met</dt><dd>{{ totals.met }}<small>of {{ totals.stations }} stations</small></dd></div>
+    <div><dt>Calculated</dt><dd>{{ totals.runs }}<small>of {{ totals.met }} met</small></dd></div>
+    <div><dt>Approved (AED)</dt><dd>{{ totals.approved|amount }}</dd></div>
+    <div><dt>Draft (AED)</dt><dd>{{ totals.draft|amount }}</dd></div>
+  </dl>
+</div>
+
+<div class="scr-card" data-scr-page-size="50" data-scr-noun-singular="station" data-inc-calculate data-url="{{ calculate_url }}" data-month="{{ month_key }}" data-profile="{{ profile.pk }}" data-period="{{ first|date:'Y-m-d' }}">
+  <div class="scr-table-scroll">
+    <table class="scr-x-table scr-x-fit scr-inc-calc">
+      <colgroup><col /><col class="w-num" /><col class="w-num" /><col class="w-progress" /><col class="w-status" /><col class="w-num" /><col class="w-actions" /></colgroup>
+      <thead>
+        <tr>
+          <th scope="col">Station</th>
+          <th scope="col" class="num">Target{% if is_customers %} (customers){% else %} (AED){% endif %}</th>
+          <th scope="col" class="num">Achieved</th>
+          <th scope="col">Progress</th>
+          <th scope="col">Status</th>
+          <th scope="col" class="num">Incentive</th>
+          <th scope="col"><span class="scr-x-visually-hidden">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr class="scr-row{% if r.run_url %} scr-x-row" data-href="{{ r.run_url }}{% endif %}">
+          <td data-label="Station">{% if r.run_url %}<a class="scr-x-name" href="{{ r.run_url }}" title="{{ r.branch.name }}">{{ r.branch.name }}</a>{% else %}<span class="scr-x-name" title="{{ r.branch.name }}">{{ r.branch.name }}</span>{% endif %}</td>
+          <td data-label="Target" class="num">{{ r.target.amount|figure:is_customers }}</td>
+          <td data-label="Achieved" class="num">{{ r.achieved|figure:is_customers }}{% if r.target %}<div class="muted scr-inc-pct">{{ r.pct }}%</div>{% endif %}</td>
+          <td data-label="Progress">{% if r.target %}<div class="scr-x-progress"><span class="scr-x-track"><i style="width:{{ r.pct|bar }}%"></i></span><span class="scr-x-pct">{{ r.pct }}%</span></div>{% endif %}</td>
+          <td data-label="Status">{% include "targets/_status.html" with s=r.status %}</td>
+          <td data-label="Incentive" class="num">{% if r.run %}{{ r.run.total|amount }}<div class="muted">{% if r.run.is_approved %}Approved{% else %}Draft{% endif %}</div>{% else %}<span class="muted">—</span>{% endif %}</td>
+          <td class="actions">
+            {% if r.can_calculate and can.create %}
+              {% comment %}Row actions stay off brand red (one red action per screen): Calculate is the filled ink button, Recalculate re-does a draft and stays plain.{% endcomment %}
+              <button type="button" class="scr-btn-small{% if not r.run %} is-primary{% endif %}" data-inc-calc data-branch="{{ r.branch.pk }}" data-name="{{ r.branch.name }}">{% if r.run %}Recalculate{% else %}Calculate{% endif %}</button>
+            {% elif r.run %}
+              <a class="scr-btn-small" href="{{ r.run_url }}">View</a>
+            {% else %}
+              <span class="scr-inc-reason">{{ r.reason }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<p class="scr-x-note">Achieved is the Targets figure for {{ period.label }}: settled orders by booking date, less credit notes. Calculate opens when the period has ended and the scheme's condition holds.</p>
+{% else %}
+<div class="scr-card">
+  <div class="scr-empty"><div>
+    <div class="scr-empty-title">{% if profile %}No targets on “{{ profile.name }}”{% if period %} for {{ period.label }}{% endif %}{% else %}No target profiles yet{% endif %}</div>
+    <p class="scr-empty-sub">Incentives are worked out per station from a target profile's period.</p>
+    <a class="scr-btn scr-btn-secondary scr-x-empty-action" href="{% url 'targets-profiles' %}">Target Profiles</a>
+  </div></div>
+</div>
+{% endif %}
+{% endblock %}

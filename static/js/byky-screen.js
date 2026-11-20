@@ -48,9 +48,12 @@
   // the in-browser filtering or paging below touches it.
   function serverPaged(el) { return !!el.closest('[data-scr-server-paged]'); }
 
-  root.querySelectorAll('.scr-search input').forEach(function (input) {
-    if (serverPaged(input)) return;
-    input.addEventListener('input', function () { applyFilters(scopeOf(input)); });
+  // Delegated, so a list whose body is swapped in place (Tracking's live
+  // refresh) keeps searching with the new box.
+  root.addEventListener('input', function (e) {
+    var input = e.target.closest('.scr-search input');
+    if (!input || serverPaged(input)) return;
+    applyFilters(scopeOf(input));
   });
 
   // A server-filtered list's dropdowns apply as soon as they change.
@@ -152,6 +155,34 @@
      tabbed screen's two grids page independently. */
   var PAGE_SIZE = 15;
   var pageOf = new WeakMap();
+  var matchesOf = new WeakMap();      // the rows the filters match, every page (Export)
+
+  /* Rows per page: data-scr-page-size on the scope or an ancestor, else 15. */
+  function sizeOf(scope) {
+    var host = scope.closest('[data-scr-page-size]');
+    var n = host ? parseInt(host.dataset.scrPageSize, 10) : 0;
+    return n > 0 ? n : PAGE_SIZE;
+  }
+
+  /* A list with more rows than a page but no pager markup used to stop at the
+     15th row with no way on (only search found the rest -- client, 20 Nov
+     2026). It gets the same pager every other list ships. */
+  var CHEVRON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+                'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="';
+  function ensurePager(scope) {
+    if (scope.querySelector('.scr-pager')) return;
+    var table = scope.querySelector('table');
+    if (!table) return;
+    var after = table.closest('.scr-table-scroll') || table;
+    if (!scope.contains(after)) after = table;
+    var pager = document.createElement('div');
+    pager.className = 'scr-pager';
+    pager.innerHTML = '<span class="scr-pager-info"></span><div class="scr-pager-nav">' +
+      '<button type="button" class="scr-pager-btn" aria-label="Previous page">' + CHEVRON + 'm14 6-6 6 6 6"></path></svg></button>' +
+      '<span class="scr-pager-current">1</span>' +
+      '<button type="button" class="scr-pager-btn" aria-label="Next page">' + CHEVRON + 'm10 6 6 6-6 6"></path></svg></button></div>';
+    after.parentNode.insertBefore(pager, after.nextSibling);
+  }
 
   /* Page numbers to render: all of them while they fit, otherwise first and
      last with a window around the current page and ellipses for the gaps. */
@@ -251,14 +282,17 @@
       if (matchesQ && matchesAll) matches.push(tr);
     });
 
-    var pages = Math.max(1, Math.ceil(matches.length / PAGE_SIZE));
+    matchesOf.set(scope, matches);
+    var size = sizeOf(scope);
+    if (rows.length > size) ensurePager(scope);
+    var pages = Math.max(1, Math.ceil(matches.length / size));
     var page = keepPage ? (pageOf.get(scope) || 1) : 1;
     if (page > pages) page = pages;
     if (page < 1) page = 1;
     pageOf.set(scope, page);
 
-    var start = (page - 1) * PAGE_SIZE;
-    var end = start + PAGE_SIZE;
+    var start = (page - 1) * size;
+    var end = start + size;
     rows.forEach(function (tr) { tr.hidden = true; });
     matches.forEach(function (tr, i) { tr.hidden = i < start || i >= end; });
 
@@ -619,7 +653,8 @@
      below. */
   function wireMenuToggle(btn) {
     var menu = btn.parentElement.querySelector('.scr-menu');
-    if (!menu) return;
+    if (!menu || btn.__scrMenuWired) return;     // wired once: a rewire must not open-then-close it
+    btn.__scrMenuWired = true;
     if (btn.closest('.scr-row-actions')) menu.classList.add('scr-menu-compact');
     btn.addEventListener('click', function (e) {
       e.stopPropagation();
@@ -1121,5 +1156,121 @@
   initScrCombos();
   document.addEventListener('shown.bs.offcanvas', function (e) {
     if (e.target) initScrCombos(e.target);
+  });
+
+  /* ── re-wiring a swapped body ───────────────────────────────────────
+     A screen that replaces part of itself in place (Tracking's live refresh)
+     calls this on the new part: its "..." menus get their handlers back and
+     its lists are filtered and paged again, keeping the search typed. */
+  function leafScopes(container) {
+    var found = Array.prototype.slice.call(container.querySelectorAll('.scr-panel'));
+    Array.prototype.forEach.call(container.querySelectorAll('.scr-card'), function (card) {
+      if (!card.querySelector('.scr-panel')) found.push(card);
+    });
+    if (container.matches && container.matches('.scr-card, .scr-panel')) found.push(container);
+    return found;
+  }
+  window.BykyScreen = {
+    rewire: function (container) {
+      container.querySelectorAll('[data-scr-menu-toggle]').forEach(wireMenuToggle);
+      leafScopes(container).forEach(function (scope) {
+        if (scope.querySelector('.scr-row') && !serverPaged(scope)) applyFilters(scope, true);
+      });
+    }
+  };
+
+  /* ── Export (client, 20 Nov 2026) ───────────────────────────────────
+     data-scr-export="<file name>" on a button: the list on screen as an .xlsx
+     -- every row the current search and filters match, across all pages; on
+     a tabbed screen, the tab that is open. Columns are the table's headings,
+     less any marked data-export-skip or with no heading (actions). A cell
+     exports its data-export value if it has one, else its text; a switch
+     exports Yes / No. SheetJS (vendor/libs/xlsx, as the Duty Roster) loads on
+     the first click, from the button's data-xlsx-src. */
+  /* The list on screen: the open tab's table, even when it has no rows (the
+     file then carries just the headings). */
+  function visibleScope() {
+    var candidates = leafScopes(root).filter(function (scope) {
+      return scope.querySelector('table thead') && !scope.closest('[hidden]') && !scope.hidden;
+    });
+    var withRows = candidates.filter(function (scope) { return scope.querySelector('.scr-row'); });
+    return withRows[0] || candidates[0] || null;
+  }
+  function cellText(td) {
+    if (td.dataset.export !== undefined) return td.dataset.export;
+    var toggle = td.querySelector('.scr-toggle, [role="switch"]');
+    if (toggle && !td.textContent.trim()) {
+      return (toggle.getAttribute('aria-checked') === 'true' || toggle.classList.contains('is-on')) ? 'Yes' : 'No';
+    }
+    var copy = td.cloneNode(true);
+    copy.querySelectorAll('.scr-menu, .scr-menu-wrap, button, svg, .scr-x-visually-hidden, [data-export-skip]')
+      .forEach(function (el) {
+        if (!el.matches('button') || !el.textContent.trim() || el.closest('.scr-menu-wrap')) el.remove();
+      });
+    copy.querySelectorAll('br, div, span.scr-contact-sub, .scr-x-sub').forEach(function (el) {
+      el.insertAdjacentText('beforebegin', ' ');
+    });
+    return copy.textContent.replace(/\s+/g, ' ').trim();
+  }
+  function loadXlsx(src) {
+    if (window.XLSX) return Promise.resolve(window.XLSX);
+    return new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = src;
+      s.onload = function () { resolve(window.XLSX); };
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+  function exportRows(button) {
+    var scope = visibleScope();
+    if (!scope) return null;
+    var heads = Array.prototype.slice.call(scope.querySelectorAll('thead th'));
+    var keep = [];
+    heads.forEach(function (th, i) {
+      var label = th.textContent.replace(/\s+/g, ' ').trim();
+      if (th.hasAttribute('data-export-skip') || !label || /^actions?$/i.test(label)) return;
+      keep.push({ index: i, label: label });
+    });
+    var rows = matchesOf.get(scope) || Array.prototype.slice.call(scope.querySelectorAll('.scr-row'));
+    var data = [keep.map(function (k) { return k.label; })];
+    rows.forEach(function (tr) {
+      var cells = tr.children;
+      data.push(keep.map(function (k) { return cells[k.index] ? cellText(cells[k.index]) : ''; }));
+    });
+    var tab = scope.closest('.scr-panel') && root.querySelector('.scr-content-tab.is-on, .scr-tab.is-active');
+    var tabName = '';
+    if (tab) {
+      var label = tab.cloneNode(true);
+      label.querySelectorAll('.scr-content-tab-count').forEach(function (el) { el.remove(); });
+      tabName = label.textContent.replace(/\s+/g, ' ').trim();
+    }
+    var name = (button.dataset.scrExport || 'export') + (tabName ? ' - ' + tabName : '');
+    return { data: data, name: name };
+  }
+  document.addEventListener('click', function (e) {
+    var button = e.target.closest('[data-scr-export]');
+    if (!button) return;
+    var sheet = exportRows(button);
+    if (!sheet) return;
+    button.disabled = true;
+    loadXlsx(button.dataset.xlsxSrc).then(function (XLSX) {
+      var ws = XLSX.utils.aoa_to_sheet(sheet.data);
+      ws['!cols'] = sheet.data[0].map(function (_, c) {
+        var width = sheet.data.reduce(function (w, row) { return Math.max(w, String(row[c] || '').length); }, 8);
+        return { wch: Math.min(width + 2, 60) };
+      });
+      var wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Export');
+      var now = new Date();                       // the viewer's own date, not UTC
+      var stamp = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' +
+                  String(now.getDate()).padStart(2, '0');
+      XLSX.writeFile(wb, sheet.name.replace(/[\\/:*?"<>|]+/g, '-') + ' ' + stamp + '.xlsx');
+    }).catch(function () {
+      if (window.BykyCrud && window.BykyCrud.showMessages) {
+        window.BykyCrud.showMessages({ title: 'Export failed',
+          items: [{ field: '', message: 'The export could not be prepared. Check the connection and try again.' }] });
+      }
+    }).then(function () { button.disabled = false; });
   });
 })();

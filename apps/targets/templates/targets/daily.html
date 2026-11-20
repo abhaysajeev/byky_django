@@ -1,0 +1,65 @@
+{% extends "targets/_base.html" %}
+{% load targets %}
+
+{% block screen_title %}Daily Progress{% endblock %}
+{% block crumb %}<b>Daily Progress</b>{% endblock %}
+{% block heading %}Daily Progress{% endblock %}
+{% block sub %}Each branch's target for the day and what it brought in, for its monthly, custom-range and annual sales profiles.{% endblock %}
+
+{% block body %}
+<div class="scr-x-bar">
+  {% if profiles|length > 1 %}{% include "targets/_profile_picker.html" with allow_all=True keep_date=day|date:"Y-m-d" %}{% endif %}
+  {% include "targets/_stepper.html" with group_label="Day" unit="day" label=day|date:"D j M Y" %}
+  {% if not is_today %}<a class="scr-x-today" href="{{ today_url }}">Today</a>{% endif %}
+  <span class="scr-x-spacer"></span>
+  {% include "targets/_filters.html" with period_name="date" period_value=day|date:"Y-m-d" %}
+</div>
+
+{% if rows %}
+<div class="scr-card">
+  <div class="scr-table-scroll">
+    <table class="scr-x-table">
+      <colgroup><col />{% if show_profile %}<col />{% endif %}<col class="w-num" /><col class="w-num" /><col class="w-num" /><col class="w-status" /></colgroup>
+      <thead>
+        <tr>
+          <th scope="col">Branch</th>
+          {% if show_profile %}<th scope="col">Profile</th>{% endif %}
+          <th scope="col" class="num">Day's target (AED)</th>
+          <th scope="col" class="num">Achieved</th>
+          <th scope="col" class="num">Difference</th>
+          <th scope="col">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        {% with t=r.target %}
+        <tr class="scr-x-row" data-href="{% url 'targets-target' t.pk %}">
+          <td data-label="Branch"><a class="scr-x-name" href="{% url 'targets-target' t.pk %}">{{ t.branch.name }}</a></td>
+          {% if show_profile %}<td data-label="Profile">{{ t.profile.name }} <span class="scr-x-muted">· {{ r.label }}</span></td>{% endif %}
+          <td data-label="Day's target" class="num">{{ r.goal|amount }}</td>
+          <td data-label="Achieved" class="num">{{ r.achieved|amount }}</td>
+          <td data-label="Difference" class="num{% if r.gap is not None and r.gap < 0 %} is-neg{% endif %}">{{ r.gap|signed }}</td>
+          <td data-label="Status">{% include "targets/_status.html" with s=r.status %}</td>
+        </tr>
+        {% endwith %}
+        {% endfor %}
+      </tbody>
+      {% if not show_profile %}<tfoot>
+        <tr>
+          <th scope="row">{{ totals.stations }} branch{{ totals.stations|pluralize:"es" }} · {{ totals.met }} met</th>
+          <td class="num">{{ totals.target|amount }}</td>
+          <td class="num">{% if totals.reached %}{{ totals.achieved|amount }}{% else %}—{% endif %}</td>
+          <td class="num{% if totals.gap < 0 %} is-neg{% endif %}">{% if totals.reached %}{{ totals.gap|signed }}{% else %}—{% endif %}</td>
+          <td></td>
+        </tr>
+      </tfoot>{% endif %}
+    </table>
+  </div>
+</div>
+<p class="scr-x-note">A day's target is set when the day starts: what is still needed for the period, shared over the days left.{% if show_profile %} Pick a profile to see its totals.{% endif %}</p>
+{% else %}
+<div class="scr-card">
+  {% include "targets/_empty.html" with title="No targets cover this day" text="Branches appear here once a sales profile covering this day has a target for them." %}
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,54 @@
+{% extends "incentives/_base.html" %}
+{% load targets %}
+
+{% block screen_title %}By Employee{% endblock %}
+{% block crumb %}<b>By Employee</b>{% endblock %}
+{% block heading %}By employee{% endblock %}
+{% block sub %}Each person's incentive paid in the month, station by station and profile by profile. A daily special pays with its month; an annual profile at the financial year's end, if its scheme says so.{% endblock %}
+
+{% block actions %}
+{% if can.print and rows %}<a class="scr-btn-small" href="{{ export_url }}">Export</a>{% endif %}
+{% endblock %}
+
+{% block body %}
+{% include "incentives/_month_bar.html" %}
+
+{% if rows %}
+<div class="scr-card">
+  <dl class="scr-x-kpis">
+    <div><dt>People</dt><dd>{{ totals.people }}</dd></div>
+    <div><dt>Approved (AED)</dt><dd>{{ totals.approved|amount }}</dd></div>
+    <div><dt>Draft (AED)</dt><dd>{{ totals.draft|amount }}</dd></div>
+    <div><dt>Total (AED)</dt><dd>{{ totals.approved|plus:totals.draft|amount }}</dd></div>
+  </dl>
+</div>
+<div class="scr-card" data-scr-page-size="50" data-scr-noun-singular="employee">
+  <div class="scr-table-scroll">
+    <table class="scr-x-table scr-x-fit">
+      <colgroup><col /><col /><col class="w-num" /><col class="w-num" /><col class="w-num" /></colgroup>
+      <thead><tr><th scope="col">Employee</th><th scope="col">Stations and profiles</th><th scope="col" class="num">Days</th><th scope="col" class="num">Approved</th><th scope="col" class="num">Draft</th></tr></thead>
+      <tbody>
+        {% for r in rows %}
+        <tr class="scr-row">
+          <td data-label="Employee" class="scr-inc-person"><span class="scr-x-name">{{ r.employee.full_name }}</span> <span class="muted">{{ r.employee.employee_code }}</span></td>
+          <td data-label="Stations" class="muted scr-x-wrap">{% for s in r.stations %}<a class="scr-x-name" href="{% url 'incentives-run' s.run.pk %}">{{ s.branch.name }}</a> <span class="scr-x-muted">{{ s.profile.name }} · {{ s.label }}</span> {{ s.amount|amount }} · {{ s.days }} day{{ s.days|pluralize }}{% if not s.run.is_approved %} · draft{% endif %}{% if not forloop.last %}<br />{% endif %}{% endfor %}</td>
+          <td data-label="Days" class="num">{{ r.days }}</td>
+          <td data-label="Approved" class="num">{{ r.approved|amount }}</td>
+          <td data-label="Draft" class="num">{{ r.draft|amount }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<p class="scr-x-note">Only approved amounts are final. A station's draft changes if it is recalculated.</p>
+{% else %}
+<div class="scr-card">
+  <div class="scr-empty"><div>
+    <div class="scr-empty-title">Nothing paid in {{ first|date:"F Y" }}</div>
+    <p class="scr-empty-sub">Calculate the stations that met their target first.</p>
+    <a class="scr-btn scr-btn-secondary scr-x-empty-action" href="{% url 'incentives-calculate' %}">Go to Calculate</a>
+  </div></div>
+</div>
+{% endif %}
+{% endblock %}

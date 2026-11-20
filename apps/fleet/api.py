@@ -72,7 +72,16 @@ _VEHICLES_SAMPLE = {
 }
 
 _DESCRIPTION = """
-Every vehicle at this station, nested **category -> vehicle type -> vehicles**. Call it at
+**Two apps share this path.** `/api/v1/manager/vehicles` is the manager app's
+**vehicle master**: every active, approved vehicle at the company's active
+stations, flat -- `vehicle_id`, `vehicle_identifier`, `vehicle_code`,
+`vehicle_name`, `rfid_epc`, type, category, brand, `is_direct_rent`,
+`is_available`, `on_rent` and `branch` (with its state); filters `state_id`,
+`branch_id`, `vehicle_type_id`, `search` (name, code, identifier or RFID);
+`page` and `page_size` (default 500, up to 2000); answer `{vehicles, page,
+pages, page_size, total_vehicles}`. Everything below is the operator app's.
+
+**Operator app:** every vehicle at this station, nested **category -> vehicle type -> vehicles**. Call it at
 login and whenever the app refreshes its fleet; each answer **replaces** what the app holds
 for the same filters.
 
@@ -123,7 +132,7 @@ class VehiclesView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
-        tags=["Operator Vehicles"],
+        tags=["Operator Vehicles", "Manager Masters"],
         summary="The vehicles at this station, by category and vehicle type",
         description=_DESCRIPTION,
         request=envelope_request("VehiclesEnvelope", VehiclesRequest, request_data_required=False),
@@ -141,6 +150,11 @@ class VehiclesView(APIView):
         ),
     )
     def post(self, request, app):
+        if app == Channel.MANAGER:
+            # The manager app's vehicle master shares this path (owner, 18 Nov 2026).
+            from apps.rental.manager_api import VehicleMasterView
+
+            return VehicleMasterView.as_view()(request._request, app=app)
         if app != Channel.OPERATOR:
             return envelope("wrong_channel", "Not allowed on this app.", http_status=403)
         branch, refused = session_station(request)

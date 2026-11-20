@@ -1,0 +1,21 @@
+{% comment %}A station's vehicles, missing first (StatusStationView): the Status
+Tracking dialog's body, and the ?branch= page's table.{% endcomment %}
+<div class="scr-trk-station-scroll">
+  <table class="scr-x-table scr-trk-station">
+    <colgroup><col class="w-veh" /><col class="w-state" /><col /><col class="w-when" /><col class="w-heard" /></colgroup>
+    <thead><tr><th scope="col">Vehicle</th><th scope="col">State</th><th scope="col">Why</th><th scope="col" class="num">Since</th><th scope="col" class="num">Last heard here</th></tr></thead>
+    <tbody>
+      {% for v in vehicles %}
+      <tr{% if v.state == "missing" %} class="is-missing"{% endif %}>
+        <td data-label="Vehicle"><span class="scr-x-name">{{ v.name }}</span><span class="scr-x-sub">{{ v.type }}{% if v.low_battery %} · Low battery{% endif %}</span></td>
+        <td data-label="State"><span class="scr-x-status is-{{ v.tone }}">{{ v.state_label }}</span></td>
+        <td data-label="Why" class="muted">{{ v.reason|default:"—" }}{% if v.heard_at %} · heard at {{ v.heard_at }}{% endif %}</td>
+        <td data-label="Since" class="num">{{ v.since|date:"j M H:i" }}</td>
+        <td data-label="Last heard here" class="num">{{ v.last_seen|date:"j M H:i"|default:"—" }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="5">{% include "tracking/_empty.html" with title="No tagged vehicles at this station" text="A vehicle appears here once it has an RFID tag and this is its current station." %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

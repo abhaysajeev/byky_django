@@ -968,6 +968,21 @@ def close_mapping(devices_qs, pk, *, user, now=None):
 # higher than the last is refused (section 7.1).
 
 APP_CHANNELS = (Channel.OPERATOR, Channel.MANAGER, Channel.EMPLOYEE)
+
+# Only operator tablets are mapped to a station (device mapping is operator
+# only), so only their update check knows a branch. Manager and employee phones
+# read the All-branches release alone: a branch mapping for them could never be
+# offered (owner, 18 Nov 2026 -- QA's employee 1.0.12 mapped to one branch
+# reached no phone).
+BRANCH_SCOPED_CHANNELS = (Channel.OPERATOR,)
+PHONE_SCOPE_MESSAGE = ("Manager and employee phones are not mapped to a station, so they only "
+                       "follow the All-branches release.")
+
+
+def check_scope(channel, scope):
+    """Refuse a per-branch mapping for an app whose devices have no branch."""
+    if scope == ReleaseScope.BRANCH and channel not in BRANCH_SCOPED_CHANNELS:
+        raise DeviceActionError(PHONE_SCOPE_MESSAGE, "Target")
 URL_MAX = 500
 VERSION_CODE_MAX = 2147483647    # PositiveIntegerField's ceiling in Postgres
 _URL = URLValidator()
@@ -1281,6 +1296,7 @@ def map_release(releases_qs, release_pk, *, user, scope, branches, targets):
     try:
         with transaction.atomic():
             release = _locked_release(releases_qs, release_pk)
+            check_scope(release.channel, scope)
             if not release.is_active:
                 raise DeviceActionError(f"{release} is withdrawn. Restore it before mapping it.", "Release")
             same_app = AppReleaseMapping.objects.select_for_update().filter(

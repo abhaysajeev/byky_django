@@ -1,0 +1,8 @@
+{% load static %}{% comment %}
+Export the list on screen as .xlsx (byky-screen.js, data-scr-export): every row
+the search and filters match, across pages; the open tab on a tabbed screen.
+Pass `name` -- the file name. Gate it with perm.print where it is included.
+{% endcomment %}<button type="button" class="scr-btn" data-scr-export="{{ name }}" data-xlsx-src="{% static 'vendor/libs/xlsx/xlsx.full.min.js' %}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"></path><path d="m7 11 5 5 5-5"></path><path d="M4 20h16"></path></svg>
+        Export
+      </button>

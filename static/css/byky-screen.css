@@ -928,7 +928,7 @@ textarea.scr-drawer-input { height: auto; min-height: 72px; padding: 10px 13px; 
 }
 .scr-rel-default.is-empty, .scr-rel-default.is-withdrawn { border-color: #f3e1bf; background: #fdf8ef; }
 .scr-rel-default-info { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.scr-rel-default-kicker { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #9490bb; }
+.scr-rel-default-kicker { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #6b6790; }
 .scr-rel-default-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; font-weight: 600; color: #1a1640; }
 .scr-rel-default-line { font-size: 12px; color: #6b6790; line-height: 1.45; }
 .scr-rel-default-actions { display: flex; gap: 10px; flex: 0 0 auto; }
@@ -1469,3 +1469,537 @@ body.scr-live-wall .scr-live-th-group { display: none; }
 .scr-cal-date .scr-lock { margin: 0 0 0 2px; }
 .scr-wk-chip-tag { align-self: flex-start; margin-top: 2px; padding: 0 6px; border-radius: 99px; font-size: 10.5px; font-weight: 700; line-height: 16px; background: #f4f3f9; color: #6b6790; }
 .scr-wk-chip-tag.is-primary { background: #eaf1fd; color: #2b52a0; }
+/* ── Shared list screens: Targets and Tracking (.scr-x) ──────────────────────
+   One idea per screen; numbers right-aligned and tabular; colour only for
+   status (always with a word); brand red only for the primary action. */
+.scr-x { display: flex; flex-direction: column; gap: 16px; }
+.scr-x > .scr-head { margin-bottom: 4px; }
+.scr-x-head { min-width: 0; }
+.scr-x .scr-crumb a { color: inherit; text-decoration: none; }
+.scr-x a.scr-x-name, .scr-x .scr-x-step, .scr-x a.scr-x-name:visited { color: #1a1640; }
+.scr-x .scr-x-step { color: #6b6790; }
+.scr-x .scr-crumb a:hover { color: #1a1640; }
+.scr-x-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* period bar: stepper, a way back to now, filter */
+.scr-x-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.scr-x-spacer { flex: 1 1 auto; }
+.scr-x-stepper { display: inline-flex; align-items: center; background: #fff; border: 1px solid #eeedf5; border-radius: 12px; height: 40px; }
+.scr-x-step { display: grid; place-items: center; width: 38px; height: 100%; color: #6b6790; text-decoration: none; border-radius: 12px; }
+.scr-x-step:hover { color: #1a1640; background: #fbfaff; }
+.scr-x-step-label { min-width: 132px; padding: 0 6px; text-align: center; font-size: 13.5px; font-weight: 600; color: #1a1640; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.scr-x-today { font-size: 12.5px; font-weight: 600; color: #6b6790; text-decoration: none; padding: 6px 4px; }
+.scr-x-today:hover { color: #1a1640; text-decoration: underline; text-underline-offset: 3px; }
+.scr-x-filter .scr-input { width: 200px; height: 40px; }
+.scr-x a:focus-visible, .scr-x button:focus-visible, .scr-x select:focus-visible,
+.scr-x input:focus-visible { outline: 2px solid #1a1640; outline-offset: 2px; }
+
+/* KPI strip: four equal tiles */
+.scr-x-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; }
+.scr-x-kpis > div { padding: 16px 20px; min-width: 0; border-inline-start: 1px solid #f0eff7; }
+.scr-x-kpis > div:first-child { border-inline-start: 0; }
+.scr-x-kpis dt { font-size: 11px; font-weight: 600; color: #9490bb; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; }
+.scr-x-kpis dd { margin: 6px 0 0; font-size: 22px; font-weight: 700; color: #1a1640; letter-spacing: -0.4px; line-height: 1.15; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.scr-x-kpis dd small { display: block; margin-top: 3px; font-size: 12px; font-weight: 500; letter-spacing: 0; color: #9490bb; }
+.scr-x-month-progress { padding: 0 20px 18px; }
+.scr-x-remarks { margin: 0; padding: 12px 20px 16px; border-top: 1px solid #f0eff7; font-size: 13px; color: #6b6790; }
+
+/* tables */
+.scr-x-table { table-layout: fixed; min-width: 640px; }
+.scr-x-table col.w-num { width: 150px; }
+.scr-x-table col.w-progress { width: 190px; }
+.scr-x-table col.w-status { width: 128px; }
+.scr-x-table col.w-kebab { width: 56px; }
+.scr-x-table col.w-type { width: 150px; }
+.scr-x-table col.w-state { width: 150px; }
+.scr-x-table col.w-check { width: 52px; }
+.scr-x-table col.w-actions { width: 168px; }
+.scr .scr-x-table th:last-child, .scr .scr-x-table td:last-child { text-align: left; }
+.scr .scr-x-table th.num, .scr .scr-x-table td.num { text-align: right; }
+.scr .scr-x-table td.actions { text-align: right; white-space: nowrap; }
+.scr-x-table td.actions > * { vertical-align: middle; }
+.scr-x-table td.actions .scr-menu-wrap { display: inline-block; margin-inline-start: 6px; }
+.scr-x-table td { font-size: 13px; color: #1a1640; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scr-x-table td.num { font-variant-numeric: tabular-nums; }
+.scr-x-table td.num.is-neg { color: #8a5300; }
+.scr-x-table td.muted, .scr-x-table .muted { color: #9490bb; }
+.scr-x-table th.check, .scr-x-table td.check { padding-inline-end: 0; }
+.scr-x-table input[type="checkbox"] { width: 16px; height: 16px; vertical-align: middle; accent-color: #1a1640; }
+.scr-x-name { color: #1a1640; font-weight: 600; text-decoration: none; }
+a.scr-x-name:hover { text-decoration: underline; text-underline-offset: 3px; }
+.scr-x-row { cursor: pointer; }
+.scr-x-table tfoot tr { border-top: 1px solid #eeedf5; background: #fbfaff; }
+.scr .scr-x-table tfoot th, .scr .scr-x-table tfoot td { font-size: 12.5px; font-weight: 700; color: #1a1640; letter-spacing: 0; text-transform: none; padding-top: 12px; padding-bottom: 12px; }
+.scr-x-days tr.is-idle td { color: #a9a6c4; }
+.scr-x-days tr.is-today td { background: #fbfaff; font-weight: 600; }
+
+/* progress */
+.scr-x-progress { display: flex; align-items: center; gap: 10px; }
+.scr-x-track { position: relative; flex: 1 1 auto; height: 6px; border-radius: 99px; background: #f0eff7; overflow: hidden; }
+.scr-x-track.is-wide { display: block; height: 8px; }
+.scr-x-track i { position: absolute; inset-block: 0; inset-inline-start: 0; border-radius: 99px; background: #1a1640; }
+.scr-x-pct { flex: 0 0 46px; text-align: right; font-size: 12px; font-weight: 600; color: #6b6790; font-variant-numeric: tabular-nums; }
+
+/* status: a word, tinted */
+.scr-x-status { display: inline-block; padding: 3px 9px; border-radius: 99px; font-size: 11.5px; font-weight: 600; line-height: 1.4; white-space: nowrap; background: #f4f3f9; color: #6b6790; }
+.scr-x-status.is-met { background: #e9f8f0; color: #14764a; }
+.scr-x-status.is-track, .scr-x-status.is-live { background: #eaf1fd; color: #2b52a0; }
+.scr-x-status.is-behind, .scr-x-status.is-short { background: #fdf3e3; color: #8a5300; }
+.scr-x-status.is-missed { background: #fdeced; color: #c2141a; }
+
+/* Set Targets */
+.scr-x-selection { display: flex; align-items: center; gap: 10px; padding: 10px 20px; background: #fbfaff; border-bottom: 1px solid #f0eff7; font-size: 13px; font-weight: 600; color: #1a1640; }
+.scr-x-selection > span { margin-inline-end: auto; }
+.scr-x-selection .scr-btn { height: 34px; padding: 0 14px; font-size: 12.5px; }
+.scr-x-foot { padding: 12px 20px; border-top: 1px solid #f0eff7; font-size: 12.5px; color: #9490bb; }
+.scr-x-banner { padding: 11px 16px; border-radius: 12px; background: #f4f3f9; color: #4b4770; font-size: 13px; }
+.scr-x-head-actions { display: flex; align-items: center; gap: 8px; }
+.scr-x-note { margin: 0; font-size: 12.5px; color: #9490bb; }
+.scr-x-empty-action { margin-top: 14px; display: inline-flex; }
+
+@media (max-width: 900px) {
+  .scr-x-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .scr-x-kpis > div:nth-child(3) { border-inline-start: 0; }
+  .scr-x-kpis > div:nth-child(n+3) { border-top: 1px solid #f0eff7; }
+}
+
+/* phones: rows become small cards, no sideways scroll */
+@media (max-width: 640px) {
+  .scr-x-bar { gap: 10px; }
+  .scr-x-spacer { display: none; }
+  .scr-x-filter, .scr-x-filter .scr-input { width: 100%; }
+  .scr-x-stepper { flex: 1 1 auto; justify-content: space-between; }
+  .scr-x-step-label { min-width: 0; }
+  .scr-x-kpis dd { font-size: 19px; }
+  .scr-x-table { min-width: 0; table-layout: auto; }
+  .scr-x-table colgroup, .scr-x-table thead { display: none; }
+  .scr-x-table, .scr-x-table tbody, .scr-x-table tfoot { display: block; }
+  .scr-x-table tr { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; padding: 14px 16px; border-bottom: 1px solid #f0eff7; }
+  .scr .scr-x-table td, .scr .scr-x-table tfoot th { display: block; padding: 0; text-align: left !important; white-space: normal; overflow: visible; }
+  .scr-x-table td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 2px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: #a9a6c4; }
+  .scr-x-table td[data-label="Station"], .scr-x-table td[data-label="Date"], .scr-x-table td[data-label="Progress"],
+  .scr-x-table td[data-label="Remarks"], .scr-x-table tfoot th { grid-column: 1 / -1; }
+  .scr-x-table td[data-label="Station"]::before, .scr-x-table td[data-label="Date"]::before { display: none; }
+  .scr-x-table td.check { grid-column: 1; }
+  .scr-x-table td.actions { grid-column: 1 / -1; text-align: left !important; }
+  .scr-x-table td:empty { display: none; }
+}
+/* the target drawer: one save; the stations/month line is read-only text */
+#drawerTarget [data-scr-save="new"] { display: none; }
+#drawerTarget [data-field="summary"] { background: #fbfaff; border-color: #f0eff7; color: #1a1640; font-weight: 600; cursor: default; }
+
+/* ── Shared list screens, part 2: what Tracking needs (.scr-x) ─────────────── */
+.scr-x-stack { display: flex; flex-direction: column; gap: 16px; }
+.scr-x-back { font-size: 12.5px; font-weight: 600; color: #6b6790; text-decoration: none; }
+.scr-x-back::before { content: "\2039"; margin-inline-end: 6px; }
+.scr-x-back:hover { color: #1a1640; }
+.scr-x-sub { display: block; margin-top: 2px; font-size: 11.5px; color: #9490bb; font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
+.scr-x .scr-x-name { display: block; overflow: hidden; text-overflow: ellipsis; }
+.scr-x .mono, .scr-x-table td.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; letter-spacing: 0.02em; }
+.scr .scr-x-table th.center, .scr .scr-x-table td.center { text-align: center; }
+.scr-x-table td.wrap { white-space: normal; }
+.scr-x-table td.num.is-alert, .scr-x-kpis dd.is-alert { color: #c2141a; }
+.scr-x-table col.w-time { width: 132px; }
+.scr-x-table col.w-when { width: 160px; }
+.scr-x-table col.w-branch { width: 180px; }
+.scr-x-table col.w-link { width: 124px; }
+.scr-x-table col.w-ack { width: 200px; }
+.scr-x-table col.w-count { width: 96px; }
+.scr-x-table col.w-switch { width: 84px; }
+.scr-x-table col.w-actions-sm { width: 196px; }
+.scr-x-table col.w-input { width: 190px; }
+.scr-x-table col.w-select { width: 184px; }
+.scr-x-table col.w-tag { width: 120px; }
+.scr-x-table col.w-flag { width: 100px; }
+
+/* tabs inside the period bar */
+.scr-x-tabs { display: inline-flex; padding: 3px; gap: 2px; background: #fff; border: 1px solid #eeedf5; border-radius: 12px; height: 40px; }
+.scr-x-tab { display: inline-flex; align-items: center; padding: 0 14px; border-radius: 9px; font-size: 13px; font-weight: 600; color: #6b6790; text-decoration: none; }
+.scr-x-tab:hover { color: #1a1640; }
+.scr-x-tab.is-on, .scr-x-tab.is-on:hover { background: #1a1640; color: #fff; }
+.scr-x-dates { display: inline-flex; align-items: center; gap: 8px; }
+.scr-x .scr-x-dates .scr-input { width: 170px; }
+.scr-x .scr-x-filter-sm .scr-input { width: 120px; }
+.scr-x-banner a { color: inherit; font-weight: 600; }
+
+/* card heads, forms */
+.scr-x-card-head { padding: 16px 20px 12px; border-bottom: 1px solid #f0eff7; }
+.scr-x-card-head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.scr-x-card-title { margin: 0; font-size: 14px; font-weight: 700; color: #1a1640; }
+.scr-x-card-sub { margin: 3px 0 0; font-size: 12.5px; color: #9490bb; max-width: 80ch; }
+.scr-x-card-body { padding: 16px 20px 20px; }
+.scr-x-form-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; padding: 16px 20px 20px; }
+.scr-x-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.scr-x-form-grid .scr-x-field { margin-bottom: 0; }
+.scr-x-field .scr-input { width: 100%; }
+.scr-x-unit { position: relative; }
+.scr-x-unit .scr-input { padding-inline-end: 48px; font-variant-numeric: tabular-nums; }
+.scr-x-unit span { position: absolute; inset-inline-end: 12px; top: 50%; transform: translateY(-50%); font-size: 12px; color: #9490bb; pointer-events: none; }
+.scr-x .scr-x-num-input { width: 120px; text-align: right; font-variant-numeric: tabular-nums; }
+.scr-x .scr-x-select-sm { width: 130px; height: 36px; }
+.scr-x-actions { display: flex; gap: 10px; margin-top: 16px; }
+.scr-x-combo { max-width: 420px; }
+.scr-x-combo .scr-input { width: 100%; }
+
+/* small buttons that carry meaning */
+.scr-btn-small.is-primary { border-color: #1a1640; background: #1a1640; color: #fff; }
+.scr-btn-small.is-primary:hover { background: #2c2760; color: #fff; }
+.scr-btn-small.is-danger { color: #c2141a; border-color: #f3c3c5; }
+
+/* row menu extras */
+.scr-x-menu-switch { display: flex; align-items: center; justify-content: space-between; gap: 16px; cursor: default; }
+.scr-x-menu-info { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; margin: 4px 0; border-top: 1px solid #f0eff7; border-bottom: 1px solid #f0eff7; font-size: 11.5px; color: #9490bb; }
+
+/* modals */
+.scr-modal.scr-x-modal { width: min(460px, calc(100vw - 32px)); }
+.scr-x-modal-foot { justify-content: flex-end; gap: 8px; }
+
+@media (max-width: 900px) {
+  .scr-x-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* phone: tabs fill the row; a month's days become compact two-line rows */
+@media (max-width: 640px) {
+  .scr-x-tabs { flex: 1 1 100%; }
+  .scr-x-tab { flex: 1 1 0; justify-content: center; }
+  .scr-x-dates { flex-wrap: wrap; width: 100%; }
+  .scr-x .scr-x-dates .scr-input { flex: 1 1 0; width: auto; min-width: 0; }
+  .scr-x-form-grid { grid-template-columns: minmax(0, 1fr); }
+  .scr-x-card-head-row { flex-direction: column; }
+  .scr-x .scr-x-num-input { width: 100%; text-align: left; }
+  .scr-x-days tr { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px 12px; padding: 10px 16px; }
+  .scr .scr-x-days td[data-label="Date"] { grid-column: 1 / 3; font-weight: 600; }
+  .scr .scr-x-days td[data-label="Status"] { grid-column: 3; grid-row: 1; justify-self: end; }
+  .scr-x-days td[data-label="Status"]::before { display: none; }
+  .scr-x-days td[data-label]::before { font-size: 9.5px; margin-bottom: 0; }
+  .scr .scr-x-table td.actions { display: flex; gap: 8px; align-items: center; }
+}
+/* links in .scr-x screens read as text; the site-wide .scr link red is for inline links */
+.scr.scr-x a.scr-x-name, .scr.scr-x a.scr-x-name:hover { color: #1a1640; }
+.scr.scr-x a.scr-x-name:hover { text-decoration: underline; text-underline-offset: 3px; }
+.scr.scr-x a.scr-x-step, .scr.scr-x a.scr-x-back, .scr.scr-x a.scr-x-today, .scr.scr-x a.scr-x-tab { color: #6b6790; }
+.scr.scr-x a.scr-x-step:hover, .scr.scr-x a.scr-x-back:hover, .scr.scr-x a.scr-x-today:hover, .scr.scr-x a.scr-x-tab:hover { color: #1a1640; }
+.scr.scr-x a.scr-x-tab.is-on, .scr.scr-x a.scr-x-tab.is-on:hover { color: #fff; }
+.scr.scr-x .scr-crumb a, .scr.scr-x .scr-crumb a:hover { color: inherit; }
+.scr.scr-x .scr-x-banner a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.scr-x-table col.w-when { width: 180px; }
+.scr .scr-x-card-title { margin: 0; line-height: 1.3; }
+.scr .scr-x-card-sub { margin: 4px 0 0; }
+/* Sales | Customers (design/08-targets.md section 9, C4): links, so the kind is in the URL. */
+.scr-x-tabs { display: inline-flex; padding: 3px; gap: 2px; background: #f4f3f9; border-radius: 12px; }
+.scr-x-tab { padding: 7px 14px; border-radius: 9px; font-size: 12.5px; font-weight: 600; text-decoration: none; transition: background 0.15s, color 0.15s; }
+.scr-x-tab.is-on { background: #1a1640; }
+/* Incentives (design/09-incentives.md section 7): the scheme form is a main
+   column of section cards and a sticky variables panel. */
+.scr-x-wrap { white-space: normal !important; }
+.scr-x-act { height: 34px; padding: 0 14px; font-size: 12.5px; }
+.scr-inc-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
+.scr-inc-main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.scr-inc-section { padding: 18px 20px; }
+.scr-inc-h { font-size: 15px; font-weight: 700; color: #1a1640; }
+.scr-inc-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.scr-inc-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; margin-top: 14px; }
+.scr-inc-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.scr-inc-wide { grid-column: 1 / -1; }
+.scr-inc-switch { flex-direction: row; align-items: center; gap: 10px; font-size: 13px; color: #1a1640; }
+.scr-inc-switch input, .scr-inc-chip input { width: 16px; height: 16px; accent-color: #1a1640; }
+.scr-inc-stations { display: flex; flex-wrap: wrap; gap: 6px; }
+.scr-inc-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid #eceaf5; border-radius: 99px; font-size: 12.5px; color: #1a1640; cursor: pointer; }
+.scr-inc-chip:has(input:checked) { border-color: #1a1640; background: #f4f3f9; }
+.scr-inc-formula { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+.scr-inc-check { min-height: 16px; font-size: 12px; }
+.scr-inc-check.is-bad { color: #c2141a; }
+.scr-inc-check.is-ok { color: #14764a; }
+.scr-inc-rows { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.scr-inc-row { display: grid; grid-template-columns: minmax(120px, 0.7fr) minmax(220px, 1fr) minmax(0, 2fr) 34px; gap: 10px; align-items: start; padding: 12px; border: 1px solid #f0eff7; border-radius: 12px; background: #fbfaff; }
+.scr-inc-row.is-var { grid-template-columns: minmax(120px, 0.8fr) minmax(0, 2.9fr) 34px; }
+.scr-inc-remove { width: 34px; height: 42px; border: 1px solid #eeedf5; border-radius: 10px; background: #fff; color: #8b87b0; cursor: pointer; display: grid; place-items: center; }
+.scr-inc-remove:hover { color: #c2141a; border-color: #f3c3c5; }
+.scr-inc-aside { position: sticky; top: 84px; padding: 18px 18px 14px; max-height: calc(100vh - 110px); overflow-y: auto; }
+.scr-inc-vars { list-style: none; margin: 10px 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.scr-inc-vars p { margin: 0 0 6px 10px; font-size: 11.5px; color: #9490bb; }
+.scr-inc-var { display: flex; align-items: baseline; gap: 8px; width: 100%; padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; text-align: left; cursor: pointer; color: #1a1640; font-size: 12.5px; }
+.scr-inc-var:hover, .scr-inc-var:focus-visible { background: #f4f3f9; }
+.scr-inc-var code, .scr-inc-aside code, .scr-inc-section code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: #2b52a0; }
+.scr-inc-try { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.scr-inc-try .scr-input { height: 40px; width: auto; }
+.scr-inc-result { margin-top: 12px; }
+.scr-inc-values { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 10px 0; font-size: 12px; color: #6b6790; }
+.scr-inc-values b { color: #1a1640; font-variant-numeric: tabular-nums; }
+@media (max-width: 1100px) {
+  .scr-inc-layout { grid-template-columns: minmax(0, 1fr); }
+  .scr-inc-aside { position: static; max-height: none; }
+}
+@media (max-width: 640px) {
+  .scr-inc-grid { grid-template-columns: minmax(0, 1fr); }
+  .scr-inc-row, .scr-inc-row.is-var { grid-template-columns: minmax(0, 1fr) 34px; }
+  .scr-inc-row > :not(.scr-inc-remove) { grid-column: 1; }
+  .scr-inc-row > .scr-inc-remove { grid-column: 2; grid-row: 1; }
+}
+/* Incentives polish (17 Nov 2026) -------------------------------------------- */
+/* An absolutely-placed header label (.scr-x-visually-hidden) escaped the table's
+   scroll box and widened the whole page at tablet widths; anchor it inside. */
+.scr-x .scr-table-scroll { position: relative; }
+/* The Show-by tabs sit alone above a table: as wide as their labels, not the row. */
+.scr-x > .scr-x-tabs { align-self: flex-start; }
+@media (prefers-reduced-motion: reduce) { .scr-x-tab { transition: none; } }
+/* Tables with many fixed columns (.scr-x-fit): narrower figure columns on tablets,
+   so the name column keeps room instead of ending in an ellipsis. */
+@media (max-width: 1100px) {
+  .scr-x-table.scr-x-fit col.w-num { width: 116px; }
+  .scr-x-table.scr-x-fit col.w-progress { width: 150px; }
+  .scr-x-table.scr-x-fit col.w-actions { width: 150px; }
+  .scr .scr-x-table.scr-x-fit th { white-space: normal; vertical-align: bottom; }
+  /* Schemes: the three row buttons stack in a narrow column so the name keeps room. */
+  .scr-x-table col.w-actions-3 { width: 104px; }
+  .scr .scr-inc-schemes td.actions { white-space: normal; }
+  .scr-inc-schemes td.actions > * { display: block; width: 100%; margin: 0 0 4px; text-align: center; }
+}
+/* Calculate has six fixed columns, too many beside the sidebar on a laptop:
+   up to 1400px the bar goes, its % moves under Achieved, names wrap. */
+@media (max-width: 1400px) {
+  .scr-x-table.scr-inc-calc col.w-progress { width: 0; }
+  .scr-x-table.scr-inc-calc col.w-num { width: 108px; }
+  .scr-x-table.scr-inc-calc col.w-actions { width: 136px; }
+  .scr .scr-inc-calc th:nth-child(4), .scr .scr-inc-calc td[data-label="Progress"] { padding: 0; overflow: hidden; font-size: 0; }
+  .scr .scr-inc-calc td[data-label="Progress"] > * { display: none; }
+  .scr-inc-calc .scr-inc-pct { display: block; }
+  /* A long station name wraps onto a second line rather than ending in "…". */
+  .scr .scr-inc-calc td[data-label="Station"], .scr-x .scr-inc-calc .scr-x-name { white-space: normal; overflow-wrap: anywhere; text-overflow: clip; }
+}
+.scr-inc-pct { display: none; font-size: 11.5px; }
+/* 641-1100px with the sidebar pinned leaves a ~590px card: these tables fit it
+   instead of hiding their last money column behind an in-card scroll. */
+@media (min-width: 641px) and (max-width: 1100px) {
+  .scr-x-table.scr-x-fit, .scr-x-table.scr-inc-days, .scr-x-table.scr-inc-schemes { min-width: 540px; }
+  .scr .scr-x-table td.scr-inc-person { white-space: normal; }
+  .scr-x-table.scr-inc-days col.w-role { width: 140px; }
+  .scr .scr-inc-days td[data-label="Role"] { white-space: normal; }
+}
+.scr .scr-x-table td.scr-inc-person { white-space: normal; }
+.scr-x .scr-inc-schemes .scr-x-name { white-space: normal; text-overflow: clip; }
+.scr .scr-x-table.scr-x-fit th { white-space: normal; vertical-align: bottom; }
+/* Calculate at 641-960px: too narrow for six columns beside the sidebar, so its
+   rows become the same small cards as on a phone. */
+@media (min-width: 641px) and (max-width: 960px) {
+  .scr-x-table.scr-inc-calc { min-width: 0; table-layout: auto; }
+  .scr-inc-calc colgroup, .scr-inc-calc thead { display: none; }
+  .scr-inc-calc, .scr-inc-calc tbody { display: block; }
+  .scr-inc-calc tr { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 16px; padding: 14px 20px; border-bottom: 1px solid #f0eff7; }
+  .scr .scr-inc-calc td { display: block; padding: 0; text-align: left !important; white-space: normal; overflow: visible; }
+  .scr-inc-calc td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 2px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: #6b6790; }
+  .scr-inc-calc td[data-label="Station"] { grid-column: 1 / -1; }
+  .scr-inc-calc td[data-label="Station"]::before { display: none; }
+  .scr .scr-inc-calc td[data-label="Progress"] { display: none; }
+  .scr .scr-inc-calc td.actions { grid-column: 1 / -1; }
+}
+/* Scheme form at 1101-1240px: the main column beside the Variables panel is
+   narrow, so each component field takes the full row. */
+@media (min-width: 1101px) and (max-width: 1240px) {
+  .scr-inc-rows .scr-inc-row:not(.is-var) { grid-template-columns: minmax(0, 1fr) 34px; }
+  .scr-inc-row:not(.is-var) > .scr-inc-field { grid-column: 1 !important; }
+  .scr-inc-rows .scr-inc-row:not(.is-var) > .scr-inc-remove { grid-column: 2; grid-row: 1; }
+}
+/* Narrower forms: a component row is name + applies-to, then the formula on its
+   own full line; each field carries its own label instead of the column heads. */
+@media (max-width: 1480px) and (min-width: 641px) {
+  .scr-inc-cols:not(.is-var) { display: none; }
+  .scr-inc-row:not(.is-var) { grid-template-columns: minmax(0, 1fr) minmax(220px, 1fr) 34px; }
+  .scr-inc-row:not(.is-var) > .scr-inc-field:nth-child(3) { grid-column: 1 / 3; }
+  .scr-inc-row:not(.is-var) > .scr-inc-remove { grid-column: 3; grid-row: 1; align-self: end; }
+  .scr-inc-row:not(.is-var) .scr-inc-field[data-label]::before { content: attr(data-label); font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: #6b6790; }
+}
+/* A KPI's note ("achieved ÷ working days") wraps instead of being cut off. */
+.scr-x .scr-x-kpis dd small { white-space: normal; }
+/* Edit, Copy and Delete side by side */
+.scr-x-table col.w-actions-3 { width: 236px; }
+@media (max-width: 1100px) { .scr-x-table col.w-actions-3 { width: 104px; } }
+/* Set Targets: a figure column and the text column after it need air between them. */
+[data-tgt-manage] .scr-x-table th.num + th, [data-tgt-manage] .scr-x-table td.num + td { padding-inline-start: 28px; }
+/* Calculate: why a station can't be calculated is information, not a button. */
+.scr-inc-reason { display: inline-block; padding: 7px 0; font-size: 12px; font-weight: 500; color: #6b6790; white-space: nowrap; }
+/* Name and code on one line, so a 30-day run reads at a glance. */
+.scr-x .scr-inc-person .scr-x-name { display: inline; }
+.scr-x-table col.w-role { width: 176px; }
+/* Run by day: one header row per day */
+.scr .scr-inc-days tr.scr-inc-dayhead th { padding-top: 10px; padding-bottom: 8px; background: #fbfaff; border-top: 1px solid #eeedf5; font-size: 11.5px; font-weight: 700; letter-spacing: 0.02em; text-transform: none; color: #1a1640; text-align: left; }
+.scr .scr-inc-days tbody:first-of-type tr.scr-inc-dayhead th { border-top: 0; }
+/* Scheme form */
+.scr .scr-inc-formula { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 12.5px; }
+.scr-inc-var code, .scr-inc-aside code, .scr-inc-section code { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
+.scr-inc-cols { display: grid; grid-template-columns: minmax(120px, 0.7fr) minmax(220px, 1fr) minmax(0, 2fr) 34px; gap: 10px; padding: 0 13px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #6b6790; }
+.scr-inc-cols.is-var { grid-template-columns: minmax(120px, 0.8fr) minmax(0, 2.9fr) 34px; }
+.scr-inc-cols:only-child { display: none; }
+.scr-inc-cols + .scr-inc-row { margin-top: -4px; }
+.scr-inc-remove:focus-visible { outline: 2px solid #1a1640; outline-offset: 2px; }
+/* Form fields already show focus with their own ring; the .scr-x outline doubled it. */
+.scr-x .scr-inc-layout .scr-drawer-input:focus-visible { outline: none; }
+.scr-inc-check:empty { min-height: 0; }
+.scr-inc-try { align-items: flex-end; gap: 12px; }
+.scr-inc-try .scr-inc-field { flex: 0 0 auto; }
+.scr-inc-try-station .scr-input { min-width: 220px; }
+.scr-inc-try .scr-inc-try-btn { height: 40px; padding: 0 18px; font-size: 12.5px; }
+.scr-inc-result { margin-top: 16px; padding-top: 14px; border-top: 1px solid #f0eff7; }
+.scr-inc-result-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; font-size: 13px; color: #1a1640; }
+.scr .scr-inc-values { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 10px 16px; margin: 14px 0; }
+.scr-inc-values div { min-width: 0; }
+.scr-inc-values dt { font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: #6b6790; white-space: nowrap; }
+.scr-inc-values dd { margin: 2px 0 0; font-size: 13.5px; font-weight: 600; color: #1a1640; font-variant-numeric: tabular-nums; }
+.scr-inc-try-table { min-width: 560px; }
+@media (max-width: 640px) {
+  .scr-inc-cols { display: none; }
+  .scr-inc-row .scr-inc-field[data-label]::before { content: attr(data-label); font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: #6b6790; }
+  .scr-inc-try { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+  .scr-inc-try-station { grid-column: 1 / -1; }
+  .scr-inc-try .scr-input, .scr-inc-try-station .scr-input { width: 100%; min-width: 0; }
+  .scr-inc-try-table { min-width: 0; }
+  /* Phone cards show the bar again, so the % under Achieved is not repeated. */
+  .scr .scr-inc-calc td[data-label="Progress"] { font-size: inherit; overflow: visible; }
+  .scr .scr-inc-calc td[data-label="Progress"] > * { display: flex; }
+  .scr-inc-calc .scr-inc-pct { display: none; }
+  /* Role and component share no label on a phone; say which line is which. */
+  .scr .scr-inc-days td[data-label="Component"]::before, .scr .scr-inc-try-table td[data-label="Components"]::before { display: inline; content: "Component: "; font-size: inherit; font-weight: 600; letter-spacing: 0; text-transform: none; color: #6b6790; margin: 0; }
+  /* Pick box: a 24px target in the card's top-right corner. */
+  [data-tgt-manage] .scr-x-table td.check input[type="checkbox"] { width: 22px; height: 22px; }
+  /* Run by day and Try it: a person is a line pair, the amount on the right. */
+  .scr-inc-days tbody { display: block; }
+  .scr .scr-inc-days tr.scr-inc-dayhead { display: block; padding: 0; border-bottom: 0; }
+  .scr .scr-inc-days tr.scr-inc-dayhead th { display: block; padding: 10px 16px 8px; }
+  .scr-inc-days tr:not(.scr-inc-dayhead), .scr-inc-try-table tr { grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 10px 16px; }
+  .scr-inc-try-table tr { padding-inline: 0; }
+  .scr-inc-days td[data-label]::before, .scr-inc-try-table td[data-label]::before { display: none; }
+  .scr .scr-inc-days td[data-label="Amount"], .scr .scr-inc-try-table td[data-label^="Amount"] { grid-column: 2; grid-row: 1; text-align: right !important; font-weight: 600; }
+  .scr-inc-days td[data-label="Role"], .scr-inc-days td[data-label="Component"],
+  .scr-inc-try-table td[data-label="Role"], .scr-inc-try-table td[data-label="Components"] { grid-column: 1 / -1; font-size: 12px; }
+  /* The name leads its card across the full width (as Station already does). */
+  .scr-x-fit td[data-label="Branch"], .scr-x-table td.scr-inc-person { grid-column: 1 / -1; }
+  .scr-x-fit td[data-label="Branch"]::before { display: none; }
+  .scr-inc-days td.scr-inc-person, .scr-inc-try-table td.scr-inc-person { grid-column: 1; }
+  /* Set Targets: the pick box rides at the top-right of its card. */
+  [data-tgt-manage] .scr-x-table tr { position: relative; }
+  [data-tgt-manage] .scr-x-table td.check { position: absolute; top: 14px; inset-inline-end: 16px; }
+  .scr-x > .scr-x-tabs { align-self: stretch; }
+}
+
+/* -- Status Tracking (client, 20 Nov 2026): the old RMS grid in our styling ---------------- */
+.scr-trk-search { padding: 16px 20px; }
+.scr-trk-search-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+.scr-trk-field { display: flex; flex-direction: column; gap: 6px; flex: 1 1 200px; min-width: 0; }
+.scr-trk-field .scr-input { height: 40px; width: 100%; }
+.scr-trk-search-actions { display: flex; gap: 8px; }
+.scr-trk-search-actions .scr-btn-primary, .scr-trk-search-actions .scr-btn-secondary { height: 40px; }
+.scr-trk-grid { min-width: 980px; }
+.scr-trk-grid col.w-station { width: 190px; }
+.scr-trk-grid col.w-time { width: 128px; }
+.scr-trk-grid col.w-antenna { width: 88px; }
+.scr .scr-trk-grid th.center, .scr .scr-trk-grid td.center { text-align: center; }
+.scr-x-table td.num.is-short { color: #c2141a; font-weight: 600; }
+.scr-x-table td.num.is-rent { color: #14764a; font-weight: 600; }
+.scr-x-table td.num.is-warn, .scr-x-kpis dd.is-warn { color: #b25d00; font-weight: 600; }
+.scr-trk-star { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; margin: -6px 0; padding: 0; border: 0; background: none; cursor: pointer; color: #d81b23; vertical-align: middle; border-radius: 50%; }
+.scr-trk-star svg { fill: currentColor; filter: drop-shadow(0 1px 2px rgba(194, 20, 26, 0.35)); transition: transform .15s ease; }
+.scr-trk-star span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding-top: 2px; font-size: 11px; font-weight: 800; color: #fff; }
+.scr-trk-star:hover svg { transform: scale(1.12); }
+.scr-trk-star:focus-visible { outline: 2px solid #1a1640; outline-offset: 2px; }
+.scr-trk-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #c8c5dc; vertical-align: middle; }
+.scr-trk-dot.is-online { background: #1f9d55; box-shadow: 0 0 0 3px #e3f6ec; }
+.scr-trk-dot.is-offline { background: #c2141a; box-shadow: 0 0 0 3px #fdeced; }
+.scr-modal.scr-x-modal.scr-trk-missing { width: min(760px, calc(100vw - 32px)); }
+.scr-trk-missing-table { min-width: 560px; }
+.scr-trk-cashiers { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid #f0eff7; font-size: 13px; color: #1a1640; }
+.scr-trk-cashiers .scr-label { margin: 0 4px 0 0; }
+.scr-trk-cashier { padding: 3px 10px; border-radius: 99px; background: #f4f3f9; font-weight: 600; }
+.scr-trk-cashier small { font-weight: 500; color: #6b6790; }
+@media (prefers-reduced-motion: reduce) { .scr-trk-star svg { transition: none; } }
+
+/* Card-discount request: the order's vehicles under the card photo (client, 20 Nov 2026) */
+.scr-mon-side { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.scr-veh-cards { display: flex; flex-direction: column; gap: 12px; }
+.scr-veh-card { border: 1px solid #eeedf5; border-radius: 12px; padding: 12px 14px; background: #fff; }
+.scr-veh-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.scr-veh-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; margin: 10px 0 0; }
+.scr-veh-grid dt { font-size: 11px; font-weight: 600; color: #9490bb; letter-spacing: 0.03em; text-transform: uppercase; }
+.scr-veh-grid dd { margin: 2px 0 0; font-size: 13px; font-weight: 600; color: #1a1640; font-variant-numeric: tabular-nums; }
+.scr-veh-grid dd small { display: block; font-size: 11.5px; font-weight: 500; color: #9490bb; }
+.scr-veh-grid .is-total dd { font-weight: 700; }
+.scr-veh-fare { margin-top: 10px; padding-top: 8px; border-top: 1px dashed #eeedf5; font-size: 12px; color: #6b6790; display: flex; flex-direction: column; gap: 2px; }
+
+/* -- Status Tracking, round 2 (client, 20 Nov 2026) ------------------------------------------
+   Counts centred under their headings (the star and a plain number share one centre line);
+   the Antenna column breathes on the right; a station that changed glows and moves up,
+   its star pulses; the station's vehicles open in a scrolling dialog. */
+.scr .scr-trk-grid th.c, .scr .scr-trk-grid td.c { text-align: center; }
+.scr-trk-grid col.w-antenna { width: 104px; }
+.scr .scr-trk-grid th:last-child, .scr .scr-trk-grid td:last-child { padding-inline-end: 24px; text-align: center; }
+.scr-trk-grid .scr-trk-star { margin: -6px auto; display: inline-flex; vertical-align: middle; }
+.scr-trk-grid tr.is-changed td { animation: liveGlow 2.4s ease-out; }
+.scr-trk-star.is-pulse svg { animation: trkPulse 0.7s ease-in-out 3; }
+@keyframes trkPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.28); } }
+[data-status-total].is-bump dd { animation: trkBump 0.9s ease-out; }
+@keyframes trkBump { 0% { transform: scale(1); } 30% { transform: scale(1.12); } 100% { transform: scale(1); } }
+.scr-x-kpis [data-status-total] dd { transform-origin: left center; }
+@media (prefers-reduced-motion: reduce) {
+  .scr-trk-grid tr.is-changed td, .scr-trk-star.is-pulse svg, [data-status-total].is-bump dd { animation: none; }
+}
+.scr-modal.scr-x-modal.scr-trk-station-modal { width: min(920px, calc(100vw - 32px)); }
+.scr-trk-station-modal .scr-modal-body { padding-top: 4px; }
+.scr-trk-station-modal .scr-trk-station-scroll { max-height: min(62vh, 620px); overflow: auto; overscroll-behavior: contain; }
+.scr-trk-station { table-layout: fixed; width: 100%; min-width: 640px; }
+.scr-trk-station col.w-veh { width: 26%; }
+.scr-trk-station col.w-state { width: 118px; }
+.scr-trk-station col.w-when { width: 132px; }
+.scr-trk-station col.w-heard { width: 158px; }
+.scr .scr-trk-station th, .scr-trk-station-modal .scr-trk-station th { position: sticky; top: 0; z-index: 1; background: #fbfaff; }
+.scr .scr-trk-station th:last-child, .scr .scr-trk-station td:last-child,
+.scr-trk-station-modal .scr-trk-station th:last-child, .scr-trk-station-modal .scr-trk-station td:last-child { padding-inline-end: 24px; text-align: right; }
+.scr-trk-station-modal .scr-trk-station th, .scr-trk-station-modal .scr-trk-station td { padding: 10px 12px; text-align: left; font-size: 13px; border-bottom: 1px solid #f0eff7; }
+.scr-trk-station-modal .scr-trk-station th { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: #9490bb; }
+.scr-trk-station-modal .scr-trk-station td.num, .scr-trk-station-modal .scr-trk-station th.num { text-align: right; }
+.scr-trk-station tr.is-missing td { background: #fff7f7; }
+.scr-trk-station-scroll { max-width: 100%; overflow-x: auto; }
+
+/* Reader CPU Approval: the action cell lines its buttons and menu up on one row (client, 20 Nov 2026) */
+.scr-trk-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.scr-trk-actions .scr-menu-wrap { display: inline-flex; margin: 0; }
+.scr-x-table .scr-trk-actions { white-space: nowrap; }
+.scr-btn-small.is-danger { color: #c2141a; border-color: #f3c9cb; }
+.scr-btn-small.is-danger:hover { background: #fdeced; border-color: #c2141a; color: #c2141a; }
+@media (max-width: 900px) { .scr-trk-actions { justify-content: flex-start; } }
+.scr-trk-station-modal .scr-trk-station th { white-space: nowrap; }
+
+/* A cell that holds a button or a dropdown is never cut off with "..." -- that read as a stray
+   kebab (Approve, History, the antenna direction; client, 20 Nov 2026). Text cells still ellipsize. */
+.scr-x-table td.actions, .scr-x-table td:has(> select), .scr-x-table td:has(> .scr-btn-small),
+.scr-x-table td:has(.scr-trk-actions) { overflow: visible; text-overflow: clip; }
+/* ── Target Profiles (design/11-target-profiles.md) ──────────────────────
+   Extends the scr-x / scr-inc families above; no new look. */
+.scr-x-step.is-off { color: #d9d5ea; cursor: default; }
+.scr-x-step.is-off:hover { background: transparent; color: #d9d5ea; }
+.scr-x-muted { color: #9490bb; font-size: 12.5px; font-weight: 500; }
+.scr-x-tag {
+  display: inline-block; padding: 2px 7px; border-radius: 6px; background: #f4f3f9; border: 1px solid #e8e7f2;
+  color: #6b6790; font-size: 11px; font-weight: 600; vertical-align: middle; white-space: nowrap;
+}
+.scr-x-profile-select { min-width: 220px; max-width: 320px; }
+.scr-x-step-label { max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
+.scr-x-daycard .scr-x-kpis dd .scr-x-status { font-size: 13px; }
+
+.scr-tp-layout { grid-template-columns: minmax(0, 1fr); max-width: 980px; }
+.scr-tp-apply { display: flex; gap: 8px; align-items: center; }
+.scr-tp-apply .scr-btn-small { white-space: nowrap; flex: 0 0 auto; }
+.scr-tp-amounts .scr-x-table col.w-num { width: 220px; }
+.scr-tp-apply .scr-drawer-input { flex: 1 1 auto; min-width: 0; }
+.scr-tp-amounts { margin-top: 14px; }
+.scr-tp-amounts .scr-x-table td { vertical-align: middle; }
+.scr-tp-amount { max-width: 180px; margin-left: auto; text-align: right; font-variant-numeric: tabular-nums; }
+.scr-tp-weights { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px 14px; margin-top: 14px; }
+.scr-tp-weight .scr-drawer-input { text-align: right; font-variant-numeric: tabular-nums; }
+.scr-tp-total { margin: 14px 0 0; font-size: 13px; color: #4b4770; text-align: right; }
+.scr-tp-total b { color: #14764a; font-variant-numeric: tabular-nums; }
+.scr-tp-total.is-off b { color: #c2141a; }
+
+@media (max-width: 767.98px) {
+  .scr-x-profile-select { min-width: 0; width: 100%; max-width: none; }
+  .scr-tp-weights { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .scr-tp-amount { max-width: none; }
+  .scr-x-step-label { min-width: 0; }
+}

@@ -1,0 +1,10 @@
+{% comment %}The state filter beside a stepper. Keeps the period and the profile in hidden fields.{% endcomment %}
+<form class="scr-x-filter" method="get">
+  {% if period_name %}<input type="hidden" name="{{ period_name }}" value="{{ period_value }}" />{% endif %}
+  {% if profile %}<input type="hidden" name="profile" value="{{ profile.pk }}" />{% endif %}
+  <label class="scr-x-visually-hidden" for="tgt-state">State</label>
+  <select id="tgt-state" class="scr-input" name="state" data-tgt-filter>
+    <option value="">All states</option>
+    {% for s in states %}<option value="{{ s.pk }}"{% if s.pk == chosen_state %} selected{% endif %}>{{ s.name }}</option>{% endfor %}
+  </select>
+</form>

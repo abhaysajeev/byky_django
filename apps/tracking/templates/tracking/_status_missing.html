@@ -1,0 +1,23 @@
+{% comment %}The missing star's dialog body (StatusMissingView), fetched into #status-missing.{% endcomment %}
+<div class="scr-table-scroll">
+  <table class="scr-x-table scr-trk-missing-table">
+    <thead><tr><th scope="col">Category</th><th scope="col">Vehicle type</th><th scope="col">Vehicle number</th><th scope="col" class="num">Missing since</th><th scope="col" class="num">Last heard</th></tr></thead>
+    <tbody>
+      {% for v in vehicles %}
+      <tr>
+        <td data-label="Category">{{ v.category|default:"—" }}</td>
+        <td data-label="Vehicle type">{{ v.type }}</td>
+        <td data-label="Vehicle number"><span class="scr-x-name">{{ v.number }}</span>{% if v.name != v.number %}<span class="scr-x-sub">{{ v.name }}</span>{% endif %}</td>
+        <td data-label="Missing since" class="num">{{ v.since|date:"j M H:i" }}</td>
+        <td data-label="Last heard" class="num">{{ v.last_seen|date:"j M H:i"|default:"—" }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="5" class="muted">Nothing is missing at {{ branch.name }} now.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="scr-trk-cashiers">
+  <span class="scr-label">Cashier{{ cashiers|length|pluralize }} on duty today</span>
+  {% for c in cashiers %}<span class="scr-trk-cashier">{{ c.name }}{% if c.type %} <small>{{ c.type }}</small>{% endif %}</span>{% empty %}<span class="muted">None on the duty roster today</span>{% endfor %}
+</div>

@@ -1,0 +1,10 @@
+{% comment %}Which profile the page shows. Keeps the state and, when asked, the date.{% endcomment %}
+<form class="scr-x-filter" method="get">
+  {% if chosen_state %}<input type="hidden" name="state" value="{{ chosen_state }}" />{% endif %}
+  {% if keep_date %}<input type="hidden" name="date" value="{{ keep_date }}" />{% endif %}
+  <label class="scr-x-visually-hidden" for="tgt-profile">Target profile</label>
+  <select id="tgt-profile" class="scr-input scr-x-profile-select" name="profile" data-tgt-filter>
+    {% if allow_all %}<option value="">All profiles</option>{% endif %}
+    {% for p in profiles %}<option value="{{ p.id }}"{% if profile and p.id == profile.pk %} selected{% endif %}>{{ p.name }} · {{ p.type }}{% if not p.is_active %} (off){% endif %}</option>{% endfor %}
+  </select>
+</form>
