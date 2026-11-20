@@ -36,7 +36,7 @@
         <tr class="scr-x-row" data-href="{% url 'targets-target' t.pk %}">
           <td data-label="Profile"><a class="scr-x-name" href="{% url 'targets-target' t.pk %}">{{ t.profile.name }}</a></td>
           <td data-label="Type">{{ t.get_period_type_display }} <span class="scr-x-muted">· {{ t.get_kind_display|lower }}</span></td>
-          <td data-label="Period">{{ r.label }}</td>
+          <td data-label="Period" title="{{ r.label }}">{{ r.label }}</td>
           <td data-label="Target" class="num">{{ t.amount|figure:t.is_customers }}</td>
           <td data-label="Achieved" class="num">{{ r.figures.achieved|figure:t.is_customers }}</td>
           <td data-label="Progress">

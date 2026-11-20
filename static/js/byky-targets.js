@@ -196,6 +196,7 @@
     annual: 'One target per financial year. Its amount is shared by the month weights below.'
   };
   var AMOUNT = { daily: 'per day', monthly: 'per month', custom: 'for the whole range', annual: 'per financial year' };
+  var PER = { daily: '/ day', monthly: '/ month', custom: 'total', annual: '/ year' };
 
   function pad(n) { return (n < 10 ? '0' : '') + n; }
   function lastOfMonth(ym) {                     // "2026-12" -> "2026-12-31"
@@ -235,7 +236,7 @@
 
   function showAmountLabels() {
     var unit = isCustomers() ? 'customers' : 'AED';
-    el('[data-tp-amount-head]').textContent = 'Target (' + unit + ', ' + (AMOUNT[type()] || '') + ')';
+    el('[data-tp-amount-head]').textContent = 'Target (' + unit + ' ' + (PER[type()] || '') + ')';
     el('[data-tp-amount-label]').textContent = 'Amount for all chosen (' + unit + ')';
     el('[data-tp-amount-help]').textContent = isCustomers()
       ? 'Customers: a whole number of unique customers, ' + (AMOUNT[type()] || '') + '.'

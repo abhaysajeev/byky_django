@@ -26,7 +26,7 @@
       <div class="scr-inc-grid">
         <label class="scr-inc-field"><span class="byky-label">Target profile</span>
           <select class="scr-drawer-input" data-inc="profile">
-            {% for p in profiles %}<option value="{{ p.id }}">{{ p.name }} · {{ p.type }} {{ p.metric|lower }}</option>{% empty %}<option value="">No active target profile</option>{% endfor %}
+            {% for p in profiles %}<option value="{{ p.id }}">{{ p.name }} ({{ p.type }}, {{ p.metric|lower }})</option>{% empty %}<option value="">No active target profile</option>{% endfor %}
           </select></label>
         <label class="scr-inc-field"><span class="byky-label">Paid in</span>
           <select class="scr-drawer-input" data-inc="payout">
