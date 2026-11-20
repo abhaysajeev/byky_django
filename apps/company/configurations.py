@@ -16,13 +16,13 @@ from django.utils import timezone
 from apps.company import dial_codes, scoping
 from apps.company.models import (
     DECIMAL_PLACES,
+    MONTH_NAMES,
     ROUND_OFF_STEPS,
     CompanyConfig,
     CompanyDialCode,
     CompanyMoneySetting,
     DialCode,
     RoundOffMode,
-    TargetPeriod,
 )
 from apps.company.writes import WriteView, _payload
 from core.money import fmt
@@ -56,8 +56,8 @@ def context_for(request):
         "company": company,
         "companies": [{"id": c.pk, "name": c.name} for c in scoping.companies_for(request.user).order_by("name")],
         "report_day_start": config.report_day_start.strftime("%H:%M") if config and config.report_day_start else "",
-        "target_period": config.target_period if config else TargetPeriod.MONTHLY,
-        "target_periods": TargetPeriod.choices,
+        "financial_year_start": config.financial_year_start if config else 1,
+        "fy_months": MONTH_NAMES,
         "money_rows": money_rows(company) if company else [],
         "countries": [{"id": c.pk, "name": c.name} for c in scoping.countries_for(request.user).order_by("name")],
         "places": DECIMAL_PLACES,
@@ -155,17 +155,22 @@ class ConfigurationSave(WriteView):
         start, rows, errors = validate(data, countries)
         primaries, problems = primary_codes(data)
         errors += problems
-        period = data.get("target_period")
-        if period not in (None, "") and period not in TargetPeriod.values:
-            errors.append({"field": "Target period", "message": "Choose a target period."})
+        fy_start = data.get("financial_year_start")
+        if fy_start not in (None, ""):
+            try:
+                fy_start = int(fy_start)
+            except (TypeError, ValueError):
+                fy_start = 0
+            if not 1 <= fy_start <= 12:
+                errors.append({"field": "Financial year starts", "message": "Choose the month the financial year starts in."})
         if errors:
             return JsonResponse({"ok": False, "code": "invalid", "errors": errors}, status=400)
         with transaction.atomic():
             config, _ = CompanyConfig.objects.get_or_create(
                 company=company, defaults={"created_by": request.user, "modified_by": request.user})
             config.report_day_start, config.modified_by = start, request.user
-            if period:
-                config.target_period = period
+            if fy_start not in (None, ""):
+                config.financial_year_start = fy_start
             config.save()
             kept = {r["country_id"] for r in rows}
             company.money_settings.exclude(country_id__in=kept).delete()

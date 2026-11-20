@@ -158,3 +158,247 @@
   setInterval(refresh, 60000);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) refresh(); });
 })();
+
+/* Target Profiles: the add / edit page (design/11-target-profiles.md §6).
+   The checkboxes of the Branches multi-select are the truth; the amount table
+   follows them, keeping what was typed for a branch while it stays chosen. */
+(function () {
+  'use strict';
+
+  var form = document.querySelector('[data-tgt-profile-form]');
+  var source = document.getElementById('tgt-profile');
+  if (!form || !source) return;
+  var data = JSON.parse(source.textContent);
+  var fyChoices = JSON.parse(document.getElementById('tgt-fy-choices').textContent);
+  var crud = window.BykyCrud;
+  var multi = document.getElementById('tp-branches');
+  var amounts = {};                       // branch id -> typed amount
+  var names = {};                         // branch id -> name
+  (data.assignments || []).forEach(function (a) {
+    if (!a.active) return;
+    amounts[String(a.id)] = a.amount;
+    names[String(a.id)] = a.name;
+  });
+
+  function field(name) { return form.querySelector('[data-tp="' + name + '"]'); }
+  function type() { return field('period_type').value; }
+  function isCustomers() { return field('metric').value === 'customers'; }
+
+  /* ── details ── */
+  ['name', 'metric', 'period_type', 'status', 'remarks'].forEach(function (k) {
+    field(k).value = data[k] == null ? '' : data[k];
+  });
+
+  var HELP = {
+    daily: 'One target per day, from the first day to the last. A single special day: pick the same day twice.',
+    monthly: 'One target per calendar month, from the first month to the last.',
+    custom: 'One target for the whole range — a campaign or a festival week.',
+    annual: 'One target per financial year. Its amount is shared by the month weights below.'
+  };
+  var AMOUNT = { daily: 'per day', monthly: 'per month', custom: 'for the whole range', annual: 'per financial year' };
+
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function lastOfMonth(ym) {                     // "2026-12" -> "2026-12-31"
+    var p = ym.split('-').map(Number);
+    return p[0] + '-' + pad(p[1]) + '-' + pad(new Date(p[0], p[1], 0).getDate());
+  }
+  function fyEnd(start) {
+    var hit = fyChoices.filter(function (f) { return f.value === start; })[0];
+    return hit ? hit.end : start;
+  }
+  function fyContaining(day) {
+    var hit = fyChoices.filter(function (f) { return f.value <= day && day <= f.end; })[0];
+    return hit ? hit.value : (fyChoices[0] && fyChoices[0].value);
+  }
+  function el(sel) { return form.querySelector(sel); }
+
+  function setRange(from, to) {
+    el('[data-tp-date="from"]').value = from;
+    el('[data-tp-date="to"]').value = to;
+    el('[data-tp-month="from"]').value = from.slice(0, 7);
+    el('[data-tp-month="to"]').value = to.slice(0, 7);
+    el('[data-tp-fy="from"]').value = fyContaining(from);
+    el('[data-tp-fy="to"]').value = fyContaining(to);
+  }
+  function range() {
+    var t = type();
+    if (t === 'monthly') {
+      var fm = el('[data-tp-month="from"]').value, tm = el('[data-tp-month="to"]').value;
+      return [fm ? fm + '-01' : '', tm ? lastOfMonth(tm) : ''];
+    }
+    if (t === 'annual') {
+      var ff = el('[data-tp-fy="from"]').value, tf = el('[data-tp-fy="to"]').value;
+      return [ff, tf ? fyEnd(tf) : ''];
+    }
+    return [el('[data-tp-date="from"]').value, el('[data-tp-date="to"]').value];
+  }
+
+  function showAmountLabels() {
+    var unit = isCustomers() ? 'customers' : 'AED';
+    el('[data-tp-amount-head]').textContent = 'Target (' + unit + ', ' + (AMOUNT[type()] || '') + ')';
+    el('[data-tp-amount-label]').textContent = 'Amount for all chosen (' + unit + ')';
+    el('[data-tp-amount-help]').textContent = isCustomers()
+      ? 'Customers: a whole number of unique customers, ' + (AMOUNT[type()] || '') + '.'
+      : 'Sales: AED ' + (AMOUNT[type()] || '') + ', planned over the period\'s days.';
+  }
+  function showType() {
+    var t = type();
+    var kind = t === 'monthly' ? 'month' : (t === 'annual' ? 'fy' : 'date');
+    [].forEach.call(form.querySelectorAll('[data-tp-range]'), function (n) { n.hidden = n.dataset.tpRange !== kind; });
+    el('[data-tp-from-label]').textContent = t === 'daily' ? 'First day' : 'From';
+    el('[data-tp-type-help]').textContent = HELP[t] || '';
+    el('[data-tp-weights]').hidden = t !== 'annual';
+    showAmountLabels();
+  }
+
+  /* ── the branches' amounts ── */
+  function chosen() { return window.BykyMulti ? window.BykyMulti.values(multi) : []; }
+  function nameOf(id) {
+    if (names[id]) return names[id];
+    var box = multi.querySelector('input[value="' + id + '"]');
+    var label = box && box.parentElement.querySelector('span');
+    return label ? label.textContent : id;
+  }
+  function drawAmounts() {
+    var body = el('[data-tp-amount-rows]');
+    var ids = chosen();
+    body.innerHTML = '';
+    ids.map(function (id) { return { id: id, name: nameOf(id) }; })
+      .sort(function (a, b) { return a.name.localeCompare(b.name); })
+      .forEach(function (b) {
+        var tr = document.createElement('tr');
+        var name = document.createElement('td');
+        name.setAttribute('data-label', 'Branch');
+        name.textContent = b.name;
+        var cell = document.createElement('td');
+        cell.className = 'num';
+        cell.setAttribute('data-label', 'Target');
+        var input = document.createElement('input');
+        input.className = 'scr-drawer-input scr-tp-amount';
+        input.inputMode = 'decimal';
+        input.autocomplete = 'off';
+        input.setAttribute('aria-label', 'Target for ' + b.name);
+        input.value = amounts[b.id] || '';
+        input.addEventListener('input', function () { amounts[b.id] = input.value; });
+        cell.appendChild(input);
+        tr.appendChild(name);
+        tr.appendChild(cell);
+        body.appendChild(tr);
+      });
+    el('[data-tp-amounts]').hidden = ids.length === 0;
+  }
+  multi.addEventListener('change', drawAmounts);
+  el('[data-tp-apply]').addEventListener('click', function () {
+    var value = el('[data-tp-apply-amount]').value.trim();
+    if (!value) return;
+    chosen().forEach(function (id) { amounts[id] = value; });
+    drawAmounts();
+  });
+
+  /* ── month weights (annual) ── */
+  var weights = el('[data-tp-weight-rows]');
+  function total() {
+    var sum = 0;
+    [].forEach.call(weights.querySelectorAll('input'), function (n) { sum += parseFloat(n.value) || 0; });
+    var rounded = Math.round(sum * 1000) / 1000;
+    var out = el('[data-tp-weight-total]');
+    out.textContent = rounded + '%';
+    out.parentElement.classList.toggle('is-off', rounded !== 100);
+  }
+  function drawWeights(values) {
+    weights.innerHTML = '';
+    (data.month_names || []).forEach(function (name, i) {
+      var label = document.createElement('label');
+      label.className = 'scr-inc-field scr-tp-weight';
+      var span = document.createElement('span');
+      span.className = 'byky-label';
+      span.textContent = name;
+      var input = document.createElement('input');
+      input.className = 'scr-drawer-input';
+      input.inputMode = 'decimal';
+      input.dataset.month = String(i + 1);
+      input.value = String(Number(values[String(i + 1)] || 0));
+      input.addEventListener('input', total);
+      label.appendChild(span);
+      label.appendChild(input);
+      weights.appendChild(label);
+    });
+    total();
+  }
+  function readWeights() {
+    var out = {};
+    [].forEach.call(weights.querySelectorAll('input'), function (n) { out[n.dataset.month] = n.value.trim() || '0'; });
+    return out;
+  }
+  el('[data-tp-weights-reset]').addEventListener('click', function () { drawWeights(data.default_weights); });
+
+  /* ── save / delete ── */
+  function busy(button, on) {
+    if (!button) return;
+    button.classList.toggle('is-saving', on);
+    button.disabled = on;
+  }
+  function collect() {
+    var r = range();
+    return {
+      pk: data.pk, name: field('name').value.trim(), metric: field('metric').value, period_type: type(),
+      starts_on: r[0], ends_on: r[1], status: field('status').value, remarks: field('remarks').value.trim(),
+      branches: chosen().map(function (id) { return { id: id, amount: amounts[id] || '' }; }),
+      weights: type() === 'annual' ? readWeights() : null
+    };
+  }
+
+  var save = document.querySelector('[data-tgt-profile-save]');
+  if (save) {
+    save.addEventListener('click', function () {
+      busy(save, true);
+      crud.post(form.dataset.saveUrl, collect()).then(function (res) {
+        busy(save, false);
+        var body = res.body || {};
+        if (!body.ok) {
+          crud.showMessages({ title: 'Please fix the following',
+                              items: body.errors || [{ message: 'Something went wrong. Try again.' }] });
+          return;
+        }
+        if (body.refused && body.refused.length) {
+          /* saved, but some branches clash with another profile: say which, stay here */
+          data.pk = body.pk;
+          if (body.redirect) window.history.replaceState(null, '', body.redirect);
+          crud.showMessages({
+            title: 'Saved — some targets were not set',
+            subtitle: 'A branch can\'t have two targets of the same type and metric over the same dates.',
+            items: body.refused.map(function (r) { return { field: r.branch, message: r.reason }; })
+          });
+          return;
+        }
+        crud.toastAfterReload(body.message);
+        window.location.href = body.redirect || window.location.href;
+      }).catch(function () {
+        busy(save, false);
+        crud.showMessages({ title: 'Not saved', items: [{ message: 'The connection dropped. Try again.' }] });
+      });
+    });
+  }
+
+  var del = document.querySelector('[data-tgt-profile-delete]');
+  if (del) {
+    del.addEventListener('click', function () {
+      crud.confirmThen({ title: 'Delete profile', body: 'Delete “' + del.dataset.name + '”? Its targets go with it.' },
+        function () {
+          crud.post(del.dataset.url, {}).then(function (res) {
+            var body = res.body || {};
+            if (!body.ok) { crud.showMessages({ title: 'Not deleted', items: body.errors || [] }); return; }
+            crud.toastAfterReload(body.message);
+            window.location.href = body.redirect;
+          });
+        });
+    });
+  }
+
+  field('period_type').addEventListener('change', showType);
+  field('metric').addEventListener('change', showAmountLabels);
+  setRange(data.starts_on, data.ends_on);
+  drawWeights(data.weights || data.default_weights);
+  showType();
+  drawAmounts();
+})();

@@ -1509,6 +1509,7 @@ body.scr-live-wall .scr-live-th-group { display: none; }
 .scr-x-table col.w-num { width: 150px; }
 .scr-x-table col.w-progress { width: 190px; }
 .scr-x-table col.w-status { width: 128px; }
+.scr-x-table col.w-type { width: 150px; }
 .scr-x-table col.w-state { width: 150px; }
 .scr-x-table col.w-check { width: 52px; }
 .scr-x-table col.w-actions { width: 168px; }
@@ -1968,3 +1969,34 @@ a.scr-x-name:hover { text-decoration: underline; text-underline-offset: 3px; }
    kebab (Approve, History, the antenna direction; client, 20 Nov 2026). Text cells still ellipsize. */
 .scr-x-table td.actions, .scr-x-table td:has(> select), .scr-x-table td:has(> .scr-btn-small),
 .scr-x-table td:has(.scr-trk-actions) { overflow: visible; text-overflow: clip; }
+/* ── Target Profiles (design/11-target-profiles.md) ──────────────────────
+   Extends the scr-x / scr-inc families above; no new look. */
+.scr-x-step.is-off { color: #d9d5ea; cursor: default; }
+.scr-x-step.is-off:hover { background: transparent; color: #d9d5ea; }
+.scr-x-muted { color: #9490bb; font-size: 12.5px; font-weight: 500; }
+.scr-x-tag {
+  display: inline-block; padding: 2px 7px; border-radius: 6px; background: #f4f3f9; border: 1px solid #e8e7f2;
+  color: #6b6790; font-size: 11px; font-weight: 600; vertical-align: middle; white-space: nowrap;
+}
+.scr-x-profile-select { min-width: 220px; max-width: 320px; }
+.scr-x-step-label { max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
+.scr-x-daycard .scr-x-kpis dd .scr-x-status { font-size: 13px; }
+
+.scr-tp-layout { grid-template-columns: minmax(0, 1fr); max-width: 980px; }
+.scr-tp-apply { display: flex; gap: 8px; align-items: center; }
+.scr-tp-apply .scr-drawer-input { flex: 1 1 auto; min-width: 0; }
+.scr-tp-amounts { margin-top: 14px; }
+.scr-tp-amounts .scr-x-table td { vertical-align: middle; }
+.scr-tp-amount { max-width: 180px; margin-left: auto; text-align: right; font-variant-numeric: tabular-nums; }
+.scr-tp-weights { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px 14px; margin-top: 14px; }
+.scr-tp-weight .scr-drawer-input { text-align: right; font-variant-numeric: tabular-nums; }
+.scr-tp-total { margin: 14px 0 0; font-size: 13px; color: #4b4770; text-align: right; }
+.scr-tp-total b { color: #14764a; font-variant-numeric: tabular-nums; }
+.scr-tp-total.is-off b { color: #c2141a; }
+
+@media (max-width: 767.98px) {
+  .scr-x-profile-select { min-width: 0; width: 100%; max-width: none; }
+  .scr-tp-weights { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .scr-tp-amount { max-width: none; }
+  .scr-x-step-label { min-width: 0; }
+}

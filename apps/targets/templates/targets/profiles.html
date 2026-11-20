@@ -1,0 +1,61 @@
+{% extends "targets/_base.html" %}
+
+{% block screen_title %}Target Profiles{% endblock %}
+{% block crumb %}<b>Target Profiles</b>{% endblock %}
+{% block heading %}Target Profiles{% endblock %}
+{% block sub %}A profile sets targets for its branches: daily, monthly, a custom range or a financial year. Profiles may overlap; the same orders count toward each.{% endblock %}
+
+{% block actions %}
+{% if can.create %}<a class="scr-btn scr-btn-primary" href="{% url 'targets-profile-add' %}">Add profile</a>{% endif %}
+{% endblock %}
+
+{% block body %}
+<div class="scr-x-bar">
+  <nav class="scr-x-tabs" aria-label="Profile status">
+    {% for t in status_tabs %}<a class="scr-x-tab{% if t.on %} is-on{% endif %}" href="{{ t.url }}"{% if t.on %} aria-current="page"{% endif %}>{{ t.label }}</a>{% endfor %}
+  </nav>
+</div>
+
+{% if rows %}
+<div class="scr-card">
+  <div class="scr-table-scroll">
+    <table class="scr-x-table scr-x-fit">
+      <colgroup><col /><col class="w-type" /><col class="w-type" /><col /><col class="w-num" /><col class="w-status" /></colgroup>
+      <thead>
+        <tr>
+          <th scope="col">Name</th>
+          <th scope="col">Metric</th>
+          <th scope="col">Type</th>
+          <th scope="col">Period</th>
+          <th scope="col" class="num">Branches</th>
+          <th scope="col">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        {% with p=r.profile %}
+        <tr class="scr-x-row" data-href="{% url 'targets-profile-edit' p.pk %}">
+          <td data-label="Name"><a class="scr-x-name" href="{% url 'targets-profile-edit' p.pk %}">{{ p.name }}</a>{% if p.remarks %} <span class="scr-x-muted">· {{ p.remarks|truncatechars:40 }}</span>{% endif %}</td>
+          <td data-label="Metric">{{ p.get_metric_display }}</td>
+          <td data-label="Type">{{ p.get_period_type_display }}</td>
+          <td data-label="Period">{{ r.range }}</td>
+          <td data-label="Branches" class="num">{{ r.stations }}</td>
+          <td data-label="Status"><span class="scr-x-status is-{% if p.status == 'active' %}met{% elif p.status == 'draft' %}idle{% else %}missed{% endif %}">{{ p.get_status_display }}</span></td>
+        </tr>
+        {% endwith %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<p class="scr-x-note">Only an active profile makes targets. Draft is for setting one up; archived keeps its history.</p>
+{% else %}
+<div class="scr-card">
+  <div class="scr-empty"><div>
+    <div class="scr-empty-title">No profiles here</div>
+    <p class="scr-empty-sub">Add a profile to give your branches targets.</p>
+    {% if can.create %}<a class="scr-btn scr-btn-secondary scr-x-empty-action" href="{% url 'targets-profile-add' %}">Add profile</a>{% endif %}
+  </div></div>
+</div>
+{% endif %}
+{% endblock %}

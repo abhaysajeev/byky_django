@@ -1,0 +1,92 @@
+{% extends "targets/_base.html" %}
+
+{% block screen_title %}{% if profile %}{{ profile.name }}{% else %}Add profile{% endif %}{% endblock %}
+{% block crumb %}<a href="{{ back_url }}">Target Profiles</a>
+<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
+<b>{% if profile %}{{ profile.name }}{% else %}Add profile{% endif %}</b>{% endblock %}
+{% block heading %}{% if profile %}{{ profile.name }}{% else %}Add profile{% endif %}{% endblock %}
+{% block sub %}A named way of setting targets: what is measured, over which periods, and how much for each branch.{% endblock %}
+
+{% block actions %}
+<a class="scr-btn-small" href="{{ back_url }}">Back</a>
+{% if can_delete_profile and can.delete %}<button type="button" class="scr-btn-small" data-tgt-profile-delete data-url="{{ delete_profile_url }}" data-name="{{ profile.name }}">Delete</button>{% endif %}
+{% if profile and can.update or not profile and can.create %}<button type="button" class="scr-btn scr-btn-primary" data-tgt-profile-save><span class="scr-btn-spin"></span>Save profile</button>{% endif %}
+{% endblock %}
+
+{% block body %}
+{{ data|json_script:"tgt-profile" }}
+{{ fy_choices|json_script:"tgt-fy-choices" }}
+<div class="scr-inc-layout scr-tp-layout" data-tgt-profile-form data-save-url="{{ save_url }}">
+  <div class="scr-inc-main">
+    <section class="scr-card scr-inc-section" aria-labelledby="tp-h-profile">
+      <h2 class="scr-x-card-title scr-inc-h" id="tp-h-profile">Profile</h2>
+      <div class="scr-inc-grid">
+        <label class="scr-inc-field scr-inc-wide"><span class="byky-label">Name</span>
+          <input class="scr-drawer-input" data-tp="name" maxlength="100" autocomplete="off" placeholder="e.g. December monthly, 5 Dec special" /></label>
+        <label class="scr-inc-field"><span class="byky-label">Metric</span>
+          <select class="scr-drawer-input" data-tp="metric"{% if "metric" in locked %} disabled{% endif %}>
+            {% for value, label in metrics %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+          </select></label>
+        <label class="scr-inc-field"><span class="byky-label">Type</span>
+          <select class="scr-drawer-input" data-tp="period_type"{% if "period_type" in locked %} disabled{% endif %}>
+            {% for value, label in types %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+          </select></label>
+        {% if locked %}<p class="scr-x-note scr-inc-wide">This profile already has targets, so its metric and type are fixed. Make a new profile for another kind.</p>{% endif %}
+
+        {% comment %}The period pickers: one pair per type, the script shows the right one.{% endcomment %}
+        <label class="scr-inc-field" data-tp-range="date"><span class="byky-label" data-tp-from-label>From</span>
+          <input class="scr-drawer-input" type="date" data-tp-date="from" /></label>
+        <label class="scr-inc-field" data-tp-range="date"><span class="byky-label">To</span>
+          <input class="scr-drawer-input" type="date" data-tp-date="to" /></label>
+        <label class="scr-inc-field" data-tp-range="month" hidden><span class="byky-label">From month</span>
+          <input class="scr-drawer-input" type="month" data-tp-month="from" /></label>
+        <label class="scr-inc-field" data-tp-range="month" hidden><span class="byky-label">To month</span>
+          <input class="scr-drawer-input" type="month" data-tp-month="to" /></label>
+        <label class="scr-inc-field" data-tp-range="fy" hidden><span class="byky-label">From financial year</span>
+          <select class="scr-drawer-input" data-tp-fy="from">{% for f in fy_choices %}<option value="{{ f.value }}">{{ f.label }}</option>{% endfor %}</select></label>
+        <label class="scr-inc-field" data-tp-range="fy" hidden><span class="byky-label">To financial year</span>
+          <select class="scr-drawer-input" data-tp-fy="to">{% for f in fy_choices %}<option value="{{ f.value }}">{{ f.label }}</option>{% endfor %}</select></label>
+        <p class="scr-x-note scr-inc-wide" data-tp-type-help></p>
+
+        <label class="scr-inc-field"><span class="byky-label">Status</span>
+          <select class="scr-drawer-input" data-tp="status">
+            {% for value, label in statuses %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+          </select></label>
+        <label class="scr-inc-field"><span class="byky-label">Remarks <span class="muted">(optional)</span></span>
+          <input class="scr-drawer-input" data-tp="remarks" maxlength="200" autocomplete="off" /></label>
+        <p class="scr-x-note scr-inc-wide">Only an active profile makes targets. Draft lets you set it up first; archived stops it and keeps its history.</p>
+      </div>
+    </section>
+
+    <section class="scr-card scr-inc-section" aria-labelledby="tp-h-branches">
+      <h2 class="scr-x-card-title scr-inc-h" id="tp-h-branches">Branches</h2>
+      <div class="scr-inc-grid">
+        <div class="scr-inc-field scr-inc-wide"><span class="byky-label" id="tp-branches-label">Branches</span>
+          {% include "byky/partials/multi_select.html" with multi_id="tp-branches" field="branches" options=branch_options chosen=chosen_branches placeholder="Choose branches" searchable=True search_label="Search branches" label_id="tp-branches-label" empty_text="No branches in your company." %}
+        </div>
+        <div class="scr-inc-field"><span class="byky-label" data-tp-amount-label>Amount for all chosen</span>
+          <div class="scr-tp-apply">
+            <input class="scr-drawer-input" inputmode="decimal" data-tp-apply-amount autocomplete="off" />
+            <button type="button" class="scr-btn-small" data-tp-apply>Apply to all</button>
+          </div></div>
+      </div>
+      <div class="scr-table-scroll scr-tp-amounts" data-tp-amounts hidden>
+        <table class="scr-x-table">
+          <colgroup><col /><col class="w-num" /></colgroup>
+          <thead><tr><th scope="col">Branch</th><th scope="col" class="num" data-tp-amount-head>Target</th></tr></thead>
+          <tbody data-tp-amount-rows></tbody>
+        </table>
+      </div>
+      <p class="scr-x-note" data-tp-amount-help></p>
+    </section>
+
+    <section class="scr-card scr-inc-section" aria-labelledby="tp-h-weights" data-tp-weights hidden>
+      <div class="scr-inc-head"><h2 class="scr-x-card-title scr-inc-h" id="tp-h-weights">Month weights</h2>
+        <button type="button" class="scr-btn-small" data-tp-weights-reset>Reset to by days</button></div>
+      <p class="scr-x-note">How the year's amount is shared across its months (the financial year starts in {{ fy_start_name }}). Each month's share is then spread evenly over its days.</p>
+      <div class="scr-tp-weights" data-tp-weight-rows></div>
+      <p class="scr-tp-total" aria-live="polite">Total <b data-tp-weight-total>100%</b></p>
+    </section>
+  </div>
+</div>
+{% endblock %}
