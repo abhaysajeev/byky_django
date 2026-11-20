@@ -22,10 +22,13 @@
   }
 
   /* ── Calculate / Recalculate / Approve ───────────────────────────── */
-  function calculate(button, url, branch, month, name, again) {
+  /* `where`: {month} or, with profiles, {profile, period} -- the server
+     takes either (design/11). */
+  function calculate(button, url, branch, where, name, again) {
     var run = function () {
       busy(button, true);
-      crud.post(url, { branch: branch, month: month }).then(function (res) {
+      var payload = { branch: branch, month: where.month, profile: where.profile || '', period: where.period || '' };
+      crud.post(url, payload).then(function (res) {
         busy(button, false);
         if (!res.body.ok) { fail('Not calculated', res.body); return; }
         crud.toastAfterReload(res.body.message);
@@ -44,13 +47,16 @@
     var calc = e.target.closest('[data-inc-calc]');
     if (calc) {
       var table = calc.closest('[data-inc-calculate]');
-      calculate(calc, table.dataset.url, calc.dataset.branch, table.dataset.month, calc.dataset.name,
-                calc.textContent.trim() === 'Recalculate');
+      calculate(calc, table.dataset.url, calc.dataset.branch,
+                { month: table.dataset.month, profile: table.dataset.profile, period: table.dataset.period },
+                calc.dataset.name, calc.textContent.trim() === 'Recalculate');
       return;
     }
     var recalc = e.target.closest('[data-inc-recalc]');
     if (recalc) {
-      calculate(recalc, recalc.dataset.url, recalc.dataset.branch, recalc.dataset.month, recalc.dataset.name, true);
+      calculate(recalc, recalc.dataset.url, recalc.dataset.branch,
+                { month: recalc.dataset.month, profile: recalc.dataset.profile, period: recalc.dataset.period },
+                recalc.dataset.name, true);
       return;
     }
     var approve = e.target.closest('[data-inc-approve]');
@@ -109,9 +115,18 @@
 
   ['name', 'effective_from', 'effective_to', 'pays_when', 'notes'].forEach(function (k) { field(k).value = data[k] || ''; });
   field('is_active').checked = !!data.is_active;
-  form.querySelectorAll('[data-inc-stations] input').forEach(function (box) {
-    box.checked = data.branches.indexOf(parseInt(box.value, 10)) >= 0;
+  if (data.profile) field('profile').value = String(data.profile);
+  field('payout').value = data.payout || 'period_end_month';
+
+  /* Branches: a searchable multi-select of the chosen profile's branches
+     (the server renders the first profile's; a change reloads them, keeping
+     any still on the new profile). */
+  var branchPicker = document.getElementById('inc-branches');
+  field('profile').addEventListener('change', function () {
+    if (!branchPicker || !window.BykyMulti) return;
+    window.BykyMulti.setOptions(branchPicker, (data.profile_branches || {})[field('profile').value] || []);
   });
+  function chosenBranches() { return branchPicker && window.BykyMulti ? window.BykyMulti.values(branchPicker) : []; }
 
   function input(cls, value, label, attrs) {
     var el = document.createElement('input');
@@ -203,7 +218,7 @@
       pk: data.pk, name: field('name').value.trim(), effective_from: field('effective_from').value,
       effective_to: field('effective_to').value, pays_when: field('pays_when').value.trim(),
       is_active: field('is_active').checked, notes: field('notes').value.trim(),
-      branches: Array.prototype.map.call(form.querySelectorAll('[data-inc-stations] input:checked'), function (b) { return b.value; }),
+      profile: field('profile').value, payout: field('payout').value, branches: chosenBranches(),
       variables: rows('variable'), components: rows('component')
     };
   }

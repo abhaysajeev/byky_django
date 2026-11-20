@@ -1,15 +1,20 @@
-"""Incentive calculation (design/09-incentives.md sections 2, 4 and 6).
+"""Incentive calculation (design/09-incentives.md sections 2, 4 and 6;
+design/11-target-profiles.md P6-P7).
 
-  I1  a station pays for a month only when its scheme's *pays when* holds
-      (default achieved >= target), the month has ended, and it has a sales target;
-  I2  basis = month achieved / working days (a day with >= 1 person rostered
-      Working there) -- the same figure for every working day;
+A run is one station's *period* of one target profile -- a month, a day, a
+custom range or a financial year -- paid on that profile's scheme.
+
+  I1  a station pays for a period only when its scheme's *pays when* holds
+      (default achieved >= target), the period has ended, and it has a target;
+  I2  basis = achieved / working days in the period (a day with >= 1 person
+      rostered Working there) -- the same figure for every working day;
   I3  each working day, that day's roster decides who gets which component;
-  I5  an employee is paid station by station, the month total is the sum;
+  I5  an employee is paid station by station; the payout month's total is the sum;
   I6  a run is a draft until approved; approved is final.
 
-Achieved is Targets' figure (apps/targets/services.achieved_by_day), so the
-target page and the incentive never disagree.
+Achieved is Targets' figure (apps/targets/services.achieved_for), so the
+target page and the incentive never disagree. Calls that name no profile mean
+the station's monthly sales target, as before profiles.
 """
 
 from collections import Counter, defaultdict
@@ -22,10 +27,11 @@ from django.utils import timezone
 from apps.crew.duty import role_of
 from apps.crew.models import CashierType, DutyRoster, DutyRosterDayType
 from apps.incentives import formula
-from apps.incentives.models import APPLIES, AppliesTo, Line, Run, RunStatus, Scheme
+from apps.incentives.models import APPLIES, AppliesTo, Line, Payout, Run, RunStatus, Scheme
 from apps.incentives.variables import CATALOGUE, MONTH_NAMES
+from apps.targets import periods
 from apps.targets import services as targets
-from apps.targets.models import Target, TargetKind
+from apps.targets.models import PeriodType, Target, TargetKind
 from core.money import places_for
 
 ZERO = Decimal("0")
@@ -45,17 +51,22 @@ def _q(value, places):
 
 # -- Schemes -------------------------------------------------------------------------------
 
-def scheme_for(company, branch, first):
-    """The active scheme for a station's month: one naming the station wins
-    over an all-stations one. Two at the same level is a configuration error."""
-    schemes = list(Scheme.objects.filter(company=company, is_active=True, effective_from__lte=first)
-                   .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=first))
+def scheme_for(company, branch, first, profile=None):
+    """The active scheme of a profile for a station's period: one naming the
+    station wins over an all-stations one of the same profile. Two at the same
+    level is a configuration error. No profile: the monthly sales one's."""
+    found = Scheme.objects.filter(company=company, is_active=True, effective_from__lte=first)
+    if profile is not None:
+        found = found.filter(profile=profile)
+    else:
+        found = found.filter(profile__metric=TargetKind.SALES, profile__period_type=PeriodType.MONTHLY)
+    schemes = list(found.filter(Q(effective_to__isnull=True) | Q(effective_to__gte=first))
                    .prefetch_related("branches", "variables", "components"))
     own = [s for s in schemes if any(b.pk == branch.pk for b in s.branches.all())]
     general = [s for s in schemes if not s.branches.all()]
     pick = own or general
     if len(pick) > 1:
-        raise IncentiveError("Scheme", f"More than one active scheme covers {branch.name} in {first:%B %Y}: "
+        raise IncentiveError("Scheme", f"More than one active scheme covers {branch.name} from {first:%-d %b %Y}: "
                                        + ", ".join(s.name for s in pick) + ".")
     return pick[0] if pick else None
 
@@ -141,10 +152,15 @@ def person_values(role, days_worked):
             "is_labour": Decimal(role == "labour"), "days_worked": Decimal(days_worked)}
 
 
-# -- The month -------------------------------------------------------------------------------
+# -- The period ------------------------------------------------------------------------------
 
-def sales_target(branch, first):
-    return Target.objects.filter(branch=branch, kind=TargetKind.SALES, period_start=first).first()
+def sales_target(branch, first, profile=None):
+    """The station's target that a run is worked out on: the profile's period
+    starting `first`, or (no profile) its monthly sales target."""
+    found = Target.objects.filter(branch=branch, period_start=first).select_related("profile", "company")
+    if profile is not None:
+        return found.filter(profile=profile).first()
+    return found.filter(kind=TargetKind.SALES, period_type=PeriodType.MONTHLY).first()
 
 
 def month_achieved(company, branch, first, last):
@@ -152,12 +168,36 @@ def month_achieved(company, branch, first, last):
     return sum((v for (b, _), v in found.items() if b == branch.pk), ZERO)
 
 
-def month_values(target_amount, achieved, work_days, first):
-    last = targets.month_bounds(first.year, first.month)[1]
+def target_achieved(target, today):
+    """Targets' own figure for the period, so the two pages never disagree:
+    AED for sales, unique customers for customers; up to today while it runs."""
+    return targets.achieved_for([target], today).get(target.pk, ZERO)
+
+
+def month_values(target_amount, achieved, work_days, first, last=None):
+    """The period's figures for the formulas. days_in_month is kept as an
+    alias of days_in_period so schemes written before profiles still work."""
+    last = last or targets.month_bounds(first.year, first.month)[1]
     basis = achieved / work_days if work_days else ZERO
     pct = achieved * 100 / target_amount if target_amount else ZERO
+    days = Decimal((last - first).days + 1)
     return {"achieved": achieved, "target": target_amount, "achievement_pct": pct, "work_days": Decimal(work_days),
-            "basis": basis, "days_in_month": Decimal((last - first).days + 1)}
+            "basis": basis, "days_in_period": days, "days_in_month": days}
+
+
+def payout_month(scheme, target):
+    """The first of the month the run is paid in (11 P7): the month its period
+    ends, or the month the financial year containing that end finishes."""
+    end = target.period_end
+    if scheme.payout == Payout.FINANCIAL_YEAR_END:
+        end = periods.financial_year(end, periods.fy_start_month(target.company))[1]
+    return end.replace(day=1)
+
+
+def period_label(target_or_run):
+    item = target_or_run
+    kind = item.period_type if hasattr(item, "period_type") else item.profile.period_type
+    return periods.period_label(kind, item.period_start, item.period_end)
 
 
 def _compile(scheme):
@@ -197,32 +237,35 @@ def _json(values):
     return {k: (format(v.normalize(), "f") if isinstance(v, Decimal) else v) for k, v in values.items()}
 
 
-def eligibility(branch, first, now=None):
-    """What the Calculate list shows for a station's month: target, achieved,
+def eligibility(branch, first, now=None, profile=None):
+    """What the Calculate list shows for a station's period: target, achieved,
     the run, and whether Calculate is allowed (with the reason when not)."""
     company = branch.company
     today = targets.today_for(company, now)
-    last = targets.month_bounds(first.year, first.month)[1]
-    target = sales_target(branch, first)
-    run = Run.objects.filter(branch=branch, period_start=first).first()
-    achieved = month_achieved(company, branch, first, min(last, today)) if first <= today else ZERO
+    target = sales_target(branch, first, profile)
+    profile = target.profile if target else profile
+    last = target.period_end if target else targets.month_bounds(first.year, first.month)[1]
+    run = (Run.objects.filter(branch=branch, period_start=first, profile=profile).first()
+           if profile else None)
+    achieved = target_achieved(target, today) if target and first <= today else ZERO
     met = bool(target) and achieved >= target.amount
     reason = ""
     if target is None:
         reason = "No target"
     elif today <= last:
-        reason = "Month not over"
+        reason = "Period not over"
     elif run is not None and run.is_approved:
         reason = "Approved"
     else:
         try:
-            scheme = scheme_for(company, branch, first)
+            scheme = scheme_for(company, branch, first, profile)
         except IncentiveError as error:
             scheme, reason = None, error.message
         if not reason and scheme is None:
             reason = "No active scheme"
         if not reason:
-            values = month_values(target.amount, achieved, 1, first)
+            # the same working days as calculate(), so the two never disagree
+            values = month_values(target.amount, achieved, len(roster_days(branch, first, last)), first, last)
             try:
                 if not formula.evaluate(scheme.pays_when, values):
                     reason = "Target not met"
@@ -230,38 +273,43 @@ def eligibility(branch, first, now=None):
                 reason = f"Scheme error: {error}"
     return {"branch": branch, "target": target, "achieved": achieved, "met": met, "run": run,
             "pct": targets.percent(achieved, target.amount) if target else None,
-            "can_calculate": not reason, "reason": reason, "ended": today > last}
+            "can_calculate": not reason, "reason": reason, "ended": today > last, "profile": profile,
+            "label": period_label(target) if target else ""}
 
 
 @transaction.atomic
-def calculate(branch, first, user, now=None):
-    """Work out (or again) a station's month as a draft run. Refused unless
-    the month has ended, the station has a sales target, a scheme applies and
-    its *pays when* holds, and the month is not approved."""
+def calculate(branch, first, user, now=None, profile=None):
+    """Work out (or again) a station's period of a profile as a draft run.
+    Refused unless the period has ended, the station has a target, a scheme
+    of the profile applies and its *pays when* holds, and the run is not
+    approved. No profile: the station's monthly sales target."""
     company = branch.company
     today = targets.today_for(company, now)
-    last = targets.month_bounds(first.year, first.month)[1]
-    if today <= last:
-        raise IncentiveError("Month", f"{first:%B %Y} is not over yet.")
-    existing = Run.objects.select_for_update().filter(branch=branch, period_start=first).first()
-    if existing is not None and existing.is_approved:
-        raise IncentiveError("Run", "This month is approved; it can't be calculated again.")
-    target = sales_target(branch, first)
+    target = sales_target(branch, first, profile)
+    if target is None and profile is None and today <= targets.month_bounds(first.year, first.month)[1]:
+        raise IncentiveError("Period", f"{first:%B %Y} is not over yet.")
     if target is None:
-        raise IncentiveError("Target", f"{branch.name} has no sales target for {first:%B %Y}.")
-    scheme = scheme_for(company, branch, first)
+        what = f"{profile.name} target" if profile else "sales target"
+        raise IncentiveError("Target", f"{branch.name} has no {what} starting {first:%-d %b %Y}.")
+    profile, last, label = target.profile, target.period_end, period_label(target)
+    if today <= last:
+        raise IncentiveError("Period", f"{label} is not over yet.")
+    existing = Run.objects.select_for_update().filter(branch=branch, profile=profile, period_start=first).first()
+    if existing is not None and existing.is_approved:
+        raise IncentiveError("Run", "This period is approved; it can't be calculated again.")
+    scheme = scheme_for(company, branch, first, profile)
     if scheme is None:
-        raise IncentiveError("Scheme", f"No active scheme covers {branch.name} in {first:%B %Y}.")
-    achieved = month_achieved(company, branch, first, last)
+        raise IncentiveError("Scheme", f"No active scheme of “{profile.name}” covers {branch.name} for {label}.")
+    achieved = target_achieved(target, today)
     days = roster_days(branch, first, last)
-    month = month_values(target.amount, achieved, len(days), first)
+    month = month_values(target.amount, achieved, len(days), first, last)
     try:
         pays = formula.evaluate(scheme.pays_when, month)
     except formula.FormulaError as error:
         raise IncentiveError("Pays when", str(error)) from None
     if not pays:
         raise IncentiveError("Target", f"{branch.name} did not meet the scheme's condition ({scheme.pays_when}) "
-                                       f"for {first:%B %Y}.")
+                                       f"for {label}.")
     try:
         parts = _compile(scheme)
     except formula.FormulaError as error:
@@ -277,8 +325,9 @@ def calculate(branch, first, user, now=None):
                 lines.append(Line(employee=employee, date=date, role=role, component=component.name, amount=amount,
                                   inputs=_json(values)))
     run, _ = Run.objects.update_or_create(
-        branch=branch, period_start=first,
-        defaults={"company": company, "period_end": last, "scheme": scheme, "target_amount": target.amount,
+        branch=branch, profile=profile, period_start=first,
+        defaults={"company": company, "period_end": last, "payout_month": payout_month(scheme, target),
+                  "scheme": scheme, "target_amount": target.amount,
                   "achieved": achieved, "work_days": len(days), "basis": _q(month["basis"], 3),
                   "total": sum((ln.amount for ln in lines), ZERO), "status": RunStatus.DRAFT,
                   "calculated_at": now or timezone.now(), "calculated_by": user, "modified_by": user})
@@ -291,7 +340,7 @@ def calculate(branch, first, user, now=None):
 
 def approve(run, user, now=None):
     if run.is_approved:
-        raise IncentiveError("Run", "This month is already approved.")
+        raise IncentiveError("Run", "This period is already approved.")
     run.status, run.approved_at, run.approved_by, run.modified_by = (RunStatus.APPROVED, now or timezone.now(),
                                                                       user, user)
     run.save(update_fields=["status", "approved_at", "approved_by", "modified_by", "modified_on"])
@@ -333,16 +382,19 @@ def run_by_employee(run):
 
 
 def employee_totals(company, branches, first):
-    """Every employee with lines in the month across these stations (I5):
-    their per-station amounts and the approved / draft totals."""
-    lines = (Line.objects.filter(run__company=company, run__branch__in=branches, run__period_start=first)
-             .select_related("employee", "run__branch"))
+    """Every employee with lines paid in the month `first` across these
+    stations (I5, 11 P7): one entry per station and profile, and the approved
+    / draft totals. A daily special pays with its month, an annual profile at
+    the financial year's end -- whichever its scheme says."""
+    lines = (Line.objects.filter(run__company=company, run__branch__in=branches, run__payout_month=first)
+             .select_related("employee", "run__branch", "run__profile"))
     people = {}
     for line in lines:
         person = people.setdefault(line.employee.pk, {"employee": line.employee, "stations": {},
                                                       "approved": ZERO, "draft": ZERO, "dates": set()})
-        station = person["stations"].setdefault(line.run.branch_id, {
-            "branch": line.run.branch, "run": line.run, "amount": ZERO, "dates": set()})
+        station = person["stations"].setdefault(line.run_id, {
+            "branch": line.run.branch, "run": line.run, "profile": line.run.profile,
+            "label": period_label(line.run), "amount": ZERO, "dates": set()})
         station["amount"] += line.amount
         station["dates"].add(line.date)
         person["dates"].add((line.run.branch_id, line.date))
@@ -352,7 +404,8 @@ def employee_totals(company, branches, first):
             person["draft"] += line.amount
     out = []
     for person in people.values():
-        stations = sorted(person["stations"].values(), key=lambda s: s["branch"].name)
+        stations = sorted(person["stations"].values(),
+                          key=lambda s: (s["branch"].name, s["profile"].name.lower(), s["run"].period_start))
         for s in stations:
             s["days"] = len(s.pop("dates"))
         out.append({"employee": person["employee"], "stations": stations, "approved": person["approved"],
@@ -364,21 +417,32 @@ def employee_totals(company, branches, first):
 
 def try_scheme(scheme, branch, day, now=None):
     """A saved scheme on one real station-day (see try_parts)."""
-    return try_parts(scheme.pays_when, _compile(scheme), branch, day, now)
+    return try_parts(scheme.pays_when, _compile(scheme), branch, day, now, profile=scheme.profile)
 
 
-def try_parts(pays_when, parts, branch, day, now=None):
-    """Formulas on one real station-day, before anyone is paid: the month's
-    figures so far (or the whole month once ended), that day's roster, and
-    each person's amount. Says whether *pays when* holds, but never gates."""
+def try_parts(pays_when, parts, branch, day, now=None, profile=None):
+    """Formulas on one real station-day, before anyone is paid: the period's
+    figures so far (or the whole period once ended), that day's roster, and
+    each person's amount. Says whether *pays when* holds, but never gates.
+    The period is the profile's one containing `day` (no profile: its month)."""
     company = branch.company
-    first = day.replace(day=1)
-    last = targets.month_bounds(first.year, first.month)[1]
     today = targets.today_for(company, now)
-    target = sales_target(branch, first)
-    achieved = month_achieved(company, branch, first, min(last, today)) if first <= today else ZERO
+    target = None
+    if profile is not None:
+        target = (Target.objects.filter(branch=branch, profile=profile, period_start__lte=day, period_end__gte=day)
+                  .select_related("company", "profile").first())
+        span = (target.period_start, target.period_end) if target else periods.period_containing(profile, day)
+    else:
+        span = None
+    first, last = span or targets.month_bounds(day.year, day.month)
+    if profile is None:
+        target = sales_target(branch, first)
+    if target is not None:
+        achieved = target_achieved(target, today) if first <= today else ZERO
+    else:
+        achieved = month_achieved(company, branch, first, min(last, today)) if first <= today else ZERO
     days = roster_days(branch, first, last)
-    month = month_values(target.amount if target else ZERO, achieved, len(days), first)
+    month = month_values(target.amount if target else ZERO, achieved, len(days), first, last)
     people = days.get(day, [])
     counts = day_counts(people)
     worked = Counter(employee.pk for p in days.values() for employee, _ in p)
@@ -401,7 +465,8 @@ def copy_scheme(scheme, user):
     """A new, inactive scheme with the same formulas (an approved run's scheme
     can't change -- copy it and change the copy)."""
     with transaction.atomic():
-        twin = Scheme.objects.create(company=scheme.company, name=f"{scheme.name} (copy)"[:100],
+        twin = Scheme.objects.create(company=scheme.company, profile=scheme.profile, payout=scheme.payout,
+                                     name=f"{scheme.name} (copy)"[:100],
                                      effective_from=scheme.effective_from, effective_to=scheme.effective_to,
                                      pays_when=scheme.pays_when, is_active=False, notes=scheme.notes,
                                      created_by=user, modified_by=user)

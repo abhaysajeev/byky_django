@@ -18,6 +18,7 @@ from apps.crew.tests.test_attendance import (  # noqa: F401
 from apps.fare.tests.test_api import call
 from apps.incentives import services
 from apps.incentives.models import AppliesTo, Scheme
+from apps.targets import services as targets
 from apps.targets.tests.test_api import DUBAI, at, boss, clock, data, sale, target  # noqa: F401
 
 D = Decimal
@@ -39,12 +40,19 @@ def roster(employee, day, branch=None, day_type=DutyRosterDayType.WORKING):
         shift1_start=start if working else None, shift1_end=start + datetime.timedelta(hours=8) if working else None)
 
 
+def monthly_sales(world):  # noqa: F811
+    """The company's monthly sales profile -- the one create_targets() fills,
+    as every scheme had after the move to profiles (design/11 §8)."""
+    first, last = targets.month_bounds(NOV.year, NOV.month)
+    return targets.default_profile(world["company"], targets.TargetKind.SALES, first, last, None)
+
+
 @pytest.fixture
 def month(world, boss, sale, clock):  # noqa: F811
     """November: Anil works AUH01 on the 5th (target met: 5,000 of 4,000) and
     AUH02 on the 6th (missed: 1,000 of 4,000), off on the 7th. AUH01's run is
     calculated (a draft); December 2 now."""
-    scheme = Scheme.objects.create(company=world["company"], name="Standard incentive", effective_from=NOV,
+    scheme = Scheme.objects.create(company=world["company"], profile=monthly_sales(world), name="Standard incentive", effective_from=NOV,
                                    is_active=True)
     scheme.components.create(position=1, name="Primary cashier", applies_to=AppliesTo.PRIMARY, formula="basis * 1%")
     target(world, boss, world["auh1"], "4000")
