@@ -11,6 +11,10 @@ The operator app gets no incentives (wrong_channel). An employee is paid only
 from APPROVED runs -- a draft can still change -- so the employee views count
 approved lines only; a month whose run is still a draft says
 `pending_approval`. The manager sees drafts too, marked as such.
+
+Target Profiles (design/11-target-profiles.md): a run is a station's period
+of one profile, paid in its `payout_month`. Without `profile_id` the manager
+calls read the monthly sales profile, as before; every new field is added.
 """
 
 import calendar
@@ -29,9 +33,19 @@ from apps.crew.models import DutyRoster, DutyRosterDayType
 from apps.incentives import services
 from apps.incentives.models import Line, Run, RunStatus
 from apps.portal.authentication import AppJWTAuthentication
+from apps.targets import periods
 from apps.targets import services as targets
-from apps.targets.api import MonthFields, _branches, _company, _ManagerView, month_of, period_json
-from apps.targets.models import Target, TargetDay, TargetKind
+from apps.targets.api import (
+    MonthFields,
+    _branches,
+    _company,
+    _ManagerView,
+    month_of,
+    period_json,
+    profile_json,
+    target_period_json,
+)
+from apps.targets.models import PeriodType, Target, TargetDay, TargetKind, TargetProfile
 from core import money
 from core.api import envelope, other_app, request_parts, whole_number_field
 from core.enums import Channel
@@ -57,10 +71,23 @@ _COMMON = (
 
 class ManagerIncentivesRequest(MonthFields):
     state_id = whole_number_field(min_value=1, required=False, allow_null=True)
+    # branches only: another profile's period (the one containing `date`;
+    # the latest started one when left out). employees: ignored.
+    profile_id = whole_number_field(min_value=1, required=False)
+    date = serializers.DateField(required=False, error_messages={"invalid": "must be YYYY-MM-DD"})
 
 
 class ManagerRunRequest(MonthFields):
-    branch_id = whole_number_field(min_value=1)
+    """`run_id`, or `branch_id` + month for the monthly sales run (as before)."""
+
+    branch_id = whole_number_field(min_value=1, required=False)
+    run_id = whole_number_field(min_value=1, required=False)
+
+    def validate(self, values):
+        values = super().validate(values)
+        if not values.get("run_id") and not values.get("branch_id"):
+            raise serializers.ValidationError({"branch_id": "send run_id, or branch_id"})
+        return values
 
 
 class EmployeeYearRequest(serializers.Serializer):
@@ -83,18 +110,40 @@ def _run_json(run):
             if run.approved_at else None}
 
 
-def manager_branches(company_ids, state_id, year, month, now=None):
-    first, _ = targets.month_bounds(year, month)
+MONTHLY_SALES = {"profile__metric": TargetKind.SALES, "profile__period_type": PeriodType.MONTHLY}
+
+
+def run_period_json(run):
+    """A run's own period: year/month too when it is a calendar month."""
+    if run.profile.period_type == PeriodType.MONTHLY:
+        return period_json(run.period_start.year, run.period_start.month)
+    return target_period_json(run)
+
+
+def manager_branches(company_ids, state_id, year, month, now=None, profile=None, day=None):
     branches = _branches(company_ids, state_id)
-    with_target = set(Target.objects.filter(branch__in=branches, kind=TargetKind.SALES, period_start=first)
-                      .values_list("branch_id", flat=True))
-    with_run = set(Run.objects.filter(branch__in=branches, period_start=first).values_list("branch_id", flat=True))
+    if profile is not None:
+        today = targets.today_for(profile.company, now)
+        started = [sp for sp in periods.profile_periods(profile) if sp[0] <= today] or periods.profile_periods(profile)
+        span = next((sp for sp in started if day and sp[0] <= day <= sp[1]), started[-1])
+        first = span[0]
+        target_q = {"profile": profile, "period_start": first}
+        run_q = {"profile": profile, "period_start": first}
+        period = {"from_date": span[0].isoformat(), "to_date": span[1].isoformat(),
+                  "label": periods.period_label(profile.period_type, *span)}
+    else:
+        first, _ = targets.month_bounds(year, month)
+        target_q = {"kind": TargetKind.SALES, "period_type": PeriodType.MONTHLY, "period_start": first}
+        run_q = {**MONTHLY_SALES, "period_start": first}
+        period = period_json(year, month)
+    with_target = set(Target.objects.filter(branch__in=branches, **target_q).values_list("branch_id", flat=True))
+    with_run = set(Run.objects.filter(branch__in=branches, **run_q).values_list("branch_id", flat=True))
     rows = []
     totals = {"stations": 0, "met": 0, "approved_total": ZERO, "draft_total": ZERO}
     for branch in sorted(branches, key=lambda b: b.name.lower()):
         if branch.pk not in with_target | with_run:
             continue
-        found = services.eligibility(branch, first, now)
+        found = services.eligibility(branch, first, now, profile=profile)
         run = found["run"]
         rows.append({
             "branch_id": branch.pk, "code": branch.short_code, "name": branch.name,
@@ -109,7 +158,10 @@ def manager_branches(company_ids, state_id, year, month, now=None):
             totals["approved_total" if run.is_approved else "draft_total"] += run.total
     totals["approved_total"] = money.fmt(totals["approved_total"])
     totals["draft_total"] = money.fmt(totals["draft_total"])
-    return {"period": period_json(year, month), "totals": totals, "branches": rows}
+    out = {"period": period, "totals": totals, "branches": rows}
+    if profile is not None:
+        out["profile"] = profile_json(profile)
+    return out
 
 
 def manager_employees(company_ids, state_id, year, month):
@@ -127,13 +179,16 @@ def manager_employees(company_ids, state_id, year, month):
         "name": p["employee"].full_name, "days": p["days"], "total": money.fmt(p["total"]),
         "approved": money.fmt(p["approved"]), "draft": money.fmt(p["draft"]),
         "stations": [{"branch_id": s["branch"].pk, "name": s["branch"].name, "days": s["days"],
-                      "amount": money.fmt(s["amount"]), "status": s["run"].status} for s in p["stations"]],
+                      "amount": money.fmt(s["amount"]), "status": s["run"].status, "run_id": s["run"].pk,
+                      "profile": profile_json(s["profile"]), "period": target_period_json(s["run"])}
+                     for s in p["stations"]],
     } for p in people]}
 
 
 def manager_run(run):
     return {
-        "period": period_json(run.period_start.year, run.period_start.month),
+        "period": run_period_json(run), "run_id": run.pk, "profile": profile_json(run.profile),
+        "payout_month": f"{run.payout_month:%Y-%m}",
         "branch": {"branch_id": run.branch_id, "code": run.branch.short_code, "name": run.branch.name},
         "status": run.status, "target": money.fmt(run.target_amount), "achieved": money.fmt(run.achieved),
         "work_days": run.work_days, "basis": money.fmt(run.basis), "total": money.fmt(run.total),
@@ -172,6 +227,11 @@ Every station with a sales target or a run that month (optionally one
 `state_id`): its `target`, `achieved`, `percent`, whether it `met` the
 target, whether the month has ended, and its `run` (`null` until calculated).
 `totals`: stations, how many met, approved and draft totals.
+
+Without `profile_id` this is the **monthly sales** profile's month, as before.
+With `profile_id` (and optionally `date`, a day inside the wanted period; the
+latest started period when left out) it is that profile's period: `period`
+is its dates and `profile` is added.
 """ + _MANAGER_RULES,
         request=envelope_request("ManagerIncentiveBranchesEnvelope", ManagerIncentivesRequest,
                                  request_data_required=False),
@@ -191,8 +251,13 @@ target, whether the month has ended, and its `run` (`null` until calculated).
         if refused:
             return refused
         year, month = month_of(values, _company(request))
-        return envelope("ok", "Incentives.",
-                        manager_branches(companies, values.get("state_id"), year, month, _now()))
+        profile = None
+        if values.get("profile_id"):
+            profile = TargetProfile.objects.filter(pk=values["profile_id"], company_id__in=companies).first()
+            if profile is None:
+                return envelope("no_profile", "No such target profile.", http_status=404)
+        return envelope("ok", "Incentives.", manager_branches(companies, values.get("state_id"), year, month,
+                                                              _now(), profile, values.get("date")))
 
 
 class ManagerIncentiveEmployeesView(_ManagerView):
@@ -203,9 +268,12 @@ class ManagerIncentiveEmployeesView(_ManagerView):
     @extend_schema(
         tags=["Manager Incentives"], summary="Each employee's incentive for a month",
         description="""
-Everyone paid in the month's runs (optionally one `state_id`), highest
-first: `total` = `approved` + `draft`, `days` worked across stations, and per
-station its days, amount and run status.
+Everyone **paid in** the month (optionally one `state_id`), highest first:
+`total` = `approved` + `draft`, `days` worked across stations, and one entry
+per station **and profile** with its days, amount, run status, `run_id`,
+`profile` and `period`. A run is paid in the month its period ends, or at
+the financial year's end if its scheme says so -- so a daily special shows in
+its own month, an annual profile in the year's last month.
 """ + _MANAGER_RULES,
         request=envelope_request("ManagerIncentiveEmployeesEnvelope", ManagerIncentivesRequest,
                                  request_data_required=False),
@@ -214,7 +282,11 @@ station its days, amount and run status.
                 "employee_id": 51, "employee_code": "BYKY001", "name": "Anas K", "days": 27, "total": "337.50",
                 "approved": "337.50", "draft": "0.00",
                 "stations": [{"branch_id": 27, "name": "CREEK PARK GATE 1", "days": 14, "amount": "175.00",
-                              "status": "approved"}]}]}),
+                              "status": "approved", "run_id": 4,
+                              "profile": {"profile_id": 3, "name": "Monthly sales", "type": "monthly",
+                                          "metric": "sales"},
+                              "period": {"from_date": "2026-10-01", "to_date": "2026-10-31",
+                                         "label": "October 2026"}}]}]}),
             *_COMMON,
         ),
     )
@@ -234,7 +306,9 @@ class ManagerIncentiveRunView(_ManagerView):
     @extend_schema(
         tags=["Manager Incentives"], summary="One station's incentive run",
         description="""
-One station's calculated month: the figures it was worked out from
+One run: by `run_id` (any profile), or `branch_id` + month for the monthly
+sales run (as before). Adds `run_id`, `profile` and `payout_month`; `period`
+is the run's own dates. The figures it was worked out from
 (`target`, `achieved`, `work_days`, `basis` = achieved / working days), the
 `total`, then `employees` (highest first, with their roles' day counts) and
 `days` (who was paid what each working day).
@@ -259,10 +333,13 @@ One station's calculated month: the figures it was worked out from
         values, companies, refused = self.begin(request, app)
         if refused:
             return refused
-        year, month = month_of(values, _company(request))
-        first, _ = targets.month_bounds(year, month)
-        run = (Run.objects.filter(company_id__in=companies, branch_id=values["branch_id"], period_start=first)
-               .select_related("branch", "scheme").first())
+        found = Run.objects.filter(company_id__in=companies).select_related("branch", "scheme", "profile")
+        if values.get("run_id"):
+            run = found.filter(pk=values["run_id"]).first()
+        else:
+            year, month = month_of(values, _company(request))
+            first, _ = targets.month_bounds(year, month)
+            run = found.filter(branch_id=values["branch_id"], period_start=first, **MONTHLY_SALES).first()
         if run is None:
             return envelope("no_run", "That station's month has not been calculated.", http_status=404)
         return envelope("ok", "Run.", manager_run(run))
@@ -285,9 +362,10 @@ def _month_status(runs, ended):
 
 
 def _sales_figures(company, branch_ids, first, today):
-    """{branch_id: Figures} for the stations' sales targets of the month."""
-    rows = list(Target.objects.filter(branch_id__in=branch_ids, kind=TargetKind.SALES, period_start=first)
-                .select_related("company", "branch"))
+    """{branch_id: Figures} for the stations' monthly sales targets of the month."""
+    rows = list(Target.objects.filter(branch_id__in=branch_ids, kind=TargetKind.SALES,
+                                      period_type=PeriodType.MONTHLY, period_start=first)
+                .select_related("company", "branch", "profile"))
     got = targets.achieved_for(rows, today)
     return {t.branch_id: targets.figures(t.amount, got.get(t.pk, ZERO)) for t in rows}, rows
 
@@ -303,20 +381,30 @@ def employee_year(employee, year, now=None):
         entry = months[day.month]
         entry["days"].add(day)
         entry["branches"].add(branch_id)
+    # Approved money by the month it is paid in (11 P7): a daily special with
+    # its month, an annual profile at the financial year's end.
     approved = defaultdict(lambda: ZERO)
-    for line in Line.objects.filter(employee=employee, date__year=year, run__status=RunStatus.APPROVED):
-        approved[line.date.month] += line.amount
+    by_profile = defaultdict(lambda: defaultdict(lambda: ZERO))
+    for line in (Line.objects.filter(employee=employee, run__payout_month__year=year, run__status=RunStatus.APPROVED)
+                 .select_related("run__profile")):
+        approved[line.run.payout_month.month] += line.amount
+        by_profile[line.run.payout_month.month][line.run.profile.name] += line.amount
+    for month in by_profile:
+        months[month]                                     # a payout month with no shift still shows
     out = []
     for month in sorted(months, reverse=True):
         entry = months[month]
         first, last = targets.month_bounds(year, month)
         figs, _ = _sales_figures(company, entry["branches"], first, today)
-        runs = {b: Run.objects.filter(branch_id=b, period_start=first).first() for b in entry["branches"]}
+        runs = {b: Run.objects.filter(branch_id=b, period_start=first, **MONTHLY_SALES).first()
+                for b in entry["branches"]}
         met = bool(figs) and len(figs) == len(entry["branches"]) and all(f.remaining == ZERO for f in figs.values())
         out.append({"year": year, "month": month, "label": f"{calendar.month_name[month]} {year}",
                     "days_worked": len(entry["days"]), "branches": len(entry["branches"]),
                     "target_achieved": met, "status": _month_status(runs, today > last),
-                    "amount": money.fmt(approved[month])})
+                    "amount": money.fmt(approved[month]),
+                    "profiles": [{"name": name, "amount": money.fmt(amount), "status": "approved"}
+                                 for name, amount in sorted(by_profile[month].items())]})
     return {"year": year, "total_earned": money.fmt(sum(approved.values(), ZERO)),
             "shifts_logged": sum(len(m["days"]) for m in months.values()), "months": out}
 
@@ -337,11 +425,21 @@ def employee_month(employee, year, month, now=None):
     achieved = targets.achieved_by_day(company, branch_ids, first, min(last, today)) if first <= today else {}
     lines = defaultdict(lambda: ZERO)
     per_branch = defaultdict(lambda: ZERO)
+    day_profiles = defaultdict(lambda: defaultdict(lambda: ZERO))
     for line in Line.objects.filter(employee=employee, date__gte=first, date__lte=last,
-                                    run__status=RunStatus.APPROVED).select_related("run"):
+                                    run__status=RunStatus.APPROVED).select_related("run__profile"):
         lines[(line.run.branch_id, line.date)] += line.amount
         per_branch[line.run.branch_id] += line.amount
-    runs = {b: Run.objects.filter(branch_id=b, period_start=first).first() for b in branch_ids}
+        day_profiles[(line.run.branch_id, line.date)][line.run.profile.name] += line.amount
+    runs = {b: Run.objects.filter(branch_id=b, period_start=first, **MONTHLY_SALES).first() for b in branch_ids}
+    # Runs paid in this month (any profile), each once -- the money the
+    # employee receives this month, wherever the days it pays for fell.
+    payouts = defaultdict(lambda: ZERO)
+    paid_runs = {}
+    for line in (Line.objects.filter(employee=employee, run__payout_month=first)
+                 .select_related("run__profile", "run__branch")):
+        payouts[line.run_id] += line.amount
+        paid_runs[line.run_id] = line.run
 
     calendar_rows = []
     by_date = {r.date: r for r in rows}
@@ -362,6 +460,8 @@ def employee_month(employee, year, month, now=None):
                 "to_target": money.fmt(max(goal - got, ZERO)) if goal is not None and got is not None else None,
                 "met": (got >= goal) if goal is not None and got is not None else None,
                 "amount": money.fmt(lines.get((row.branch_id, day), ZERO)),
+                "profiles": [{"name": name, "amount": money.fmt(amount)}
+                             for name, amount in sorted(day_profiles.get((row.branch_id, day), {}).items())],
             })
         calendar_rows.append(entry)
         day += datetime.timedelta(days=1)
@@ -385,6 +485,11 @@ def employee_month(employee, year, month, now=None):
         "amount": money.fmt(sum(per_branch.values(), ZERO)), "status": _month_status(runs, today > last),
         "amount_to_achieve": money.fmt(sum((f.remaining for f in figs.values()), ZERO)),
         "branch_summary": summary, "calendar": calendar_rows,
+        "payouts": [{"run_id": run.pk, "profile": run.profile.name, "branch": run.branch.name,
+                     "period_label": periods.period_label(run.profile.period_type, run.period_start, run.period_end),
+                     "amount": money.fmt(payouts[run.pk]), "status": run.status}
+                    for run in sorted(paid_runs.values(), key=lambda r: (r.branch.name, r.profile.name.lower()))],
+        "paid_in_month": money.fmt(sum((payouts[r] for r, run in paid_runs.items() if run.is_approved), ZERO)),
     }
 
 
@@ -432,12 +537,18 @@ The Incentives Dashboard: `total_earned` (approved, the year), `shifts_logged`
 newest first -- days worked, how many stations, whether every station they
 worked met its sales target (`target_achieved`), `status` and `amount`.
 `year` defaults to this one.
+
+With Target Profiles a month's `amount` is the approved money **paid in**
+that month, and `profiles` breaks it down by profile: a daily special pays
+with its month, an annual profile at the financial year's end (so that month
+appears even with no shift in it).
 """ + _EMPLOYEE_RULES,
         request=envelope_request("EmployeeIncentiveYearEnvelope", EmployeeYearRequest, request_data_required=False),
         responses=envelope_responses(
             (200, "ok", "Incentives.", {"year": 2026, "total_earned": "5000.00", "shifts_logged": 104, "months": [
                 {"year": 2026, "month": 8, "label": "August 2026", "days_worked": 27, "branches": 3,
-                 "target_achieved": True, "status": "approved", "amount": "337.50"}]}),
+                 "target_achieved": True, "status": "approved", "amount": "337.50",
+                 "profiles": [{"name": "Monthly sales", "amount": "337.50", "status": "approved"}]}]}),
             (409, "not_an_employee", "This sign-in has no employee.", {}),
             *_COMMON,
         ),
@@ -452,7 +563,8 @@ worked met its sales target (`target_achieved`), `status` and `amount`.
 
 _DAY = {"date": "2026-08-01", "weekday": "Sat", "day_type": "working",
         "branch": {"branch_id": 27, "name": "CREEK PARK GATE 1"}, "role": "primary", "target": "1166.67",
-        "achieved": "1320.00", "to_target": "0.00", "met": True, "amount": "12.50"}
+        "achieved": "1320.00", "to_target": "0.00", "met": True, "amount": "12.50",
+        "profiles": [{"name": "Monthly sales", "amount": "12.50"}]}
 _OFF = {"date": "2026-08-07", "weekday": "Fri", "day_type": "week_off", "branch": None, "role": None,
         "target": None, "achieved": None, "to_target": None, "met": None, "amount": None}
 
@@ -477,7 +589,12 @@ added up).
   day has its station, `role` (`primary`, `secondary`, `labour`), the
   station's **daily target** for that day (fixed at the day's start from the
   revenue before it), `achieved`, `to_target` (never below 0), `met`, and the
-  approved `amount`. Days not reached yet have `achieved: null`.
+  approved `amount` (with a `profiles` breakdown). Days not reached yet have
+  `achieved: null`.
+* **`payouts`** -- runs paid in this month, any profile: `profile`, `branch`,
+  `period_label`, `amount`, `status` (`draft` ones are not paid yet);
+  `paid_in_month` adds up the approved ones. An annual profile's run shows
+  in its financial year's last month.
 """ + _EMPLOYEE_RULES,
         request=envelope_request("EmployeeIncentiveMonthEnvelope", EmployeeMonthRequest,
                                  request_data_required=False),
@@ -490,7 +607,10 @@ added up).
                 "branch_summary": [{"branch_id": 27, "name": "CREEK PARK GATE 1", "state": "Dubai", "days": 14,
                                     "target": "35000.00", "achieved": "36100.00", "pending": "0.00",
                                     "target_achieved": True, "amount": "175.00"}],
-                "calendar": [_DAY, _OFF]}),
+                "calendar": [_DAY, _OFF],
+                "payouts": [{"run_id": 4, "profile": "Monthly sales", "branch": "CREEK PARK GATE 1",
+                             "period_label": "August 2026", "amount": "175.00", "status": "approved"}],
+                "paid_in_month": "175.00"}),
             (409, "not_an_employee", "This sign-in has no employee.", {}),
             *_COMMON,
         ),
