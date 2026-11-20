@@ -3,7 +3,7 @@
 {% block screen_title %}Status Tracking{% endblock %}
 {% block crumb %}Status Tracking{% endblock %}
 {% block heading %}{% if chosen_branch %}{{ chosen_name }}{% else %}Status Tracking{% endif %}{% endblock %}
-{% block sub %}{% if chosen_branch %}Where each tagged vehicle of this station stands now, missing first.{% else %}Every station's vehicles: in rent, on test, on alert and missing. Updates by itself.{% endif %}{% endblock %}
+{% block sub %}{% if chosen_branch %}Where each tagged vehicle of this station stands now, missing first.{% else %}Every station with a reader: its vehicles in rent, on test, on alert and missing. Updates by itself.{% endif %}{% endblock %}
 
 {% block body %}
 {% if chosen_branch %}
