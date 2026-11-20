@@ -1509,6 +1509,7 @@ body.scr-live-wall .scr-live-th-group { display: none; }
 .scr-x-table col.w-num { width: 150px; }
 .scr-x-table col.w-progress { width: 190px; }
 .scr-x-table col.w-status { width: 128px; }
+.scr-x-table col.w-kebab { width: 56px; }
 .scr-x-table col.w-type { width: 150px; }
 .scr-x-table col.w-state { width: 150px; }
 .scr-x-table col.w-check { width: 52px; }

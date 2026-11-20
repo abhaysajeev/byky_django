@@ -23,7 +23,6 @@ from apps.incentives.tests.test_calculate import (  # noqa: F401
 from apps.targets import services as targets
 from apps.targets.models import (
     PeriodType,
-    ProfileStatus,
     Target,
     TargetProfile,
     TargetProfileBranch,
@@ -39,7 +38,7 @@ def special_profile(world, staff, payout=Payout.PERIOD_END_MONTH, amount="300"):
     """A one-day special on 6 Nov at ADC1, with a flat 10 a person scheme."""
     profile = TargetProfile.objects.create(company=world["company"], name="6 Nov special", metric="sales",
                                            period_type=PeriodType.DAILY, starts_on=SIXTH, ends_on=SIXTH,
-                                           status=ProfileStatus.ACTIVE)
+                                           is_active=True)
     TargetProfileBranch.objects.create(profile=profile, branch=world["adc1"], amount=D(amount))
     targets.sync_profile(profile, staff, now=local(1))
     flat = Scheme.objects.create(company=world["company"], profile=profile, payout=payout, name="Special",

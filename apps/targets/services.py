@@ -37,7 +37,6 @@ from apps.rental.models import CreditNote, CreditNoteStatus, Order, OrderStatus
 from apps.targets import periods as P
 from apps.targets.models import (
     PeriodType,
-    ProfileStatus,
     Target,
     TargetDay,
     TargetKind,
@@ -255,7 +254,7 @@ def default_profile(company, kind, first, last, user):
     month's target" lives (the manager app, older screens). Made when missing;
     its range grows to cover first..last."""
     profile = (TargetProfile.objects.select_for_update()
-               .filter(company=company, metric=kind, period_type=PeriodType.MONTHLY, status=ProfileStatus.ACTIVE)
+               .filter(company=company, metric=kind, period_type=PeriodType.MONTHLY, is_active=True)
                .order_by("pk").first())
     if profile is None:
         name = DEFAULT_NAMES[kind]
@@ -263,7 +262,7 @@ def default_profile(company, kind, first, last, user):
             name += " (2)"
         return TargetProfile.objects.create(company=company, name=name, metric=kind,
                                             period_type=PeriodType.MONTHLY, starts_on=first, ends_on=last,
-                                            status=ProfileStatus.ACTIVE, created_by=user, modified_by=user)
+                                            is_active=True, created_by=user, modified_by=user)
     if first < profile.starts_on or last > profile.ends_on:
         profile.starts_on, profile.ends_on = min(first, profile.starts_on), max(last, profile.ends_on)
         profile.modified_by = user
@@ -402,7 +401,7 @@ def sync_profile(profile, user, now=None):
     A duplicate (same type + metric over overlapping dates, 11 P3) refuses that
     period, named; the others still save. Returns (made, changed, refusals)."""
     profile = TargetProfile.objects.select_for_update().select_related("company").get(pk=profile.pk)
-    if profile.status != ProfileStatus.ACTIVE:
+    if not profile.is_active:
         return 0, 0, []
     today = today_for(profile.company, now)
     first_time = not profile.targets.exists()
@@ -462,6 +461,29 @@ def remove_branch(profile, branch, now=None):
         assignment.delete()
 
 
+@transaction.atomic
+def set_branches(profile, rows, user, now=None):
+    """Target Branch Mapping: make the profile's stations exactly `rows`
+    [(branch, amount)], then sync its targets. A station taken off keeps its
+    started targets as history (remove_branch). Returns sync_profile's
+    (made, changed, refusals)."""
+    wanted = {branch.pk: amount for branch, amount in rows}
+    for assignment in list(profile.assignments.select_related("branch")):
+        if assignment.branch_id not in wanted:
+            if assignment.active:
+                remove_branch(profile, assignment.branch, now=now)
+            continue
+        amount = wanted.pop(assignment.branch_id)
+        if assignment.amount != amount or not assignment.active:
+            assignment.amount, assignment.active = amount, True
+            assignment.save(update_fields=["amount", "active"])
+    TargetProfileBranch.objects.bulk_create([TargetProfileBranch(profile=profile, branch_id=b, amount=a)
+                                             for b, a in wanted.items()])
+    profile.modified_by = user
+    profile.save(update_fields=["modified_by", "modified_on"])
+    return sync_profile(profile, user, now=now)
+
+
 def set_weights(profile, weights):
     """Store an annual profile's 12 month weights (they must total 100)."""
     if not P.weights_valid(weights):
@@ -471,11 +493,37 @@ def set_weights(profile, weights):
                                             for i, w in sorted(weights.items())])
 
 
+def delete_refusal(profile):
+    """Why a profile can't be deleted, or None (owner, 20 Nov 2026): not while
+    any branch is mapped to it -- unmap them on Target Branch Mapping first --
+    and never while an incentive scheme or a worked-out incentive uses it,
+    since that is paid money's record. Unmapped, it goes with the targets it
+    made."""
+    mapped = profile.assignments.filter(active=True).count()
+    if mapped:
+        return (f"It is mapped to {mapped} branch{'es' if mapped != 1 else ''}. Unmap "
+                f"{'them' if mapped != 1 else 'it'} on Target Branch Mapping first.")
+    if profile.runs.exists():
+        return "Incentives were worked out on it; switch it off instead."
+    if profile.schemes.exists():
+        return "An incentive scheme pays on it; delete or move that scheme first."
+    return None
+
+
 def can_delete_profile(profile, now=None):
-    """Only while nothing has happened on it: no target started, no incentive."""
-    today = today_for(profile.company, now)
-    return not profile.targets.filter(period_start__lte=today).exists() and not profile.runs.exists() \
-        and not profile.schemes.exists()
+    return delete_refusal(profile) is None
+
+
+@transaction.atomic
+def delete_profile(profile):
+    """Delete an unmapped profile and every target it made (their days go too)."""
+    reason = delete_refusal(profile)
+    if reason:
+        raise TargetError("Profile", reason)
+    name = profile.name
+    profile.targets.all().delete()
+    profile.delete()
+    return name
 
 
 def profile_locked_fields(profile):

@@ -159,9 +159,9 @@
   document.addEventListener('visibilitychange', function () { if (!document.hidden) refresh(); });
 })();
 
-/* Target Profiles: the add / edit page (design/11-target-profiles.md §6).
-   The checkboxes of the Branches multi-select are the truth; the amount table
-   follows them, keeping what was typed for a branch while it stays chosen. */
+/* Target Profiles: the add / edit page (design/11-target-profiles.md §6):
+   the profile's details and an annual profile's month weights. Its branches
+   are on Target Branch Mapping (the next block). */
 (function () {
   'use strict';
 
@@ -171,23 +171,16 @@
   var data = JSON.parse(source.textContent);
   var fyChoices = JSON.parse(document.getElementById('tgt-fy-choices').textContent);
   var crud = window.BykyCrud;
-  var multi = document.getElementById('tp-branches');
-  var amounts = {};                       // branch id -> typed amount
-  var names = {};                         // branch id -> name
-  (data.assignments || []).forEach(function (a) {
-    if (!a.active) return;
-    amounts[String(a.id)] = a.amount;
-    names[String(a.id)] = a.name;
-  });
 
   function field(name) { return form.querySelector('[data-tp="' + name + '"]'); }
   function type() { return field('period_type').value; }
   function isCustomers() { return field('metric').value === 'customers'; }
 
   /* ── details ── */
-  ['name', 'metric', 'period_type', 'status', 'remarks'].forEach(function (k) {
+  ['name', 'metric', 'period_type', 'remarks'].forEach(function (k) {
     field(k).value = data[k] == null ? '' : data[k];
   });
+  field('is_active').checked = !!data.is_active;
 
   var HELP = {
     daily: 'One target per day, from the first day to the last. A single special day: pick the same day twice.',
@@ -195,9 +188,6 @@
     custom: 'One target for the whole range — a campaign or a festival week.',
     annual: 'One target per financial year. Its amount is shared by the month weights below.'
   };
-  var AMOUNT = { daily: 'per day', monthly: 'per month', custom: 'for the whole range', annual: 'per financial year' };
-  var PER = { daily: '/ day', monthly: '/ month', custom: 'total', annual: '/ year' };
-
   function pad(n) { return (n < 10 ? '0' : '') + n; }
   function lastOfMonth(ym) {                     // "2026-12" -> "2026-12-31"
     var p = ym.split('-').map(Number);
@@ -234,14 +224,6 @@
     return [el('[data-tp-date="from"]').value, el('[data-tp-date="to"]').value];
   }
 
-  function showAmountLabels() {
-    var unit = isCustomers() ? 'customers' : 'AED';
-    el('[data-tp-amount-head]').textContent = 'Target (' + unit + ' ' + (PER[type()] || '') + ')';
-    el('[data-tp-amount-label]').textContent = 'Amount for all chosen (' + unit + ')';
-    el('[data-tp-amount-help]').textContent = isCustomers()
-      ? 'Customers: a whole number of unique customers, ' + (AMOUNT[type()] || '') + '.'
-      : 'Sales: AED ' + (AMOUNT[type()] || '') + ', planned over the period\'s days.';
-  }
   function showType() {
     var t = type();
     var kind = t === 'monthly' ? 'month' : (t === 'annual' ? 'fy' : 'date');
@@ -249,52 +231,7 @@
     el('[data-tp-from-label]').textContent = t === 'daily' ? 'First day' : 'From';
     el('[data-tp-type-help]').textContent = HELP[t] || '';
     el('[data-tp-weights]').hidden = t !== 'annual';
-    showAmountLabels();
   }
-
-  /* ── the branches' amounts ── */
-  function chosen() { return window.BykyMulti ? window.BykyMulti.values(multi) : []; }
-  function nameOf(id) {
-    if (names[id]) return names[id];
-    var box = multi.querySelector('input[value="' + id + '"]');
-    var label = box && box.parentElement.querySelector('span');
-    return label ? label.textContent : id;
-  }
-  function drawAmounts() {
-    var body = el('[data-tp-amount-rows]');
-    var ids = chosen();
-    body.innerHTML = '';
-    ids.map(function (id) { return { id: id, name: nameOf(id) }; })
-      .sort(function (a, b) { return a.name.localeCompare(b.name); })
-      .forEach(function (b) {
-        var tr = document.createElement('tr');
-        var name = document.createElement('td');
-        name.setAttribute('data-label', 'Branch');
-        name.textContent = b.name;
-        var cell = document.createElement('td');
-        cell.className = 'num';
-        cell.setAttribute('data-label', 'Target');
-        var input = document.createElement('input');
-        input.className = 'scr-drawer-input scr-tp-amount';
-        input.inputMode = 'decimal';
-        input.autocomplete = 'off';
-        input.setAttribute('aria-label', 'Target for ' + b.name);
-        input.value = amounts[b.id] || '';
-        input.addEventListener('input', function () { amounts[b.id] = input.value; });
-        cell.appendChild(input);
-        tr.appendChild(name);
-        tr.appendChild(cell);
-        body.appendChild(tr);
-      });
-    el('[data-tp-amounts]').hidden = ids.length === 0;
-  }
-  multi.addEventListener('change', drawAmounts);
-  el('[data-tp-apply]').addEventListener('click', function () {
-    var value = el('[data-tp-apply-amount]').value.trim();
-    if (!value) return;
-    chosen().forEach(function (id) { amounts[id] = value; });
-    drawAmounts();
-  });
 
   /* ── month weights (annual) ── */
   var weights = el('[data-tp-weight-rows]');
@@ -343,8 +280,7 @@
     var r = range();
     return {
       pk: data.pk, name: field('name').value.trim(), metric: field('metric').value, period_type: type(),
-      starts_on: r[0], ends_on: r[1], status: field('status').value, remarks: field('remarks').value.trim(),
-      branches: chosen().map(function (id) { return { id: id, amount: amounts[id] || '' }; }),
+      starts_on: r[0], ends_on: r[1], is_active: field('is_active').checked, remarks: field('remarks').value.trim(),
       weights: type() === 'annual' ? readWeights() : null
     };
   }
@@ -397,9 +333,118 @@
   }
 
   field('period_type').addEventListener('change', showType);
-  field('metric').addEventListener('change', showAmountLabels);
   setRange(data.starts_on, data.ends_on);
   drawWeights(data.weights || data.default_weights);
   showType();
-  drawAmounts();
+})();
+
+/* Target Branch Mapping (owner, 20 Nov 2026). The checkboxes of the Branches
+   multi-select are the truth; the amount table follows them, keeping what was
+   typed for a branch while it stays chosen. */
+(function () {
+  'use strict';
+
+  var form = document.querySelector('[data-tgt-mapping]');
+  var source = document.getElementById('tgt-mapping');
+  if (!form || !source) return;
+  var data = JSON.parse(source.textContent);
+  var crud = window.BykyCrud;
+  var multi = document.getElementById('tm-branches');
+  var amounts = {};                       // branch id -> typed amount
+  var names = {};
+  (data.assignments || []).forEach(function (a) {
+    amounts[String(a.id)] = a.amount;
+    names[String(a.id)] = a.name;
+  });
+  var PER = { daily: '/ day', monthly: '/ month', custom: 'total', annual: '/ year' };
+  var AMOUNT = { daily: 'per day', monthly: 'per month', custom: 'for the whole range', annual: 'per financial year' };
+  function el(sel) { return form.querySelector(sel); }
+
+  var unit = data.is_customers ? 'customers' : 'AED';
+  el('[data-tm-amount-head]').textContent = 'Target (' + unit + ' ' + (PER[data.type] || '') + ')';
+  el('[data-tm-amount-label]').textContent = 'Amount for all chosen (' + unit + ')';
+  el('[data-tm-amount-help]').textContent = data.is_customers
+    ? 'Customers: a whole number of unique customers, ' + (AMOUNT[data.type] || '') + '.'
+    : 'Sales: AED ' + (AMOUNT[data.type] || '') + ', planned over the period\'s days.';
+
+  function chosen() { return window.BykyMulti ? window.BykyMulti.values(multi) : []; }
+  function nameOf(id) {
+    if (names[id]) return names[id];
+    var box = multi.querySelector('input[value="' + id + '"]');
+    var label = box && box.parentElement.querySelector('span');
+    return label ? label.textContent : id;
+  }
+  function draw() {
+    var body = el('[data-tm-amount-rows]');
+    var ids = chosen();
+    body.innerHTML = '';
+    ids.map(function (id) { return { id: id, name: nameOf(id) }; })
+      .sort(function (a, b) { return a.name.localeCompare(b.name); })
+      .forEach(function (b) {
+        var tr = document.createElement('tr');
+        var name = document.createElement('td');
+        name.setAttribute('data-label', 'Branch');
+        name.textContent = b.name;
+        var cell = document.createElement('td');
+        cell.className = 'num';
+        cell.setAttribute('data-label', 'Target');
+        var input = document.createElement('input');
+        input.className = 'scr-drawer-input scr-tp-amount';
+        input.inputMode = 'decimal';
+        input.autocomplete = 'off';
+        input.setAttribute('aria-label', 'Target for ' + b.name);
+        input.value = amounts[b.id] || '';
+        input.addEventListener('input', function () { amounts[b.id] = input.value; });
+        cell.appendChild(input);
+        tr.appendChild(name);
+        tr.appendChild(cell);
+        body.appendChild(tr);
+      });
+    el('[data-tm-amounts]').hidden = ids.length === 0;
+  }
+  multi.addEventListener('change', draw);
+  el('[data-tm-apply]').addEventListener('click', function () {
+    var value = el('[data-tm-apply-amount]').value.trim();
+    if (!value) return;
+    chosen().forEach(function (id) { amounts[id] = value; });
+    draw();
+  });
+
+  function busy(button, on) {
+    if (!button) return;
+    button.classList.toggle('is-saving', on);
+    button.disabled = on;
+  }
+  var save = document.querySelector('[data-tgt-map-save]');
+  if (save) {
+    save.addEventListener('click', function () {
+      busy(save, true);
+      var payload = { profile: data.profile,
+                      branches: chosen().map(function (id) { return { id: id, amount: amounts[id] || '' }; }) };
+      crud.post(form.dataset.saveUrl, payload).then(function (res) {
+        busy(save, false);
+        var body = res.body || {};
+        if (!body.ok) {
+          crud.showMessages({ title: 'Please fix the following',
+                              items: body.errors || [{ message: 'Something went wrong. Try again.' }] });
+          return;
+        }
+        if (body.refused && body.refused.length) {
+          crud.showMessages({
+            title: 'Saved — some targets were not set',
+            subtitle: 'A branch can\'t have two targets of the same type and metric over the same dates.',
+            items: body.refused.map(function (r) { return { field: r.branch, message: r.reason }; })
+          });
+          return;
+        }
+        crud.toastAfterReload(body.message);
+        window.location.href = body.redirect || window.location.href;
+      }).catch(function () {
+        busy(save, false);
+        crud.showMessages({ title: 'Not saved', items: [{ message: 'The connection dropped. Try again.' }] });
+      });
+    });
+  }
+
+  draw();
 })();

@@ -201,6 +201,8 @@ PAGES = [
     ("targets.daily", "targets", "Daily Progress", "targets-daily", ["read"], 2, False),
     ("targets.profiles", "targets", "Target Profiles", "targets-profiles", ["create", "read", "update", "delete"], 3,
      False),
+    # Which branches a profile covers, and each one's amount (owner, 20 Nov 2026: its own page).
+    ("targets.mapping", "targets", "Target Branch Mapping", "targets-mapping", ["read", "update"], 4, False),
     # Replaced by Target Profiles (20 Nov 2026); its link redirects there.
     ("targets.manage", "targets", "Set Targets", "targets-manage", ["create", "read", "update", "delete"], 3, True),
     ("targets.privileges", "targets", "Privileges", "targets-privileges", ["read", "update"], 9, False),

@@ -17,10 +17,10 @@
 </div>
 
 {% if rows %}
-<div class="scr-card">
+<div class="scr-card" data-scr-delete-url="{{ delete_url }}" data-scr-noun="Target profile">
   <div class="scr-table-scroll">
     <table class="scr-x-table scr-x-fit">
-      <colgroup><col /><col class="w-type" /><col class="w-type" /><col /><col class="w-num" /><col class="w-status" /></colgroup>
+      <colgroup><col /><col class="w-type" /><col class="w-type" /><col /><col class="w-num" /><col class="w-status" /><col class="w-kebab" /></colgroup>
       <thead>
         <tr>
           <th scope="col">Name</th>
@@ -29,18 +29,42 @@
           <th scope="col">Period</th>
           <th scope="col" class="num">Branches</th>
           <th scope="col">Status</th>
+          <th scope="col"><span class="scr-x-visually-hidden">Actions</span></th>
         </tr>
       </thead>
       <tbody>
         {% for r in rows %}
         {% with p=r.profile %}
-        <tr class="scr-x-row" data-href="{% url 'targets-profile-edit' p.pk %}">
-          <td data-label="Name"><a class="scr-x-name" href="{% url 'targets-profile-edit' p.pk %}">{{ p.name }}</a>{% if p.remarks %} <span class="scr-x-muted">· {{ p.remarks|truncatechars:40 }}</span>{% endif %}</td>
+        <tr class="scr-x-row scr-row" data-pk="{{ p.pk }}" data-href="{% url 'targets-profile-edit' p.pk %}">
+          <td data-label="Name"><a class="scr-x-name scr-co-name" href="{% url 'targets-profile-edit' p.pk %}">{{ p.name }}</a>{% if p.remarks %} <span class="scr-x-muted">· {{ p.remarks|truncatechars:40 }}</span>{% endif %}</td>
           <td data-label="Metric">{{ p.get_metric_display }}</td>
           <td data-label="Type">{{ p.get_period_type_display }}</td>
           <td data-label="Period">{{ r.range }}</td>
           <td data-label="Branches" class="num">{{ r.stations }}</td>
-          <td data-label="Status"><span class="scr-x-status is-{% if p.status == 'active' %}met{% elif p.status == 'draft' %}idle{% else %}missed{% endif %}">{{ p.get_status_display }}</span></td>
+          <td data-label="Status" class="scr-tp-status">{% if p.is_active %}<span class="scr-x-status is-met">Active</span>{% elif r.targets %}<span class="scr-x-status is-idle">Off</span> <span class="scr-x-muted">· history kept</span>{% else %}<span class="scr-x-status is-idle">Off</span> <span class="scr-x-muted">· not started</span>{% endif %}</td>
+          <td class="actions">
+            {% comment %}The shared kebab (row_actions.html) plus Branch mapping. Delete asks first; the server
+            refuses a profile still mapped to branches and says so.{% endcomment %}
+            <div class="scr-menu-wrap">
+              <button type="button" class="scr-icon-btn" title="More" aria-label="Actions for {{ p.name }}" data-scr-menu-toggle>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="12" cy="19" r="1.6"></circle></svg>
+              </button>
+              <div class="scr-menu" hidden>
+                <a class="scr-menu-item" href="{% url 'targets-profile-edit' p.pk %}">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4l10-10a2.1 2.1 0 0 0-3-3L5 17z"></path><path d="M14.5 6.5 17.5 9.5"></path></svg>
+                  {% if can.update %}Edit{% else %}View{% endif %}
+                </a>
+                {% if can_map %}<a class="scr-menu-item" href="{% url 'targets-mapping' %}?profile={{ p.pk }}">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21V4a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v17M15 9h4a1 1 0 0 1 1 1v11M3 21h18"></path></svg>
+                  Branch mapping
+                </a>{% endif %}
+                {% if can.delete %}<button type="button" class="scr-menu-item scr-menu-item-danger" data-scr-delete>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0-1 13a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1L6 7h12ZM10 11v6M14 11v6"></path></svg>
+                  Delete
+                </button>{% endif %}
+              </div>
+            </div>
+          </td>
         </tr>
         {% endwith %}
         {% endfor %}
@@ -48,7 +72,7 @@
     </table>
   </div>
 </div>
-<p class="scr-x-note">Only an active profile makes targets. Draft is for setting one up; archived keeps its history.</p>
+<p class="scr-x-note">Only an active profile makes targets. Switch one off to set it up first, or to stop it: targets it already made stay as history. A profile can be deleted once no branch is mapped to it.</p>
 {% else %}
 <div class="scr-card">
   <div class="scr-empty"><div>
