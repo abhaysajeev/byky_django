@@ -137,21 +137,27 @@ def queue_previews(photo_id):
 
 # -- Attach ------------------------------------------------------------------------------
 
-def attachable(photo_id, company, purpose):
+def attachable(photo_id, company, purpose, *, shared=False):
     """The locked photo a request may take, or a refusal. Call inside the
-    request's own transaction, then mark_attached once the request is saved."""
+    request's own transaction, then mark_attached once the request is saved.
+
+    `shared`: a photo already attached may be taken again (asset checks:
+    one photo of a shelf or a corner covers several assets -- owner, 18 Nov
+    2026). The caller decides which earlier use is allowed."""
     photo = Photo.objects.select_for_update().filter(pk=photo_id).first()
     if photo is None:
         raise PhotoRefused("photo_not_uploaded",
                            "That photo has not reached the server yet. Upload it, then send this again.", 409)
     if photo.company_id != company.pk or photo.purpose != purpose:
         raise PhotoRefused("unknown_photo", "No such photo for this request.", 400)
-    if photo.status == PhotoStatus.ATTACHED:
+    if photo.status == PhotoStatus.ATTACHED and not shared:
         raise PhotoRefused("photo_in_use", "That photo is already on another request.", 409)
     return photo
 
 
 def mark_attached(photo, now=None):
+    if photo.status == PhotoStatus.ATTACHED:
+        return                                  # shared: it keeps its first attach time
     photo.status, photo.attached_at = PhotoStatus.ATTACHED, now or timezone.now()
     photo.save(update_fields=["status", "attached_at", "modified_on"])
 

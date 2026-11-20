@@ -632,6 +632,11 @@ out or send null -- the check then has `photo_id` null (and, in the manager
 app, null `photo_url` / `photo_thumb_url`). `sync_id` is this call's id (UUIDv7)
 and becomes the check's id: a resend is answered `duplicate`.
 
+**One photo can cover several assets:** send the same `photo_id` on as many
+checks as it shows (one call per asset, each with its own `sync_id`). Only
+`photo_in_use` if that photo is on an asset check of **another station** (or on
+another kind of request).
+
 Recorded only -- nothing to approve, nobody is notified. The asset's condition
 is its latest check (`assets`: `last_check_status`). Managers see checks with
 their photos in the manager app; the back office on the web.
