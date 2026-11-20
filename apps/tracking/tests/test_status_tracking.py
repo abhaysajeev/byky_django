@@ -12,7 +12,13 @@ from django.utils import timezone
 
 from apps.crew.models import Designation, DutyRoster, DutyRosterDayType, Employee, RosterCategory
 from apps.tracking import views
-from apps.tracking.models import PresenceState, Reader, TagLastSeen, VehiclePresence
+from apps.tracking.models import (
+    PresenceState,
+    Reader,
+    ReaderAssignment,
+    TagLastSeen,
+    VehiclePresence,
+)
 from apps.tracking.tests.test_screens import make_bike, post, reader  # noqa: F401
 from core.timezones import business_date_for
 
@@ -80,6 +86,8 @@ def test_the_search_is_state_then_branch(client_in, world, station):
     adc2 = Branch.objects.create(company=world["company"], location=adc1.location, short_code="ADC2",
                                  name="Abu Dhabi Corniche 2", branch_type=BranchType.STATION)
     presence(world, make_bike(world, "AD2", "A0000009", branch=adc2), PresenceState.PRESENT, branch=adc2)
+    second = Reader.objects.create(device_id="190619101016200", company=world["company"], status="approved")
+    ReaderAssignment.objects.create(reader=second, branch=adc2, from_at=timezone.now())
     page = client_in.get(reverse("tracking-status"))
     assert {r["id"] for r in page.context["rows"]} == {adc1.pk, adc2.pk}
     body = page.content.decode()
@@ -165,3 +173,21 @@ def test_both_reader_switches_turn_off_and_on(client_in, reader):  # noqa: F811
         assert post(client_in, url, {"enabled": True}).json()["ok"] is True
         reader.refresh_from_db()
         assert getattr(reader, field) is True, name
+
+
+def test_only_stations_with_a_reader_mapped_are_listed(client_in, world, station):
+    """Client, 20 Nov 2026: a station with tagged bikes but no reader is left out
+    of the grid and the dropdowns; a mapped reader that is off still lists it."""
+    from apps.company.models import Branch, BranchType
+
+    bare = Branch.objects.create(company=world["company"], location=world["adc1"].location, short_code="BARE",
+                                 name="No Reader Park", branch_type=BranchType.STATION)
+    presence(world, make_bike(world, "NR1", "A0000010", branch=bare), PresenceState.MISSING, branch=bare)
+    page = client_in.get(reverse("tracking-status"))
+    assert [r["id"] for r in page.context["rows"]] == [world["adc1"].pk]
+    assert "No Reader Park" not in page.content.decode()
+    assert page.context["totals"]["missing"] == 1                  # its missing bike is not counted
+
+    Reader.objects.filter(device_id="190619101016089").update(enabled=False, online=False)
+    rows = client_in.get(reverse("tracking-status")).context["rows"]
+    assert [(r["id"], r["antenna"]) for r in rows] == [(world["adc1"].pk, "offline")]

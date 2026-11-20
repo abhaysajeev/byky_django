@@ -117,6 +117,15 @@ def _station_readers(branch_ids):
     return found
 
 
+def mapped_branch_ids(branch_ids=None):
+    """Stations with an approved reader assigned now -- the ones Status Tracking
+    lists (client, 20 Nov 2026), whether that reader is on, off or offline."""
+    rows = ReaderAssignment.objects.filter(to_at__isnull=True, reader__status=ReaderStatus.APPROVED)
+    if branch_ids is not None:
+        rows = rows.filter(branch_id__in=branch_ids)
+    return set(rows.values_list("branch_id", flat=True))
+
+
 def _heard(presence, seen, own):
     """When its own station last heard the vehicle: the tag's exact row if one of
     the station's readers made it, else the engine's (stored every few minutes)."""
@@ -148,11 +157,12 @@ def station_status(branches, now=None):
     for p in presences:
         by_branch.setdefault(p.branch_id, []).append(p)
 
+    mapped = mapped_branch_ids(branch_ids)
     rows = []
     for branch in branches:
         mine = by_branch.get(branch.pk, [])
         station_readers = readers.get(branch.pk, [])
-        if not mine and not station_readers:
+        if branch.pk not in mapped:      # only stations with a reader mapped (client, 20 Nov 2026)
             continue
         own = {r.pk for r in station_readers}
         window = timings.get(branch.pk, engine.COMPANY_DEFAULT).missing
@@ -177,8 +187,8 @@ def station_status(branches, now=None):
         if closed:
             counts = dict.fromkeys(counts, 0)
         contacts = [c for c in (engine._contact(r) for r in station_readers) if c]
-        antenna = ("none" if not station_readers else
-                   "online" if any(r.online for r in station_readers) else "offline")
+        # a mapped reader that is switched off reads as offline
+        antenna = "online" if any(r.online for r in station_readers) else "offline"
         rows.append({"id": branch.pk, "name": branch.name, "vehicles": len(mine), "closed": closed,
                      "last_updated": max(contacts) if contacts else None, "antenna": antenna, **counts})
     rows.sort(key=lambda r: (r["antenna"] != "online", -r["missing"], r["name"].lower()))
@@ -230,6 +240,9 @@ class StatusView(TrackingScreenView):
             return context
 
         state, station = (_int(params.get(k)) for k in ("state", "station"))
+        # only stations with a reader mapped -- in the grid and in both dropdowns
+        mapped = mapped_branch_ids([b.pk for b in scoped])
+        scoped = [b for b in scoped if b.pk in mapped]
         states = {b.location.state_id: b.location.state.name for b in scoped}
         shown = [b for b in scoped
                  if (not state or b.location.state_id == state) and (not station or b.pk == station)]
