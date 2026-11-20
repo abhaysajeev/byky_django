@@ -63,27 +63,169 @@
       multi.classList.toggle('has-value', chosen.length > 0);
     }
 
+    /* Optional search (data-searchable): a filter box at the top of the menu,
+       for long lists such as a company's branches. Typing hides the options
+       that don't match; the ticks are untouched, so a hidden option stays
+       chosen. Arrow keys move through the options left, Enter or Space ticks. */
+    var search = null, noMatch = null;
+    if (multi.hasAttribute('data-searchable')) {
+      var box = document.createElement('div');
+      box.className = 'byky-multi-search';
+      search = document.createElement('input');
+      search.type = 'search';
+      search.className = 'byky-multi-search-input';
+      search.placeholder = multi.dataset.searchPlaceholder || 'Search';
+      search.setAttribute('aria-label', multi.dataset.searchPlaceholder || 'Search the options');
+      search.autocomplete = 'off';
+      box.appendChild(search);
+      menu.insertBefore(box, menu.firstChild);
+      noMatch = document.createElement('p');
+      noMatch.className = 'byky-multi-none byky-multi-nomatch';
+      noMatch.textContent = 'No matches';
+      noMatch.hidden = true;
+      menu.appendChild(noMatch);
+      search.addEventListener('input', filter);
+      search.addEventListener('keydown', function (e) {
+        if (e.key === 'ArrowDown') { e.preventDefault(); move(-1, 1); }
+        if (e.key === 'Enter') { e.preventDefault(); var first = visible()[0]; if (first) toggle(first); }
+      });
+    }
+
+    /* Optional Select all / Clear (data-select-all). With text in the search
+       box they act on the matching options only -- "Select all" after typing
+       "dubai" picks every Dubai branch. One change event for the lot. */
+    if (multi.hasAttribute('data-select-all')) {
+      var bar = document.createElement('div');
+      bar.className = 'byky-multi-bulk';
+      [['Select all', true], ['Clear', false]].forEach(function (pair) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'byky-multi-bulk-btn';
+        b.textContent = pair[0];
+        b.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var changed = false;
+          visible().forEach(function (opt) {
+            var box = opt.querySelector('input[type="checkbox"]');
+            if (box && !box.disabled && box.checked !== pair[1]) { box.checked = pair[1]; changed = true; }
+          });
+          if (changed) menu.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        bar.appendChild(b);
+      });
+      var after = menu.querySelector('.byky-multi-search');
+      menu.insertBefore(bar, after ? after.nextSibling : menu.firstChild);
+    }
+
+    function options() { return [].slice.call(menu.querySelectorAll('.byky-multi-opt')); }
+    function visible() { return options().filter(function (o) { return !o.hidden; }); }
+    function filter() {
+      var q = search ? search.value.trim().toLowerCase() : '';
+      var shown = 0;
+      options().forEach(function (o) {
+        var hit = !q || o.textContent.toLowerCase().indexOf(q) !== -1;
+        o.hidden = !hit;
+        shown += hit;
+      });
+      if (noMatch) noMatch.hidden = shown > 0 || !options().length;
+    }
+    function toggle(opt) {
+      var b = opt.querySelector('input[type="checkbox"]');
+      if (!b || b.disabled) return;
+      b.checked = !b.checked;
+      b.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    /* focus the option `by` steps from the one at index `from` (-1 = before the first) */
+    function move(from, by) {
+      var list = visible();
+      var next = list[from + by];
+      if (next) next.querySelector('input').focus();
+      else if (from + by < 0 && search) search.focus();
+    }
+    function close(refocus) {
+      menu.hidden = true;
+      multi.classList.remove('is-open');
+      control.setAttribute('aria-expanded', 'false');
+      if (refocus) control.focus();
+    }
+    menu.addEventListener('keydown', function (e) {
+      var opt = e.target.closest && e.target.closest('.byky-multi-opt');
+      if (e.key === 'Escape') { e.preventDefault(); close(true); return; }
+      if (!opt) return;
+      var at = visible().indexOf(opt);
+      if (e.key === 'ArrowDown') { e.preventDefault(); move(at, 1); }
+      if (e.key === 'ArrowUp') { e.preventDefault(); move(at, -1); }
+      if (e.key === 'Enter') { e.preventDefault(); toggle(opt); }
+    });
+
+    control.setAttribute('aria-expanded', 'false');
     control.addEventListener('click', function (e) {
       e.stopPropagation();
       var open = menu.hidden;
       /* one menu at a time, including the filter dropdowns' */
       [].forEach.call(document.querySelectorAll('.byky-multi-menu'), function (m) { m.hidden = true; });
+      [].forEach.call(document.querySelectorAll('.byky-multi.is-open'), function (m) { m.classList.remove('is-open'); });
       menu.hidden = !open;
       multi.classList.toggle('is-open', !menu.hidden);
+      control.setAttribute('aria-expanded', String(!menu.hidden));
+      if (!menu.hidden && search) {
+        search.value = '';
+        filter();
+        search.focus();
+      }
     });
     control.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); control.click(); }
+      if (e.key === 'Escape' && !menu.hidden) { e.preventDefault(); close(true); }
     });
     menu.addEventListener('click', function (e) { e.stopPropagation(); });
     menu.addEventListener('change', render);
-    document.addEventListener('click', function () {
-      menu.hidden = true;
-      multi.classList.remove('is-open');
-    });
+    document.addEventListener('click', function () { close(false); });
 
     multi.__bykyRenderPills = render;
+    multi.__bykyFilter = filter;
     render();
   }
+
+  /* Replace a multi-select's options -- e.g. the branches of the profile just
+     picked -- keeping the ticks of values still offered. items: [{id, name}]. */
+  function setOptions(multi, items, chosen) {
+    var menu = multi.querySelector('.byky-multi-menu');
+    if (!menu) return;
+    var keep = {};
+    (chosen || values(multi)).forEach(function (v) { keep[String(v)] = true; });
+    [].forEach.call(menu.querySelectorAll('.byky-multi-opt, .byky-multi-none:not(.byky-multi-nomatch)'),
+      function (n) { n.remove(); });
+    var tail = menu.querySelector('.byky-multi-nomatch');
+    if (!items.length) {
+      var none = document.createElement('p');
+      none.className = 'byky-multi-none';
+      none.textContent = multi.dataset.emptyText || 'Nothing to choose from yet.';
+      menu.insertBefore(none, tail);
+    }
+    items.forEach(function (item) {
+      var label = document.createElement('label');
+      label.className = 'byky-multi-opt';
+      var box = document.createElement('input');
+      box.type = 'checkbox';
+      box.value = item.id;
+      box.checked = !!keep[String(item.id)];
+      var text = document.createElement('span');
+      text.textContent = item.name;
+      label.appendChild(box);
+      label.appendChild(text);
+      menu.insertBefore(label, tail);
+    });
+    if (multi.__bykyFilter) multi.__bykyFilter();
+    if (multi.__bykyRenderPills) multi.__bykyRenderPills();
+  }
+
+  function values(multi) {
+    return [].slice.call(multi.querySelectorAll('.byky-multi-menu input[type="checkbox"]:checked'))
+      .map(function (b) { return b.value; });
+  }
+
+  window.BykyMulti = { init: initMultiselect, setOptions: setOptions, values: values };
 
   function setup(drawer) {
     if (drawer.__bykyReady) return;

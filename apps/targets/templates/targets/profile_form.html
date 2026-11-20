@@ -1,0 +1,73 @@
+{% extends "targets/_base.html" %}
+
+{% block screen_title %}{% if profile %}{{ profile.name }}{% else %}Add profile{% endif %}{% endblock %}
+{% block crumb %}<a href="{{ back_url }}">Target Profiles</a>
+<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
+<b>{% if profile %}{{ profile.name }}{% else %}Add profile{% endif %}</b>{% endblock %}
+{% block heading %}{% if profile %}{{ profile.name }}{% else %}Add profile{% endif %}{% endblock %}
+{% block sub %}A named way of setting targets: what is measured, over which periods, and how much for each branch.{% endblock %}
+
+{% block actions %}
+<a class="scr-btn-small" href="{{ back_url }}">Back</a>
+{% if profile and can.delete %}<button type="button" class="scr-btn-small" data-tgt-profile-delete data-url="{{ delete_profile_url }}" data-name="{{ profile.name }}">Delete</button>{% endif %}
+{% if profile and can.update or not profile and can.create %}<button type="button" class="scr-btn scr-btn-primary" data-tgt-profile-save><span class="scr-btn-spin"></span>Save profile</button>{% endif %}
+{% endblock %}
+
+{% block body %}
+{{ data|json_script:"tgt-profile" }}
+{{ fy_choices|json_script:"tgt-fy-choices" }}
+<div class="scr-inc-layout scr-tp-layout" data-tgt-profile-form data-save-url="{{ save_url }}">
+  <div class="scr-inc-main">
+    <section class="scr-card scr-inc-section" aria-labelledby="tp-h-profile">
+      <h2 class="scr-x-card-title scr-inc-h" id="tp-h-profile">Profile</h2>
+      <div class="scr-inc-grid">
+        <label class="scr-inc-field scr-inc-wide"><span class="byky-label">Name</span>
+          <input class="scr-drawer-input" data-tp="name" maxlength="100" autocomplete="off" placeholder="e.g. December monthly, 5 Dec special" /></label>
+        <label class="scr-inc-field"><span class="byky-label">Metric</span>
+          <select class="scr-drawer-input" data-tp="metric"{% if "metric" in locked %} disabled{% endif %}>
+            {% for value, label in metrics %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+          </select></label>
+        <label class="scr-inc-field"><span class="byky-label">Type</span>
+          <select class="scr-drawer-input" data-tp="period_type"{% if "period_type" in locked %} disabled{% endif %}>
+            {% for value, label in types %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+          </select></label>
+        {% if locked %}<p class="scr-x-note scr-inc-wide">This profile already has targets, so its metric and type are fixed. Make a new profile for another kind.</p>{% endif %}
+
+        {% comment %}The period pickers: one pair per type, the script shows the right one.{% endcomment %}
+        <label class="scr-inc-field" data-tp-range="date"><span class="byky-label" data-tp-from-label>From</span>
+          <input class="scr-drawer-input" type="date" data-tp-date="from" /></label>
+        <label class="scr-inc-field" data-tp-range="date"><span class="byky-label">To</span>
+          <input class="scr-drawer-input" type="date" data-tp-date="to" /></label>
+        <label class="scr-inc-field" data-tp-range="month" hidden><span class="byky-label">From month</span>
+          <input class="scr-drawer-input" type="month" data-tp-month="from" /></label>
+        <label class="scr-inc-field" data-tp-range="month" hidden><span class="byky-label">To month</span>
+          <input class="scr-drawer-input" type="month" data-tp-month="to" /></label>
+        <label class="scr-inc-field" data-tp-range="fy" hidden><span class="byky-label">From financial year</span>
+          <select class="scr-drawer-input" data-tp-fy="from">{% for f in fy_choices %}<option value="{{ f.value }}">{{ f.label }}</option>{% endfor %}</select></label>
+        <label class="scr-inc-field" data-tp-range="fy" hidden><span class="byky-label">To financial year</span>
+          <select class="scr-drawer-input" data-tp-fy="to">{% for f in fy_choices %}<option value="{{ f.value }}">{{ f.label }}</option>{% endfor %}</select></label>
+        <p class="scr-x-note scr-inc-wide" data-tp-type-help></p>
+
+        <label class="scr-inc-field scr-inc-wide"><span class="byky-label">Remarks <span class="muted">(optional)</span></span>
+          <input class="scr-drawer-input" data-tp="remarks" maxlength="200" autocomplete="off" /></label>
+        <label class="scr-inc-field scr-inc-wide scr-inc-switch"><input type="checkbox" data-tp="is_active" /> <span>Active — makes targets for its branches</span></label>
+        <p class="scr-x-note scr-inc-wide">Leave it off while you set it up. Switching it off later stops new periods; targets it already made stay as history.</p>
+      </div>
+    </section>
+
+    <section class="scr-card scr-inc-section" aria-labelledby="tp-h-branches">
+      <div class="scr-inc-head"><h2 class="scr-x-card-title scr-inc-h" id="tp-h-branches">Branches</h2>
+        {% if profile %}<a class="scr-btn-small" href="{{ mapping_url }}">Target Branch Mapping</a>{% endif %}</div>
+      <p class="scr-x-note">{% if profile %}{{ branch_count }} branch{{ branch_count|pluralize:"es" }} mapped. Which branches this profile covers, and how much each, is set on Target Branch Mapping.{% else %}Save the profile, then choose its branches and amounts on Target Branch Mapping.{% endif %}</p>
+    </section>
+
+    <section class="scr-card scr-inc-section" aria-labelledby="tp-h-weights" data-tp-weights hidden>
+      <div class="scr-inc-head"><h2 class="scr-x-card-title scr-inc-h" id="tp-h-weights">Month weights</h2>
+        <button type="button" class="scr-btn-small" data-tp-weights-reset>Reset to by days</button></div>
+      <p class="scr-x-note">How the year's amount is shared across its months (the financial year starts in {{ fy_start_name }}). Each month's share is then spread evenly over its days.</p>
+      <div class="scr-tp-weights" data-tp-weight-rows></div>
+      <p class="scr-tp-total" aria-live="polite">Total <b data-tp-weight-total>100%</b></p>
+    </section>
+  </div>
+</div>
+{% endblock %}

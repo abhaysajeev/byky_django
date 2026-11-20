@@ -8,6 +8,7 @@ BranchApprovalAuthority is designed here but lands with the crew module, since
 it points at Employee (design/02-company.md sign-off).
 """
 
+import calendar
 from decimal import Decimal
 
 from django.core.validators import MaxValueValidator, MinValueValidator
@@ -428,10 +429,7 @@ ROUND_OFF_STEPS = {
 DECIMAL_PLACES = [(2, "2 (0.00)"), (3, "3 (0.000)")]
 
 
-class TargetPeriod(models.TextChoices):
-    """How a company's targets are set (design/08-targets.md T2). Monthly only for now."""
-
-    MONTHLY = "monthly", "Monthly"
+MONTH_NAMES = [(n, calendar.month_name[n]) for n in range(1, 13)]
 
 
 class CompanyConfig(TimeStampedModel):
@@ -443,8 +441,9 @@ class CompanyConfig(TimeStampedModel):
 
     company = models.OneToOneField(Company, on_delete=models.CASCADE, related_name="config")
     report_day_start = models.TimeField(null=True, blank=True)
-    # The period a station's target covers (design/08-targets.md T2).
-    target_period = models.CharField(max_length=10, choices=TargetPeriod.choices, default=TargetPeriod.MONTHLY)
+    # The month the financial year starts in: an annual target profile covers a
+    # financial year, and a scheme may pay at its end (design/11-target-profiles.md).
+    financial_year_start = models.PositiveSmallIntegerField(choices=MONTH_NAMES, default=1)
     # When the primary dial codes last changed (owner, 12 Nov 2026): moves the
     # dial-codes API's version, a removal included.
     dial_codes_updated_at = models.DateTimeField(null=True, blank=True)

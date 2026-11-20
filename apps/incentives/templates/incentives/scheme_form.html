@@ -5,7 +5,7 @@
 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
 <b>{% if scheme %}{{ scheme.name }}{% else %}Add scheme{% endif %}</b>{% endblock %}
 {% block heading %}{% if scheme %}{{ scheme.name }}{% else %}Add scheme{% endif %}{% endblock %}
-{% block sub %}Who gets what for each working day at a station whose target was met. Formulas use the names in the Variables panel.{% endblock %}
+{% block sub %}Who gets what for each working day at a branch that met its target on the scheme's profile. Formulas use the names in the Variables panel.{% endblock %}
 
 {% block actions %}
 <a class="scr-btn-small" href="{{ back_url }}">Back</a>
@@ -24,22 +24,28 @@
     <section class="scr-card scr-inc-section" aria-labelledby="inc-h-scheme">
       <h2 class="scr-x-card-title scr-inc-h" id="inc-h-scheme">Scheme</h2>
       <div class="scr-inc-grid">
+        <label class="scr-inc-field"><span class="byky-label">Target profile</span>
+          <select class="scr-drawer-input" data-inc="profile">
+            {% for p in profiles %}<option value="{{ p.id }}">{{ p.name }} ({{ p.type }}, {{ p.metric|lower }})</option>{% empty %}<option value="">No active target profile</option>{% endfor %}
+          </select></label>
+        <label class="scr-inc-field"><span class="byky-label">Paid in</span>
+          <select class="scr-drawer-input" data-inc="payout">
+            {% for value, label in payouts %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+          </select></label>
         <label class="scr-inc-field scr-inc-wide"><span class="byky-label">Name</span>
           <input class="scr-drawer-input" data-inc="name" maxlength="100" autocomplete="off" /></label>
         <label class="scr-inc-field"><span class="byky-label">Effective from</span>
           <input class="scr-drawer-input" type="date" data-inc="effective_from" /></label>
         <label class="scr-inc-field"><span class="byky-label">Effective to <span class="muted">(optional)</span></span>
           <input class="scr-drawer-input" type="date" data-inc="effective_to" /></label>
-        <div class="scr-inc-field scr-inc-wide"><span class="byky-label" id="inc-stations-label">Stations</span>
-          <div class="scr-inc-stations" role="group" aria-labelledby="inc-stations-label" data-inc-stations>
-            {% for b in branches_list %}<label class="scr-inc-chip"><input type="checkbox" value="{{ b.id }}" /> {{ b.name }}</label>{% endfor %}
-          </div>
-          <p class="scr-x-note">None ticked = every station.</p>
+        <div class="scr-inc-field scr-inc-wide"><span class="byky-label" id="inc-branches-label">Branches</span>
+          {% include "byky/partials/multi_select.html" with multi_id="inc-branches" field="branches" options=branch_options chosen=data.branches placeholder="All branches on the profile" searchable=True select_all=True search_label="Search branches" label_id="inc-branches-label" empty_text="This profile has no branches yet." %}
+          <p class="scr-x-note">None chosen = every branch on the profile.</p>
         </div>
         <label class="scr-inc-field scr-inc-wide"><span class="byky-label">Pays when</span>
           <input class="scr-drawer-input scr-inc-formula" data-inc="pays_when" data-scope="pays_when" spellcheck="false" autocomplete="off" />
           <span class="scr-inc-check" data-check-for="pays_when" aria-live="polite"></span></label>
-        <label class="scr-inc-field scr-inc-wide scr-inc-switch"><input type="checkbox" data-inc="is_active" /> <span>Active — used by Calculate for the months it covers</span></label>
+        <label class="scr-inc-field scr-inc-wide scr-inc-switch"><input type="checkbox" data-inc="is_active" /> <span>Active — used by Calculate for the periods it covers</span></label>
         <label class="scr-inc-field scr-inc-wide"><span class="byky-label">Notes <span class="muted">(optional)</span></span>
           <input class="scr-drawer-input" data-inc="notes" maxlength="300" autocomplete="off" /></label>
       </div>

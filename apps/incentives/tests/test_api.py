@@ -18,6 +18,7 @@ from apps.crew.tests.test_attendance import (  # noqa: F401
 from apps.fare.tests.test_api import call
 from apps.incentives import services
 from apps.incentives.models import AppliesTo, Scheme
+from apps.targets import services as targets
 from apps.targets.tests.test_api import DUBAI, at, boss, clock, data, sale, target  # noqa: F401
 
 D = Decimal
@@ -39,12 +40,19 @@ def roster(employee, day, branch=None, day_type=DutyRosterDayType.WORKING):
         shift1_start=start if working else None, shift1_end=start + datetime.timedelta(hours=8) if working else None)
 
 
+def monthly_sales(world):  # noqa: F811
+    """The company's monthly sales profile -- the one create_targets() fills,
+    as every scheme had after the move to profiles (design/11 §8)."""
+    first, last = targets.month_bounds(NOV.year, NOV.month)
+    return targets.default_profile(world["company"], targets.TargetKind.SALES, first, last, None)
+
+
 @pytest.fixture
 def month(world, boss, sale, clock):  # noqa: F811
     """November: Anil works AUH01 on the 5th (target met: 5,000 of 4,000) and
     AUH02 on the 6th (missed: 1,000 of 4,000), off on the 7th. AUH01's run is
     calculated (a draft); December 2 now."""
-    scheme = Scheme.objects.create(company=world["company"], name="Standard incentive", effective_from=NOV,
+    scheme = Scheme.objects.create(company=world["company"], profile=monthly_sales(world), name="Standard incentive", effective_from=NOV,
                                    is_active=True)
     scheme.components.create(position=1, name="Primary cashier", applies_to=AppliesTo.PRIMARY, formula="basis * 1%")
     target(world, boss, world["auh1"], "4000")
@@ -154,3 +162,61 @@ def test_the_incentive_endpoints_are_in_the_api_docs(client, db):
     for path in ("incentives/branches", "incentives/employees", "incentives/run", "incentives/year",
                  "incentives/month"):
         assert path in schema
+
+
+# -- Target Profiles (design/11 §7) --------------------------------------------------------------
+
+
+def _special(world, boss, payout):  # noqa: F811
+    """A one-day special on 5 Nov at AUH01 paying a flat 10."""
+    from apps.company.models import CompanyConfig
+    from apps.incentives.models import Payout
+    from apps.targets.models import PeriodType, TargetProfile, TargetProfileBranch
+
+    CompanyConfig.objects.get_or_create(company=world["company"], defaults={"financial_year_start": 1})
+    fifth = datetime.date(2026, 11, 5)
+    profile = TargetProfile.objects.create(company=world["company"], name="5 Nov special", metric="sales",
+                                           period_type=PeriodType.DAILY, starts_on=fifth, ends_on=fifth,
+                                           is_active=True)
+    TargetProfileBranch.objects.create(profile=profile, branch=world["auh1"], amount=D("100"))
+    targets.sync_profile(profile, boss, now=at(11, 1))
+    scheme = Scheme.objects.create(company=world["company"], profile=profile, name="Special", effective_from=fifth,
+                                   is_active=True, payout=getattr(Payout, payout))
+    scheme.components.create(position=1, name="Flat", applies_to=AppliesTo.EVERYONE, formula="10")
+    return profile
+
+
+def test_runs_of_two_profiles_and_their_payout_months(client, world, manager, staff_app, boss, sale, month):  # noqa: F811
+    sale(at(11, 5), "300")
+    special = _special(world, boss, "FINANCIAL_YEAR_END")             # FY = calendar year: paid in December
+    run = services.calculate(world["auh1"], datetime.date(2026, 11, 5), boss, now=DEC_2, profile=special)
+    assert run.payout_month == datetime.date(2026, 12, 1)
+    services.approve(run, boss)
+    monthly = services.calculate(world["auh1"], NOV, boss, now=DEC_2)          # again, with the 5th's sale
+    services.approve(monthly, boss)
+
+    by_id = data(call(client, RUN, {"run_id": run.pk}, token=manager))
+    assert (by_id["profile"]["name"], by_id["payout_month"], by_id["period"]["label"]) == (
+        "5 Nov special", "2026-12", "5 Nov 2026")
+    old = data(call(client, RUN, {"year": 2026, "month": 11, "branch_id": world["auh1"].pk}, token=manager))
+    assert old["run_id"] == monthly.pk and old["period"]["month"] == 11          # the old call: the monthly run
+
+    nov = data(call(client, EMPLOYEES, {"year": 2026, "month": 11}, token=manager))["employees"]
+    dec = data(call(client, EMPLOYEES, {"year": 2026, "month": 12}, token=manager))["employees"]
+    assert [s["profile"]["name"] for s in nov[0]["stations"]] == ["Monthly sales"]
+    assert [(s["profile"]["name"], D(s["amount"])) for s in dec[0]["stations"]] == [("5 Nov special", D(10))]
+
+    year = data(call(client, YEAR, {"year": 2026}, token=staff_app))
+    months = {m["month"]: m for m in year["months"]}
+    assert D(months[12]["amount"]) == 10 and months[12]["profiles"][0]["name"] == "5 Nov special"
+    assert D(year["total_earned"]) == D(months[11]["amount"]) + 10
+
+    december = data(call(client, MONTH, {"year": 2026, "month": 12}, token=staff_app))
+    assert [(p["profile"], D(p["amount"])) for p in december["payouts"]] == [("5 Nov special", D(10))]
+    assert D(december["paid_in_month"]) == 10
+    november = data(call(client, MONTH, {"year": 2026, "month": 11}, token=staff_app))
+    fifth = next(d for d in november["calendar"] if d["date"] == "2026-11-05")
+    assert {p["name"] for p in fifth["profiles"]} == {"Monthly sales", "5 Nov special"}
+
+    branches = data(call(client, BRANCHES, {"profile_id": special.pk, "date": "2026-11-05"}, token=manager))
+    assert branches["profile"]["name"] == "5 Nov special" and branches["branches"][0]["run"]["run_id"] == run.pk

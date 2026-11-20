@@ -38,7 +38,7 @@
     </div>
   </div>
 
-  <div class="scr-card">
+  <div class="scr-card" data-scr-page-size="50">
     <div class="scr-content-tabs" data-scr-tabgroup="app-mapping">
       {% for a in apps %}
       <button type="button" class="scr-content-tab{% if forloop.first %} is-on{% endif %}" data-tab="{{ a.value }}" data-map-app-tab="{{ a.value }}">

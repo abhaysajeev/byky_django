@@ -1,10 +1,10 @@
 {% extends "tracking/_base.html" %}
 {% load static %}
 
-{% block screen_title %}Readers{% endblock %}
-{% block crumb %}Readers{% endblock %}
-{% block heading %}Readers{% endblock %}
-{% block sub %}A new reader appears as Pending. Approve it and give it a branch before its data counts.{% endblock %}
+{% block screen_title %}Reader CPU Approval{% endblock %}
+{% block crumb %}Reader CPU Approval{% endblock %}
+{% block heading %}Reader CPU Approval{% endblock %}
+{% block sub %}A new reader CPU appears as Pending. Approve it and give it a branch before its data counts.{% endblock %}
 
 {% block page_js %}
 <script src="{% static 'js/byky-screen.js' %}"></script>
@@ -26,7 +26,14 @@
     </dl>
   </div>
 
-  <div class="scr-card">
+  <div class="scr-card" data-scr-page-size="50" data-scr-noun-singular="reader" data-scr-noun-plural="readers">
+    <div class="scr-toolbar">
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="search" autocomplete="off" placeholder="Search CPU ID, name or branch" aria-label="Search CPU ID, name or branch" />
+      </div>
+      <span class="scr-toolbar-count">{{ rows|length }} reader{{ rows|length|pluralize }}</span>
+    </div>
     <div class="scr-table-scroll">
       <table class="scr-x-table">
         <colgroup><col /><col class="w-branch" /><col class="w-status" /><col class="w-time" /><col class="w-switch" /><col class="w-actions-sm" /></colgroup>
@@ -34,7 +41,7 @@
         <tbody>
           {% for row in rows %}
           {% with r=row.r %}
-          <tr class="scr-row">
+          <tr class="scr-row" data-search="{{ r.device_id }} {{ r.name|lower }} {{ row.branch.name|lower }}">
             <td data-label="Reader"><span class="scr-x-name">{{ r.name|default:"Unnamed reader" }}</span><span class="scr-x-sub mono">{{ r.device_id }}</span></td>
             <td data-label="Branch">{{ row.branch.name|default:"—" }}</td>
             <td data-label="Status"><span class="scr-x-status is-{{ row.status.key }}">{{ row.status.label }}</span></td>
@@ -44,18 +51,22 @@
               <button type="button" class="scr-toggle{% if r.enabled %} is-on{% endif %}" role="switch" aria-checked="{% if r.enabled %}true{% else %}false{% endif %}" aria-label="Reader on, {{ r.name|default:r.device_id }}" data-tracking-toggle data-url="{% url 'tracking-reader-enabled' r.pk %}" {% if not perm.update %}disabled{% endif %}><i></i></button>
               {% else %}<span class="muted">—</span>{% endif %}
             </td>
-            <td class="actions">
-              {% if r.status == "pending" and perm.approve %}
+            <td class="actions"><div class="scr-trk-actions">
+              {% if r.status == "pending" %}
+              {% comment %}A reader waiting for approval needs only Approve, or Block for a device nobody knows -- no menu (client, 20 Nov 2026).{% endcomment %}
+              {% if perm.approve %}
               <button type="button" class="scr-btn-small is-primary" data-modal-open="reader-approve" data-url="{% url 'tracking-reader-approve' r.pk %}" data-fill-device="{{ r.device_id }}" data-fill-name="{{ r.name }}">Approve</button>
+              <button type="button" class="scr-btn-small is-danger" data-post="{% url 'tracking-reader-block' r.pk %}" data-confirm="Block reader {{ r.device_id }}? Its connections will be closed.">Block</button>
               {% else %}
               <button type="button" class="scr-btn-small" data-modal-open="reader-test" data-fill-device="{{ r.device_id }}">Test</button>
               {% endif %}
+              {% else %}
+              <button type="button" class="scr-btn-small" data-modal-open="reader-test" data-fill-device="{{ r.device_id }}">Test</button>
               <div class="scr-menu-wrap">
                 <button type="button" class="scr-icon-btn" aria-label="More for {{ r.name|default:r.device_id }}" data-scr-menu-toggle>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="12" cy="19" r="1.6"></circle></svg>
                 </button>
                 <div class="scr-menu" hidden>
-                  {% if r.status == "pending" %}<button type="button" class="scr-menu-item" data-modal-open="reader-test" data-fill-device="{{ r.device_id }}">Test connection</button>{% endif %}
                   {% if r.status == "approved" and perm.update %}<button type="button" class="scr-menu-item" data-modal-open="reader-edit" data-url="{% url 'tracking-reader-edit' r.pk %}" data-fill-device="{{ r.device_id }}" data-fill-name="{{ r.name }}" data-fill-branch="{{ row.branch.pk|default:'' }}">Edit name and branch</button>{% endif %}
                   {% if perm.update %}<div class="scr-menu-item scr-x-menu-switch"><span>Keep raw readings</span><button type="button" class="scr-toggle{% if r.keep_raw %} is-on{% endif %}" role="switch" aria-checked="{% if r.keep_raw %}true{% else %}false{% endif %}" aria-label="Keep raw readings, {{ r.name|default:r.device_id }}" data-tracking-toggle data-url="{% url 'tracking-reader-keep-raw' r.pk %}"><i></i></button></div>{% endif %}
                   <div class="scr-x-menu-info"><span>IP {{ r.last_ip|default:"—" }}</span><span>Firmware {{ r.firmware|default:"—" }}</span></div>
@@ -63,7 +74,8 @@
                   {% if r.status == "blocked" and perm.approve %}<button type="button" class="scr-menu-item" data-post="{% url 'tracking-reader-unblock' r.pk %}">Unblock reader</button>{% endif %}
                 </div>
               </div>
-            </td>
+              {% endif %}
+            </div></td>
           </tr>
           {% endwith %}
           {% empty %}

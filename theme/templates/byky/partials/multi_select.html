@@ -1,0 +1,28 @@
+{% comment %}
+A standalone multi-select (pills in the control, a menu of checkboxes below),
+the same control the drawers use -- byky-drawer.js wires it on load.
+
+  multi_id      id of the control; the label points at it
+  field         data-field, for the page's script to find it
+  options       [{id, name}]
+  chosen        ids already ticked (a list of ints or strings)
+  placeholder   text while nothing is picked
+  searchable    True adds a search box at the top of the menu
+  select_all    True adds Select all / Clear (acting on the matches when searching)
+  search_label  that box's placeholder ("Search branches")
+  empty_text    shown when there is nothing to pick
+{% endcomment %}
+<div class="byky-multi" id="{{ multi_id }}" data-field="{{ field }}" data-placeholder="{{ placeholder|default:'Select one or more' }}"{% if searchable %} data-searchable data-search-placeholder="{{ search_label|default:'Search' }}"{% endif %}{% if empty_text %} data-empty-text="{{ empty_text }}"{% endif %}{% if select_all %} data-select-all{% endif %}>
+  <div class="byky-multi-control" tabindex="0" role="button" aria-haspopup="listbox"{% if label_id %} aria-labelledby="{{ label_id }}"{% endif %}>
+    <span class="byky-multi-pills"></span>
+    <span class="byky-multi-placeholder">{{ placeholder|default:"Select one or more" }}</span>
+    <svg class="byky-multi-caret" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+  </div>
+  <div class="byky-multi-menu" hidden role="listbox" aria-multiselectable="true">
+    {% for o in options %}
+    <label class="byky-multi-opt"><input type="checkbox" value="{{ o.id }}"{% if o.id in chosen %} checked{% endif %} /><span>{{ o.name }}</span></label>
+    {% empty %}
+    <p class="byky-multi-none">{{ empty_text|default:"Nothing to choose from yet." }}</p>
+    {% endfor %}
+  </div>
+</div>

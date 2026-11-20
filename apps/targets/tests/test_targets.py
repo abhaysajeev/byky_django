@@ -276,17 +276,24 @@ def test_the_screens_open(client_in, world, staff):
     first = target.period_start
     urls = [reverse("targets-overview"), reverse("targets-overview") + "?month=1999-13",
             reverse("targets-daily"), reverse("targets-daily") + "?date=nope",
-            reverse("targets-manage"), reverse("targets-manage") + "?month=2026-01",
-            reverse("targets-station", args=[world["adc1"].pk, first.year, first.month]),
-            reverse("targets-station", args=[world["adc1"].pk, first.year + 1, first.month]),
+            reverse("targets-profiles"), reverse("targets-profiles") + "?status=archived",
+            reverse("targets-profile-add"), reverse("targets-profile-edit", args=[target.profile_id]),
+            reverse("targets-station", args=[world["adc1"].pk]),
+            reverse("targets-station", args=[world["adc1"].pk]) + f"?month={first.year + 1}-{first.month:02d}",
+            reverse("targets-target", args=[target.pk]),
             reverse("targets-privileges"), reverse("targets-month-data", args=[target.pk])]
     for url in urls:
         assert client_in.get(url).status_code == 200, url
     assert client_in.get(reverse("targets-month-data", args=[target.pk])).json()["amount"] == "9,000.00"
+    # the older links still land somewhere sensible
+    assert client_in.get(reverse("targets-manage")).url == reverse("targets-profiles")
+    old = reverse("targets-station-month", args=[world["adc1"].pk, first.year, first.month])
+    assert client_in.get(old).url == reverse("targets-target", args=[target.pk])
 
 
 def test_another_companys_station_is_not_reachable(client_in, world):
-    assert client_in.get(reverse("targets-station", args=[world["theirs"].pk, 2026, 11])).status_code == 404
+    assert client_in.get(reverse("targets-station", args=[world["theirs"].pk])).status_code == 404
+    assert client_in.get(reverse("targets-station-month", args=[world["theirs"].pk, 2026, 11])).status_code == 404
 
 
 def _save(client, **data):
@@ -322,14 +329,14 @@ def test_a_role_without_targets_is_refused(client, world):
     assert _save(client, branches=[str(world["adc1"].pk)], month="2026-12", amount="1").status_code == 403
 
 
-def test_configurations_saves_the_target_period(client_in, world):
+def test_configurations_saves_the_financial_year_start(client_in, world):
     response = client_in.post(reverse("company-configurations-save"),
                               {"company": world["company"].pk, "report_day_start": "04:00", "money": [],
-                               "target_period": "monthly"}, content_type="application/json")
+                               "financial_year_start": "4"}, content_type="application/json")
     wrong = client_in.post(reverse("company-configurations-save"),
-                           {"company": world["company"].pk, "target_period": "weekly"},
+                           {"company": world["company"].pk, "financial_year_start": "13"},
                            content_type="application/json")
 
     assert response.json()["ok"] is True
-    assert CompanyConfig.objects.get(company=world["company"]).target_period == "monthly"
+    assert CompanyConfig.objects.get(company=world["company"]).financial_year_start == 4
     assert wrong.status_code == 400

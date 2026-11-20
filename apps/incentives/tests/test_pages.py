@@ -12,6 +12,7 @@ from apps.incentives.tests.test_calculate import (  # noqa: F401
     AFTER,
     NOV,
     example,
+    monthly_sales,
     people,
     roster,
     scheme,
@@ -79,13 +80,14 @@ def test_exports_open(client_in, run):
 
 
 def test_saving_a_scheme_checks_every_formula_at_once(client_in, world):
+    profile = monthly_sales(world).pk
     bad = post(client_in, "incentives-scheme-save", {
-        "name": "", "effective_from": "2026-12-01", "pays_when": "achieved >= targett",
+        "profile": profile, "name": "", "effective_from": "2026-12-01", "pays_when": "achieved >= targett",
         "components": [{"name": "Labour", "applies_to": "labour", "formula": "basis * "}]}).json()
     fields = [e["field"] for e in bad["errors"]]
     assert fields == ["Name", "Pays when", "Component Labour"]
     good = post(client_in, "incentives-scheme-save", {
-        "name": "December", "effective_from": "2026-12-01", "pays_when": "achieved >= target", "is_active": True,
+        "profile": profile, "name": "December", "effective_from": "2026-12-01", "pays_when": "achieved >= target", "is_active": True,
         "variables": [{"name": "rate", "formula": "1% / max(tier2, 2)"}],
         "components": [{"name": "Primary", "applies_to": "primary", "formula": "basis * 1%"},
                        {"name": "Tier 2", "applies_to": "tier2", "formula": "basis * rate"}]}).json()
@@ -96,7 +98,7 @@ def test_saving_a_scheme_checks_every_formula_at_once(client_in, world):
 
 def test_two_active_schemes_for_the_same_stations_are_refused(client_in, world, scheme):  # noqa: F811
     body = post(client_in, "incentives-scheme-save", {
-        "name": "Twin", "effective_from": "2026-11-01", "pays_when": "achieved >= target", "is_active": True,
+        "profile": scheme.profile_id, "name": "Twin", "effective_from": "2026-11-01", "pays_when": "achieved >= target", "is_active": True,
         "components": [{"name": "P", "applies_to": "primary", "formula": "1"}]}).json()
     assert not body["ok"] and "already active" in body["errors"][0]["message"]
     assert not Scheme.objects.filter(name="Twin").exists()
@@ -128,3 +130,31 @@ def test_writes_need_their_rights(client_in, world, run):
     assert post(client_in, "incentives-approve", {}, run.pk).status_code == 403
     assert post(client_in, "incentives-calculate-post", {"branch": world["adc1"].pk, "month": "2026-11"}).status_code == 403
     assert Run.objects.get().status == RunStatus.DRAFT
+
+
+def test_a_scheme_needs_a_profile_and_its_branches_come_from_it(client_in, world, staff):  # noqa: F811
+    from apps.targets import services as targets
+
+    targets.create_targets(world["company"], [world["adc1"]], 2026, 11, services.Decimal("4000"), "", staff,
+                           now=local(1))
+    profile = monthly_sales(world)
+    payload = {"name": "P", "effective_from": "2026-12-01", "pays_when": "achieved >= target",
+               "components": [{"name": "P", "applies_to": "primary", "formula": "1"}]}
+    missing = post(client_in, "incentives-scheme-save", payload).json()
+    assert "Target profile" in [e["field"] for e in missing["errors"]]
+    stranger = post(client_in, "incentives-scheme-save",
+                    {**payload, "profile": profile.pk, "branches": [world["theirs"].pk]}).json()
+    assert "Branches" in [e["field"] for e in stranger["errors"]]
+    good = post(client_in, "incentives-scheme-save", {**payload, "profile": profile.pk, "payout": "financial_year_end",
+                                                      "branches": [world["adc1"].pk]}).json()
+    assert good["ok"], good
+    saved = Scheme.objects.get(name="P")
+    assert (saved.profile, saved.payout, list(saved.branches.all())) == (profile, "financial_year_end",
+                                                                         [world["adc1"]])
+
+
+def test_the_scheme_form_has_a_searchable_branches_picker(client_in, world, scheme):  # noqa: F811
+    page = client_in.get(reverse("incentives-scheme-edit", args=[scheme.pk])).content.decode()
+    assert 'id="inc-branches"' in page and "data-searchable" in page
+    assert 'id="inc-branches-label">Branches<' in page
+    assert "scr-inc-chip" not in page and 'data-inc="profile"' in page and 'data-inc="payout"' in page
