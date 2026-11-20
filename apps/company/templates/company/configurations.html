@@ -68,16 +68,16 @@ apps/company/configurations.py; one save posts the whole page.
   <div class="scr-card">
     <div class="scr-form-head">
       <div>
-        <div class="scr-form-title-row"><h2 class="scr-form-title">Targets</h2></div>
-        <p class="scr-form-sub">The period a station's target covers. Its days follow the business day start above.</p>
+        <div class="scr-form-title-row"><h2 class="scr-form-title">Targets &amp; incentives</h2></div>
+        <p class="scr-form-sub">An annual target profile covers a financial year, and an incentive scheme can pay at its end. Target days follow the business day start above.</p>
       </div>
     </div>
     <div class="scr-form-body">
       <div class="scr-grid">
         <div class="scr-field">
-          <label class="scr-label" for="config-target-period">Target period</label>
-          <select id="config-target-period" class="scr-input" data-config-target-period{% if not perm.update %} disabled{% endif %}>
-            {% for value, label in target_periods %}<option value="{{ value }}"{% if value == target_period %} selected{% endif %}>{{ label }}</option>{% endfor %}
+          <label class="scr-label" for="config-fy-start">Financial year starts</label>
+          <select id="config-fy-start" class="scr-input" data-config-fy-start{% if not perm.update %} disabled{% endif %}>
+            {% for value, label in fy_months %}<option value="{{ value }}"{% if value == financial_year_start %} selected{% endif %}>{{ label }}</option>{% endfor %}
           </select>
         </div>
       </div>

@@ -1,8 +1,10 @@
-"""Incentive schemes and their monthly runs (design/09-incentives.md section 5).
+"""Incentive schemes and their runs (design/09-incentives.md section 5,
+design/11-target-profiles.md P6-P7).
 
-A scheme is formulas an admin maintains; a run is one station's month worked
-out from the duty roster and the sales target, kept as lines so every figure
-can be explained. An approved run is final and never moves.
+A scheme is formulas an admin maintains for one target profile; a run is one
+station's period of that profile worked out from the duty roster and its
+target, kept as lines so every figure can be explained. An approved run is
+final and never moves.
 """
 
 from django.db import models
@@ -29,12 +31,23 @@ APPLIES = {
 }
 
 
+class Payout(models.TextChoices):
+    """Which month a run's money belongs to (11 P7)."""
+
+    PERIOD_END_MONTH = "period_end_month", "Month the period ends"
+    FINANCIAL_YEAR_END = "financial_year_end", "Financial-year end"
+
+
 class Scheme(TimeStampedModel):
     company = models.ForeignKey("company.Company", on_delete=models.PROTECT, related_name="incentive_schemes")
+    # The target profile it pays on (11 P6): its stations, periods and target.
+    profile = models.ForeignKey("targets.TargetProfile", on_delete=models.PROTECT, related_name="schemes")
+    payout = models.CharField(max_length=20, choices=Payout.choices, default=Payout.PERIOD_END_MONTH)
     name = models.CharField(max_length=100)
     effective_from = models.DateField()
     effective_to = models.DateField(null=True, blank=True)
-    # Empty = every station; a station-specific scheme wins over an all-stations one.
+    # Empty = every station on the profile; a station-specific scheme wins over an
+    # all-stations one of the same profile.
     branches = models.ManyToManyField("company.Branch", blank=True, related_name="incentive_schemes")
     pays_when = models.CharField(max_length=500, default="achieved >= target")
     is_active = models.BooleanField(default=False)
@@ -98,12 +111,15 @@ class RunStatus(models.TextChoices):
 
 
 class Run(TimeStampedModel):
-    """One station's month: the snapshot it was worked out from, and its total."""
+    """One station's period of one profile: the snapshot it was worked out from,
+    and its total; `payout_month` is the first day of the month it is paid in."""
 
     company = models.ForeignKey("company.Company", on_delete=models.PROTECT, related_name="+")
     branch = models.ForeignKey("company.Branch", on_delete=models.PROTECT, related_name="incentive_runs")
+    profile = models.ForeignKey("targets.TargetProfile", on_delete=models.PROTECT, related_name="runs")
     period_start = models.DateField()
     period_end = models.DateField()
+    payout_month = models.DateField()
     scheme = models.ForeignKey(Scheme, on_delete=models.PROTECT, related_name="runs")
     target_amount = models.DecimalField(**MONEY)
     achieved = models.DecimalField(**MONEY)
@@ -120,13 +136,14 @@ class Run(TimeStampedModel):
         db_table = "incentives_run"
         ordering = ["-period_start", "branch__name"]
         constraints = [
-            models.UniqueConstraint(fields=["branch", "period_start"], name="incentives_run_one_per_month"),
+            models.UniqueConstraint(fields=["branch", "profile", "period_start"],
+                                    name="incentives_run_one_per_profile_period"),
             models.CheckConstraint(condition=Q(status="draft") | Q(approved_at__isnull=False),
                                    name="incentives_run_approved_has_time"),
         ]
 
     def __str__(self):
-        return f"{self.branch} {self.period_start:%b %Y}"
+        return f"{self.branch} {self.period_start:%d %b %Y}–{self.period_end:%d %b %Y}"
 
     @property
     def is_approved(self):

@@ -69,7 +69,7 @@
   <div class="scr-empty"><div>
     <div class="scr-empty-title">No sales targets for {{ first|date:"F Y" }}</div>
     <p class="scr-empty-sub">Incentives are worked out per station from its monthly sales target.</p>
-    <a class="scr-btn scr-btn-secondary scr-x-empty-action" href="{% url 'targets-manage' %}?month={{ month_key }}">Set targets</a>
+    <a class="scr-btn scr-btn-secondary scr-x-empty-action" href="{% url 'targets-profiles' %}">Target Profiles</a>
   </div></div>
 </div>
 {% endif %}
