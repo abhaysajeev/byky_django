@@ -1,11 +1,11 @@
-{% comment %}Period stepper: ‹ label ›. Pass prev_url, next_url, label, and optionally today_url / today_label.{% endcomment %}
+{% comment %}Period stepper: ‹ label ›. Pass prev_url, next_url, label, and optionally today_url / today_label. An empty url shows a disabled arrow (a profile's first or last period).{% endcomment %}
 <div class="scr-x-stepper" role="group" aria-label="{{ group_label }}">
-  <a class="scr-x-step" href="{{ prev_url }}" aria-label="Previous {{ unit }}">
+  {% if prev_url %}<a class="scr-x-step" href="{{ prev_url }}" aria-label="Previous {{ unit }}">{% else %}<span class="scr-x-step is-off" aria-hidden="true">{% endif %}
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6"></path></svg>
-  </a>
+  {% if prev_url %}</a>{% else %}</span>{% endif %}
   <span class="scr-x-step-label">{{ label }}</span>
-  <a class="scr-x-step" href="{{ next_url }}" aria-label="Next {{ unit }}">
+  {% if next_url %}<a class="scr-x-step" href="{{ next_url }}" aria-label="Next {{ unit }}">{% else %}<span class="scr-x-step is-off" aria-hidden="true">{% endif %}
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
-  </a>
+  {% if next_url %}</a>{% else %}</span>{% endif %}
 </div>
 {% if today_url %}<a class="scr-x-today" href="{{ today_url }}">{{ today_label }}</a>{% endif %}
