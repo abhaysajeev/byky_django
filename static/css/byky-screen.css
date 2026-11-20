@@ -1600,13 +1600,13 @@ a.scr-x-name:hover { text-decoration: underline; text-underline-offset: 3px; }
 .scr-x-table col.w-time { width: 132px; }
 .scr-x-table col.w-when { width: 160px; }
 .scr-x-table col.w-branch { width: 180px; }
-.scr-x-table col.w-link { width: 104px; }
+.scr-x-table col.w-link { width: 124px; }
 .scr-x-table col.w-ack { width: 200px; }
 .scr-x-table col.w-count { width: 96px; }
 .scr-x-table col.w-switch { width: 84px; }
-.scr-x-table col.w-actions-sm { width: 140px; }
+.scr-x-table col.w-actions-sm { width: 196px; }
 .scr-x-table col.w-input { width: 190px; }
-.scr-x-table col.w-select { width: 160px; }
+.scr-x-table col.w-select { width: 184px; }
 .scr-x-table col.w-tag { width: 120px; }
 .scr-x-table col.w-flag { width: 100px; }
 
@@ -1963,3 +1963,8 @@ a.scr-x-name:hover { text-decoration: underline; text-underline-offset: 3px; }
 .scr-btn-small.is-danger:hover { background: #fdeced; border-color: #c2141a; color: #c2141a; }
 @media (max-width: 900px) { .scr-trk-actions { justify-content: flex-start; } }
 .scr-trk-station-modal .scr-trk-station th { white-space: nowrap; }
+
+/* A cell that holds a button or a dropdown is never cut off with "..." -- that read as a stray
+   kebab (Approve, History, the antenna direction; client, 20 Nov 2026). Text cells still ellipsize. */
+.scr-x-table td.actions, .scr-x-table td:has(> select), .scr-x-table td:has(> .scr-btn-small),
+.scr-x-table td:has(.scr-trk-actions) { overflow: visible; text-overflow: clip; }
