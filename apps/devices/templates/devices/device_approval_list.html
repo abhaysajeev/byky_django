@@ -33,10 +33,7 @@
     </div>
     <div class="scr-head-actions">
       {% if perm.print %}
-      <button type="button" class="scr-btn">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="m7 11 5 5 5-5"></path><path d="M4 20h16"></path></svg>
-        Export
-      </button>
+      {% include "byky/partials/export_button.html" with name="Device Approval" %}
       {% endif %}
     </div>
   </div>
@@ -67,7 +64,7 @@
       </button>
     </div>
 
-    <div class="scr-panel" data-tabgroup="device-approval" data-tab="pending" data-scr-noun-singular="request" data-scr-noun-plural="requests">
+    <div class="scr-panel" data-scr-page-size="50" data-tabgroup="device-approval" data-tab="pending" data-scr-noun-singular="request" data-scr-noun-plural="requests">
       <div class="scr-toolbar">
         <div class="scr-search">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
@@ -89,6 +86,7 @@
             <tr>
               <th>Device ID</th>
               <th>Model</th>
+              <th>Platform ID</th>
               <th>Platform</th>
               <th>App</th>
               <th>Registered</th>
@@ -98,7 +96,7 @@
           </thead>
           <tbody>
             {% for d in pending_devices %}
-            <tr class="scr-row" data-search="{{ d.registration_id }} {{ d.model|lower }}" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-state="pending" data-name="{{ d.name }}" data-model="{{ d.model }}" data-platform="{{ d.platform }}" data-channel="{{ d.channel_value }}" data-app="{{ d.channel }}" data-registered="{{ d.registered_on|date:'d M Y, H:i' }}"{% if d.reinstall %} data-reinstall="1" data-since="{{ d.reinstall.since|date:'d M Y, H:i' }}"{% endif %}>
+            <tr class="scr-row" data-search="{{ d.registration_id }} {{ d.model|lower }} {{ d.platform_id|lower }}" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-state="pending" data-name="{{ d.name }}" data-model="{{ d.model }}" data-platform="{{ d.platform }}" data-channel="{{ d.channel_value }}" data-app="{{ d.channel }}" data-registered="{{ d.registered_on|date:'d M Y, H:i' }}"{% if d.reinstall %} data-reinstall="1" data-since="{{ d.reinstall.since|date:'d M Y, H:i' }}"{% endif %}>
               <td><span class="scr-code">{{ d.registration_id }}</span></td>
               <td>
                 <span style="font-weight:600">{{ d.model|default:"—" }}</span>
@@ -106,6 +104,7 @@
                 <div class="scr-contact-sub">{{ d.name|default:"This device" }} reinstalled {{ d.reinstall.since|date:"d M Y H:i" }}{% if d.reinstall.model %} on {{ d.reinstall.model }}{% endif %}</div>
                 {% endif %}
               </td>
+              <td class="scr-cell-wrap">{% if d.platform_id %}<span class="scr-code">{{ d.platform_id }}</span>{% else %}—{% endif %}</td>
               <td class="scr-contact">{{ d.platform }}</td>
               <td class="scr-contact">{{ d.channel }}</td>
               <td class="scr-contact">{{ d.registered_on|date:"d M Y H:i" }}</td>
@@ -138,7 +137,7 @@
             </tr>
             {% empty %}
             <tr>
-              <td colspan="7" style="padding:0">
+              <td colspan="8" style="padding:0">
                 <div class="scr-empty">
                   <span class="scr-empty-ico">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3.5 2"></path></svg>
@@ -156,7 +155,7 @@
       </div>
     </div>
 
-    <div class="scr-panel" data-tabgroup="device-approval" data-tab="approved" data-scr-noun-singular="device" data-scr-noun-plural="devices" hidden>
+    <div class="scr-panel" data-scr-page-size="50" data-tabgroup="device-approval" data-tab="approved" data-scr-noun-singular="device" data-scr-noun-plural="devices" hidden>
       <div class="scr-toolbar">
         <div class="scr-search">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
@@ -172,6 +171,7 @@
               <th>Device ID</th>
               <th>Device Name</th>
               <th>Model</th>
+              <th>Platform ID</th>
               <th>Login Status</th>
               <th>Last Seen</th>
               <th data-status-cell>Status</th>
@@ -180,10 +180,11 @@
           </thead>
           <tbody>
             {% for d in approved_devices %}
-            <tr class="scr-row" data-search="{{ d.registration_id }} {{ d.name|lower }} {{ d.signed_in|lower }}" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-state="approved" data-name="{{ d.name }}">
+            <tr class="scr-row" data-search="{{ d.registration_id }} {{ d.name|lower }} {{ d.signed_in|lower }} {{ d.platform_id|lower }}" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-state="approved" data-name="{{ d.name }}">
               <td><span class="scr-code">{{ d.registration_id }}</span></td>
               <td style="font-weight:600">{{ d.name|default:"—" }}</td>
               <td class="scr-contact">{{ d.model|default:"—" }}</td>
+              <td class="scr-cell-wrap">{% if d.platform_id %}<span class="scr-code">{{ d.platform_id }}</span>{% else %}—{% endif %}</td>
               <td>{% if d.signed_in %}<span class="scr-badge scr-badge-active" title="{{ d.signed_in }}"><i></i>Logged in</span>{% else %}<span class="scr-badge scr-badge-inactive"><i></i>Logged out</span>{% endif %}</td>
               <td class="scr-contact">{{ d.last_seen_at|date:"d M Y H:i"|default:"—" }}</td>
               <td data-status-cell><span class="scr-badge scr-badge-approved"><i></i>{{ d.status_label }}</span></td>
@@ -221,7 +222,7 @@
             </tr>
             {% empty %}
             <tr>
-              <td colspan="7" style="padding:0">
+              <td colspan="8" style="padding:0">
                 <div class="scr-empty">
                   <span class="scr-empty-ico">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"></path></svg>
@@ -239,7 +240,7 @@
       </div>
     </div>
 
-    <div class="scr-panel" data-tabgroup="device-approval" data-tab="blocked" data-scr-noun-singular="device" data-scr-noun-plural="devices" hidden>
+    <div class="scr-panel" data-scr-page-size="50" data-tabgroup="device-approval" data-tab="blocked" data-scr-noun-singular="device" data-scr-noun-plural="devices" hidden>
       <div class="scr-toolbar">
         <div class="scr-search">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
@@ -255,6 +256,7 @@
               <th>Device ID</th>
               <th>Device Name</th>
               <th>Model</th>
+              <th>Platform ID</th>
               <th>Station</th>
               <th>Last Seen</th>
               <th data-status-cell>Status</th>
@@ -263,10 +265,11 @@
           </thead>
           <tbody>
             {% for d in blocked_devices %}
-            <tr class="scr-row" data-search="{{ d.registration_id }} {{ d.name|lower }}" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-state="blocked" data-name="{{ d.name }}">
+            <tr class="scr-row" data-search="{{ d.registration_id }} {{ d.name|lower }} {{ d.platform_id|lower }}" data-pk="{{ d.pk }}" data-number="{{ d.registration_id }}" data-state="blocked" data-name="{{ d.name }}">
               <td><span class="scr-code">{{ d.registration_id }}</span></td>
               <td style="font-weight:600">{{ d.name|default:"—" }}</td>
               <td class="scr-contact">{{ d.model|default:"—" }}</td>
+              <td class="scr-cell-wrap">{% if d.platform_id %}<span class="scr-code">{{ d.platform_id }}</span>{% else %}—{% endif %}</td>
               <td class="scr-contact">{{ d.branch|default:"—" }}</td>
               <td class="scr-contact">{{ d.last_seen_at|date:"d M Y H:i"|default:"—" }}</td>
               <td data-status-cell><span class="scr-badge scr-badge-rejected"><i></i>{{ d.status_label }}</span></td>
@@ -298,7 +301,7 @@
             </tr>
             {% empty %}
             <tr>
-              <td colspan="7" style="padding:0">
+              <td colspan="8" style="padding:0">
                 <div class="scr-empty">
                   <span class="scr-empty-ico">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>

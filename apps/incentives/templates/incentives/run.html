@@ -32,7 +32,7 @@
   <a class="scr-x-tab{% if by == 'employee' %} is-on{% endif %}" href="{{ employee_url }}"{% if by == 'employee' %} aria-current="page"{% endif %}>By employee</a>
 </nav>
 
-<div class="scr-card">
+<div class="scr-card" data-scr-page-size="50" data-scr-noun-singular="employee">
   <div class="scr-table-scroll">
     {% if by == "day" %}
     {% comment %}One header row per day, then that day's people: the day is read once, not repeated down a column.{% endcomment %}
@@ -62,7 +62,7 @@
       <thead><tr><th scope="col">Employee</th><th scope="col">Worked as</th><th scope="col" class="num">Days</th><th scope="col" class="num">Amount</th></tr></thead>
       <tbody>
         {% for e in employees %}
-        <tr>
+        <tr class="scr-row">
           <td data-label="Employee" class="scr-inc-person"><span class="scr-x-name">{{ e.employee.full_name }}</span> <span class="muted">{{ e.employee.employee_code }}</span></td>
           <td data-label="Worked as" class="muted">{{ e.roles_text }}</td>
           <td data-label="Days" class="num">{{ e.days }}</td>

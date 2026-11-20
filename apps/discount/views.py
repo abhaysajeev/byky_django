@@ -361,8 +361,31 @@ class ApprovalDetailView(DiscountScreenView):
             "revoke_url": reverse("discount-approval-revoke", args=[claim.pk]),
             # An approval can be taken back until its bill uses it.
             "can_revoke": claim.status == ClaimStatus.APPROVED and claim.order.status == OrderStatus.ACTIVE,
+            "items": _order_vehicles(claim.order, zone),
         })
         return context
+
+
+def _order_vehicles(order, zone):
+    """The order's vehicles and the fare on each (client, 20 Nov 2026): every line
+    but a replaced or removed one (those are not billed), with the fare details
+    the order page shows (apps/rental/views.py OrderDetailView)."""
+    from apps.rental.views import fare_terms_lines, is_free_item, package_label
+
+    def local(moment):
+        return moment.astimezone(zone) if moment else None
+
+    items = (order.items.exclude(status__in=[OrderItemStatus.REPLACED, OrderItemStatus.REMOVED])
+             .select_related("vehicle__vehicle_type").order_by("start_time", "created_on"))
+    return [{
+        "vehicle": item.vehicle.vehicle_name, "identifier": item.vehicle.identifier,
+        "vehicle_type": item.vehicle.vehicle_type.vehicle_type_name, "status": item.status,
+        "status_label": item.get_status_display(), "package_minutes": item.package_minutes,
+        "run_minutes": item.run_minutes, "start_time": local(item.start_time), "end_time": local(item.end_time),
+        "base_fare": item.base_fare, "overtime_amount": item.overtime_amount, "total_amount": item.total_amount,
+        "fare_lines": fare_terms_lines(item.fare_details), "package": package_label(item.package_details),
+        "free_item": is_free_item(item.package_details),
+    } for item in items]
 
 
 # -- Redemption History --------------------------------------------------------

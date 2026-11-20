@@ -1600,13 +1600,13 @@ a.scr-x-name:hover { text-decoration: underline; text-underline-offset: 3px; }
 .scr-x-table col.w-time { width: 132px; }
 .scr-x-table col.w-when { width: 160px; }
 .scr-x-table col.w-branch { width: 180px; }
-.scr-x-table col.w-link { width: 104px; }
+.scr-x-table col.w-link { width: 124px; }
 .scr-x-table col.w-ack { width: 200px; }
 .scr-x-table col.w-count { width: 96px; }
 .scr-x-table col.w-switch { width: 84px; }
-.scr-x-table col.w-actions-sm { width: 140px; }
+.scr-x-table col.w-actions-sm { width: 196px; }
 .scr-x-table col.w-input { width: 190px; }
-.scr-x-table col.w-select { width: 160px; }
+.scr-x-table col.w-select { width: 184px; }
 .scr-x-table col.w-tag { width: 120px; }
 .scr-x-table col.w-flag { width: 100px; }
 
@@ -1877,3 +1877,94 @@ a.scr-x-name:hover { text-decoration: underline; text-underline-offset: 3px; }
   [data-tgt-manage] .scr-x-table td.check { position: absolute; top: 14px; inset-inline-end: 16px; }
   .scr-x > .scr-x-tabs { align-self: stretch; }
 }
+
+/* -- Status Tracking (client, 20 Nov 2026): the old RMS grid in our styling ---------------- */
+.scr-trk-search { padding: 16px 20px; }
+.scr-trk-search-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+.scr-trk-field { display: flex; flex-direction: column; gap: 6px; flex: 1 1 200px; min-width: 0; }
+.scr-trk-field .scr-input { height: 40px; width: 100%; }
+.scr-trk-search-actions { display: flex; gap: 8px; }
+.scr-trk-search-actions .scr-btn-primary, .scr-trk-search-actions .scr-btn-secondary { height: 40px; }
+.scr-trk-grid { min-width: 980px; }
+.scr-trk-grid col.w-station { width: 190px; }
+.scr-trk-grid col.w-time { width: 128px; }
+.scr-trk-grid col.w-antenna { width: 88px; }
+.scr .scr-trk-grid th.center, .scr .scr-trk-grid td.center { text-align: center; }
+.scr-x-table td.num.is-short { color: #c2141a; font-weight: 600; }
+.scr-x-table td.num.is-rent { color: #14764a; font-weight: 600; }
+.scr-x-table td.num.is-warn, .scr-x-kpis dd.is-warn { color: #b25d00; font-weight: 600; }
+.scr-trk-star { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; margin: -6px 0; padding: 0; border: 0; background: none; cursor: pointer; color: #d81b23; vertical-align: middle; border-radius: 50%; }
+.scr-trk-star svg { fill: currentColor; filter: drop-shadow(0 1px 2px rgba(194, 20, 26, 0.35)); transition: transform .15s ease; }
+.scr-trk-star span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding-top: 2px; font-size: 11px; font-weight: 800; color: #fff; }
+.scr-trk-star:hover svg { transform: scale(1.12); }
+.scr-trk-star:focus-visible { outline: 2px solid #1a1640; outline-offset: 2px; }
+.scr-trk-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #c8c5dc; vertical-align: middle; }
+.scr-trk-dot.is-online { background: #1f9d55; box-shadow: 0 0 0 3px #e3f6ec; }
+.scr-trk-dot.is-offline { background: #c2141a; box-shadow: 0 0 0 3px #fdeced; }
+.scr-modal.scr-x-modal.scr-trk-missing { width: min(760px, calc(100vw - 32px)); }
+.scr-trk-missing-table { min-width: 560px; }
+.scr-trk-cashiers { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid #f0eff7; font-size: 13px; color: #1a1640; }
+.scr-trk-cashiers .scr-label { margin: 0 4px 0 0; }
+.scr-trk-cashier { padding: 3px 10px; border-radius: 99px; background: #f4f3f9; font-weight: 600; }
+.scr-trk-cashier small { font-weight: 500; color: #6b6790; }
+@media (prefers-reduced-motion: reduce) { .scr-trk-star svg { transition: none; } }
+
+/* Card-discount request: the order's vehicles under the card photo (client, 20 Nov 2026) */
+.scr-mon-side { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.scr-veh-cards { display: flex; flex-direction: column; gap: 12px; }
+.scr-veh-card { border: 1px solid #eeedf5; border-radius: 12px; padding: 12px 14px; background: #fff; }
+.scr-veh-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.scr-veh-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; margin: 10px 0 0; }
+.scr-veh-grid dt { font-size: 11px; font-weight: 600; color: #9490bb; letter-spacing: 0.03em; text-transform: uppercase; }
+.scr-veh-grid dd { margin: 2px 0 0; font-size: 13px; font-weight: 600; color: #1a1640; font-variant-numeric: tabular-nums; }
+.scr-veh-grid dd small { display: block; font-size: 11.5px; font-weight: 500; color: #9490bb; }
+.scr-veh-grid .is-total dd { font-weight: 700; }
+.scr-veh-fare { margin-top: 10px; padding-top: 8px; border-top: 1px dashed #eeedf5; font-size: 12px; color: #6b6790; display: flex; flex-direction: column; gap: 2px; }
+
+/* -- Status Tracking, round 2 (client, 20 Nov 2026) ------------------------------------------
+   Counts centred under their headings (the star and a plain number share one centre line);
+   the Antenna column breathes on the right; a station that changed glows and moves up,
+   its star pulses; the station's vehicles open in a scrolling dialog. */
+.scr .scr-trk-grid th.c, .scr .scr-trk-grid td.c { text-align: center; }
+.scr-trk-grid col.w-antenna { width: 104px; }
+.scr .scr-trk-grid th:last-child, .scr .scr-trk-grid td:last-child { padding-inline-end: 24px; text-align: center; }
+.scr-trk-grid .scr-trk-star { margin: -6px auto; display: inline-flex; vertical-align: middle; }
+.scr-trk-grid tr.is-changed td { animation: liveGlow 2.4s ease-out; }
+.scr-trk-star.is-pulse svg { animation: trkPulse 0.7s ease-in-out 3; }
+@keyframes trkPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.28); } }
+[data-status-total].is-bump dd { animation: trkBump 0.9s ease-out; }
+@keyframes trkBump { 0% { transform: scale(1); } 30% { transform: scale(1.12); } 100% { transform: scale(1); } }
+.scr-x-kpis [data-status-total] dd { transform-origin: left center; }
+@media (prefers-reduced-motion: reduce) {
+  .scr-trk-grid tr.is-changed td, .scr-trk-star.is-pulse svg, [data-status-total].is-bump dd { animation: none; }
+}
+.scr-modal.scr-x-modal.scr-trk-station-modal { width: min(920px, calc(100vw - 32px)); }
+.scr-trk-station-modal .scr-modal-body { padding-top: 4px; }
+.scr-trk-station-modal .scr-trk-station-scroll { max-height: min(62vh, 620px); overflow: auto; overscroll-behavior: contain; }
+.scr-trk-station { table-layout: fixed; width: 100%; min-width: 640px; }
+.scr-trk-station col.w-veh { width: 26%; }
+.scr-trk-station col.w-state { width: 118px; }
+.scr-trk-station col.w-when { width: 132px; }
+.scr-trk-station col.w-heard { width: 158px; }
+.scr .scr-trk-station th, .scr-trk-station-modal .scr-trk-station th { position: sticky; top: 0; z-index: 1; background: #fbfaff; }
+.scr .scr-trk-station th:last-child, .scr .scr-trk-station td:last-child,
+.scr-trk-station-modal .scr-trk-station th:last-child, .scr-trk-station-modal .scr-trk-station td:last-child { padding-inline-end: 24px; text-align: right; }
+.scr-trk-station-modal .scr-trk-station th, .scr-trk-station-modal .scr-trk-station td { padding: 10px 12px; text-align: left; font-size: 13px; border-bottom: 1px solid #f0eff7; }
+.scr-trk-station-modal .scr-trk-station th { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: #9490bb; }
+.scr-trk-station-modal .scr-trk-station td.num, .scr-trk-station-modal .scr-trk-station th.num { text-align: right; }
+.scr-trk-station tr.is-missing td { background: #fff7f7; }
+.scr-trk-station-scroll { max-width: 100%; overflow-x: auto; }
+
+/* Reader CPU Approval: the action cell lines its buttons and menu up on one row (client, 20 Nov 2026) */
+.scr-trk-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.scr-trk-actions .scr-menu-wrap { display: inline-flex; margin: 0; }
+.scr-x-table .scr-trk-actions { white-space: nowrap; }
+.scr-btn-small.is-danger { color: #c2141a; border-color: #f3c9cb; }
+.scr-btn-small.is-danger:hover { background: #fdeced; border-color: #c2141a; color: #c2141a; }
+@media (max-width: 900px) { .scr-trk-actions { justify-content: flex-start; } }
+.scr-trk-station-modal .scr-trk-station th { white-space: nowrap; }
+
+/* A cell that holds a button or a dropdown is never cut off with "..." -- that read as a stray
+   kebab (Approve, History, the antenna direction; client, 20 Nov 2026). Text cells still ellipsize. */
+.scr-x-table td.actions, .scr-x-table td:has(> select), .scr-x-table td:has(> .scr-btn-small),
+.scr-x-table td:has(.scr-trk-actions) { overflow: visible; text-overflow: clip; }
