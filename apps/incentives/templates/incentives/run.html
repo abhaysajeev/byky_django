@@ -5,22 +5,22 @@
 {% block crumb %}<a href="{{ back_url }}">Calculate</a>
 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
 <b>{{ run.branch.name }}</b>{% endblock %}
-{% block heading %}{{ run.branch.name }} · {{ run.period_start|date:"F Y" }}{% endblock %}
-{% block sub %}{% if run.is_approved %}Approved {{ run.approved_at|date:"d M Y, H:i" }} by {{ run.approved_by.display_name|default:run.approved_by.username }}{% else %}Draft · calculated {{ run.calculated_at|date:"d M Y, H:i" }}{% if run.calculated_by %} by {{ run.calculated_by.display_name|default:run.calculated_by.username }}{% endif %}{% endif %} · scheme “{{ run.scheme.name }}”{% endblock %}
+{% block heading %}{{ run.branch.name }} · {{ profile.name }} · {{ period_label }}{% endblock %}
+{% block sub %}{% if run.is_approved %}Approved {{ run.approved_at|date:"d M Y, H:i" }} by {{ run.approved_by.display_name|default:run.approved_by.username }}{% else %}Draft · calculated {{ run.calculated_at|date:"d M Y, H:i" }}{% if run.calculated_by %} by {{ run.calculated_by.display_name|default:run.calculated_by.username }}{% endif %}{% endif %} · scheme “{{ run.scheme.name }}” · paid in {{ run.payout_month|date:"F Y" }}{% endblock %}
 
 {% block actions %}
 <span class="scr-x-status is-{% if run.is_approved %}met{% else %}live{% endif %}">{% if run.is_approved %}Approved{% else %}Draft{% endif %}</span>
 {% if can.print %}<a class="scr-btn-small" href="{{ export_url }}">Export</a>{% endif %}
 {% if not run.is_approved %}
-  {% if can.create %}<button type="button" class="scr-btn-small" data-inc-recalc data-url="{{ calculate_url }}" data-branch="{{ run.branch_id }}" data-month="{{ run.period_start|date:'Y-m' }}" data-name="{{ run.branch.name }}">Recalculate</button>{% endif %}
-  {% if can.approve %}<button type="button" class="scr-btn scr-btn-primary" data-inc-approve data-url="{{ approve_url }}" data-name="{{ run.branch.name }}, {{ run.period_start|date:'F Y' }}" data-total="{{ run.total|amount }}">Approve</button>{% endif %}
+  {% if can.create %}<button type="button" class="scr-btn-small" data-inc-recalc data-url="{{ calculate_url }}" data-branch="{{ run.branch_id }}" data-month="{{ run.period_start|date:'Y-m' }}" data-profile="{{ run.profile_id }}" data-period="{{ run.period_start|date:'Y-m-d' }}" data-name="{{ run.branch.name }}">Recalculate</button>{% endif %}
+  {% if can.approve %}<button type="button" class="scr-btn scr-btn-primary" data-inc-approve data-url="{{ approve_url }}" data-name="{{ run.branch.name }}, {{ period_label }}" data-total="{{ run.total|amount }}">Approve</button>{% endif %}
 {% endif %}
 {% endblock %}
 
 {% block body %}
 <div class="scr-card">
   <dl class="scr-x-kpis">
-    <div><dt>Target</dt><dd>{{ run.target_amount|amount }}<small>Achieved {{ run.achieved|amount }}</small></dd></div>
+    <div><dt>Target</dt><dd>{{ run.target_amount|figure:is_customers }}<small>Achieved {{ run.achieved|figure:is_customers }}</small></dd></div>
     <div><dt>Working days</dt><dd>{{ run.work_days }}</dd></div>
     <div><dt>Daily basis</dt><dd>{{ run.basis|amount }}<small>achieved ÷ working days</small></dd></div>
     <div><dt>Incentive (AED)</dt><dd>{{ run.total|amount }}<small>{{ people_count }} {% if people_count == 1 %}person{% else %}people{% endif %}</small></dd></div>

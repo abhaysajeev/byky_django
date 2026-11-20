@@ -1,6 +1,7 @@
-"""Incentive screens (design/09-incentives.md section 7): Calculate (station x
-month), a run, By Employee, Schemes and the scheme form. Every figure comes
-from apps/incentives/services.py; these views only scope, draw and write."""
+"""Incentive screens (design/09-incentives.md section 7, design/11 §6):
+Calculate (station x a profile's period), a run, By Employee (by payout
+month), Schemes and the scheme form. Every figure comes from
+apps/incentives/services.py; these views only scope, draw and write."""
 
 import datetime
 import io
@@ -15,12 +16,14 @@ from django.views import View
 from apps.company.models import BranchType, State
 from apps.company.scoping import branches_for, companies_for
 from apps.incentives import formula, services
-from apps.incentives.models import AppliesTo, Run, Scheme, SchemeComponent
+from apps.incentives.models import AppliesTo, Payout, Run, Scheme, SchemeComponent
 from apps.incentives.variables import CATALOGUE, MONTH_NAMES, as_list
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
+from apps.targets import periods
 from apps.targets import services as targets
+from apps.targets.models import PeriodType, ProfileStatus, TargetKind, TargetProfile
 from theme.views import ThemedTemplateView
 
 CALCULATE, EMPLOYEES, SCHEMES = "incentives.calculate", "incentives.employees", "incentives.schemes"
@@ -45,6 +48,29 @@ def scoped_runs(user):
 
 def scoped_schemes(user):
     return Scheme.objects.filter(company__in=companies_for(user))
+
+
+def scoped_profiles(user):
+    return TargetProfile.objects.filter(company__in=companies_for(user)).select_related("company")
+
+
+TYPE_ORDER = {PeriodType.MONTHLY: 0, PeriodType.ANNUAL: 1, PeriodType.CUSTOM: 2, PeriodType.DAILY: 3}
+
+
+def _date_or_none(value):
+    try:
+        return datetime.date.fromisoformat(str(value or "")[:10])
+    except ValueError:
+        return None
+
+
+def default_profile(profiles):
+    """Calculate's default: the monthly sales profile, else the first active one."""
+    profiles = list(profiles)
+    for p in profiles:
+        if p.metric == TargetKind.SALES and p.period_type == PeriodType.MONTHLY and p.status == ProfileStatus.ACTIVE:
+            return p
+    return profiles[0] if profiles else None
 
 
 def _month(value, today):
@@ -103,8 +129,35 @@ class CalculateView(IncentivesScreen):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        first = context["first"]
-        rows = [services.eligibility(b, first) for b in self.branches(context)]
+        today = context["business_today"]
+        profiles = sorted(scoped_profiles(self.request.user).exclude(status=ProfileStatus.DRAFT),
+                          key=lambda p: (p.status != ProfileStatus.ACTIVE, TYPE_ORDER.get(p.period_type, 9),
+                                         p.name.lower()))
+        profile = next((p for p in profiles if p.pk == _int(self.request.GET.get("profile"))), None) \
+            or default_profile(profiles)
+        context.update({"profiles": [{"id": p.pk, "name": p.name, "type": p.get_period_type_display(),
+                                      "status": p.status} for p in profiles],
+                        "profile": profile, "periods": [], "period": None, "rows": [], "totals": {}})
+        if profile is None:
+            return context
+        # Periods that have started, newest first: ended ones can be calculated,
+        # the running one shows its progress.
+        started = [sp for sp in periods.profile_periods(profile) if sp[0] <= today][::-1][:36]
+        chosen = _date_or_none(self.request.GET.get("period"))
+        if chosen is None and self.request.GET.get("month"):            # older links: ?month=YYYY-MM
+            chosen = context["first"]
+        span = next((sp for sp in started if sp[0] == chosen), None)
+        if span is None:
+            span = next((sp for sp in started if sp[1] < today), started[0] if started else None)
+        if span is None:
+            return context
+        first = span[0]
+        context["periods"] = [{"value": a.isoformat(), "on": (a, b) == span, "ended": b < today,
+                               "label": periods.period_label(profile.period_type, a, b)} for a, b in started]
+        context["period"] = {"start": span[0], "end": span[1],
+                             "label": periods.period_label(profile.period_type, *span)}
+        context["first"], context["month_key"] = first, f"{first:%Y-%m}"
+        rows = [services.eligibility(b, first, profile=profile) for b in self.branches(context)]
         rows = [r for r in rows if r["target"] or r["run"]]
         for r in rows:
             r["status"] = _target_status(r)
@@ -115,7 +168,7 @@ class CalculateView(IncentivesScreen):
             "rows": rows, "calculate_url": reverse("incentives-calculate-post"),
             "totals": {"met": sum(1 for r in rows if r["met"]), "stations": len(rows), "approved": approved,
                        "draft": draft, "runs": sum(1 for r in rows if r["run"])},
-            "ended": context["business_today"] > targets.month_bounds(first.year, first.month)[1],
+            "ended": today > span[1], "is_customers": profile.metric == TargetKind.CUSTOMERS,
         })
         return context
 
@@ -136,8 +189,8 @@ class RunView(IncentivesScreen):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        run = get_object_or_404(scoped_runs(self.request.user).select_related("branch", "scheme", "calculated_by",
-                                                                           "approved_by"), pk=self.kwargs["pk"])
+        run = get_object_or_404(scoped_runs(self.request.user).select_related(
+            "branch", "scheme", "profile", "calculated_by", "approved_by"), pk=self.kwargs["pk"])
         by = "employee" if self.request.GET.get("view") == "employee" else "day"
         days = services.run_by_day(run) if by == "day" else []
         employees = services.run_by_employee(run) if by == "employee" else []
@@ -148,9 +201,11 @@ class RunView(IncentivesScreen):
             e["roles_text"] = ", ".join(f"{ROLE_LABEL.get(k, k)} {v}d" for k, v in e["roles"].items())
         context.update({
             "run": run, "by": by, "days": days, "employees": employees,
+            "period_label": services.period_label(run), "profile": run.profile,
+            "is_customers": run.profile.metric == TargetKind.CUSTOMERS,
             "day_url": reverse("incentives-run", args=[run.pk]), "people_count": run.lines.values("employee").distinct().count(),
             "employee_url": reverse("incentives-run", args=[run.pk]) + "?view=employee",
-            "back_url": reverse("incentives-calculate") + f"?month={run.period_start:%Y-%m}",
+            "back_url": reverse("incentives-calculate") + f"?profile={run.profile_id}&period={run.period_start}",
             "calculate_url": reverse("incentives-calculate-post"),
             "approve_url": reverse("incentives-approve", args=[run.pk]),
             "export_url": reverse("incentives-run-export", args=[run.pk]),
@@ -184,7 +239,8 @@ class SchemeListView(IncentivesScreen):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        schemes = list(scoped_schemes(self.request.user).prefetch_related("branches", "components"))
+        schemes = list(scoped_schemes(self.request.user).select_related("profile")
+                       .prefetch_related("branches", "components"))
         context.update({"schemes": [{"scheme": s, "used": s.is_used, "stations": list(s.branches.all())}
                                     for s in schemes],
                         "copy_url": reverse("incentives-scheme-copy", args=[0]),
@@ -213,6 +269,8 @@ class SchemeFormView(IncentivesScreen):
             f"{context['business_today'].replace(day=1):%Y-%m-%d}",
             "effective_to": f"{scheme.effective_to:%Y-%m-%d}" if scheme and scheme.effective_to else "",
             "branches": [b.pk for b in scheme.branches.all()] if scheme else [],
+            "profile": scheme.profile_id if scheme else None,
+            "payout": scheme.payout if scheme else Payout.PERIOD_END_MONTH,
             "pays_when": scheme.pays_when if scheme else "achieved >= target",
             "is_active": scheme.is_active if scheme else False,
             "notes": scheme.notes if scheme else "",
@@ -221,7 +279,20 @@ class SchemeFormView(IncentivesScreen):
                            for c in scheme.components.all()] if scheme else
             [{"name": "", "applies_to": AppliesTo.PRIMARY, "formula": ""}],
         }
+        profiles = [p for p in scoped_profiles(self.request.user).prefetch_related("assignments__branch")
+                    if p.status == ProfileStatus.ACTIVE or (scheme and p.pk == scheme.profile_id)]
+        profiles.sort(key=lambda p: (TYPE_ORDER.get(p.period_type, 9), p.name.lower()))
+        if not data["profile"] and profiles:
+            data["profile"] = default_profile(profiles).pk
+        # Each profile's branches, for the Branches picker to follow the profile chosen.
+        data["profile_branches"] = {
+            str(p.pk): sorted(({"id": a.branch_id, "name": a.branch.name} for a in p.assignments.all() if a.active),
+                              key=lambda b: b["name"].lower()) for p in profiles}
+        chosen = data["profile_branches"].get(str(data["profile"]), [])
         context.update({
+            "profiles": [{"id": p.pk, "name": p.name, "type": p.get_period_type_display(),
+                          "metric": p.get_metric_display()} for p in profiles],
+            "payouts": Payout.choices, "branch_options": chosen,
             "scheme": scheme, "locked": bool(scheme and scheme.is_used), "data": data,
             "catalogue": as_list(), "month_names": MONTH_NAMES,
             "applies_to": [{"value": v, "label": label} for v, label in AppliesTo.choices],
@@ -257,32 +328,36 @@ def _invalid(errors, status=400):
 
 
 class CalculatePost(View):
-    """POST {branch, month}: calculate (or again) that station's month."""
+    """POST {branch, profile?, period? | month}: calculate (or again) that
+    station's period of the profile (no profile: its monthly sales target)."""
 
     def post(self, request):
         if not has_permission(request.user, CALCULATE, "create"):
             return _refused()
         data = _payload(request)
         branch = get_object_or_404(scoped_branches(request.user), pk=_int(data.get("branch")))
-        first = _month(data.get("month"), targets.today_for(branch.company))
+        profile = None
+        if data.get("profile"):
+            profile = get_object_or_404(scoped_profiles(request.user), pk=_int(data.get("profile")))
+        first = _date_or_none(data.get("period")) or _month(data.get("month"), targets.today_for(branch.company))
         try:
-            run = services.calculate(branch, first, request.user)
+            run = services.calculate(branch, first, request.user, profile=profile)
         except services.IncentiveError as error:
             return _invalid([{"field": error.field, "message": error.message}])
         return JsonResponse({"ok": True, "url": reverse("incentives-run", args=[run.pk]),
-                             "message": f"{branch.name}, {first:%B %Y} calculated."})
+                             "message": f"{branch.name}, {services.period_label(run)} calculated."})
 
 
 class ApprovePost(View):
     def post(self, request, pk):
         if not has_permission(request.user, CALCULATE, "approve"):
             return _refused()
-        run = get_object_or_404(scoped_runs(request.user).select_related("branch"), pk=pk)
+        run = get_object_or_404(scoped_runs(request.user).select_related("branch", "profile"), pk=pk)
         try:
             services.approve(run, request.user)
         except services.IncentiveError as error:
             return _invalid([{"field": error.field, "message": error.message}])
-        return JsonResponse({"ok": True, "message": f"{run.branch.name}, {run.period_start:%B %Y} approved."})
+        return JsonResponse({"ok": True, "message": f"{run.branch.name}, {services.period_label(run)} approved."})
 
 
 def _date(value, field, errors, required=True):
@@ -326,13 +401,22 @@ class SchemeSave(View):
         variables, components = _rows(data)
         errors += services.validate(pays_when, variables, components)
         company = scheme.company if scheme else companies_for(request.user).order_by("name").first()
-        stations = list(scoped_branches(request.user).filter(company=company,
-                                                             pk__in=[_int(b) for b in data.get("branches") or []]))
+        profile = scoped_profiles(request.user).filter(company=company, pk=_int(data.get("profile"))).first()
+        if profile is None:
+            errors.append({"field": "Target profile", "message": "Choose the target profile it pays on."})
+        payout = data.get("payout") if data.get("payout") in Payout.values else Payout.PERIOD_END_MONTH
+        wanted = {_int(b) for b in data.get("branches") or []} - {None}
+        on_profile = set(profile.assignments.filter(active=True).values_list("branch_id", flat=True)) \
+            if profile else set()
+        if wanted - on_profile:
+            errors.append({"field": "Branches", "message": "Choose only branches on the target profile."})
+        stations = list(scoped_branches(request.user).filter(company=company, pk__in=wanted & on_profile))
         if errors:
             return _invalid(errors)
         with transaction.atomic():
             scheme = scheme or Scheme(company=company, created_by=request.user)
             scheme.name, scheme.effective_from, scheme.effective_to = name, start, end
+            scheme.profile, scheme.payout = profile, payout
             scheme.pays_when, scheme.is_active = pays_when, bool(data.get("is_active"))
             scheme.notes, scheme.modified_by = str(data.get("notes") or "")[:300], request.user
             scheme.save()
@@ -344,7 +428,8 @@ class SchemeSave(View):
             for index, (cname, applies, text) in enumerate(components):
                 scheme.components.create(position=index, name=cname, applies_to=applies, formula=text)
             if scheme.is_active:
-                clash = (Scheme.objects.filter(company=company, is_active=True).exclude(pk=scheme.pk)
+                clash = (Scheme.objects.filter(company=company, profile=profile, is_active=True)
+                         .exclude(pk=scheme.pk)
                          .filter(effective_from__lte=end or datetime.date.max)
                          .exclude(effective_to__lt=start))
                 mine = {b.pk for b in stations}
@@ -353,7 +438,8 @@ class SchemeSave(View):
                     if mine == theirs or (not mine and not theirs):
                         transaction.set_rollback(True)
                         return _invalid([{"field": "Active", "message":
-                                          f"“{other.name}” is already active for the same stations and dates. "
+                                          f"“{other.name}” is already active for the same profile, branches "
+                                          "and dates. "
                                           "Switch one off or change its dates."}])
         return JsonResponse({"ok": True, "message": f"Scheme “{scheme.name}” saved.",
                              "url": reverse("incentives-schemes")})
@@ -415,8 +501,10 @@ class SchemeTry(View):
         if errors:
             return _invalid(errors)
         rows = [SchemeComponent(name=n, applies_to=a, formula=f) for n, a, f in components]
+        profile = scoped_profiles(request.user).filter(pk=_int(data.get("profile"))).first()
         try:
-            view = services.try_parts(str(data.get("pays_when")), services.compile_parts(variables, rows), branch, day)
+            view = services.try_parts(str(data.get("pays_when")), services.compile_parts(variables, rows), branch, day,
+                                      profile=profile)
         except (services.IncentiveError, formula.FormulaError) as error:
             return _invalid([{"field": getattr(error, "field", "Formula"), "message": getattr(error, "message",
                                                                                                str(error))}])
@@ -464,11 +552,12 @@ class RunExport(PagePermissionMixin, View):
     required_action = "print"
 
     def get(self, request, pk):
-        run = get_object_or_404(scoped_runs(request.user).select_related("branch"), pk=pk)
+        run = get_object_or_404(scoped_runs(request.user).select_related("branch", "profile"), pk=pk)
         rows = [(line.date, line.employee.employee_code, line.employee.full_name,
                  ROLE_LABEL.get(line.role, line.role), line.component, float(line.amount))
                 for line in run.lines.select_related("employee").order_by("date", "employee__first_name")]
-        name = f"Incentive {run.branch.name} {run.period_start:%Y-%m}{'' if run.is_approved else ' DRAFT'}"
+        name = (f"Incentive {run.branch.name} {run.profile.name} {run.period_start:%Y-%m-%d}"
+                f"{'' if run.is_approved else ' DRAFT'}")[:120]
         return _xlsx(name, ["Date", "Employee code", "Employee", "Role", "Component", "Amount"], rows)
 
 
@@ -485,9 +574,10 @@ class EmployeesExport(PagePermissionMixin, View):
         rows = []
         for r in services.employee_totals(company, list(branches), first):
             for s in r["stations"]:
-                rows.append((r["employee"].employee_code, r["employee"].full_name, s["branch"].name, s["days"],
+                rows.append((r["employee"].employee_code, r["employee"].full_name, s["branch"].name,
+                             s["profile"].name, s["label"], s["days"],
                              "Approved" if s["run"].is_approved else "Draft", float(s["amount"])))
-        return _xlsx(f"Incentives by employee {first:%Y-%m}",
-                     ["Employee code", "Employee", "Station", "Days", "Status", "Amount"], rows)
+        return _xlsx(f"Incentives paid in {first:%Y-%m}",
+                     ["Employee code", "Employee", "Station", "Profile", "Period", "Days", "Status", "Amount"], rows)
 
 
