@@ -31,6 +31,13 @@ NOV = datetime.date(2026, 11, 1)
 D = Decimal
 
 
+def monthly_sales(world):
+    """The company's monthly sales profile -- the one create_targets() fills,
+    as every scheme had after the move to profiles (design/11 §8)."""
+    first, last = targets.month_bounds(NOV.year, NOV.month)
+    return targets.default_profile(world["company"], targets.TargetKind.SALES, first, last, None)
+
+
 @pytest.fixture
 def people(world):
     company = world["company"]
@@ -58,7 +65,7 @@ def roster(employee, day, branch, role, cashier_type="", day_type=DutyRosterDayT
 
 @pytest.fixture
 def scheme(world):
-    s = Scheme.objects.create(company=world["company"], name="Standard incentive", effective_from=NOV,
+    s = Scheme.objects.create(company=world["company"], profile=monthly_sales(world), name="Standard incentive", effective_from=NOV,
                               is_active=True)
     s.components.create(position=1, name="Primary cashier", applies_to=AppliesTo.PRIMARY, formula="basis * 1%")
     s.components.create(position=2, name="Tier 2 share", applies_to=AppliesTo.TIER2,
@@ -164,7 +171,7 @@ def test_an_employee_is_paid_station_by_station(world, staff, example, sale):  #
 
 
 def test_a_station_specific_scheme_wins(world, staff, example, scheme):  # noqa: F811
-    special = Scheme.objects.create(company=world["company"], name="Corniche", effective_from=NOV, is_active=True)
+    special = Scheme.objects.create(company=world["company"], profile=monthly_sales(world), name="Corniche", effective_from=NOV, is_active=True)
     special.branches.set([world["adc1"]])
     special.components.create(position=1, name="Flat", applies_to=AppliesTo.EVERYONE, formula="10")
     run = services.calculate(world["adc1"], NOV, staff, now=AFTER)
