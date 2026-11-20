@@ -14,7 +14,6 @@ from apps.targets import periods as P
 from apps.targets import services
 from apps.targets.models import (
     PeriodType,
-    ProfileStatus,
     Target,
     TargetDay,
     TargetKind,
@@ -29,10 +28,10 @@ date = datetime.date
 
 
 def make_profile(world, staff, name, period_type, starts_on, ends_on, amounts, metric=TargetKind.SALES,  # noqa: F811
-                 status=ProfileStatus.ACTIVE):
+                 is_active=True):
     profile = TargetProfile.objects.create(company=world["company"], name=name, metric=metric,
                                            period_type=period_type, starts_on=starts_on, ends_on=ends_on,
-                                           status=status, created_by=staff, modified_by=staff)
+                                           is_active=is_active, created_by=staff, modified_by=staff)
     for branch, amount in amounts:
         TargetProfileBranch.objects.create(profile=profile, branch=branch, amount=D(amount))
     return profile
@@ -109,7 +108,7 @@ def test_activating_makes_every_period_with_its_days(world, staff, creek):
 
 def test_a_draft_profile_makes_nothing(world, staff):
     profile = make_profile(world, staff, "Later", PeriodType.MONTHLY, date(2026, 12, 1), date(2026, 12, 31),
-                           [(world["adc1"], "1000")], status=ProfileStatus.DRAFT)
+                           [(world["adc1"], "1000")], is_active=False)
     assert services.sync_profile(profile, staff, now=NOW) == (0, 0, [])
     assert not Target.objects.exists()
 
@@ -194,17 +193,17 @@ def test_removing_a_station_keeps_its_history(world, staff):
     assert services.sync_profile(profile, staff, now=NOW)[0] == 0                   # not brought back
 
 
-def test_a_profile_can_be_deleted_only_before_anything_happens(world, staff):
-    future = make_profile(world, staff, "Next year", PeriodType.MONTHLY, date(2027, 1, 1), date(2027, 1, 31),
-                          [(world["adc1"], "1000")])
+def test_a_profile_can_be_deleted_only_once_no_branch_is_mapped(world, staff):
     running = make_profile(world, staff, "Now", PeriodType.CUSTOM, date(2026, 11, 1), date(2026, 11, 20),
                            [(world["adc1"], "1000")])
-    services.sync_profile(future, staff, now=NOW)
     services.sync_profile(running, staff, now=NOW)
 
-    assert services.can_delete_profile(future, now=NOW)
-    assert not services.can_delete_profile(running, now=NOW)
+    assert "mapped to 1 branch" in services.delete_refusal(running)
     assert services.profile_locked_fields(running) == {"metric", "period_type"}
+    services.set_branches(running, [], staff, now=NOW)                  # unmap it
+    assert services.can_delete_profile(running)
+    services.delete_profile(running)
+    assert not Target.objects.exists() and not TargetProfile.objects.filter(name="Now").exists()
 
 
 def test_the_annual_profile_uses_its_weights(world, staff):

@@ -8,10 +8,11 @@ the same control the drawers use -- byky-drawer.js wires it on load.
   chosen        ids already ticked (a list of ints or strings)
   placeholder   text while nothing is picked
   searchable    True adds a search box at the top of the menu
+  select_all    True adds Select all / Clear (acting on the matches when searching)
   search_label  that box's placeholder ("Search branches")
   empty_text    shown when there is nothing to pick
 {% endcomment %}
-<div class="byky-multi" id="{{ multi_id }}" data-field="{{ field }}" data-placeholder="{{ placeholder|default:'Select one or more' }}"{% if searchable %} data-searchable data-search-placeholder="{{ search_label|default:'Search' }}"{% endif %}{% if empty_text %} data-empty-text="{{ empty_text }}"{% endif %}>
+<div class="byky-multi" id="{{ multi_id }}" data-field="{{ field }}" data-placeholder="{{ placeholder|default:'Select one or more' }}"{% if searchable %} data-searchable data-search-placeholder="{{ search_label|default:'Search' }}"{% endif %}{% if empty_text %} data-empty-text="{{ empty_text }}"{% endif %}{% if select_all %} data-select-all{% endif %}>
   <div class="byky-multi-control" tabindex="0" role="button" aria-haspopup="listbox"{% if label_id %} aria-labelledby="{{ label_id }}"{% endif %}>
     <span class="byky-multi-pills"></span>
     <span class="byky-multi-placeholder">{{ placeholder|default:"Select one or more" }}</span>

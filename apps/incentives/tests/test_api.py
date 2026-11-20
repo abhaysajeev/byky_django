@@ -171,13 +171,13 @@ def _special(world, boss, payout):  # noqa: F811
     """A one-day special on 5 Nov at AUH01 paying a flat 10."""
     from apps.company.models import CompanyConfig
     from apps.incentives.models import Payout
-    from apps.targets.models import PeriodType, ProfileStatus, TargetProfile, TargetProfileBranch
+    from apps.targets.models import PeriodType, TargetProfile, TargetProfileBranch
 
     CompanyConfig.objects.get_or_create(company=world["company"], defaults={"financial_year_start": 1})
     fifth = datetime.date(2026, 11, 5)
     profile = TargetProfile.objects.create(company=world["company"], name="5 Nov special", metric="sales",
                                            period_type=PeriodType.DAILY, starts_on=fifth, ends_on=fifth,
-                                           status=ProfileStatus.ACTIVE)
+                                           is_active=True)
     TargetProfileBranch.objects.create(profile=profile, branch=world["auh1"], amount=D("100"))
     targets.sync_profile(profile, boss, now=at(11, 1))
     scheme = Scheme.objects.create(company=world["company"], profile=profile, name="Special", effective_from=fifth,

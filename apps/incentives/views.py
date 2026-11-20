@@ -23,7 +23,7 @@ from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
 from apps.targets import periods
 from apps.targets import services as targets
-from apps.targets.models import PeriodType, ProfileStatus, TargetKind, TargetProfile
+from apps.targets.models import PeriodType, Target, TargetKind, TargetProfile
 from theme.views import ThemedTemplateView
 
 CALCULATE, EMPLOYEES, SCHEMES = "incentives.calculate", "incentives.employees", "incentives.schemes"
@@ -68,7 +68,7 @@ def default_profile(profiles):
     """Calculate's default: the monthly sales profile, else the first active one."""
     profiles = list(profiles)
     for p in profiles:
-        if p.metric == TargetKind.SALES and p.period_type == PeriodType.MONTHLY and p.status == ProfileStatus.ACTIVE:
+        if p.metric == TargetKind.SALES and p.period_type == PeriodType.MONTHLY and p.is_active:
             return p
     return profiles[0] if profiles else None
 
@@ -130,13 +130,14 @@ class CalculateView(IncentivesScreen):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         today = context["business_today"]
-        profiles = sorted(scoped_profiles(self.request.user).exclude(status=ProfileStatus.DRAFT),
-                          key=lambda p: (p.status != ProfileStatus.ACTIVE, TYPE_ORDER.get(p.period_type, 9),
-                                         p.name.lower()))
+        found = scoped_profiles(self.request.user)
+        found = found.filter(pk__in=Target.objects.values("profile_id")) | found.filter(is_active=True)
+        profiles = sorted(found.distinct(), key=lambda p: (not p.is_active, TYPE_ORDER.get(p.period_type, 9),
+                                                           p.name.lower()))
         profile = next((p for p in profiles if p.pk == _int(self.request.GET.get("profile"))), None) \
             or default_profile(profiles)
         context.update({"profiles": [{"id": p.pk, "name": p.name, "type": p.get_period_type_display(),
-                                      "status": p.status} for p in profiles],
+                                      "is_active": p.is_active} for p in profiles],
                         "profile": profile, "periods": [], "period": None, "rows": [], "totals": {}})
         if profile is None:
             return context
@@ -280,7 +281,7 @@ class SchemeFormView(IncentivesScreen):
             [{"name": "", "applies_to": AppliesTo.PRIMARY, "formula": ""}],
         }
         profiles = [p for p in scoped_profiles(self.request.user).prefetch_related("assignments__branch")
-                    if p.status == ProfileStatus.ACTIVE or (scheme and p.pk == scheme.profile_id)]
+                    if p.is_active or (scheme and p.pk == scheme.profile_id)]
         profiles.sort(key=lambda p: (TYPE_ORDER.get(p.period_type, 9), p.name.lower()))
         if not data["profile"] and profiles:
             data["profile"] = default_profile(profiles).pk
