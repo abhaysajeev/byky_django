@@ -1984,6 +1984,8 @@ a.scr-x-name:hover { text-decoration: underline; text-underline-offset: 3px; }
 
 .scr-tp-layout { grid-template-columns: minmax(0, 1fr); max-width: 980px; }
 .scr-tp-apply { display: flex; gap: 8px; align-items: center; }
+.scr-tp-apply .scr-btn-small { white-space: nowrap; flex: 0 0 auto; }
+.scr-tp-amounts .scr-x-table col.w-num { width: 220px; }
 .scr-tp-apply .scr-drawer-input { flex: 1 1 auto; min-width: 0; }
 .scr-tp-amounts { margin-top: 14px; }
 .scr-tp-amounts .scr-x-table td { vertical-align: middle; }
