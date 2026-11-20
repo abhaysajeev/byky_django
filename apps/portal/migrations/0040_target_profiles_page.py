@@ -34,7 +34,7 @@ def apply_registry(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('portal', '0038_incentives_pages'),
+        ('portal', '0039_tracking_page_names'),
     ]
 
     operations = [
