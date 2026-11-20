@@ -14,24 +14,36 @@ screens now and the manager-app API later read the same figures.
 A day is the company's business day (Configurations: report day start, T3).
 
 Customer targets (section 9, owner 17 Nov 2026) share the table with kind
-"customers": a whole number of unique customers on the same counted orders,
-monthly only -- no days, no freezing; "On track" compares pro rata.
+"customers": a whole number of unique customers on the same counted orders --
+no days, no freezing; "On track" compares pro rata.
+
+Target Profiles (design/11-target-profiles.md): every target belongs to a
+profile and is one of its periods. sync_profile() makes them; the same orders
+count toward every profile covering them (P2).
 """
 
-import calendar
 import datetime
 from collections import defaultdict
 from dataclasses import dataclass
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 
-from django.db import transaction
-from django.db.models import Count, DateTimeField, ExpressionWrapper, F, Sum, Value
+from django.db import IntegrityError, transaction
+from django.db.models import Count, DateTimeField, ExpressionWrapper, F, Q, Sum, Value
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 
 from apps.rental.counted import counted
 from apps.rental.models import CreditNote, CreditNoteStatus, Order, OrderStatus
-from apps.targets.models import Target, TargetDay, TargetKind
+from apps.targets import periods as P
+from apps.targets.models import (
+    PeriodType,
+    Target,
+    TargetDay,
+    TargetKind,
+    TargetProfile,
+    TargetProfileBranch,
+    TargetProfileMonth,
+)
 from core.money import places_for
 from core.timezones import business_day_of, business_window, day_start_for, zone_for
 
@@ -50,13 +62,10 @@ class TargetError(Exception):
 # -- Dates and money ----------------------------------------------------------------------
 
 
-def month_bounds(year, month):
-    """(first, last) day of a calendar month."""
-    return datetime.date(year, month, 1), datetime.date(year, month, calendar.monthrange(year, month)[1])
-
-
-def days_of(first, last):
-    return [first + datetime.timedelta(days=n) for n in range((last - first).days + 1)]
+month_bounds = P.month_bounds
+days_of = P.days_of
+split_even = P.split_even
+target_label = P.target_label
 
 
 def today_for(company, now=None):
@@ -67,20 +76,8 @@ def _step(places):
     return Decimal(1).scaleb(-places)
 
 
-def split_even(amount, days, places):
-    """{day: amount}: `amount` over `days` evenly, rounded down to the money
-    places, the remainder on the last day -- so the days add up exactly."""
-    if not days:
-        return {}
-    amount = max(amount, ZERO)
-    each = (amount / len(days)).quantize(_step(places), rounding=ROUND_DOWN)
-    split = dict.fromkeys(days, each)
-    split[days[-1]] = amount - each * (len(days) - 1)
-    return split
-
-
 def required_for(amount, achieved_before, days_left, places):
-    """What a day must bring in for the month to still be met (T5)."""
+    """What a day must bring in for the period to still be met (T5)."""
     if days_left <= 0:
         return ZERO
     left = max(amount - achieved_before, ZERO)
@@ -208,80 +205,356 @@ def freeze_due(now=None):
 # -- Writing ------------------------------------------------------------------------------
 
 
-def _create_days(target, places):
-    split = split_even(target.amount, days_of(target.period_start, target.period_end), places)
+def weights_of(profile):
+    """An annual profile's {month_index: weight}; None = proportional to days."""
+    if profile is None or profile.period_type != PeriodType.ANNUAL:
+        return None
+    found = {m.month_index: m.weight for m in profile.months.all()}
+    return found if P.weights_valid(found) else None
+
+
+def _create_days(target, places, weights=None):
+    """Sales targets plan every day; customer targets have no days (C3)."""
+    if target.kind != TargetKind.SALES:
+        return
+    split = P.plan(target.period_type, target.amount, target.period_start, target.period_end, places, weights)
     TargetDay.objects.bulk_create([TargetDay(target=target, date=d, planned_amount=a) for d, a in split.items()])
+
+
+def clash(branch, kind, period_type, first, last, exclude_profile=None):
+    """The target that would duplicate this one (same type + metric over
+    overlapping dates on the station -- 11 P3), or None."""
+    found = Target.objects.filter(branch=branch, kind=kind, period_type=period_type,
+                                  period_start__lte=last, period_end__gte=first)
+    if exclude_profile is not None:
+        found = found.exclude(profile=exclude_profile)
+    return found.select_related("profile").first()
+
+
+def _make_target(profile, branch, first, last, amount, remarks, user, weights=None, overridden=False):
+    """One period's target and its days, or None when the database refuses a
+    duplicate that slipped past clash() (two saves at once)."""
+    try:
+        with transaction.atomic():
+            target = Target.objects.create(
+                company=profile.company, branch=branch, profile=profile, kind=profile.metric,
+                period_type=profile.period_type, period_start=first, period_end=last, amount=amount,
+                amount_overridden=overridden, remarks=remarks, created_by=user, modified_by=user)
+            _create_days(target, places_for(profile.company, branch), weights)
+    except IntegrityError:
+        return None
+    return target
+
+
+DEFAULT_NAMES = {TargetKind.SALES: "Monthly sales", TargetKind.CUSTOMERS: "Monthly customers"}
+
+
+def default_profile(company, kind, first, last, user):
+    """The company's monthly profile for a metric -- where a plain "this
+    month's target" lives (the manager app, older screens). Made when missing;
+    its range grows to cover first..last."""
+    profile = (TargetProfile.objects.select_for_update()
+               .filter(company=company, metric=kind, period_type=PeriodType.MONTHLY, is_active=True)
+               .order_by("pk").first())
+    if profile is None:
+        name = DEFAULT_NAMES[kind]
+        while TargetProfile.objects.filter(company=company, name=name).exists():
+            name += " (2)"
+        return TargetProfile.objects.create(company=company, name=name, metric=kind,
+                                            period_type=PeriodType.MONTHLY, starts_on=first, ends_on=last,
+                                            is_active=True, created_by=user, modified_by=user)
+    if first < profile.starts_on or last > profile.ends_on:
+        profile.starts_on, profile.ends_on = min(first, profile.starts_on), max(last, profile.ends_on)
+        profile.modified_by = user
+        profile.save(update_fields=["starts_on", "ends_on", "modified_by", "modified_on"])
+    return profile
 
 
 @transaction.atomic
 def create_targets(company, branches, year, month, amount, remarks, user, now=None, kind=TargetKind.SALES):
-    """Add one month's target for each station. Returns (saved, refused):
-    a station that already has a target overlapping the month, or is
-    inactive, is refused by name; the others are saved (design §5)."""
+    """Add one month's target for each station, on the company's monthly
+    profile for `kind`. Returns (saved, refused): a station that already has a
+    monthly target for the month, or is inactive, is refused by name."""
     first, last = month_bounds(year, month)
     today = today_for(company, now)
     if last < today:
         raise TargetError("Month", "That month has ended; a target can only be set for this month or later.")
+    profile = default_profile(company, kind, first, last, user)
     saved, refused = [], []
     for branch in branches:
         if not branch.is_active:
             refused.append((branch, "the branch is inactive"))
             continue
-        if Target.objects.filter(branch=branch, kind=kind, period_start__lte=last, period_end__gte=first).exists():
+        if clash(branch, kind, PeriodType.MONTHLY, first, last):
             refused.append((branch, "it already has a target for this month"))
             continue
-        target = Target.objects.create(company=company, branch=branch, kind=kind, period_start=first,
-                                       period_end=last, amount=amount, remarks=remarks, created_by=user,
-                                       modified_by=user)
-        if kind == TargetKind.SALES:
-            _create_days(target, places_for(company, branch))
+        assignment = TargetProfileBranch.objects.filter(profile=profile, branch=branch).first()
+        if assignment is None:
+            assignment = TargetProfileBranch.objects.create(profile=profile, branch=branch, amount=amount)
+        elif not assignment.active:
+            assignment.active, assignment.amount = True, amount
+            assignment.save(update_fields=["active", "amount"])
+        target = _make_target(profile, branch, first, last, amount, remarks, user,
+                              overridden=amount != assignment.amount)
+        if target is None:
+            refused.append((branch, "it already has a target for this month"))
+            continue
         saved.append(target)
     ensure_frozen(saved, today)
     return saved, refused
 
 
-@transaction.atomic
-def update_target(target, amount, remarks, user, now=None):
-    """Change a target's amount or remarks (T7): refused once its month has
-    ended. Days before today keep their planned amount; today and later share
-    what is left. Today's frozen required amount follows the new amount."""
-    today = today_for(target.company, now)
-    if is_locked(target, today):
-        raise TargetError("Month", "This month has ended; its target can't be changed.")
-    if target.kind == TargetKind.CUSTOMERS:
-        target.amount, target.remarks, target.modified_by = amount, remarks, user
-        target.save(update_fields=["amount", "remarks", "modified_by", "modified_on"])
-        return target
-    places = places_for(target.company, target.branch)
+def _replan(target, amount, today, places, weights=None):
+    """Days before today keep their plan; today and later share what is left,
+    in the proportions the period's plan gives them (even, or by month weight)."""
     days = list(target.days.order_by("date"))
     past = [d for d in days if d.date < today]
     ahead = [d for d in days if d.date >= today]
-    split = split_even(amount - sum((d.planned_amount for d in past), ZERO), [d.date for d in ahead], places)
+    if not ahead:
+        return
+    left = max(amount - sum((d.planned_amount for d in past), ZERO), ZERO)
+    if target.period_type != PeriodType.ANNUAL:                 # evenly, exactly as T7
+        split = split_even(left, [d.date for d in ahead], places)
+        for row in ahead:
+            row.planned_amount = split[row.date]
+            if row.date == today:
+                row.required_amount = None
+        TargetDay.objects.bulk_update(ahead, ["planned_amount", "required_amount"])
+        return
+    shape = P.plan(target.period_type, amount, target.period_start, target.period_end, places, weights)
+    base = sum((shape[d.date] for d in ahead), ZERO)
+    step = _step(places)
+    used = ZERO
     for row in ahead:
-        row.planned_amount = split[row.date]
+        share = (left * shape[row.date] / base) if base else left / len(ahead)
+        row.planned_amount = share.quantize(step, rounding=ROUND_DOWN)
+        used += row.planned_amount
         if row.date == today:
-            row.required_amount = None                    # frozen again below, with the new amount
+            row.required_amount = None                    # frozen again, with the new amount
+    ahead[-1].planned_amount += left - used
     TargetDay.objects.bulk_update(ahead, ["planned_amount", "required_amount"])
+
+
+@transaction.atomic
+def update_target(target, amount, remarks, user, now=None, override=True):
+    """Change one period's amount or remarks (T7): refused once it has ended.
+    Days before today keep their plan; today and later share what is left.
+    Today's frozen required amount follows the new amount. An edit made here
+    marks the period as set on its own, so a later change to the profile's
+    amount leaves it alone (11 §5)."""
+    today = today_for(target.company, now)
+    if is_locked(target, today):
+        raise TargetError("Period", "This period has ended; its target can't be changed.")
+    fields = ["amount", "remarks", "modified_by", "modified_on"]
+    if override and amount != target.amount:
+        target.amount_overridden = True
+        fields.append("amount_overridden")
+    if target.kind == TargetKind.SALES:
+        _replan(target, amount, today, places_for(target.company, target.branch), weights_of(target.profile))
     target.amount, target.remarks, target.modified_by = amount, remarks, user
-    target.save(update_fields=["amount", "remarks", "modified_by", "modified_on"])
+    target.save(update_fields=fields)
     ensure_frozen([target], today)
     return target
 
 
 def delete_target(target, now=None):
     if is_locked(target, today_for(target.company, now)):
-        raise TargetError("Month", "This month has ended; its target can't be deleted.")
+        raise TargetError("Period", "This period has ended; its target can't be deleted.")
+    if target.period_start <= today_for(target.company, now) and _has_run(target):
+        raise TargetError("Period", "An incentive has been worked out on this target; it can't be deleted.")
     target.delete()
+
+
+def _has_run(target):
+    from apps.incentives.models import Run
+
+    return Run.objects.filter(branch_id=target.branch_id, profile_id=target.profile_id,
+                              period_start=target.period_start).exists()
+
+
+# -- Profiles -----------------------------------------------------------------------------
+
+
+@dataclass
+class Refusal:
+    branch: object
+    reason: str
+
+    def __iter__(self):                                   # (branch, reason), as create_targets gives
+        return iter((self.branch, self.reason))
+
+
+def _clash_reason(found, profile):
+    label = P.target_label(found)
+    return (f"{label} overlaps its {found.get_period_type_display().lower()} "
+            f"{found.get_kind_display().lower()} target on “{found.profile.name}”")
+
+
+@transaction.atomic
+def sync_profile(profile, user, now=None):
+    """Make the profile's targets match its stations and amounts. Idempotent.
+
+    For each active station, every period gets a target: periods that have
+    ended are only filled the first time a profile makes targets (setting one
+    up late), never afterwards. An amount change moves every period not yet
+    ended and not edited on its own (the T7 way); ended periods never change.
+    A duplicate (same type + metric over overlapping dates, 11 P3) refuses that
+    period, named; the others still save. Returns (made, changed, refusals)."""
+    profile = TargetProfile.objects.select_for_update().select_related("company").get(pk=profile.pk)
+    if not profile.is_active:
+        return 0, 0, []
+    today = today_for(profile.company, now)
+    first_time = not profile.targets.exists()
+    weights = weights_of(profile)
+    spans = P.profile_periods(profile)
+    made, changed, refusals, touched = 0, 0, [], []
+    existing = defaultdict(dict)
+    for t in profile.targets.all():
+        existing[t.branch_id][t.period_start] = t
+    for assignment in profile.assignments.filter(active=True).select_related("branch"):
+        branch = assignment.branch
+        if not branch.is_active:
+            refusals.append(Refusal(branch, "the branch is inactive"))
+            continue
+        problems = []
+        for first, last in spans:
+            target = existing[branch.pk].get(first)
+            if target is not None:
+                if (target.amount != assignment.amount and not target.amount_overridden
+                        and not is_locked(target, today)):
+                    update_target(target, assignment.amount, target.remarks, user, now=now, override=False)
+                    changed += 1
+                continue
+            if last < today and not first_time:
+                continue
+            found = clash(branch, profile.metric, profile.period_type, first, last, exclude_profile=profile)
+            if found is not None:
+                problems.append(_clash_reason(found, profile))
+                continue
+            target = _make_target(profile, branch, first, last, assignment.amount, "", user, weights)
+            if target is None:
+                problems.append(f"{P.period_label(profile.period_type, first, last)} overlaps another target")
+                continue
+            made += 1
+            touched.append(target)
+        if problems:
+            more = f" (and {len(problems) - 3} more)" if len(problems) > 3 else ""
+            refusals.append(Refusal(branch, "; ".join(problems[:3]) + more))
+    ensure_frozen([t for t in touched if t.period_start <= today], today)
+    return made, changed, refusals
+
+
+@transaction.atomic
+def remove_branch(profile, branch, now=None):
+    """Take a station off a profile: its targets not yet started go; started
+    and ended ones stay as history, and the station stays listed, inactive."""
+    today = today_for(profile.company, now)
+    profile.targets.filter(branch=branch, period_start__gt=today).delete()
+    kept = profile.targets.filter(branch=branch).exists()
+    assignment = TargetProfileBranch.objects.filter(profile=profile, branch=branch).first()
+    if assignment is None:
+        return
+    if kept:
+        assignment.active = False
+        assignment.save(update_fields=["active"])
+    else:
+        assignment.delete()
+
+
+@transaction.atomic
+def set_branches(profile, rows, user, now=None):
+    """Target Branch Mapping: make the profile's stations exactly `rows`
+    [(branch, amount)], then sync its targets. A station taken off keeps its
+    started targets as history (remove_branch). Returns sync_profile's
+    (made, changed, refusals)."""
+    wanted = {branch.pk: amount for branch, amount in rows}
+    for assignment in list(profile.assignments.select_related("branch")):
+        if assignment.branch_id not in wanted:
+            if assignment.active:
+                remove_branch(profile, assignment.branch, now=now)
+            continue
+        amount = wanted.pop(assignment.branch_id)
+        if assignment.amount != amount or not assignment.active:
+            assignment.amount, assignment.active = amount, True
+            assignment.save(update_fields=["amount", "active"])
+    TargetProfileBranch.objects.bulk_create([TargetProfileBranch(profile=profile, branch_id=b, amount=a)
+                                             for b, a in wanted.items()])
+    profile.modified_by = user
+    profile.save(update_fields=["modified_by", "modified_on"])
+    return sync_profile(profile, user, now=now)
+
+
+def set_weights(profile, weights):
+    """Store an annual profile's 12 month weights (they must total 100)."""
+    if not P.weights_valid(weights):
+        raise TargetError("Month weights", "The 12 month weights must each be 0 or more and add up to 100%.")
+    TargetProfileMonth.objects.filter(profile=profile).delete()
+    TargetProfileMonth.objects.bulk_create([TargetProfileMonth(profile=profile, month_index=i, weight=w)
+                                            for i, w in sorted(weights.items())])
+
+
+def delete_refusal(profile):
+    """Why a profile can't be deleted, or None (owner, 20 Nov 2026): not while
+    any branch is mapped to it -- unmap them on Target Branch Mapping first --
+    and never while an incentive scheme or a worked-out incentive uses it,
+    since that is paid money's record. Unmapped, it goes with the targets it
+    made."""
+    mapped = profile.assignments.filter(active=True).count()
+    if mapped:
+        return (f"It is mapped to {mapped} branch{'es' if mapped != 1 else ''}. Unmap "
+                f"{'them' if mapped != 1 else 'it'} on Target Branch Mapping first.")
+    if profile.runs.exists():
+        return "Incentives were worked out on it; switch it off instead."
+    if profile.schemes.exists():
+        return "An incentive scheme pays on it; delete or move that scheme first."
+    return None
+
+
+def can_delete_profile(profile, now=None):
+    return delete_refusal(profile) is None
+
+
+@transaction.atomic
+def delete_profile(profile):
+    """Delete an unmapped profile and every target it made (their days go too)."""
+    reason = delete_refusal(profile)
+    if reason:
+        raise TargetError("Profile", reason)
+    name = profile.name
+    profile.targets.all().delete()
+    profile.delete()
+    return name
+
+
+def profile_locked_fields(profile):
+    """Type and metric are fixed once a profile has made targets (11 §3)."""
+    return {"metric", "period_type"} if profile.pk and profile.targets.exists() else set()
+
+
+def shrink_allowed(profile, starts_on, ends_on, now=None):
+    """The range may grow; it may shrink only over periods not yet started."""
+    today = today_for(profile.company, now)
+    lost = profile.targets.filter(Q(period_end__lt=starts_on) | Q(period_start__gt=ends_on))
+    return not lost.filter(period_start__lte=today).exists()
+
+
+def drop_outside(profile, now=None):
+    """After a range change: periods now outside it, not yet started, go."""
+    today = today_for(profile.company, now)
+    profile.targets.filter(Q(period_end__lt=profile.starts_on) | Q(period_start__gt=profile.ends_on),
+                           period_start__gt=today).delete()
 
 
 # -- Reading ------------------------------------------------------------------------------
 #
 # Statuses are words, never colour alone (design §6):
-#   month  Met | On track (achieved >= planned through yesterday) | Behind | Missed (ended) | Not started
+#   period Met | On track (achieved >= planned through yesterday) | Behind | Missed (ended) | Not started
 #   day    Met | Short (past, below its day's target) | In progress (today) | Upcoming
 
 MONTH_STATUS = {"met": "Met", "track": "On track", "behind": "Behind", "missed": "Missed", "idle": "Not started"}
 DAY_STATUS = {"met": "Met", "short": "Short", "live": "In progress", "idle": "Upcoming"}
+# A Daily profile's target is one day: progress only (11 P4).
+CARD_STATUS = {"met": "Met", "live": "In progress", "short": "Not met", "idle": "Upcoming"}
 
 
 @dataclass
@@ -301,7 +574,7 @@ def _status(key, labels):
 
 
 def month_status(target, achieved, planned_to_date, today):
-    """`planned_to_date`: the planned amounts of the days before today."""
+    """A period's status. `planned_to_date`: the plan for the days before today."""
     if target.period_start > today:
         return _status("idle", MONTH_STATUS)
     if achieved >= target.amount:
@@ -309,6 +582,18 @@ def month_status(target, achieved, planned_to_date, today):
     if target.period_end < today:
         return _status("missed", MONTH_STATUS)
     return _status("track" if achieved >= planned_to_date else "behind", MONTH_STATUS)
+
+
+period_status = month_status
+
+
+def card_status(target, achieved, today):
+    """A one-day target: Met, In progress (today), Not met (past), Upcoming."""
+    if target.period_start > today:
+        return _status("idle", CARD_STATUS)
+    if achieved >= target.amount:
+        return _status("met", CARD_STATUS)
+    return _status("live" if target.period_end >= today else "short", CARD_STATUS)
 
 
 def pro_rata(target, today):
@@ -332,21 +617,26 @@ def day_status(row, achieved, today):
 
 
 def achieved_for(targets, today):
-    """{target_id: achieved so far} for many targets, one query per company
-    and kind: AED for sales, unique customers for customers."""
+    """{target_id: achieved so far} for many targets: AED for sales (one query
+    per company), unique customers for customers -- counted over each
+    target's own window, since overlapping profiles have different windows."""
     by_company = defaultdict(list)
     for t in targets:
         if t.period_start <= today:
             by_company[(t.company, t.kind)].append(t)
     out = {}
     for (company, kind), items in by_company.items():
+        if kind == TargetKind.CUSTOMERS:
+            windows = defaultdict(list)
+            for t in items:
+                windows[(t.period_start, min(t.period_end, today))].append(t)
+            for (first, last), group in windows.items():
+                counts = customers_by_branch(company, {t.branch_id for t in group}, first, last)
+                for t in group:
+                    out[t.pk] = Decimal(counts.get(t.branch_id, 0))
+            continue
         first = min(t.period_start for t in items)
         last = min(max(t.period_end for t in items), today)
-        if kind == TargetKind.CUSTOMERS:
-            counts = customers_by_branch(company, {t.branch_id for t in items}, first, last)
-            for t in items:
-                out[t.pk] = Decimal(counts.get(t.branch_id, 0))
-            continue
         achieved = achieved_by_day(company, {t.branch_id for t in items}, first, last)
         for t in items:
             out[t.pk] = _sum(achieved, t.branch_id, t.period_start, t.period_end)
@@ -360,62 +650,90 @@ def _days_by_target(targets):
     return days
 
 
+def is_card(target):
+    """A Daily profile's target shows as one progress card, not a day table."""
+    return target.period_type == PeriodType.DAILY
+
+
 def month_view(target, now=None):
-    """Everything a station's month detail (and the manager API later) shows."""
+    """Everything a target's detail (and the apps) show, for any period type.
+    `card` is set for a Daily profile's target: progress only (11 P4)."""
     company = target.company
     today = today_for(company, now)
+    base = {"target": target, "label": P.target_label(target), "locked": is_locked(target, today),
+            "started": target.period_start <= today, "business_today": today, "card": is_card(target),
+            "days_left": max(0, (target.period_end - max(today, target.period_start)).days + 1)
+            if target.period_end >= today else 0}
     if target.kind == TargetKind.CUSTOMERS:
         got = achieved_for([target], today).get(target.pk, ZERO)
-        return {"target": target, "figures": figures(target.amount, got), "days": [], "today": None,
-                "days_left": max(0, (target.period_end - today).days + 1) if target.period_start <= today else 0,
-                "locked": is_locked(target, today), "started": target.period_start <= today,
-                "business_today": today, "status": month_status(target, got, pro_rata(target, today), today)}
+        status = (card_status(target, got, today) if base["card"]
+                  else month_status(target, got, pro_rata(target, today), today))
+        return {**base, "figures": figures(target.amount, got), "days": [], "today": None, "status": status}
     ensure_frozen([target], today)
     rows = list(target.days.order_by("date"))
     achieved = achieved_by_day(company, [target.branch_id], target.period_start, min(today, target.period_end))
     total = _sum(achieved, target.branch_id, target.period_start, target.period_end)
+    if base["card"]:
+        return {**base, "figures": figures(target.amount, total), "days": [], "today": None,
+                "status": card_status(target, total, today)}
     days = []
     for row in rows:
         got = achieved.get((target.branch_id, row.date), ZERO) if row.date <= today else None
         goal = day_target(row)
+        status = day_status(row, got or ZERO, today)
         days.append({"date": row.date, "planned": row.planned_amount, "required": row.required_amount,
                      "target": goal, "achieved": got, "gap": None if got is None else got - goal,
-                     "status": day_status(row, got or ZERO, today), "state": day_status(row, got or ZERO, today)["key"]})
+                     "status": status, "state": status["key"]})
     current = next((d for d in days if d["date"] == today), None)
     planned_to_date = sum((r.planned_amount for r in rows if r.date < today), ZERO)
-    return {"target": target, "figures": figures(target.amount, total), "days": days, "today": current,
-            "days_left": sum(1 for d in days if d["date"] >= today), "locked": is_locked(target, today),
-            "started": target.period_start <= today, "business_today": today,
+    return {**base, "figures": figures(target.amount, total), "days": days, "today": current,
             "status": month_status(target, total, planned_to_date, today)}
 
 
+target_view = month_view
+
+
 def month_targets(branch_ids, year, month, kind=TargetKind.SALES):
+    """The monthly-profile targets of a calendar month (the older screens and
+    app calls that ask for "the month's target")."""
     first, _ = month_bounds(year, month)
-    return (Target.objects.filter(branch_id__in=branch_ids, kind=kind, period_start=first)
-            .select_related("company", "branch", "modified_by"))
+    return (Target.objects.filter(branch_id__in=branch_ids, kind=kind, period_type=PeriodType.MONTHLY,
+                                  period_start=first)
+            .select_related("company", "branch", "profile", "modified_by"))
 
 
-def overview(branches, year, month, now=None, kind=TargetKind.SALES):
-    """Overview: every station with a target for the month, and the month's totals."""
-    branches = list(branches)
-    targets = list(month_targets([b.pk for b in branches], year, month, kind))
+def targets_on(branch_ids, day, profile=None, kind=None):
+    """Every target whose period covers `day`, optionally of one profile or metric."""
+    found = Target.objects.filter(branch_id__in=branch_ids, period_start__lte=day, period_end__gte=day)
+    if profile is not None:
+        found = found.filter(profile=profile)
+    if kind is not None:
+        found = found.filter(kind=kind)
+    return found.select_related("company", "branch", "profile", "modified_by")
+
+
+def _rows(targets, now, kind):
+    """Overview rows and totals for a set of targets (one per station)."""
+    targets = list(targets)
     todays = {t.company_id: today_for(t.company, now) for t in targets}
     achieved = {}
     for cid in todays:
         achieved.update(achieved_for([t for t in targets if t.company_id == cid], todays[cid]))
     days = _days_by_target(targets)
     rows, totals = [], {"target": ZERO, "achieved": ZERO, "today": ZERO, "on_track": 0, "today_set": False}
-    for t in sorted(targets, key=lambda t: t.branch.name.lower()):
+    for t in sorted(targets, key=lambda t: (t.branch.name.lower(), t.period_start)):
         today = todays[t.company_id]
         got = achieved.get(t.pk, ZERO)
-        if kind == TargetKind.CUSTOMERS:
-            planned_to_date = pro_rata(t, today)
+        if is_card(t):
+            status = card_status(t, got, today)
+        elif kind == TargetKind.CUSTOMERS:
+            status = month_status(t, got, pro_rata(t, today), today)
         else:
-            planned_to_date = sum((d.planned_amount for d in days[t.pk] if d.date < today), ZERO)
-        status = month_status(t, got, planned_to_date, today)
-        today_row = next((d for d in days[t.pk] if d.date == today), None)
+            status = month_status(t, got, sum((d.planned_amount for d in days[t.pk] if d.date < today), ZERO), today)
+        today_row = None if is_card(t) else next((d for d in days[t.pk] if d.date == today), None)
         today_goal = day_target(today_row) if today_row else None
-        rows.append({"target": t, "figures": figures(t.amount, got), "status": status, "today": today_goal})
+        rows.append({"target": t, "figures": figures(t.amount, got), "status": status, "today": today_goal,
+                     "label": P.target_label(t)})
         totals["target"] += t.amount
         totals["achieved"] += got
         totals["on_track"] += status["key"] in ("met", "track")
@@ -430,12 +748,53 @@ def overview(branches, year, month, now=None, kind=TargetKind.SALES):
     return {"rows": rows, "totals": totals}
 
 
-def daily(branches, day, now=None):
-    """Daily Progress: every station whose target covers `day`."""
+def overview(branches, year, month, now=None, kind=TargetKind.SALES):
+    """Every station's monthly-profile target for the month, and the totals."""
+    return _rows(month_targets([b.pk for b in branches], year, month, kind), now, kind)
+
+
+def profile_overview(profile, branches, day, now=None):
+    """Overview for one profile: each station's period containing `day`."""
+    found = targets_on([b.pk for b in branches], day, profile=profile)
+    return _rows(found, now, profile.metric)
+
+
+def station_targets(branch, day, now=None):
+    """A station's page: every target, of any profile, overlapping the month of
+    `day` -- the monthly target, that month's specials and campaigns, the
+    annual year -- with figures. Sorted by period length, then profile."""
+    first, last = month_bounds(day.year, day.month)
+    found = list(Target.objects.filter(branch=branch, period_start__lte=last, period_end__gte=first)
+                 .select_related("company", "branch", "profile"))
+    order = {PeriodType.ANNUAL: 0, PeriodType.MONTHLY: 1, PeriodType.CUSTOM: 2, PeriodType.DAILY: 3}
+    found.sort(key=lambda t: (order.get(t.period_type, 9), t.kind, t.period_start, t.profile.name.lower()))
+    if not found:
+        return []
+    today = today_for(found[0].company, now)
+    achieved = achieved_for(found, today)
+    days = _days_by_target([t for t in found if t.kind == TargetKind.SALES and not is_card(t)])
+    out = []
+    for t in found:
+        got = achieved.get(t.pk, ZERO)
+        if is_card(t):
+            status = card_status(t, got, today)
+        elif t.kind == TargetKind.CUSTOMERS:
+            status = month_status(t, got, pro_rata(t, today), today)
+        else:
+            status = month_status(t, got, sum((d.planned_amount for d in days[t.pk] if d.date < today), ZERO), today)
+        out.append({"target": t, "label": P.target_label(t), "figures": figures(t.amount, got), "status": status})
+    return out
+
+
+def daily(branches, day, now=None, profile=None):
+    """Daily Progress: every multi-day sales target covering `day` -- one row
+    per station and profile (a Daily profile's target is a card, not a day)."""
     branches = list(branches)
-    targets = list(Target.objects.filter(branch__in=branches, kind=TargetKind.SALES, period_start__lte=day,
-                                         period_end__gte=day)
-                   .select_related("company", "branch"))
+    found = Target.objects.filter(branch__in=branches, kind=TargetKind.SALES, period_start__lte=day,
+                                  period_end__gte=day).exclude(period_type=PeriodType.DAILY)
+    if profile is not None:
+        found = found.filter(profile=profile)
+    targets = list(found.select_related("company", "branch", "profile"))
     by_company = defaultdict(list)
     for t in targets:
         by_company[t.company].append(t)
@@ -449,7 +808,7 @@ def daily(branches, day, now=None):
             achieved.update(achieved_by_day(company, {t.branch_id for t in items}, day, day))
     rows_by_target = {r.target_id: r for r in TargetDay.objects.filter(target__in=targets, date=day)}
     rows, totals = [], {"target": ZERO, "achieved": ZERO, "gap": ZERO, "met": 0}
-    for t in sorted(targets, key=lambda t: t.branch.name.lower()):
+    for t in sorted(targets, key=lambda t: (t.branch.name.lower(), t.profile.name.lower())):
         row = rows_by_target.get(t.pk)
         if row is None:
             continue
@@ -458,18 +817,22 @@ def daily(branches, day, now=None):
         goal = day_target(row)
         status = day_status(row, got or ZERO, today)
         rows.append({"target": t, "goal": goal, "achieved": got, "gap": None if got is None else got - goal,
-                     "status": status})
+                     "status": status, "label": P.target_label(t)})
         totals["target"] += goal
         if got is not None:
             totals["achieved"] += got
             totals["gap"] += got - goal
         totals["met"] += status["key"] == "met"
-    totals["stations"] = len(rows)
+    totals["stations"] = len({r["target"].branch_id for r in rows})
     totals["reached"] = any(r["achieved"] is not None for r in rows)
     return {"rows": rows, "totals": totals}
 
 
-def manage_rows(branches, year, month, kind=TargetKind.SALES):
-    """Set Targets: every station, with its target for the month or none."""
-    by_branch = {t.branch_id: t for t in month_targets([b.pk for b in branches], year, month, kind)}
-    return [{"branch": b, "target": by_branch.get(b.pk)} for b in branches]
+def profile_rows(profiles, now=None):
+    """The Target Profiles list: each profile with its range, stations and status."""
+    out = []
+    for profile in profiles:
+        out.append({"profile": profile, "range": P.range_label(profile),
+                    "stations": sum(1 for a in profile.assignments.all() if a.active),
+                    "targets": profile.targets.count()})
+    return out

@@ -1,14 +1,14 @@
-"""The Set / Edit target drawer (theme/templates/byky/partials/drawer.html).
+"""The Edit-this-period drawer (theme/templates/byky/partials/drawer.html).
 
-The stations and month come from the page that opened it (Set Targets or a
-station's month) and are sent as hidden fields; the person sees them as one
-read-only line and only types the amount and remarks."""
+Opened from a target's page: the branch, profile and period show as one
+read-only line; the person only types the amount and remarks. Saving marks
+the period as set on its own (design/11-target-profiles.md §5)."""
 
 TARGET = {
     "drawer_id": "drawerTarget",
     "scr_name": "target",
     "model": "targets.Target",
-    "add_label": "Set target",
+    "add_label": "Edit this period",
     "title_field": "title",
     "hide_active": True,
     "size": "compact",
@@ -22,7 +22,7 @@ TARGET = {
                 {"id": "summary", "label": "For", "kind": "text", "readonly": True, "width": 12,
                  "placeholder": " "},
                 {"id": "amount", "label": "Target amount", "kind": "number", "required": True, "width": 12,
-                 "help": "Sales: AED, split evenly over the month's days. Customers: a whole number."},
+                 "help": "For this period only; a later change to the profile's amount leaves it alone. Sales: AED. Customers: a whole number."},
                 {"id": "remarks", "label": "Remarks", "kind": "textarea", "required": False, "width": 12,
                  "placeholder": "Optional"},
             ],

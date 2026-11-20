@@ -9,4 +9,6 @@ urlpatterns = [
     path("targets/states", api.ManagerTargetStatesView.as_view(), name="api-app-targets-states"),
     path("targets/branches", api.ManagerTargetBranchesView.as_view(), name="api-app-targets-branches"),
     path("targets/branch", api.ManagerTargetBranchView.as_view(), name="api-app-targets-branch"),
+    path("targets/profiles", api.ManagerTargetProfilesView.as_view(), name="api-app-targets-profiles"),
+    path("targets/target", api.ManagerTargetView.as_view(), name="api-app-targets-target"),
 ]

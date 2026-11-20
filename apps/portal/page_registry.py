@@ -194,11 +194,17 @@ PAGES = [
     ("tracking.settings", "tracking", "Tracking Settings", "tracking-settings", ["read", "update"], 6, False),
     ("tracking.privileges", "tracking", "Privileges", "tracking-privileges", ["read", "update"], 9, False),
 
-    # Station targets (design/08-targets.md §6). A station's month detail opens from Overview
-    # and shares its read right; setting, editing and removing need Set Targets.
+    # Station targets (design/08-targets.md §6, design/11-target-profiles.md §6). A station's
+    # page and a target's detail open from Overview and share its read right; making,
+    # editing and removing profiles, and editing one period, need Target Profiles.
     ("targets.overview", "targets", "Overview", "targets-overview", ["read"], 1, False),
     ("targets.daily", "targets", "Daily Progress", "targets-daily", ["read"], 2, False),
-    ("targets.manage", "targets", "Set Targets", "targets-manage", ["create", "read", "update", "delete"], 3, False),
+    ("targets.profiles", "targets", "Target Profiles", "targets-profiles", ["create", "read", "update", "delete"], 3,
+     False),
+    # Which branches a profile covers, and each one's amount (owner, 20 Nov 2026: its own page).
+    ("targets.mapping", "targets", "Target Branch Mapping", "targets-mapping", ["read", "update"], 4, False),
+    # Replaced by Target Profiles (20 Nov 2026); its link redirects there.
+    ("targets.manage", "targets", "Set Targets", "targets-manage", ["create", "read", "update", "delete"], 3, True),
     ("targets.privileges", "targets", "Privileges", "targets-privileges", ["read", "update"], 9, False),
 
     # Staff incentives on a met sales target (design/09-incentives.md section 8).

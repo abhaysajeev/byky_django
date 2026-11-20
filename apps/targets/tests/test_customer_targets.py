@@ -101,8 +101,10 @@ def test_the_pages_switch_to_customers(client_in, world, staff):  # noqa: F811
     today = services.today_for(world["company"])
     saved, _ = services.create_targets(world["company"], [world["adc1"]], today.year, today.month, D("120"), "",
                                        staff, kind=CUSTOMERS)
-    for url in (reverse("targets-overview") + "?kind=customers", reverse("targets-manage") + "?kind=customers",
-                reverse("targets-station", args=[world["adc1"].pk, today.year, today.month]) + "?kind=customers"):
+    target = saved[0]
+    for url in (reverse("targets-overview") + "?kind=customers",
+                reverse("targets-overview") + f"?profile={target.profile_id}",
+                reverse("targets-target", args=[target.pk])):
         response = client_in.get(url)
         assert response.status_code == 200, url
         assert "120" in response.content.decode() and "120.00" not in response.content.decode(), url
