@@ -3,7 +3,7 @@
 {% block screen_title %}Status Tracking{% endblock %}
 {% block crumb %}Status Tracking{% endblock %}
 {% block heading %}{% if chosen_branch %}{{ chosen_name }}{% else %}Status Tracking{% endif %}{% endblock %}
-{% block sub %}{% if chosen_branch %}Where each tagged vehicle of this station stands now.{% else %}Every station's vehicles: in rent, on test, on alert and missing. Updates by itself.{% endif %}{% endblock %}
+{% block sub %}{% if chosen_branch %}Where each tagged vehicle of this station stands now, missing first.{% else %}Every station's vehicles: in rent, on test, on alert and missing. Updates by itself.{% endif %}{% endblock %}
 
 {% block body %}
 {% if chosen_branch %}
@@ -11,60 +11,32 @@
   <a class="scr-x-back" href="{% url 'tracking-status' %}">All stations</a>
 </div>
 <div class="scr-x scr-x-stack" data-tracking-live>
-  <div class="scr-card">
-    <div class="scr-table-scroll">
-      <table class="scr-x-table">
-        <colgroup><col /><col class="w-status" /><col /><col class="w-time" /><col class="w-time" /></colgroup>
-        <thead><tr><th scope="col">Vehicle</th><th scope="col">State</th><th scope="col">Why</th><th scope="col" class="num">Since</th><th scope="col" class="num">Last heard here</th></tr></thead>
-        <tbody>
-          {% for v in vehicles %}
-          <tr>
-            <td data-label="Vehicle"><span class="scr-x-name">{{ v.name }}</span><span class="scr-x-sub">{{ v.type }}{% if v.low_battery %} · Low battery{% endif %}</span></td>
-            <td data-label="State"><span class="scr-x-status is-{{ v.tone }}">{{ v.state_label }}</span></td>
-            <td data-label="Why" class="muted">{{ v.reason|default:"—" }}{% if v.heard_at %} · heard at {{ v.heard_at }}{% endif %}</td>
-            <td data-label="Since" class="num">{{ v.since|date:"j M H:i" }}</td>
-            <td data-label="Last heard here" class="num">{{ v.last_seen|date:"j M H:i"|default:"—" }}</td>
-          </tr>
-          {% empty %}
-          <tr><td colspan="5">{% include "tracking/_empty.html" with title="No tagged vehicles at this station" text="A vehicle appears here once it has an RFID tag and this is its current station." %}</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
+  <div class="scr-card">{% include "tracking/_status_station.html" %}</div>
 </div>
 {% else %}
 <form class="scr-card scr-trk-search" method="get" data-status-search>
   <div class="scr-trk-search-row">
-    <label class="scr-trk-field"><span class="scr-label">Country</span>
-      <select class="scr-input" name="country" data-status-country>
-        <option value="">All countries</option>
-        {% for c in countries %}<option value="{{ c.id }}"{% if c.id == f.country %} selected{% endif %}>{{ c.name }}</option>{% endfor %}
-      </select></label>
-    <label class="scr-trk-field"><span class="scr-label">Emirate</span>
+    <label class="scr-trk-field"><span class="scr-label">State</span>
       <select class="scr-input" name="state" data-status-state>
-        <option value="">All emirates</option>
-        {% for s in states %}<option value="{{ s.id }}" data-country="{{ s.country }}"{% if s.id == f.state %} selected{% endif %}>{{ s.name }}</option>{% endfor %}
+        <option value="">All states</option>
+        {% for s in states %}<option value="{{ s.id }}"{% if s.id == f.state %} selected{% endif %}>{{ s.name }}</option>{% endfor %}
       </select></label>
-    <label class="scr-trk-field"><span class="scr-label">Station</span>
+    <label class="scr-trk-field"><span class="scr-label">Branch</span>
       <select class="scr-input" name="station" data-status-station>
-        <option value="">All stations</option>
-        {% for b in stations %}<option value="{{ b.id }}" data-state="{{ b.state }}" data-country="{{ b.country }}"{% if b.id == f.station %} selected{% endif %}>{{ b.name }}</option>{% endfor %}
+        <option value="">All branches</option>
+        {% for b in stations %}<option value="{{ b.id }}" data-state="{{ b.state }}"{% if b.id == f.station %} selected{% endif %}>{{ b.name }}</option>{% endfor %}
       </select></label>
-    <div class="scr-trk-search-actions">
-      <button type="submit" class="scr-btn-primary">Search</button>
-      {% if f.country or f.state or f.station %}<a class="scr-btn-secondary" href="{% url 'tracking-status' %}">Clear</a>{% endif %}
-    </div>
+    {% if f.state or f.station %}<div class="scr-trk-search-actions"><a class="scr-btn-secondary" href="{% url 'tracking-status' %}">Clear</a></div>{% endif %}
   </div>
 </form>
 
-<div class="scr-x scr-x-stack" data-tracking-live>
+<div class="scr-x scr-x-stack" data-tracking-live data-status-grid>
   <div class="scr-card">
     <dl class="scr-x-kpis">
-      <div><dt>In rent mode</dt><dd>{{ totals.rent }}</dd></div>
-      <div><dt>In test mode</dt><dd>{{ totals.test }}</dd></div>
-      <div><dt>In alert mode</dt><dd{% if totals.alert %} class="is-warn"{% endif %}>{{ totals.alert }}</dd></div>
-      <div><dt>Missing</dt><dd{% if totals.missing %} class="is-alert"{% endif %}>{{ totals.missing }}</dd></div>
+      <div data-status-total="rent"><dt>In rent mode</dt><dd>{{ totals.rent }}</dd></div>
+      <div data-status-total="test"><dt>In test mode</dt><dd>{{ totals.test }}</dd></div>
+      <div data-status-total="alert"><dt>In alert mode</dt><dd{% if totals.alert %} class="is-warn"{% endif %}>{{ totals.alert }}</dd></div>
+      <div data-status-total="missing"><dt>Missing</dt><dd{% if totals.missing %} class="is-alert"{% endif %}>{{ totals.missing }}</dd></div>
     </dl>
   </div>
 
@@ -75,27 +47,27 @@
         <thead><tr>
           <th scope="col">Station</th>
           <th scope="col">Last updated</th>
-          <th scope="col" class="num">Tags read</th>
-          <th scope="col" class="num">Vehicles</th>
-          <th scope="col" class="num">Available</th>
-          <th scope="col" class="num">In rent</th>
-          <th scope="col" class="num">In test</th>
-          <th scope="col" class="num">In alert</th>
-          <th scope="col" class="num">Missing</th>
-          <th scope="col" class="center">Antenna</th>
+          <th scope="col" class="c">Tags read</th>
+          <th scope="col" class="c">Vehicles</th>
+          <th scope="col" class="c">Available</th>
+          <th scope="col" class="c">In rent</th>
+          <th scope="col" class="c">In test</th>
+          <th scope="col" class="c">In alert</th>
+          <th scope="col" class="c">Missing</th>
+          <th scope="col" class="c">Antenna</th>
         </tr></thead>
         <tbody>
           {% for r in rows %}
-          <tr class="scr-x-row" data-href="?branch={{ r.id }}">
-            <td data-label="Station"><a class="scr-x-name" href="?branch={{ r.id }}">{{ r.name }}</a>{% if r.closed %}<span class="scr-x-sub">Closed now</span>{% endif %}</td>
+          <tr class="scr-x-row" data-station="{{ r.id }}" data-sig="{{ r.sig }}" data-missing="{{ r.missing }}" data-station-url="{% url 'tracking-status-station' r.id %}" data-station-name="{{ r.name }}">
+            <td data-label="Station"><a class="scr-x-name" href="?branch={{ r.id }}" data-station-open>{{ r.name }}</a>{% if r.closed %}<span class="scr-x-sub">Closed now</span>{% endif %}</td>
             <td data-label="Last updated" class="muted">{% if r.last_updated %}{{ r.last_updated|date:"d/m/Y" }}<span class="scr-x-sub">{{ r.last_updated|date:"h:i:s A" }}</span>{% else %}—{% endif %}</td>
-            <td data-label="Tags read" class="num{% if r.tags_read < r.vehicles and not r.closed %} is-short{% endif %}">{{ r.tags_read }}</td>
-            <td data-label="Vehicles" class="num"><b>{{ r.vehicles }}</b></td>
-            <td data-label="Available" class="num">{{ r.available }}</td>
-            <td data-label="In rent" class="num{% if r.rent %} is-rent{% endif %}">{{ r.rent }}</td>
-            <td data-label="In test" class="num">{{ r.test }}</td>
-            <td data-label="In alert" class="num{% if r.alert %} is-warn{% endif %}">{{ r.alert }}</td>
-            <td data-label="Missing" class="num">
+            <td data-label="Tags read" class="c{% if r.tags_read < r.vehicles and not r.closed %} is-short{% endif %}">{{ r.tags_read }}</td>
+            <td data-label="Vehicles" class="c"><b>{{ r.vehicles }}</b></td>
+            <td data-label="Available" class="c">{{ r.available }}</td>
+            <td data-label="In rent" class="c{% if r.rent %} is-rent{% endif %}">{{ r.rent }}</td>
+            <td data-label="In test" class="c">{{ r.test }}</td>
+            <td data-label="In alert" class="c{% if r.alert %} is-warn{% endif %}">{{ r.alert }}</td>
+            <td data-label="Missing" class="c">
               {% if r.missing %}
               <button type="button" class="scr-trk-star" data-missing-url="{% url 'tracking-status-missing' r.id %}" data-missing-name="{{ r.name }}" aria-label="{{ r.missing }} missing at {{ r.name }}: show them">
                 <svg width="30" height="30" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z"></path></svg>
@@ -103,17 +75,17 @@
               </button>
               {% else %}0{% endif %}
             </td>
-            <td data-label="Antenna" class="center"><span class="scr-trk-dot is-{{ r.antenna }}" title="{% if r.antenna == 'online' %}Reader online{% elif r.antenna == 'offline' %}Reader offline{% else %}No reader{% endif %}"></span><span class="scr-x-visually-hidden">{% if r.antenna == 'online' %}Online{% elif r.antenna == 'offline' %}Offline{% else %}No reader{% endif %}</span></td>
+            <td data-label="Antenna" class="c"><span class="scr-trk-dot is-{{ r.antenna }}" title="{% if r.antenna == 'online' %}Reader online{% elif r.antenna == 'offline' %}Reader offline{% else %}No reader{% endif %}"></span><span class="scr-x-visually-hidden">{% if r.antenna == 'online' %}Online{% elif r.antenna == 'offline' %}Offline{% else %}No reader{% endif %}</span></td>
           </tr>
           {% empty %}
-          <tr><td colspan="10">{% include "tracking/_empty.html" with title="Nothing tracked here yet" text="Approve a reader on Reader CPU Approval and give it a station. Tagged vehicles then appear here within 30 seconds." %}</td></tr>
+          <tr><td colspan="10">{% include "tracking/_empty.html" with title="Nothing tracked here yet" text="Approve a reader on Reader CPU Approval and give it a branch. Tagged vehicles then appear here within 30 seconds." %}</td></tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
     {% if page.paginator.num_pages > 1 %}{% include "byky/partials/server_pager.html" %}{% endif %}
   </div>
-  <p class="scr-x-note">In alert: at the station but not heard for over a minute, or its signal is weakening, the warning before missing. A closed station shows 0. A station with no working hours saved is tracked all day.</p>
+  <p class="scr-x-note">In alert: at the station but not heard for over a minute, or its signal is weakening, the warning before missing. A station whose figures change moves to the top. A closed station shows 0; one with no working hours saved is tracked all day.</p>
 </div>
 {% endif %}
 {% endblock %}
@@ -128,6 +100,18 @@
     </button>
   </div>
   <div class="scr-modal-body" data-missing-body aria-live="polite"></div>
+  <div class="scr-modal-foot scr-x-modal-foot"><button type="button" class="scr-btn-primary" data-tracking-close>Close</button></div>
+</div>
+
+<div class="scr-modal-veil" data-scr-modal-veil="status-station" hidden></div>
+<div class="scr-modal scr-x-modal scr-trk-station-modal" data-scr-modal="status-station" role="dialog" aria-modal="true" aria-labelledby="status-station-title" hidden>
+  <div class="scr-modal-head">
+    <div><div class="scr-modal-title" id="status-station-title" data-station-title>Station</div><p class="scr-modal-sub">Its tagged vehicles, missing first</p></div>
+    <button type="button" class="scr-drawer-close" data-tracking-close aria-label="Close">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+    </button>
+  </div>
+  <div class="scr-modal-body" data-station-body aria-live="polite"></div>
   <div class="scr-modal-foot scr-x-modal-foot"><button type="button" class="scr-btn-primary" data-tracking-close>Close</button></div>
 </div>
 {% endblock %}

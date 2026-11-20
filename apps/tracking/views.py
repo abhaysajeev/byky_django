@@ -185,9 +185,32 @@ def station_status(branches, now=None):
     return rows
 
 
+def station_vehicles(user, branch_id):
+    """One station's tagged vehicles -- missing first (STATE_ORDER), then by name."""
+    scope = VehiclePresence.objects.filter(company__in=companies_for(user), branch_id=branch_id)
+    presences = list(scope.select_related("vehicle__vehicle_type", "heard_by_branch"))
+    tags = {p.pk: engine.tag_of(p.vehicle.rfid_epc) for p in presences}
+    fresh = {t.tag: t for t in TagLastSeen.objects.filter(tag__in=set(tags.values()))}
+    own_readers = set(ReaderAssignment.objects.filter(branch_id=branch_id, to_at__isnull=True)
+                      .values_list("reader_id", flat=True))
+    rank = {state: n for n, state in enumerate(STATE_ORDER)}
+    rows = []
+    for p in presences:
+        # the engine stores last-heard only every few minutes; the tag's row is exact
+        last = fresh.get(tags[p.pk])
+        heard = last.seen_at if last is not None and last.reader_id in own_readers else p.last_seen_at
+        rows.append({"name": p.vehicle.vehicle_name, "type": _vehicle_type(p.vehicle), "state": p.state,
+                     "state_label": p.get_state_display(), "badge": BADGE[p.state], "tone": TONE[p.state],
+                     "reason": REASON_LABEL.get(p.reason, ""), "since": p.since, "last_seen": heard,
+                     "heard_at": p.heard_by_branch.name if p.heard_by_branch_id else "",
+                     "low_battery": p.low_battery})
+    return sorted(rows, key=lambda row: (rank[row["state"]], row["name"]))
+
+
 class StatusView(TrackingScreenView):
-    """Status Tracking (client, 20 Nov 2026): the old RMS grid and its search --
-    Country, Emirate, Station -- in our styling. A station's row opens its vehicles."""
+    """Status Tracking (client, 20 Nov 2026): the old RMS grid in our styling,
+    searched by State, then Branch. A station's row opens its vehicles in a
+    dialog (StatusStationView); ?branch= still opens them as a page."""
 
     template_name = "tracking/status.html"
     page_code = "tracking.status"
@@ -196,58 +219,52 @@ class StatusView(TrackingScreenView):
         context = super().get_context_data(**kwargs)
         user, params = self.request.user, self.request.GET
         scoped = list(branches_for(user).filter(is_active=True)
-                      .select_related("location__country", "location__state").order_by("name"))
+                      .select_related("location__state").order_by("name"))
         chosen = _int(params.get("branch"))
         if chosen not in {b.pk for b in scoped}:
             chosen = None
         context["chosen_branch"] = chosen
         if chosen:
-            rows = VehiclePresence.objects.filter(company__in=companies_for(user), branch_id=chosen)
             context["chosen_name"] = next(b.name for b in scoped if b.pk == chosen)
-            context["vehicles"] = self._vehicles(rows, chosen)
+            context["vehicles"] = station_vehicles(user, chosen)
             return context
 
-        country, state, station = (_int(params.get(k)) for k in ("country", "state", "station"))
-        countries = {b.location.country_id: b.location.country.name for b in scoped}
-        states = {b.location.state_id: (b.location.state.name, b.location.country_id) for b in scoped}
+        state, station = (_int(params.get(k)) for k in ("state", "station"))
+        states = {b.location.state_id: b.location.state.name for b in scoped}
         shown = [b for b in scoped
-                 if (not country or b.location.country_id == country)
-                 and (not state or b.location.state_id == state)
-                 and (not station or b.pk == station)]
+                 if (not state or b.location.state_id == state) and (not station or b.pk == station)]
         rows = station_status(shown)
         totals = {key: sum(r[key] for r in rows) for key in ("rent", "test", "alert", "missing")}
+        for r in rows:          # what the page compares between refreshes to show a change
+            r["sig"] = "|".join(str(r[k]) for k in ("tags_read", "vehicles", "available", "rent", "test",
+                                                    "alert", "missing", "antenna", "closed"))
         page = Paginator(rows, STATUS_PER_PAGE).get_page(params.get("page"))
         query = params.copy()
         query.pop("page", None)
         context.update({
             "rows": list(page.object_list), "page": page, "query": query.urlencode(), "totals": totals,
-            "countries": sorted(({"id": k, "name": v} for k, v in countries.items()), key=lambda o: o["name"]),
-            "states": sorted(({"id": k, "name": v[0], "country": v[1]} for k, v in states.items()),
-                             key=lambda o: o["name"]),
-            "stations": [{"id": b.pk, "name": b.name, "state": b.location.state_id,
-                          "country": b.location.country_id} for b in scoped],
-            "f": {"country": country, "state": state, "station": station},
+            "states": sorted(({"id": k, "name": v} for k, v in states.items()), key=lambda o: o["name"]),
+            "stations": [{"id": b.pk, "name": b.name, "state": b.location.state_id} for b in scoped],
+            "f": {"state": state, "station": station},
         })
         return context
 
-    def _vehicles(self, scope, branch_id):
-        presences = list(scope.select_related("vehicle__vehicle_type", "heard_by_branch"))
-        tags = {p.pk: engine.tag_of(p.vehicle.rfid_epc) for p in presences}
-        fresh = {t.tag: t for t in TagLastSeen.objects.filter(tag__in=set(tags.values()))}
-        own_readers = set(ReaderAssignment.objects.filter(branch_id=branch_id, to_at__isnull=True)
-                          .values_list("reader_id", flat=True))
-        rank = {state: n for n, state in enumerate(STATE_ORDER)}
-        rows = []
-        for p in presences:
-            # the engine stores last-heard only every few minutes; the tag's row is exact
-            last = fresh.get(tags[p.pk])
-            heard = last.seen_at if last is not None and last.reader_id in own_readers else p.last_seen_at
-            rows.append({"name": p.vehicle.vehicle_name, "type": _vehicle_type(p.vehicle), "state": p.state,
-                         "state_label": p.get_state_display(), "badge": BADGE[p.state], "tone": TONE[p.state],
-                         "reason": REASON_LABEL.get(p.reason, ""), "since": p.since, "last_seen": heard,
-                         "heard_at": p.heard_by_branch.name if p.heard_by_branch_id else "",
-                         "low_battery": p.low_battery})
-        return sorted(rows, key=lambda row: (rank[row["state"]], row["name"]))
+
+class StatusStationView(TrackingScreenView):
+    """A station's vehicles for the Status Tracking dialog (client, 20 Nov 2026):
+    missing first, then the rest."""
+
+    template_name = "tracking/_status_station.html"
+    page_code = "tracking.status"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        branch = branches_for(self.request.user).filter(pk=kwargs["branch_id"]).first()
+        if branch is None:
+            raise Http404
+        context["branch"] = branch
+        context["vehicles"] = station_vehicles(self.request.user, branch.pk)
+        return context
 
 
 class StatusMissingView(TrackingScreenView):
