@@ -240,11 +240,39 @@
     }, 10000);
   }
 
-  /* a whole table row opens its station (Status Tracking) */
+  /* a whole table row opens what it names */
   document.addEventListener('click', function (e) {
     var row = e.target.closest('tr[data-href]');
     if (!row || e.target.closest('a, button, input, select, label')) return;
     window.location.href = row.dataset.href;
+  });
+
+  /* Status Tracking: a station's row (or its name) opens its vehicles in a
+     dialog, missing first (client, 20 Nov 2026); the star still opens just the
+     missing ones. */
+  var openStation = null;
+  function loadStation() {
+    var box = document.querySelector('[data-scr-modal="status-station"]');
+    if (!box || box.hidden || !openStation) return;
+    var body = box.querySelector('[data-station-body]');
+    fetch(openStation.url, { credentials: 'same-origin' }).then(function (r) {
+      return r.ok ? r.text() : Promise.reject(r.status);
+    }).then(function (html) { body.innerHTML = html; }).catch(function () {
+      body.innerHTML = '<p class="scr-x-note">Could not load the vehicles. Try again.</p>';
+    });
+  }
+  document.addEventListener('click', function (e) {
+    var row = e.target.closest('tr[data-station-url]');
+    if (!row || e.target.closest('button, [data-missing-url]')) return;
+    if (e.target.closest('a') && !e.target.closest('[data-station-open]')) return;
+    if (e.ctrlKey || e.metaKey || e.shiftKey) return;        // a new tab keeps the page link
+    e.preventDefault();
+    openStation = { url: row.dataset.stationUrl };
+    var box = modal('status-station', true);
+    if (!box) return;
+    box.querySelector('[data-station-title]').textContent = row.dataset.stationName || 'Station';
+    box.querySelector('[data-station-body]').innerHTML = '<p class="scr-x-note">Loading…</p>';
+    loadStation();
   });
 
   /* Status Tracking: the missing star opens the station's missing vehicles */
@@ -263,27 +291,25 @@
     });
   });
 
-  /* Status Tracking search: Country narrows Emirate and Station, Emirate narrows Station */
+  /* Status Tracking search: State narrows Branch; picking a Branch takes its
+     State; either applies at once. */
   var search = document.querySelector('[data-status-search]');
   if (search) {
-    var country = search.querySelector('[data-status-country]');
     var state = search.querySelector('[data-status-state]');
     var station = search.querySelector('[data-status-station]');
     var narrow = function () {
-      Array.prototype.forEach.call(state.options, function (o) {
-        if (!o.value) return;
-        o.hidden = !!country.value && o.dataset.country !== country.value;
-        if (o.hidden && o.selected) state.value = '';
-      });
       Array.prototype.forEach.call(station.options, function (o) {
         if (!o.value) return;
-        o.hidden = (!!country.value && o.dataset.country !== country.value) ||
-                   (!!state.value && o.dataset.state !== state.value);
+        o.hidden = !!state.value && o.dataset.state !== state.value;
         if (o.hidden && o.selected) station.value = '';
       });
     };
-    country.addEventListener('change', narrow);
-    state.addEventListener('change', narrow);
+    state.addEventListener('change', function () { narrow(); search.submit(); });
+    station.addEventListener('change', function () {
+      var picked = station.options[station.selectedIndex];
+      if (picked && picked.value && picked.dataset.state) state.value = picked.dataset.state;
+      search.submit();
+    });
     narrow();
   }
 
@@ -408,6 +434,55 @@
   var live = document.querySelector('[data-tracking-live]');
   if (!live) return;
 
+  /* Status Tracking, live like Live Monitoring (client, 20 Nov 2026): a
+     station whose figures changed since the last look moves to the top, most
+     recent first, and glows; its missing star pulses when the count went up;
+     a total that changed bumps. The order of changed stations is kept for the
+     visit. */
+  var grid = live.hasAttribute('data-status-grid');
+  var raised = [];                              // station ids, most recently changed first
+  function snapshot() {
+    var rows = {};
+    live.querySelectorAll('tr[data-station]').forEach(function (tr) {
+      rows[tr.dataset.station] = { sig: tr.dataset.sig, missing: +tr.dataset.missing || 0 };
+    });
+    var totals = {};
+    live.querySelectorAll('[data-status-total]').forEach(function (el) {
+      totals[el.dataset.statusTotal] = el.querySelector('dd').textContent.trim();
+    });
+    return { rows: rows, totals: totals };
+  }
+  function settle(before) {
+    var body = live.querySelector('table.scr-trk-grid tbody');
+    if (!body) return;
+    var changed = [];
+    body.querySelectorAll('tr[data-station]').forEach(function (tr) {
+      var was = before.rows[tr.dataset.station];
+      if (was && was.sig !== tr.dataset.sig) {
+        changed.push(tr.dataset.station);
+        tr.classList.add('is-changed');
+        var star = tr.querySelector('.scr-trk-star');
+        if (star && (+tr.dataset.missing || 0) > was.missing) star.classList.add('is-pulse');
+      }
+    });
+    changed.forEach(function (id) {
+      var at = raised.indexOf(id);
+      if (at > -1) raised.splice(at, 1);
+      raised.unshift(id);
+    });
+    // raised stations first, in the order they changed; the rest keep the server's order
+    raised.slice().reverse().forEach(function (id) {
+      var tr = body.querySelector('tr[data-station="' + id + '"]');
+      if (tr) body.insertBefore(tr, body.firstChild);
+    });
+    live.querySelectorAll('[data-status-total]').forEach(function (el) {
+      var key = el.dataset.statusTotal;
+      if (before.totals[key] !== undefined && before.totals[key] !== el.querySelector('dd').textContent.trim()) {
+        el.classList.add('is-bump');
+      }
+    });
+  }
+
   function refresh() {
     if (document.hidden) return;
     fetch(window.location.href, { credentials: 'same-origin' }).then(function (r) {
@@ -418,15 +493,19 @@
       if (!fresh) return;
       // Don't swap under an open menu or dialog, and keep what was typed in a search box.
       if (live.querySelector('.scr-menu:not([hidden])') || document.querySelector('.scr-menu-layer .scr-menu:not([hidden])')) return;
+      var before = grid ? snapshot() : null;
       var typed = Array.prototype.map.call(live.querySelectorAll('.scr-search input'), function (i) { return i.value; });
       live.innerHTML = fresh.innerHTML;
       Array.prototype.forEach.call(live.querySelectorAll('.scr-search input'), function (input, n) {
         if (typed[n]) input.value = typed[n];
       });
+      if (before) settle(before);
+      loadStation();                          // an open station dialog stays current too
       // Its "..." menus and paged lists need byky-screen.js again (Reader CPU Approval).
       if (window.BykyScreen) window.BykyScreen.rewire(live);
     }).catch(function () { /* the next tick tries again */ });
   }
+  if (grid) settle({ rows: {}, totals: {} });
 
   var pending = null;
   function soon() {
@@ -443,7 +522,9 @@
     } catch (e) { /* the poll below carries on */ }
   }
   listen(2000);
-  setInterval(refresh, 60000);
+  // Status Tracking looks again every 30 s: "in alert" (over a minute unheard)
+  // is not an engine event, so only a look catches it.
+  setInterval(refresh, grid ? 30000 : 60000);
   document.addEventListener('visibilitychange', function () {
     if (!document.hidden) refresh();          // catch up on what a hidden tab skipped
   });

@@ -72,28 +72,56 @@ def test_a_closed_station_shows_zero(client_in, station, monkeypatch):
     assert (row["available"], row["alert"], row["missing"], row["rent"], row["test"], row["tags_read"]) == (0,) * 6
 
 
-def test_the_search_narrows_by_country_emirate_and_station(client_in, world, station):
+def test_the_search_is_state_then_branch(client_in, world, station):
+    """Client, 20 Nov 2026: no Country; State narrows Branch."""
     from apps.company.models import Branch, BranchType
 
     adc1 = world["adc1"]
     adc2 = Branch.objects.create(company=world["company"], location=adc1.location, short_code="ADC2",
                                  name="Abu Dhabi Corniche 2", branch_type=BranchType.STATION)
     presence(world, make_bike(world, "AD2", "A0000009", branch=adc2), PresenceState.PRESENT, branch=adc2)
-    all_rows = client_in.get(reverse("tracking-status")).context["rows"]
-    assert {r["id"] for r in all_rows} == {adc1.pk, adc2.pk}
+    page = client_in.get(reverse("tracking-status"))
+    assert {r["id"] for r in page.context["rows"]} == {adc1.pk, adc2.pk}
+    body = page.content.decode()
+    assert 'name="country"' not in body and "countries" not in page.context
+    assert ">State<" in body and ">Branch<" in body
+    assert f'data-state="{adc1.location.state_id}"' in body          # each branch says its state
 
     one = client_in.get(reverse("tracking-status"), {"station": adc2.pk}).context
     assert [r["id"] for r in one["rows"]] == [adc2.pk]
     by_state = client_in.get(reverse("tracking-status"), {"state": adc1.location.state_id}).context["rows"]
     assert {r["id"] for r in by_state} == {adc1.pk, adc2.pk}
-    by_country = client_in.get(reverse("tracking-status"), {"country": adc1.location.country_id}).context["rows"]
-    assert len(by_country) == 2
-    assert client_in.get(reverse("tracking-status"), {"country": 999999}).context["rows"] == []
+    assert client_in.get(reverse("tracking-status"), {"state": 999999}).context["rows"] == []
 
 
-def test_a_station_opens_its_vehicles(client_in, world, station):
-    page = client_in.get(reverse("tracking-status"), {"branch": world["adc1"].pk})
+def test_each_station_row_carries_what_the_page_compares(client_in, world, station):
+    body = client_in.get(reverse("tracking-status")).content.decode()
+    adc1 = world["adc1"].pk
+    assert f'data-station="{adc1}"' in body
+    assert 'data-sig="3|6|1|1|1|2|1|online|False"' in body
+    assert reverse("tracking-status-station", args=[adc1]) in body
+
+
+def test_a_station_opens_its_vehicles_missing_first(client_in, world, station):
+    fragment = client_in.get(reverse("tracking-status-station", args=[world["adc1"].pk]))
+    assert fragment.status_code == 200
+    names = [v["name"] for v in fragment.context["vehicles"]]
+    assert names[0] == "MI1" and len(names) == 6
+    assert 'class="is-missing"' in fragment.content.decode()
+    assert client_in.get(reverse("tracking-status-station", args=[world["theirs"].pk])).status_code == 404
+    page = client_in.get(reverse("tracking-status"), {"branch": world["adc1"].pk})      # the page still works
     assert page.status_code == 200 and len(page.context["vehicles"]) == 6
+
+
+def test_a_pending_reader_has_approve_and_block_and_no_menu(client_in, world, reader):  # noqa: F811
+    Reader.objects.create(device_id="190619101016999", status="pending", company=world["company"])
+    body = client_in.get(reverse("tracking-readers")).content.decode()
+    pending = body[body.index("190619101016999"):]
+    pending = pending[:pending.index("</tr>")]
+    assert ">Approve<" in pending and ">Block<" in pending and "data-scr-menu-toggle" not in pending
+    approved = body[body.index(reader.device_id):]
+    approved = approved[:approved.index("</tr>")]
+    assert "data-scr-menu-toggle" in approved and ">Test<" in approved
 
 
 def test_the_missing_dialog_lists_them_with_todays_cashiers(client_in, world, station):
