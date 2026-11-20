@@ -1,0 +1,74 @@
+{% extends "targets/_base.html" %}
+{% load targets %}
+
+{% block screen_title %}Overview{% endblock %}
+{% block crumb %}<b>Overview</b>{% endblock %}
+{% block heading %}Overview{% endblock %}
+{% block sub %}{% if is_customers %}Unique customers per branch against its monthly target.{% else %}How each branch is doing against its monthly target.{% endif %}{% endblock %}
+
+{% block actions %}
+{% if can.create %}<a class="scr-btn scr-btn-primary" href="{% url 'targets-manage' %}?month={{ year }}-{{ month|stringformat:'02d' }}&kind={{ kind }}">Set targets</a>{% endif %}
+{% endblock %}
+
+{% block body %}
+<div class="scr-x-bar">
+  <nav class="scr-x-tabs" aria-label="Target kind">
+  {% for k in kind_tabs %}<a class="scr-x-tab{% if k.on %} is-on{% endif %}" href="{{ k.url }}"{% if k.on %} aria-current="page"{% endif %}>{{ k.label }}</a>{% endfor %}
+</nav>
+  {% include "targets/_stepper.html" with group_label="Month" unit="month" label=first|date:"F Y" %}
+  {% if not is_current %}<a class="scr-x-today" href="{% url 'targets-overview' %}?kind={{ kind }}{% if chosen_state %}&state={{ chosen_state }}{% endif %}">This month</a>{% endif %}
+  <span class="scr-x-spacer"></span>
+  {% include "targets/_filters.html" with period_name="month" period_value=first|date:"Y-m" %}
+</div>
+
+{% if rows %}
+<div class="scr-card">
+  <dl class="scr-x-kpis">
+    <div><dt>Target</dt><dd>{{ totals.target|figure:is_customers }}{% if is_customers %}<small>customers</small>{% endif %}</dd></div>
+    <div><dt>Achieved</dt><dd>{{ totals.achieved|figure:is_customers }}<small>{{ totals.percent }}%</small></dd></div>
+    <div><dt>On track</dt><dd>{{ totals.on_track }}<small>of {{ totals.stations }} branches</small></dd></div>
+    {% if is_customers %}<div><dt>Still to win</dt><dd>{{ totals.remaining|figure:True }}<small>customers</small></dd></div>
+    {% else %}<div><dt>Today's target</dt><dd>{% if totals.today_set %}{{ totals.today|amount }}{% else %}—{% endif %}</dd></div>{% endif %}
+  </dl>
+</div>
+
+<div class="scr-card">
+  <div class="scr-table-scroll">
+    <table class="scr-x-table scr-x-fit">
+      <colgroup><col /><col class="w-num" /><col class="w-num" /><col class="w-progress" />{% if not is_customers %}<col class="w-num" />{% endif %}<col class="w-status" /></colgroup>
+      <thead>
+        <tr>
+          <th scope="col">Branch</th>
+          <th scope="col" class="num">{% if is_customers %}Target (customers){% else %}Target (AED){% endif %}</th>
+          <th scope="col" class="num">Achieved</th>
+          <th scope="col">Progress</th>
+          {% if not is_customers %}<th scope="col" class="num">Today's target</th>{% endif %}
+          <th scope="col">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        {% with t=r.target %}
+        <tr class="scr-x-row" data-href="{% url 'targets-station' t.branch_id t.period_start.year t.period_start.month %}?kind={{ kind }}">
+          <td data-label="Branch"><a class="scr-x-name" href="{% url 'targets-station' t.branch_id t.period_start.year t.period_start.month %}?kind={{ kind }}">{{ t.branch.name }}</a></td>
+          <td data-label="Target" class="num">{{ t.amount|figure:is_customers }}</td>
+          <td data-label="Achieved" class="num">{{ r.figures.achieved|figure:is_customers }}</td>
+          <td data-label="Progress">
+            <div class="scr-x-progress"><span class="scr-x-track"><i style="width:{{ r.figures.percent|bar }}%"></i></span><span class="scr-x-pct">{{ r.figures.percent }}%</span></div>
+          </td>
+          {% if not is_customers %}<td data-label="Today's target" class="num">{{ r.today|amount }}</td>{% endif %}
+          <td data-label="Status">{% include "targets/_status.html" with s=r.status %}</td>
+        </tr>
+        {% endwith %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<p class="scr-x-note">{% if is_customers %}Achieved counts each customer once, on settled orders by booking date. On track means at or ahead of the month's share so far.{% else %}Achieved counts settled orders by booking date, less credit notes. On track means at or ahead of the even split so far.{% endif %}</p>
+{% else %}
+<div class="scr-card">
+  {% include "targets/_empty.html" with title="No targets for this month" text="Set a monthly target for your branches to follow their progress here." %}
+</div>
+{% endif %}
+{% endblock %}

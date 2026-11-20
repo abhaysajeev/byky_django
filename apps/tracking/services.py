@@ -79,7 +79,7 @@ def approve(reader, *, company, branch, name="", user=None, now=None):
     if reader.status == ReaderStatus.BLOCKED:
         raise TrackingError("Unblock this reader first.")
     if branch.company_id != company.pk:
-        raise TrackingError("That station belongs to another company.", "Station")
+        raise TrackingError("That branch belongs to another company.", "Branch")
     reader.company, reader.status, reader.enabled = company, ReaderStatus.APPROVED, True
     reader.name = (name or "").strip()[:100] or reader.name
     reader.modified_by = user
@@ -97,7 +97,7 @@ def edit(reader, *, name=None, branch=None, user=None, now=None):
         reader.save(update_fields=["name", "modified_by", "modified_on"])
         if branch is not None:
             if branch.company_id != reader.company_id:
-                raise TrackingError("That station belongs to another company.", "Station")
+                raise TrackingError("That branch belongs to another company.", "Branch")
             assign(reader, branch, now=now)
     return reader
 

@@ -112,6 +112,9 @@ class Antenna(TimeStampedModel):
 
 class CalibrationMethod(models.TextChoices):
     PARKED = "parked", "Bikes parked on the boundary"
+    # Owner, 18 Nov 2026 (the old RMS way): a past period of normal parking,
+    # each vehicle's own range fixed at the station (VehicleBaseline).
+    OBSERVE = "observe", "Observed over a past period"
 
 
 class CalibrationStatus(models.TextChoices):
@@ -143,6 +146,37 @@ class Calibration(TimeStampedModel):
             models.UniqueConstraint(fields=["reader"], condition=Q(status__in=["open", "proposed"]),
                                     name="tracking_one_open_calibration_per_reader"),
         ]
+
+
+class VehicleBaseline(models.Model):
+    """One vehicle's own signal range at one reader, from an approved Observe
+    calibration (apps/tracking/calibration.py::observe; owner, 18 Nov 2026 --
+    the old RMS way). The engine prefers it to the antenna's limits: a tag's
+    strength depends on how it is mounted, so each bike is judged against
+    its own normal, not a fleet-wide one."""
+
+    reader = models.ForeignKey(Reader, on_delete=models.CASCADE, related_name="baselines")
+    tag = models.CharField(max_length=8)                 # 8-hex, as stored by the gateway
+    vehicle = models.ForeignKey("fleet.Vehicle", on_delete=models.CASCADE, related_name="+")
+    low_rssi = models.SmallIntegerField()                # its normal weakest (10th percentile), dBm
+    high_rssi = models.SmallIntegerField()               # its normal strongest (90th percentile)
+    mid_rssi = models.SmallIntegerField()                # the average of the two
+    enter_rssi = models.SmallIntegerField()              # back inside at this (= low)
+    leave_rssi = models.SmallIntegerField()              # out below this (low - allowance)
+    samples = models.PositiveIntegerField()
+    calibration = models.ForeignKey("tracking.Calibration", on_delete=models.CASCADE, related_name="baselines")
+
+    class Meta:
+        db_table = "tracking_vehicle_baseline"
+        ordering = ["reader", "tag"]
+        constraints = [
+            models.UniqueConstraint(fields=["reader", "tag"], name="tracking_baseline_tag_per_reader"),
+            models.CheckConstraint(condition=Q(enter_rssi__gt=models.F("leave_rssi")),
+                                   name="tracking_baseline_enter_above_leave"),
+        ]
+
+    def __str__(self):
+        return f"{self.tag} at {self.reader_id}"
 
 
 class PointZone(models.TextChoices):

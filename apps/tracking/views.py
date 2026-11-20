@@ -41,8 +41,10 @@ from apps.tracking.models import (
     Reading,
     TagLastSeen,
     TrackingSettings,
+    VehicleBaseline,
     VehiclePresence,
 )
+from core.timezones import zone_for
 from theme.views import ThemedTemplateView
 
 ACTIONS = ("create", "read", "update", "approve")
@@ -50,13 +52,17 @@ PER_PAGE = 100
 MAX_RAW_HOURS = 24
 RAW_QUERY_TIMEOUT = "5s"
 ALERT_STATES = (PresenceState.MISSING,)
+# chip tone per state (.scr-x-status): green present, red missing, blue out on an order, grey unknown
+OUT_STATES = (PresenceState.ON_RENT, PresenceState.ON_TEST, PresenceState.IN_SERVICE)
+TONE = {PresenceState.PRESENT: "met", PresenceState.MISSING: "missed", PresenceState.UNKNOWN: "idle",
+        PresenceState.ON_RENT: "track", PresenceState.ON_TEST: "track", PresenceState.IN_SERVICE: "track"}
 STATE_ORDER = (PresenceState.MISSING, PresenceState.UNKNOWN, PresenceState.PRESENT,
                PresenceState.ON_RENT, PresenceState.ON_TEST, PresenceState.IN_SERVICE)
 BADGE = {PresenceState.PRESENT: "scr-badge-active", PresenceState.ON_RENT: "scr-badge-approved",
          PresenceState.ON_TEST: "scr-badge-approved", PresenceState.IN_SERVICE: "scr-badge-pending",
          PresenceState.MISSING: "scr-badge-missing",
          PresenceState.UNKNOWN: "scr-badge-inactive"}
-REASON_LABEL = {"station_closed": "Station closed", "not_seen": "Not heard", "weak_signal": "Signal below limit",
+REASON_LABEL = {"station_closed": "Branch closed", "not_seen": "Not heard", "weak_signal": "Signal below limit",
                 "reader_offline": "Reader offline", "no_reader": "No reader",
                 "no_new_reads": "Reader hears no tags", "calibrating": "Calibrating"}
 
@@ -115,6 +121,10 @@ class StatusView(TrackingScreenView):
         totals = dict(scope.order_by().values_list("state").annotate(n=Count("pk")))
         names = dict(PresenceState.choices)
         context["tiles"] = [{"label": names[s], "value": totals.get(s, 0), "key": str(s.value)} for s in STATE_ORDER]
+        out = sum(totals.get(s, 0) for s in OUT_STATES)
+        context["kpis"] = {"present": totals.get(PresenceState.PRESENT, 0), "missing": totals.get(PresenceState.MISSING, 0),
+                           "unknown": totals.get(PresenceState.UNKNOWN, 0), "out": out,
+                           "out_detail": " · ".join(f"{totals.get(s, 0)} {names[s].lower()}" for s in OUT_STATES)}
 
         if chosen:
             context["vehicles"] = self._vehicles(scope, chosen)
@@ -126,6 +136,10 @@ class StatusView(TrackingScreenView):
             now = timezone.now()
             context["branch_rows"] = [
                 {"id": b.pk, "name": b.name, "cells": [counts[b.pk].get(s, 0) for s in STATE_ORDER],
+                 "present": counts[b.pk].get(PresenceState.PRESENT, 0),
+                 "missing": counts[b.pk].get(PresenceState.MISSING, 0),
+                 "unknown": counts[b.pk].get(PresenceState.UNKNOWN, 0),
+                 "out": sum(counts[b.pk].get(s, 0) for s in OUT_STATES),
                  "hours": branch_open_state(b, now)} for b in branches]
             context["state_labels"] = [names[s] for s in STATE_ORDER]
         context["chosen_branch"] = chosen
@@ -144,7 +158,7 @@ class StatusView(TrackingScreenView):
             last = fresh.get(tags[p.pk])
             heard = last.seen_at if last is not None and last.reader_id in own_readers else p.last_seen_at
             rows.append({"name": p.vehicle.vehicle_name, "type": _vehicle_type(p.vehicle), "state": p.state,
-                         "state_label": p.get_state_display(), "badge": BADGE[p.state],
+                         "state_label": p.get_state_display(), "badge": BADGE[p.state], "tone": TONE[p.state],
                          "reason": REASON_LABEL.get(p.reason, ""), "since": p.since, "last_seen": heard,
                          "heard_at": p.heard_by_branch.name if p.heard_by_branch_id else "",
                          "low_battery": p.low_battery})
@@ -279,12 +293,15 @@ class ReadersView(TrackingScreenView):
             at = open_now.get(r.pk)
             offline_after = timings[at.branch_id].offline if at else engine.COMPANY_DEFAULT.offline
             contact = engine._contact(r)
-            rows.append({"r": r, "branch": at.branch if at else None,
-                         # worked out here, not read from Reader.online: the engine only runs in write mode
-                         "online": contact is not None and (now - contact).total_seconds() < offline_after,
+            # worked out here, not read from Reader.online: the engine only runs in write mode
+            online = contact is not None and (now - contact).total_seconds() < offline_after
+            rows.append({"r": r, "branch": at.branch if at else None, "online": online,
+                         "status": _reader_status(r, online), "contact": contact, "contact_ago": ago(contact, now),
                          "heartbeat_age": _age(r.last_heartbeat_at, now), "data_age": _age(r.last_data_at, now)})
         context["rows"] = rows
         context["counts"] = {s: sum(1 for x in readers if x.status == s) for s in ReaderStatus.values}
+        context["online_count"] = sum(1 for row in rows if row["status"]["label"] == "Online")
+        context["offline_count"] = sum(1 for row in rows if row["status"]["label"] == "Offline")
         context["all_branches"] = list(branches_for(user).filter(is_active=True).order_by("name")
                                        .values("id", "name", "company_id"))
         return context
@@ -292,6 +309,26 @@ class ReadersView(TrackingScreenView):
 
 def _age(moment, now):
     return int((now - moment).total_seconds()) if moment else None
+
+
+def ago(moment, now):
+    """"12 s ago", "4 min ago", "2 h ago", "3 d ago"; "Never" when there is none."""
+    seconds = _age(moment, now)
+    if seconds is None:
+        return "Never"
+    for size, unit in ((86400, "d"), (3600, "h"), (60, "min")):
+        if seconds >= size:
+            return f"{seconds // size} {unit} ago"
+    return f"{max(seconds, 0)} s ago"
+
+
+def _reader_status(reader, online):
+    """One status per reader: Pending / Blocked / Online / Offline, with its chip tone."""
+    if reader.status == ReaderStatus.PENDING:
+        return {"key": "behind", "label": "Pending"}
+    if reader.status == ReaderStatus.BLOCKED:
+        return {"key": "missed", "label": "Blocked"}
+    return {"key": "met", "label": "Online"} if online else {"key": "idle", "label": "Offline"}
 
 
 def _branch(user, value):
@@ -334,7 +371,7 @@ class ReaderAddView(ReaderActionView):
         user = self.request.user
         branch = _branch(user, data.get("branch"))
         if branch is None:
-            raise services.TrackingError("Choose the station this reader stands at.", "Station")
+            raise services.TrackingError("Choose the branch this reader stands at.", "Branch")
         services.save_new_reader(data.get("device_id"), branch=branch, name=data.get("name", ""), user=user)
 
 
@@ -362,7 +399,7 @@ class ReaderApproveView(ReaderActionView):
         user = self.request.user
         branch = _branch(user, data.get("branch"))
         if branch is None:
-            raise services.TrackingError("Choose the station this reader stands at.", "Station")
+            raise services.TrackingError("Choose the branch this reader stands at.", "Branch")
         services.approve(reader, company=branch.company, branch=branch, name=data.get("name", ""), user=user)
 
 
@@ -375,7 +412,7 @@ class ReaderEditView(ReaderActionView):
         if data.get("branch"):
             branch = _branch(user, data.get("branch"))
             if branch is None:
-                raise services.TrackingError("Choose a station.", "Station")
+                raise services.TrackingError("Choose a branch.", "Branch")
         services.edit(reader, name=data.get("name"), branch=branch, user=user)
 
 
@@ -437,6 +474,18 @@ class AntennasView(TrackingScreenView):
             context["bike_options"] = [
                 {"id": v.pk, "name": v.vehicle_name, "tag": engine.tag_of(v.rfid_epc)}
                 for v in calibration.choosable(chosen)]
+            # Observe: a past period, the last 3 hours by default (company time).
+            zone = zone_for(chosen.company) if chosen.company_id else timezone.get_current_timezone()
+            now = timezone.localtime(timezone.now(), zone).replace(second=0, microsecond=0)
+            context.update({
+                "observe_to": now.strftime("%Y-%m-%dT%H:%M"),
+                "observe_from": (now - datetime.timedelta(hours=3)).strftime("%Y-%m-%dT%H:%M"),
+                "observe_min": (now - datetime.timedelta(days=calibration._retention_days(chosen)))
+                .strftime("%Y-%m-%dT%H:%M"),
+                "retention_days": calibration._retention_days(chosen),
+                "observe_minutes": calibration.MIN_OBSERVE_MINUTES,
+            })
+        context["baseline_count"] = VehicleBaseline.objects.filter(reader=chosen).count()
         return context
 
 
@@ -485,6 +534,13 @@ class CalibrationView(writes.WriteView):
         if action == "start":
             calibration.start(reader, data.get("vehicles") or [], user=self.request.user)
             return "Listening. Keep the bikes parked on the boundary."
+        if action == "observe":
+            zone = zone_for(reader.company)
+            session = calibration.observe(reader, _local_moment(data.get("window_from"), zone),
+                                          _local_moment(data.get("window_to"), zone), user=self.request.user)
+            found, skipped = len(session.result["vehicles"]), len(session.result["skipped"])
+            return (f"Worked out {found} vehicle{'s' if found != 1 else ''}'s range"
+                    + (f"; {skipped} had too few readings" if skipped else "") + ". Review and approve.")
         if action == "clear":
             calibration.clear_limits(reader)
             return "Limits cleared. Any read now counts as present."
@@ -513,6 +569,17 @@ def _moment(value):
         return None
     if moment is not None and timezone.is_naive(moment):
         moment = timezone.make_aware(moment, timezone.get_current_timezone())
+    return moment
+
+
+def _local_moment(value, zone):
+    """`YYYY-MM-DDTHH:MM` from a date-time field, read in the company's zone; None if unreadable."""
+    try:
+        moment = datetime.datetime.fromisoformat(value) if value else None
+    except (TypeError, ValueError):
+        return None
+    if moment is not None and timezone.is_naive(moment):
+        moment = timezone.make_aware(moment, zone)
     return moment
 
 

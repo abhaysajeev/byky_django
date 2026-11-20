@@ -38,6 +38,7 @@ from apps.tracking.models import (
     ReaderStatus,
     TagLastSeen,
     TrackingSettings,
+    VehicleBaseline,
     VehiclePresence,
 )
 from core.realtime import publish
@@ -327,6 +328,7 @@ def _cycle(now):
     seen = {t.tag: t for t in TagLastSeen.objects.filter(tag__in=set(tags.values()))}
     limits = {(a.reader_id, a.port): (a.enter_rssi, a.leave_rssi) for a in Antenna.objects.filter(
         enter_rssi__isnull=False, leave_rssi__isnull=False)}
+    baselines = {(b.reader_id, b.tag): (b.enter_rssi, b.leave_rssi) for b in VehicleBaseline.objects.all()}
     rented = active_rentals(ids)
     tests = dict(TestRide.objects.filter(vehicle_id__in=ids, status=TestRideStatus.ON_TEST)
                  .values_list("vehicle_id", "expected_end_at"))
@@ -350,7 +352,9 @@ def _cycle(now):
             calibrating=tags[pk] in calibrating, has_reader=bool(readers),
             reader_online=any(r.online for r in readers), reader_contact=max(contacts) if contacts else None,
             own_seen=own_seen, rssi_avg=last.rssi_avg if own else None,
-            limits=limits.get((last.reader_id, last.port)) if own else None,
+            # The vehicle's own range (an Observe calibration) first, else its antenna's.
+            limits=(baselines.get((last.reader_id, last.tag)) or limits.get((last.reader_id, last.port)))
+            if own else None,
             timings=timings[branch_id], moved=prev is not None and prev.branch_id != branch_id,
             closed=branch_id in closed))
         per_branch.setdefault(branch_id, []).append(Row(v, prev, own_seen, verdict))
