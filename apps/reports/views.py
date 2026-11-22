@@ -23,7 +23,7 @@ from apps.portal.services import has_permission
 from apps.reports import xlsx
 from apps.reports.base import COUNT, DATA, DATE, DATETIME, MONEY, PERCENT
 from apps.reports.common import Ctx, person
-from apps.reports.filters import CHOICE_FILTERS, ID_FILTERS, TEXT_FILTERS, Filters
+from apps.reports.filters import CHOICE_FILTERS, ID_FILTERS, TEXT_FILTERS, Filters, choices
 from apps.reports.options import PARENT, names, options
 from core import money
 from core.timezones import zone_for
@@ -40,6 +40,7 @@ SCREEN_LABELS = {
     "asset_type": "Asset type", "customer": "Customer name", "phone": "Phone no", "order_no": "Order no",
     "vehicle_no": "Vehicle no", "credit_note_no": "Credit note no", "device": "Device name",
     "rfid": "RFID tag no", "card_no": "Card number", "asset": "Asset code or serial", "status": "Status",
+    "payment_mode": "Payment mode", "discount": "Discount type",
 }
 # Shown in the bar itself; the rest under More filters.
 PRIMARY = ("state", "branch")
@@ -59,8 +60,12 @@ def _context(request, report):
     company = money.company_for_user(user)
     zone = zone_for(company)
     now = timezone.now()
-    return Ctx(user=user, zone=zone, f=Filters(request.GET, report, zone, now, day_start=_day_start(company)),
-               now=now, places=money.places_for(company))
+    day_start = _day_start(company)
+    ctx = Ctx(user=user, zone=zone, f=Filters(request.GET, report, zone, now, day_start=day_start),
+              now=now, places=money.places_for(company))
+    # What Clear goes back to: the business day, not the range the page opened on.
+    ctx.defaults = Filters({}, report, zone, now, day_start=day_start).inputs()
+    return ctx
 
 
 def _page(request):
@@ -137,7 +142,7 @@ class ReportView(_Report, PagePermissionMixin, ThemedTemplateView):
             bar.append({
                 "key": key, "label": SCREEN_LABELS[key], "kind": kind, "value": inputs.get(key, ""),
                 "options": opts.get(key, []) if kind == "select" else [
-                    {"id": v, "name": n} for v, n in report.statuses],
+                    {"id": v, "name": n} for v, n in choices(report, key)],
                 "parent": PARENT.get(key), "primary": key in PRIMARY,
                 "placeholder": SCREEN_LABELS[key] if key in TEXT_FILTERS else "",
             })
@@ -147,6 +152,7 @@ class ReportView(_Report, PagePermissionMixin, ThemedTemplateView):
             "primary_bar": [b for b in bar if b["primary"]],
             "more_bar": [b for b in bar if not b["primary"]],
             "inputs": inputs,
+            "defaults": ctx.defaults,
             "initial": payload(report, result, ctx, names(opts)),
             "data_url": reverse(f"reports-{report.slug}-data"),
             "export_url": reverse(f"reports-{report.slug}-export"),
