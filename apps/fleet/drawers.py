@@ -438,6 +438,32 @@ VEHICLE = {
                     "kind": "text",
                     "required": True,
                 },
+                # Category and Brand only narrow the Vehicle Type list (owner,
+                # 22 Nov 2026): a vehicle stores its type alone, and its
+                # category and brand are the type's -- never saved here.
+                {
+                    "id": "category",
+                    "label": "Category",
+                    "kind": "select",
+                    "required": False,
+                    "filter_only": True,
+                    "empty_label": "All categories",
+                    "options_from": "vehicle_categories_list",
+                    "option_key": "category_name",
+                    "parents": [{"field": "company", "key": "company_id"}],
+                },
+                {
+                    "id": "brand",
+                    "label": "Brand",
+                    "kind": "select",
+                    "required": False,
+                    "filter_only": True,
+                    "empty_label": "All brands",
+                    "options_from": "vehicle_brands_list",
+                    "option_key": "brand_name",
+                    "parents": [{"field": "company", "key": "company_id"},
+                                {"field": "category", "key": "category_ids"}],
+                },
                 {
                     "id": "vehicle_type",
                     "label": "Vehicle Type",
@@ -445,6 +471,10 @@ VEHICLE = {
                     "required": True,
                     "options_from": "vehicle_types_list",
                     "option_key": "vehicle_type_name",
+                    "help": "Pick a category and brand to narrow the vehicle types.",
+                    "parents": [{"field": "company", "key": "company_id"},
+                                {"field": "category", "key": "category_id"},
+                                {"field": "brand", "key": "brand_id"}],
                 },
                 {
                     "id": "uom",

@@ -143,3 +143,12 @@ class VehicleForm(ScopedModelForm):
             from apps.company.scoping import branches_for
 
             self.fields["current_branch"].queryset = branches_for(self.user).filter(is_active=True)
+
+    def clean(self):
+        """A system user picks the company too: the vehicle type must be that
+        company's (a company user's list is already only their own)."""
+        cleaned = super().clean()
+        company, vehicle_type = cleaned.get("company"), cleaned.get("vehicle_type")
+        if company is not None and vehicle_type is not None and vehicle_type.company_id != company.pk:
+            self.add_error("vehicle_type", "This vehicle type belongs to another company.")
+        return cleaned
