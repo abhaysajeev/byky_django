@@ -44,11 +44,11 @@ data-url with the same query string the Export link carries.
       {% if report.dated %}
       <label class="rpt-field rpt-field-when">
         <span class="rpt-label">From</span>
-        <input class="rpt-input" type="datetime-local" name="from" value="{{ inputs.from }}" data-default="{{ inputs.from }}" />
+        <input class="rpt-input" type="datetime-local" name="from" value="{{ inputs.from }}" data-default="{{ defaults.from }}" />
       </label>
       <label class="rpt-field rpt-field-when">
         <span class="rpt-label">To</span>
-        <input class="rpt-input" type="datetime-local" name="to" value="{{ inputs.to }}" data-default="{{ inputs.to }}" />
+        <input class="rpt-input" type="datetime-local" name="to" value="{{ inputs.to }}" data-default="{{ defaults.to }}" />
       </label>
       {% endif %}
       {% for b in primary_bar %}{% include "reports/_field.html" %}{% endfor %}

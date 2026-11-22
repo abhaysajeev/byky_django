@@ -5,7 +5,7 @@ payment-mode columns and how a person is named."""
 from collections import defaultdict
 from dataclasses import dataclass
 
-from django.db.models import Q, Sum
+from django.db.models import Exists, OuterRef, Q, Sum
 
 from apps.rental import order_status as display
 from apps.rental.counted import counted
@@ -29,6 +29,7 @@ class Ctx:
     f: object            # apps.reports.filters.Filters
     now: object
     places: int = 3      # money decimals (core/money.py)
+    defaults: dict | None = None   # the bar's values with nothing chosen -- what Clear restores
 
 
 # -- Filters every order-shaped report applies the same way ---------------------------
@@ -60,6 +61,24 @@ def customer(qs, f, order="order__"):
     if f.get("order_no"):
         qs = qs.filter(**{f"{order}order_no__icontains": f.get("order_no")})
     return qs
+
+
+def payment_mode(qs, f, order="order__"):
+    """Orders with a payment in that mode (advance, settlement or refund)."""
+    if not f.get("payment_mode"):
+        return qs
+    pk = f"{order}pk" if order else "pk"
+    return qs.filter(Exists(Payment.objects.filter(order=OuterRef(pk), mode_id=f.get("payment_mode"))))
+
+
+def discount(qs, f, invoice="invoice__"):
+    """The bill's discount: the invoice's discount_source, or none at all."""
+    value = f.get("discount")
+    if not value:
+        return qs
+    if value == "none":
+        return qs.filter(**{f"{invoice}discount_source": ""}) if invoice else qs.filter(discount_source="")
+    return qs.filter(**{f"{invoice}discount_source" if invoice else "discount_source": value})
 
 
 def vehicle_q(f, prefix=""):
