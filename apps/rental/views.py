@@ -742,6 +742,33 @@ class InvoiceReceiptView(PagePermissionMixin, View):
         return render(request, "rental/partials/invoice_receipt.html", {"bill": bill})
 
 
+def _letterhead(company, request):
+    """The A4 print's company block: the company's own logo when it has one."""
+    logo = company.logo.url if company.logo else None
+    return {"name": company.name, "address": company.address, "phone": company.phone_number,
+            "email": company.email, "logo": request.build_absolute_uri(logo) if logo else None}
+
+
+class InvoicePrintView(PagePermissionMixin, View):
+    """The tax invoice as an A4 page, opened in its own tab by the preview's
+    Print button (client, 22 Nov 2026). The same figures as the receipt --
+    `_receipt` -- laid out for A4; the receipt and the preview are untouched."""
+
+    page_code = "rental.invoice"
+
+    def get(self, request, pk):
+        invoice = _invoices_for_receipt(request.user).filter(pk=pk).first()
+        if invoice is None:
+            raise Http404("No such invoice.")
+        if invoice.is_void:
+            raise Http404("This invoice was cancelled.")
+        bill = _receipt(invoice, zone_for(getattr(request.user, "company", None)))
+        return render(request, "rental/print/invoice_a4.html", {
+            "bill": bill, "company": _letterhead(invoice.company, request), "branch": invoice.branch,
+            "autoprint": request.GET.get("print") != "0",
+        })
+
+
 class InvoiceDetailView(RentalScreenView):
     template_name = "rental/invoice_detail.html"
     page_code = "rental.invoice"
@@ -900,13 +927,35 @@ class CreditNoteReceiptView(PagePermissionMixin, View):
         if note.status != CreditNoteStatus.APPROVED:
             raise Http404("Only an issued credit note prints.")
         zone = zone_for(getattr(request.user, "company", None))
-        invoice = note.invoice
-        return render(request, "rental/partials/credit_note_receipt.html", {
-            "note": note, "invoice": invoice, "date": note.decided_at.astimezone(zone).strftime("%d-%m-%Y"),
-            "invoice_date": invoice.issued_at.astimezone(zone).strftime("%d-%m-%Y"),
-            "emirate": invoice.branch.location.state.name, "issued_by": note.decided_by.display_name
-            if note.decided_by_id else "—",
-        })
+        return render(request, "rental/partials/credit_note_receipt.html", _credit_note_print(note, zone))
+
+
+def _credit_note_print(note, zone):
+    invoice = note.invoice
+    return {
+        "note": note, "invoice": invoice, "date": note.decided_at.astimezone(zone).strftime("%d-%m-%Y"),
+        "invoice_date": invoice.issued_at.astimezone(zone).strftime("%d-%m-%Y"),
+        "emirate": invoice.branch.location.state.name, "issued_by": note.decided_by.display_name
+        if note.decided_by_id else "—",
+    }
+
+
+class CreditNotePrintView(PagePermissionMixin, View):
+    """The credit note as an A4 page (client, 22 Nov 2026) -- same rules as
+    its receipt: print right, approved notes only."""
+
+    page_code = "rental.credit_note"
+    required_action = "print"
+
+    def get(self, request, pk):
+        note = _credit_note_for(request.user, pk)
+        if note.status != CreditNoteStatus.APPROVED:
+            raise Http404("Only an issued credit note prints.")
+        zone = zone_for(getattr(request.user, "company", None))
+        context = _credit_note_print(note, zone)
+        context.update({"company": _letterhead(note.invoice.company, request), "branch": note.invoice.branch,
+                        "autoprint": request.GET.get("print") != "0"})
+        return render(request, "rental/print/credit_note_a4.html", context)
 
 
 
