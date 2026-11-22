@@ -3,7 +3,7 @@ item `{id, name, parent}` (`parent` drives the cascades: a station's state, a
 vehicle type's category, a card grade's card type)."""
 
 from apps.company.models import State
-from apps.company.scoping import branches_for
+from apps.company.scoping import branches_for, payment_modes_for
 from apps.discount.scoping import card_grades_for, card_types_for
 from apps.fleet.scoping import asset_types_for, categories_for, vehicle_types_for
 from apps.portal.scoping import users_for
@@ -43,6 +43,8 @@ def options(user, keys):
     if "asset_type" in keys:
         out["asset_type"] = _items({"id": t.pk, "name": t.asset_type_name, "parent": None}
                                    for t in asset_types_for(user))
+    if "payment_mode" in keys:
+        out["payment_mode"] = _items({"id": m.pk, "name": m.name, "parent": None} for m in payment_modes_for(user))
     return out
 
 
