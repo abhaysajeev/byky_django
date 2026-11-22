@@ -79,7 +79,7 @@ def _option(row, key, parents):
         attrs = []
         for parent in parents:
             value = row.get(parent["key"])
-            values = value if isinstance(value, (list, tuple, set)) else [value]
+            values = value if isinstance(value, list | tuple | set) else [value]
             attrs.append((parent["field"], " ".join(str(v) for v in values if v not in (None, ""))))
         option["parent_attrs"] = attrs
     return option

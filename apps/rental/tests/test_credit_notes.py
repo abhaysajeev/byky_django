@@ -269,6 +269,22 @@ def test_an_issued_credit_note_prints(client, token, settled, web):
     assert "TAX CREDIT NOTE" in receipt and "AED 21.00" in receipt and settled.invoice.invoice_no in receipt
 
 
+def test_an_issued_credit_note_prints_on_a4(client, token, settled, web):
+    post(web, f"/rental/credit-note/issue/{settled.invoice.pk}/", {"net_amount": "21.00"})
+    note = CreditNote.objects.get()
+
+    page = web.get(f"/rental/credit-note/{note.pk}/print/").content.decode()
+
+    assert page.lstrip().startswith("<!doctype html>") and "byky-print-a4.css" in page
+    assert "TAX CREDIT NOTE" in page and "AED 21.00" in page and settled.invoice.invoice_no in page
+
+
+def test_a_pending_credit_note_has_no_a4(client, token, settled, web):
+    request_data = ask(settled)
+    call(client, REQUEST, request_data, token=token)
+    assert web.get(f"/rental/credit-note/{request_data['sync_id']}/print/").status_code == 404
+
+
 def test_one_live_credit_note_per_order_is_enforced_by_the_database(client, token, settled):
     call(client, REQUEST, ask(settled), token=token)
     with pytest.raises(IntegrityError), transaction.atomic():

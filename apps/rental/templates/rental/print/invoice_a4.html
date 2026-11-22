@@ -1,0 +1,140 @@
+{% load static money %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tax Invoice {{ bill.invoice_no }}</title>
+<link rel="stylesheet" href="{% static 'css/byky-print-a4.css' %}" />
+</head>
+<body>
+<div class="a4-toolbar">
+  <button type="button" class="a4-print" onclick="window.print()">Print</button>
+  <button type="button" onclick="window.close()">Close</button>
+</div>
+
+<main class="a4-sheet">
+  <header class="a4-head">
+    <div class="a4-company">
+      <img class="a4-logo" src="{% if company.logo %}{{ company.logo }}{% else %}{% static 'img/branding/byky-logo.png' %}{% endif %}" alt="" />
+      <div>
+        <div class="a4-company-name">{{ bill.company|default:company.name }}</div>
+        {% if company.address %}<div class="a4-company-line">{{ company.address }}</div>{% endif %}
+        <div class="a4-company-line">{% if company.phone %}Tel {{ company.phone }}{% endif %}{% if company.phone and company.email %} · {% endif %}{{ company.email }}</div>
+      </div>
+    </div>
+    <div class="a4-doc">
+      <div class="a4-doc-title">TAX INVOICE</div>
+      {% if bill.discount_source == "complimentary" %}<div class="a4-doc-sub">COMPLIMENTARY</div>{% endif %}
+      <div class="a4-doc-trn">TRN: <strong>{{ bill.trn }}</strong></div>
+    </div>
+  </header>
+  <hr class="a4-rule" />
+
+  <section class="a4-boxes">
+    <div class="a4-box">
+      <div class="a4-box-title">Invoice</div>
+      <dl class="a4-kv">
+        <dt>Invoice No</dt><dd>{{ bill.invoice_no }}</dd>
+        <dt>Date</dt><dd>{{ bill.issued_at|date:"d-m-Y, h:i A" }}</dd>
+        <dt>Order No</dt><dd>{{ bill.order_no }}</dd>
+        <dt>Trans No</dt><dd>{{ bill.trans_no }}</dd>
+        <dt>Station</dt><dd>{{ bill.station }}{% if bill.emirate %}, {{ bill.emirate }}{% endif %}</dd>
+        <dt>Started · Closed</dt><dd>{{ bill.starting_time }} · {{ bill.closing_time }}</dd>
+      </dl>
+    </div>
+    <div class="a4-box">
+      <div class="a4-box-title">Bill to</div>
+      <dl class="a4-kv">
+        <dt>Customer</dt><dd>{{ bill.customer }}</dd>
+        <dt>Mobile</dt><dd>{{ bill.mobile }}</dd>
+        <dt>ID</dt><dd>{{ bill.id_type }}{% if bill.id_no != "—" %} · {{ bill.id_no }}{% endif %}</dd>
+        <dt>Opened by</dt><dd>{{ bill.open_by }}</dd>
+        <dt>Closed by</dt><dd>{{ bill.closed_by }}</dd>
+        {% if bill.star_rating %}<dt>Rating</dt><dd>{{ bill.star_rating }} ★{% if bill.rating_remarks %} · {{ bill.rating_remarks }}{% endif %}</dd>{% endif %}
+      </dl>
+    </div>
+  </section>
+
+  <table class="a4-table">
+    <colgroup>
+      <col class="w-sno" /><col /><col class="w-type" /><col class="w-pkg" />
+      <col class="w-time" /><col class="w-time" /><col class="w-run" />
+      <col class="w-money" /><col class="w-money" /><col class="w-amount" />
+    </colgroup>
+    <thead>
+      <tr>
+        <th>#</th><th>Vehicle</th><th>Type</th><th>Package</th>
+        <th class="ctr">Out</th><th class="ctr">Return</th><th class="ctr">Run</th>
+        <th class="num">Base</th><th class="num">Extra</th><th class="num">Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in bill.lines %}
+      <tr>
+        <td>{{ l.sno }}</td>
+        <td><strong>{{ l.vehicle }}</strong>{% if l.free_item %}<span class="a4-tag">FREE</span>{% endif %}{% if l.identifier %}<span class="sub">{{ l.identifier }}</span>{% endif %}</td>
+        <td>{{ l.vehicle_type|default:"—" }}</td>
+        <td>{{ l.package|default:"" }}{% if l.package %}<span class="sub">{{ l.package_minutes }} min</span>{% else %}{{ l.package_minutes }} min{% endif %}</td>
+        <td class="ctr">{{ l.start_time|date:"h:i A"|default:"—" }}</td>
+        <td class="ctr">{{ l.returned }}</td>
+        <td class="ctr">{{ l.duration }}</td>
+        <td class="num">{{ l.base_fare|money }}</td>
+        <td class="num">{{ l.overtime_amount|money }}</td>
+        <td class="num"><strong>{{ l.amount|money }}</strong></td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="10">No vehicles billed</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <section class="a4-bottom">
+    <div>
+      {% if bill.payments %}
+      <table class="a4-pay">
+        <thead><tr><th>Payment</th><th>Mode</th><th>Reference</th><th class="num">AED</th></tr></thead>
+        <tbody>
+          {% for p in bill.payments %}
+          <tr><td>{{ p.kind|capfirst }}</td><td>{{ p.mode|default:"—" }}</td><td>{{ p.reference_no|default:"—" }}</td><td class="num">{{ p.amount|money }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+      {% if bill.credit_note.status == "approved" %}
+      <p class="a4-note">Credit note <strong>{{ bill.credit_note.label }}</strong> issued against this invoice: AED {{ bill.credit_note.net_amount|money }}.</p>
+      {% endif %}
+      <p class="a4-note">All amounts in AED. VAT is included in the fares.</p>
+    </div>
+    <table class="a4-totals">
+      <tbody>
+        <tr><td>Subtotal</td><td class="num">{{ bill.subtotal|money }}</td></tr>
+        {% for line in bill.discount_lines %}{% if line.amount %}
+        <tr><td>{{ line.label }}{% if line.percentage %} ({{ line.percentage|floatformat:"-2" }}%){% endif %}</td><td class="num">− {{ line.amount|money }}</td></tr>
+        {% endif %}{% endfor %}
+        {% if bill.rounding %}<tr><td>Rounded off</td><td class="num">{{ bill.rounding|money }}</td></tr>{% endif %}
+        <tr class="net"><td>NET TOTAL</td><td class="num">AED {{ bill.net_amount|money }}</td></tr>
+        <tr class="muted"><td>Taxable amount</td><td class="num">{{ bill.taxable_amount|money }}</td></tr>
+        <tr class="muted"><td>VAT @ {{ bill.tax_percentage|floatformat:"-1" }}% (included)</td><td class="num">{{ bill.tax_amount|money }}</td></tr>
+        {% if bill.balance %}<tr class="muted"><td>Balance</td><td class="num">{{ bill.balance|money }}</td></tr>{% endif %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="a4-sign">
+    <div>Customer signature</div>
+    <div>Cashier · {{ bill.closed_by }}</div>
+    <div>Station stamp</div>
+  </section>
+  <p class="a4-foot">Thank you for riding with us · {{ bill.station }}</p>
+</main>
+
+{% if autoprint %}<script>
+  window.addEventListener('load', function () {
+    var imgs = [].slice.call(document.images);
+    Promise.all(imgs.map(function (i) { return i.complete ? 0 : new Promise(function (r) { i.onload = i.onerror = r; }); }))
+      .then(function () { return document.fonts ? document.fonts.ready : 0; })
+      .then(function () { setTimeout(function () { window.print(); }, 150); });
+  });
+</script>{% endif %}
+</body>
+</html>
