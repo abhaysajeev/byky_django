@@ -124,9 +124,9 @@ field.readonly       always read-only -- a value this screen displays but
 
             {% if f.kind == "select" %}
               <div class="byky-select-wrap">
-                <select id="{{ f.id }}" class="byky-input byky-select" data-field="{{ f.id }}"{% if f.lock_on_edit %} data-lock-on-edit="true"{% endif %}{% if f.default %} data-default="{{ f.default }}"{% endif %}{% if f.readonly %} disabled{% endif %}>
-                  <option value="">Select</option>
-                  {% for o in f.resolved %}<option{% if o.id %} value="{{ o.id }}"{% endif %}{% if f.default and o.name == f.default %} selected{% endif %}>{{ o.name|default:o }}</option>{% endfor %}
+                <select id="{{ f.id }}" class="byky-input byky-select" data-field="{{ f.id }}"{% if f.parent_fields %} data-parents="{{ f.parent_fields }}"{% endif %}{% if f.filter_only %} data-filter-only="true"{% endif %}{% if f.lock_on_edit %} data-lock-on-edit="true"{% endif %}{% if f.default %} data-default="{{ f.default }}"{% endif %}{% if f.readonly %} disabled{% endif %}>
+                  <option value="">{{ f.empty_label|default:"Select" }}</option>
+                  {% for o in f.resolved %}<option{% if o.id %} value="{{ o.id }}"{% endif %}{% for k, v in o.parent_attrs %} data-parent-{{ k }}="{{ v }}"{% endfor %}{% if f.default and o.name == f.default %} selected{% endif %}>{{ o.name|default:o }}</option>{% endfor %}
                 </select>
                 <svg class="byky-select-caret" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
               </div>
