@@ -1,108 +1,30 @@
-/* The A4 tax invoice and credit note (client, 22 Nov 2026) -- opened in their
-   own tab from the print preview's Print button. Print-first: sized in mm and
-   pt, one font stack every printer has, no app shell. On screen the sheet is
-   shown on a grey desk at A4 size so what you see is what prints. */
+/* The A4 print of the tax invoice and credit note (client, 22 Nov 2026):
+   the very same receipt the preview shows (byky-invoice-receipt.css,
+   rental/partials/*_receipt.html) -- no layout of its own -- scaled up to
+   fill an A4 page. zoom scales the whole receipt, so every alignment holds.
+   Loaded after byky-invoice-receipt.css so this @page wins over its 100mm roll. */
 
-@page {
-  size: A4;
-  margin: 14mm 12mm 16mm;
-  @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 7.5pt "Segoe UI", Arial, sans-serif; color: #666; }
-  @bottom-left { content: "This is a computer-generated document."; font: 7.5pt "Segoe UI", Arial, sans-serif; color: #666; }
-}
+@page { size: A4; margin: 10mm; }
 
-:root { color-scheme: light; }
-* { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; background: #e9e9ef; color: #1a1a1a; }
-body {
-  font: 9.5pt/1.4 "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-  -webkit-print-color-adjust: exact; print-color-adjust: exact;
-}
+html, body { margin: 0; padding: 0; background: #ecebf3; }
 
-/* -- screen: the sheet on a desk, and a toolbar ------------------------- */
+/* 100mm receipt x 1.9 = 190mm: the A4 width less the 10mm margins. */
+.a4-receipt { padding: 12px 0 24px; }
+.a4-receipt .bill { zoom: 1.9; box-shadow: 0 1px 3px rgba(26, 22, 64, 0.12); }
+
 .a4-toolbar {
   position: sticky; top: 0; z-index: 2; display: flex; gap: 8px; justify-content: center;
-  padding: 10px; background: #fff; border-bottom: 1px solid #ddd;
-}
-.a4-toolbar button {
-  font: 600 10pt "Segoe UI", Arial, sans-serif; padding: 7px 18px; border-radius: 8px; cursor: pointer;
-  border: 1px solid #c7c7d1; background: #fff; color: #1a1a1a;
-}
-.a4-toolbar .a4-print { background: #d81f26; border-color: #d81f26; color: #fff; }
-.a4-sheet {
-  width: 210mm; min-height: 297mm; margin: 12px auto 24px; padding: 14mm 12mm 16mm;
-  background: #fff; box-shadow: 0 2px 14px rgba(0, 0, 0, 0.12);
+  padding: 10px; background: #fff; border-bottom: 1px solid #e6e4f0;
 }
 
-/* -- the letterhead ------------------------------------------------------- */
-.a4-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10mm; }
-.a4-company { display: flex; gap: 5mm; align-items: flex-start; min-width: 0; }
-.a4-logo { width: 26mm; max-height: 20mm; object-fit: contain; }
-.a4-company-name { font-size: 13pt; font-weight: 700; letter-spacing: 0.02em; }
-.a4-company-line { font-size: 8.5pt; color: #444; }
-.a4-doc { text-align: right; flex: 0 0 auto; }
-.a4-doc-title { font-size: 17pt; font-weight: 800; letter-spacing: 0.06em; color: #1a1a1a; }
-.a4-doc-sub { font-size: 9pt; font-weight: 700; color: #d81f26; letter-spacing: 0.08em; }
-.a4-doc-trn { margin-top: 1.5mm; font-size: 9pt; }
-.a4-rule { border: 0; border-top: 1.2pt solid #1a1a1a; margin: 4mm 0 4mm; }
-
-/* -- the two info boxes --------------------------------------------------- */
-.a4-boxes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 5mm; margin-bottom: 5mm; }
-.a4-box { min-width: 0; border: 0.6pt solid #b9b9c4; border-radius: 2mm; padding: 3mm 4mm; break-inside: avoid; }
-.a4-box-title {
-  font-size: 7.5pt; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #666;
-  margin-bottom: 1.5mm;
-}
-.a4-kv { display: grid; grid-template-columns: 27mm minmax(0, 1fr); column-gap: 2mm; row-gap: 0.6mm; font-size: 9pt; }
-.a4-kv dt { color: #555; }
-.a4-kv dd { margin: 0; font-weight: 600; word-break: break-word; }
-
-/* -- the lines table ------------------------------------------------------ */
-.a4-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 8.8pt; }
-.a4-table thead { display: table-header-group; }
-.a4-table .w-sno { width: 7mm; }
-.a4-table .w-type { width: 36mm; }
-.a4-table .w-pkg { width: 17mm; }
-.a4-table .w-time { width: 17mm; }
-.a4-table .w-run { width: 11mm; }
-.a4-table .w-money { width: 16mm; }
-.a4-table .w-amount { width: 19mm; }
-.a4-table th {
-  background: #f1f1f5; color: #333; font-weight: 700; font-size: 7.8pt; letter-spacing: 0.03em;
-  text-transform: uppercase; text-align: left; padding: 2mm 1.6mm; border-bottom: 0.8pt solid #1a1a1a;
-}
-.a4-table td { padding: 1.4mm 1.6mm; border-bottom: 0.5pt solid #d9d9e1; vertical-align: top; }
-.a4-table tr { break-inside: avoid; }
-.a4-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.a4-table .ctr { text-align: center; white-space: nowrap; }
-.a4-table .sub { display: block; font-size: 7.5pt; color: #666; font-weight: 400; }
-.a4-tag { display: inline-block; font-size: 7pt; font-weight: 700; padding: 0.2mm 1.2mm; border-radius: 1mm;
-          background: #eef6f1; color: #1c6b43; margin-left: 1mm; }
-
-/* -- totals and payments --------------------------------------------------- */
-.a4-bottom { display: grid; grid-template-columns: minmax(0, 1fr) 76mm; gap: 6mm; margin-top: 5mm; break-inside: avoid; }
-.a4-totals { width: 100%; border-collapse: collapse; font-size: 9.2pt; }
-.a4-totals td { padding: 1.2mm 0; }
-.a4-totals td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.a4-totals .muted td { color: #555; }
-.a4-totals .net td {
-  border-top: 1.2pt solid #1a1a1a; border-bottom: 1.2pt solid #1a1a1a; padding: 2.2mm 0;
-  font-size: 11.5pt; font-weight: 800;
-}
-.a4-pay { width: 100%; border-collapse: collapse; font-size: 8.6pt; }
-.a4-pay th { text-align: left; font-size: 7.5pt; text-transform: uppercase; letter-spacing: 0.05em; color: #666;
-             border-bottom: 0.6pt solid #b9b9c4; padding: 1.2mm 1mm; }
-.a4-pay td { padding: 1.2mm 1mm; border-bottom: 0.4pt solid #e1e1e8; }
-.a4-pay .num { text-align: right; font-variant-numeric: tabular-nums; }
-.a4-note { font-size: 8.4pt; color: #444; margin-top: 3mm; }
-
-/* -- signatures and footer ------------------------------------------------- */
-.a4-sign { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8mm; margin-top: 14mm; break-inside: avoid; }
-.a4-sign div { border-top: 0.6pt solid #888; padding-top: 1.5mm; font-size: 8pt; color: #555; text-align: center; }
-.a4-foot { margin-top: 6mm; font-size: 7.8pt; color: #666; text-align: center; }
-
-/* -- print: just the sheet --------------------------------------------------- */
 @media print {
-  html, body { background: #fff; width: auto; }
-  .a4-toolbar { display: none !important; }
-  .a4-sheet { width: auto; min-height: 0; margin: 0; padding: 0 0.5mm; box-shadow: none; }
+  html, body { background: #fff; }
+  .a4-receipt { padding: 0; }
+  /* The receipt's own print rules pin it absolute at 100mm (one roll);
+     here it flows, so a long bill continues onto the next A4 page. */
+  .a4-receipt .bill {
+    position: static; zoom: 1.9; width: 100mm; margin: 0 auto; box-shadow: none;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .a4-receipt .bill-table tr { break-inside: avoid; }
 }

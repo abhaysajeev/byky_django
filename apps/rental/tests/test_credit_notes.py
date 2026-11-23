@@ -274,9 +274,10 @@ def test_an_issued_credit_note_prints_on_a4(client, token, settled, web):
     note = CreditNote.objects.get()
 
     page = web.get(f"/rental/credit-note/{note.pk}/print/").content.decode()
+    receipt = web.get(f"/rental/credit-note/{note.pk}/receipt/").content.decode()
 
     assert page.lstrip().startswith("<!doctype html>") and "byky-print-a4.css" in page
-    assert "TAX CREDIT NOTE" in page and "AED 21.00" in page and settled.invoice.invoice_no in page
+    assert receipt.strip() in page and "TAX CREDIT NOTE" in page        # the preview's receipt, on A4
 
 
 def test_a_pending_credit_note_has_no_a4(client, token, settled, web):
