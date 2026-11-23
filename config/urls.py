@@ -22,6 +22,7 @@ urlpatterns = [
     path("incentives/", include("apps.incentives.urls")),
     path("sync/", include("apps.sync.urls")),
     path("photos/", include("apps.photos.urls")),
+    path("integrations/", include("apps.integrations.urls")),
     path("api/v1/<app:app>/", include("apps.devices.api_urls")),
     path("api/v1/<app:app>/", include("apps.portal.api_urls")),
     path("api/v1/<app:app>/", include("apps.fare.api_urls")),
@@ -35,6 +36,8 @@ urlpatterns = [
     path("api/v1/<app:app>/", include("apps.tracking.api_urls")),
     path("api/v1/<app:app>/", include("apps.targets.api_urls")),
     path("api/v1/<app:app>/", include("apps.incentives.api_urls")),
+    # Server to server, not an app: ERPNext's push (apps/integrations).
+    path("api/v1/integrations/", include("apps.integrations.api_urls")),
     # Must come before the catch-all below, or it swallows these too.
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),

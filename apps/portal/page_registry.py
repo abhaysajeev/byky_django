@@ -52,6 +52,9 @@ TRACKING_SVG = "M12 13a2 2 0 1 0 0-4 2 2 0 0 0 0 4M12 13v8M8.5 7.5a5 5 0 0 0 0 7
 # A target: three rings and the centre -- station targets.
 TARGETS_SVG = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10M12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2"
 
+# Two arrows passing each other -- the ERPNext integration (apps/integrations).
+ERPNEXT_SVG = "M4 8h13M13 4l4 4-4 4M20 16H7M11 12l-4 4 4 4"
+
 # code, name, menu header (blank = no divider), sort order, is_flat, svg, svg2
 MODULES = [
     ("general", "General", "", 0, True, "", ""),
@@ -66,6 +69,7 @@ MODULES = [
     ("targets", "Targets", "Operations", 69, False, TARGETS_SVG, ""),
     ("incentives", "Incentives", "Operations", 70, False, INCENTIVES_SVG, ""),
     ("reports", "Reports", "Operations", 72, False, REPORTS_SVG, ""),
+    ("integrations", "ERPNext", "System", 80, False, ERPNEXT_SVG, ""),
     ("system", "Users & Roles", "System", 90, False, SYSTEM_SVG, ""),
     ("monitoring", "Logs", "System", 95, False, LOGS_SVG, ""),
 ]
@@ -244,6 +248,12 @@ PAGES = [
 
     ("system.role", "system", "Roles", "portal-role-list", CRUD, 1, False),
     ("system.user", "system", "Users", "portal-user-list", CRUD, 2, False),
+    # What ERPNext has sent (design/10-erpnext-integration.md §17): read now;
+    # approve is registered ahead of step 2, which writes approved records.
+    ("integrations.erpnext_inbox", "integrations", "ERPNext Inbox", "integrations-erpnext-inbox",
+     ["read", "approve"], 1, False),
+    ("integrations.privileges", "integrations", "Privileges", "integrations-privileges", ["read", "update"], 9, False),
+
     # Which roles may manage roles and users (owner, 3 Nov 2026).
     ("system.privileges", "system", "Privileges", "system-privileges", ["read", "update"], 9, False),
 
