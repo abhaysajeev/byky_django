@@ -39,7 +39,7 @@ REVIEWED = {
     "apps/rental/scoping.py": (4, "the scoping helpers themselves"),
     "apps/rental/services.py": (6, "writes, one-order reads; recent/customer invoices counted()"),
     "apps/rental/views.py": (7, "lists and one-record views, void labelled; KPIs settled only"),
-    "apps/reports/common.py": (5, "payments, references, credit notes counted()"),
+    "apps/reports/common.py": (6, "payments, references, credit notes counted(); payment_mode() only narrows an already-counted queryset"),
     "apps/reports/defs/cancelled_invoices.py": (2, "the ONE place cancelled orders' money is shown, on purpose"),
     "apps/reports/defs/consolidated.py": (2, "money only for COMPLETED orders"),
     "apps/reports/defs/credit_note.py": (1, "counted()"),
