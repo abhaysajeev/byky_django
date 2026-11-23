@@ -9,7 +9,11 @@ its 100mm roll size. The page is tiny; nothing is gained by caching this.
    fill an A4 page. zoom scales the whole receipt, so every alignment holds.
    Loaded after byky-invoice-receipt.css so this @page wins over its 100mm roll. */
 
-@page { size: A4; margin: 10mm; }
+/* No page margin: the browser prints its own header and footer (page title,
+   URL, date, page number) in the margin, so with none there is nowhere for
+   them to go. The 10mm white border is padding on the page instead, repeated
+   on every page of a long bill (box-decoration-break: clone). */
+@page { size: A4; margin: 0; }
 
 html, body { margin: 0; padding: 0; background: #ecebf3; }
 
@@ -24,7 +28,7 @@ html, body { margin: 0; padding: 0; background: #ecebf3; }
 
 @media print {
   html, body { background: #fff; }
-  .a4-receipt { padding: 0; }
+  .a4-receipt { padding: 10mm; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
   /* The receipt's own print rules pin it absolute at 100mm (one roll);
      here it flows, so a long bill continues onto the next A4 page. */
   .a4-receipt .bill {
