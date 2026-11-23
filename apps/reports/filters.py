@@ -22,6 +22,7 @@ ID_FILTERS = {
     "card_type": "Card Type",
     "card_grade": "Card Grade",
     "asset_type": "Asset Type",
+    "payment_mode": "Payment Mode",
 }
 TEXT_FILTERS = {
     "customer": "Customer Name",
@@ -34,7 +35,16 @@ TEXT_FILTERS = {
     "card_no": "Card Number",
     "asset": "Asset No",
 }
-CHOICE_FILTERS = {"status": "Status"}
+CHOICE_FILTERS = {"status": "Status", "discount": "Discount Type"}
+# The bill's discount (client, 22 Nov 2026): the invoice's discount_source.
+DISCOUNTS = (("none", "No discount"), ("card", "Card discount"), ("manager", "Manager discount"),
+             ("card_manager", "Card + manager discount"), ("complimentary", "Complimentary"))
+
+
+def choices(report, key):
+    """A choice filter's (value, label) pairs: the report's own statuses, or
+    the shared discount types."""
+    return DISCOUNTS if key == "discount" else report.statuses
 LABELS = {**ID_FILTERS, **TEXT_FILTERS, **CHOICE_FILTERS}
 INPUT_FORMAT = "%Y-%m-%dT%H:%M"
 SHOWN_FORMAT = "%d/%m/%Y %I:%M %p"
@@ -67,7 +77,7 @@ class Filters:
             elif key in TEXT_FILTERS:
                 self.values[key] = raw.strip()[:60]
             elif key in CHOICE_FILTERS:
-                self.values[key] = raw if raw in dict(report.statuses) else ""
+                self.values[key] = raw if raw in dict(choices(report, key)) else ""
         today = now.astimezone(zone).date()
         if day_start is not None:
             default_end = datetime.datetime.combine(today, day_start) - datetime.timedelta(minutes=1)
@@ -115,7 +125,7 @@ class Filters:
             if key in ID_FILTERS:
                 value = names.get(key, {}).get(value, value)
             elif key in CHOICE_FILTERS:
-                value = dict(self.report.statuses).get(value, value)
+                value = dict(choices(self.report, key)).get(value, value)
             parts.append(f"{LABELS[key]} : {value}")
         return parts
 

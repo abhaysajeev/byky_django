@@ -1,8 +1,9 @@
 {% comment %}
 The invoice print preview: one modal per page, filled on demand with the
 clicked invoice's receipt (rental/partials/invoice_receipt.html, loaded from
-its receipt URL by byky-invoice-print.js). The frame is .no-print, so Print
-puts only the receipt on paper.
+its receipt URL by byky-invoice-print.js). The preview stays the station
+receipt; Print opens the A4 copy (<receipt url>/../print/) in a new tab, which
+opens the browser's print dialog itself (client, 22 Nov 2026).
 {% endcomment %}
 <div class="scr-modal-veil no-print" data-scr-modal-veil="invoice-print" hidden>
   <div class="bill-loader" data-invoice-loader role="status" aria-live="polite" hidden>
@@ -14,7 +15,7 @@ puts only the receipt on paper.
   <div class="scr-modal-head no-print">
     <div>
       <div class="scr-modal-title" id="invoice-print-title">{{ print_noun|default:"Invoice" }} <span data-invoice-modal-no></span></div>
-      <p class="scr-modal-sub">Print preview · prints at the station receipt width (100 mm)</p>
+      <p class="scr-modal-sub">Preview · Print opens an A4 copy in a new tab</p>
     </div>
     <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
@@ -25,9 +26,9 @@ puts only the receipt on paper.
   </div>
   <div class="scr-modal-foot no-print" style="justify-content:flex-end">
     <button type="button" class="bill-btn" data-scr-modal-close>Close</button>
-    <button type="button" class="bill-btn bill-btn-print" data-scr-print data-invoice-modal-print disabled>
+    <button type="button" class="bill-btn bill-btn-print" data-invoice-modal-print disabled>
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6M6 18H4a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-2M6 14h12v7H6z"></path></svg>
-      Print
+      Print A4
     </button>
   </div>
 </div>

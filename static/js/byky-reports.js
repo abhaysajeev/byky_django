@@ -223,13 +223,27 @@
     return params.toString();
   }
 
+  var inflight = null;
+  var applyButton = $('[data-rpt-apply]');
+  function busy(on) {
+    if (!applyButton) return;
+    applyButton.disabled = on;
+    applyButton.setAttribute('aria-busy', String(on));
+    applyButton.textContent = on ? 'Applying…' : 'Apply filters';
+  }
+
   function load(pageNo, qs) {
     if (qs === undefined) qs = query(pageNo);
     history.replaceState(null, '', qs ? '?' + qs : location.pathname);
     var mine = ++seq;
+    // The last Apply wins: an earlier request still in flight is dropped.
+    if (inflight) inflight.abort();
+    inflight = window.AbortController ? new AbortController() : null;
+    busy(true);
     frame.classList.add('is-loading');
     kpis.classList.add('is-loading');
-    fetch(dataUrl + (qs ? '?' + qs : ''), { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+    fetch(dataUrl + (qs ? '?' + qs : ''), { credentials: 'same-origin', headers: { Accept: 'application/json' },
+                                            signal: inflight ? inflight.signal : undefined })
       .then(function (res) {
         if (res.status === 401) throw new Error('Signed out. Sign in again to see this report.');
         if (res.status === 403) throw new Error('You no longer have access to this report.');
@@ -238,13 +252,15 @@
       })
       .then(function (data) {
         if (mine !== seq) return;
+        busy(false);
         frame.classList.remove('is-loading');
         kpis.classList.remove('is-loading');
         draw(data);
         if (pageNo && frame.scrollTo) frame.scrollTo(0, 0);
       })
       .catch(function (err) {
-        if (mine !== seq) return;
+        if (mine !== seq || err.name === 'AbortError') return;
+        busy(false);
         frame.classList.remove('is-loading');
         kpis.classList.remove('is-loading');
         frame.hidden = true;

@@ -353,6 +353,63 @@
       if (e.target.matches('[data-field]')) syncShowIf();
     });
 
+    /* Dependent selects (data-parents="category brand"): each option carries
+       data-parent-<field>="id id ..." -- the parent ids it belongs to. An
+       option shows only when every chosen parent is among its ids; an empty
+       parent narrows nothing. A child whose value no longer fits is cleared,
+       and the change runs on down the chain (Category -> Brand -> Type). */
+    function cascadeSelects() { return [].slice.call(drawer.querySelectorAll('select[data-parents]')); }
+    function parentValue(name) {
+      var el = drawer.querySelector('[data-field="' + name + '"]');
+      return el ? el.value : '';
+    }
+    function fits(option, parents) {
+      return parents.every(function (name) {
+        var want = parentValue(name);
+        if (!want) return true;
+        var ids = (option.getAttribute('data-parent-' + name) || '').split(' ');
+        return ids.indexOf(want) > -1;
+      });
+    }
+    function syncCascade() {
+      /* twice: a child cleared in the first pass can narrow its own children */
+      for (var pass = 0; pass < 2; pass++) {
+        cascadeSelects().forEach(function (select) {
+          var parents = select.dataset.parents.split(' ');
+          [].forEach.call(select.options, function (option) {
+            if (!option.value) return;
+            var ok = fits(option, parents);
+            option.hidden = !ok;
+            option.disabled = !ok;
+          });
+          var chosen = select.options[select.selectedIndex];
+          if (chosen && chosen.value && chosen.disabled) {
+            select.value = '';
+            select.classList.remove('has-value');
+          }
+        });
+      }
+    }
+    /* Edit: a filter-only parent (Category, Brand) is not stored on the record,
+       so fill it from the chosen child's own option when it names one id. */
+    function deriveParents() {
+      cascadeSelects().slice().reverse().forEach(function (select) {
+        var chosen = select.options[select.selectedIndex];
+        if (!chosen || !chosen.value) return;
+        select.dataset.parents.split(' ').forEach(function (name) {
+          var parent = drawer.querySelector('[data-field="' + name + '"]');
+          var ids = (chosen.getAttribute('data-parent-' + name) || '').split(' ').filter(Boolean);
+          if (parent && !parent.value && ids.length === 1) {
+            parent.value = ids[0];
+            parent.classList.toggle('has-value', !!parent.value);
+          }
+        });
+      });
+    }
+    drawer.addEventListener('change', function (e) {
+      if (e.target.matches('select[data-field]')) syncCascade();
+    });
+
     function syncEnabled() {
       [].forEach.call(drawer.querySelectorAll('[data-enables]'), function (box) {
         var target = drawer.querySelector('[data-field="' + box.dataset.enables + '"]');
@@ -397,6 +454,8 @@
           if (el.tagName === 'SELECT') el.disabled = lock; else el.readOnly = lock;
         }
       });
+      if (mode === 'edit') deriveParents();
+      syncCascade();
       syncEnabled();
       syncShowIf();
     }
