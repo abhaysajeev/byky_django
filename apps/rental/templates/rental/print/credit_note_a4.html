@@ -1,0 +1,23 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tax Credit Note {{ note.credit_note_no }}</title>
+<link rel="stylesheet" href="{% static 'css/byky-invoice-receipt.css' %}" />
+{% include "rental/print/_a4_style.html" %}
+</head>
+<body>
+{% comment %}
+The preview's credit note, unchanged, scaled to A4 (client, 22 Nov 2026).
+{% endcomment %}
+<div class="a4-toolbar no-print">
+  <button type="button" class="bill-btn" onclick="window.close()">Close</button>
+  <button type="button" class="bill-btn bill-btn-print" onclick="window.print()">Print</button>
+</div>
+<main class="a4-receipt">
+  {% include "rental/partials/credit_note_receipt.html" %}
+</main>
+{% include "rental/print/_autoprint.html" %}
+</body>
+</html>

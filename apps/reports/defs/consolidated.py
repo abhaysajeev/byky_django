@@ -10,10 +10,11 @@ actual collection (net less them).
 
 from collections import defaultdict
 
-from django.db.models import Count, OuterRef, Q, Subquery
+from django.db.models import Count, Exists, OuterRef, Q, Subquery
 from django.db.models.functions import Coalesce
 
 from apps.devices.services import running_number
+from apps.rental import order_status
 from apps.rental.models import (
     DiscountSource,
     OrderItem,
@@ -23,6 +24,7 @@ from apps.rental.models import (
     OrderRequestStatus,
     OrderStatus,
 )
+from apps.rental.reports import _with_status
 from apps.rental.scoping import orders_for
 from apps.reports import common
 from apps.reports.base import (
@@ -59,7 +61,11 @@ class Consolidated(Report):
     title = "Consolidated"
     sheet_title = "Consolidated Report"
     page_code = "reports.consolidated"
-    filters = ("state", "branch", "cashier", "device")
+    # More filters (client, 22 Nov 2026): order status, how paid, which
+    # discount, which vehicles were on it, and which customer or order.
+    filters = ("state", "branch", "cashier", "device", "status", "payment_mode", "discount", "category",
+               "vehicle_type", "customer", "phone", "order_no")
+    statuses = order_status.CHOICES
     unit = ("tablet-day", "tablet-days")
     empty = "No orders were booked in this range."
     description = "Orders booked per day, branch and tablet: counts, receipts and the money of the settled ones."
@@ -68,6 +74,12 @@ class Consolidated(Report):
         f = ctx.f
         orders = orders_for(ctx.user).filter(booked_at__gte=f.since, booked_at__lt=f.until)
         orders = common.cashier(common.place(orders, f), f, order="")
+        orders = common.customer(common.payment_mode(orders, f, order=""), f, order="")
+        orders = common.discount(orders, f)
+        if f.any_vehicle:
+            orders = orders.filter(Exists(OrderItem.objects.filter(common.vehicle_q(f), order=OuterRef("pk"))))
+        if f.get("status"):
+            orders = _with_status(orders).filter(app_status=f.get("status"))
         if f.get("device"):
             orders = orders.filter(Q(device__name__icontains=f.get("device"))
                                    | Q(device__device_registration_id__icontains=f.get("device")))
