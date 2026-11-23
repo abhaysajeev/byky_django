@@ -18,7 +18,7 @@ def test_the_a4_invoice_is_a_whole_page_with_the_receipts_figures(client_in, inv
 
     assert page.status_code == 200
     html = page.content.decode()
-    assert html.lstrip().startswith("<!doctype html>") and "byky-print-a4.css" in html
+    assert html.lstrip().startswith("<!doctype html>") and "size: A4" in html
     assert page.context["bill"] == receipt.context["bill"]          # one source of figures
     # The preview's receipt itself, inside the A4 page -- no layout of its own.
     assert receipt.content.decode().strip() in html
