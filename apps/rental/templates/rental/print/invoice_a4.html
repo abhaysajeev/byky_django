@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Tax Invoice {{ bill.invoice_no }}</title>
 <link rel="stylesheet" href="{% static 'css/byky-invoice-receipt.css' %}" />
-<link rel="stylesheet" href="{% static 'css/byky-print-a4.css' %}" />
+{% include "rental/print/_a4_style.html" %}
 </head>
 <body>
 {% comment %}

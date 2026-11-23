@@ -1,3 +1,8 @@
+{% comment %}
+Inline, not a static file: a stale cached stylesheet printed the receipt at
+its 100mm roll size. The page is tiny; nothing is gained by caching this.
+{% endcomment %}
+<style>
 /* The A4 print of the tax invoice and credit note (client, 22 Nov 2026):
    the very same receipt the preview shows (byky-invoice-receipt.css,
    rental/partials/*_receipt.html) -- no layout of its own -- scaled up to
@@ -28,3 +33,4 @@ html, body { margin: 0; padding: 0; background: #ecebf3; }
   }
   .a4-receipt .bill-table tr { break-inside: avoid; }
 }
+</style>

@@ -276,7 +276,7 @@ def test_an_issued_credit_note_prints_on_a4(client, token, settled, web):
     page = web.get(f"/rental/credit-note/{note.pk}/print/").content.decode()
     receipt = web.get(f"/rental/credit-note/{note.pk}/receipt/").content.decode()
 
-    assert page.lstrip().startswith("<!doctype html>") and "byky-print-a4.css" in page
+    assert page.lstrip().startswith("<!doctype html>") and "size: A4" in page
     assert receipt.strip() in page and "TAX CREDIT NOTE" in page        # the preview's receipt, on A4
 
 
