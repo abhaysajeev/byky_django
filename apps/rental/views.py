@@ -742,17 +742,10 @@ class InvoiceReceiptView(PagePermissionMixin, View):
         return render(request, "rental/partials/invoice_receipt.html", {"bill": bill})
 
 
-def _letterhead(company, request):
-    """The A4 print's company block: the company's own logo when it has one."""
-    logo = company.logo.url if company.logo else None
-    return {"name": company.name, "address": company.address, "phone": company.phone_number,
-            "email": company.email, "logo": request.build_absolute_uri(logo) if logo else None}
-
-
 class InvoicePrintView(PagePermissionMixin, View):
-    """The tax invoice as an A4 page, opened in its own tab by the preview's
-    Print button (client, 22 Nov 2026). The same figures as the receipt --
-    `_receipt` -- laid out for A4; the receipt and the preview are untouched."""
+    """The tax invoice on A4, opened in its own tab by the preview's Print
+    button (client, 22 Nov 2026): the preview's receipt itself, scaled up to
+    the page -- no layout of its own."""
 
     page_code = "rental.invoice"
 
@@ -764,8 +757,7 @@ class InvoicePrintView(PagePermissionMixin, View):
             raise Http404("This invoice was cancelled.")
         bill = _receipt(invoice, zone_for(getattr(request.user, "company", None)))
         return render(request, "rental/print/invoice_a4.html", {
-            "bill": bill, "company": _letterhead(invoice.company, request), "branch": invoice.branch,
-            "autoprint": request.GET.get("print") != "0",
+            "bill": bill, "autoprint": request.GET.get("print") != "0",
         })
 
 
@@ -953,8 +945,7 @@ class CreditNotePrintView(PagePermissionMixin, View):
             raise Http404("Only an issued credit note prints.")
         zone = zone_for(getattr(request.user, "company", None))
         context = _credit_note_print(note, zone)
-        context.update({"company": _letterhead(note.invoice.company, request), "branch": note.invoice.branch,
-                        "autoprint": request.GET.get("print") != "0"})
+        context["autoprint"] = request.GET.get("print") != "0"
         return render(request, "rental/print/credit_note_a4.html", context)
 
 
