@@ -1,83 +1,23 @@
-{% load static money %}<!doctype html>
+{% load static %}<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Tax Credit Note {{ note.credit_note_no }}</title>
+<link rel="stylesheet" href="{% static 'css/byky-invoice-receipt.css' %}" />
 <link rel="stylesheet" href="{% static 'css/byky-print-a4.css' %}" />
 </head>
 <body>
-<div class="a4-toolbar">
-  <button type="button" class="a4-print" onclick="window.print()">Print</button>
-  <button type="button" onclick="window.close()">Close</button>
+{% comment %}
+The preview's credit note, unchanged, scaled to A4 (client, 22 Nov 2026).
+{% endcomment %}
+<div class="a4-toolbar no-print">
+  <button type="button" class="bill-btn" onclick="window.close()">Close</button>
+  <button type="button" class="bill-btn bill-btn-print" onclick="window.print()">Print</button>
 </div>
-
-<main class="a4-sheet">
-  <header class="a4-head">
-    <div class="a4-company">
-      <img class="a4-logo" src="{% if company.logo %}{{ company.logo }}{% else %}{% static 'img/branding/byky-logo.png' %}{% endif %}" alt="" />
-      <div>
-        <div class="a4-company-name">{{ invoice.company_name|default:company.name }}</div>
-        {% if company.address %}<div class="a4-company-line">{{ company.address }}</div>{% endif %}
-        <div class="a4-company-line">{% if company.phone %}Tel {{ company.phone }}{% endif %}{% if company.phone and company.email %} · {% endif %}{{ company.email }}</div>
-      </div>
-    </div>
-    <div class="a4-doc">
-      <div class="a4-doc-title">TAX CREDIT NOTE</div>
-      <div class="a4-doc-trn">TRN: <strong>{{ invoice.company_trn|default:"—" }}</strong></div>
-    </div>
-  </header>
-  <hr class="a4-rule" />
-
-  <section class="a4-boxes">
-    <div class="a4-box">
-      <div class="a4-box-title">Credit note</div>
-      <dl class="a4-kv">
-        <dt>Credit Note No</dt><dd>{{ note.credit_note_no }}</dd>
-        <dt>Date</dt><dd>{{ date }}</dd>
-        <dt>Against Invoice</dt><dd>{{ invoice.invoice_no }}</dd>
-        <dt>Invoice Date</dt><dd>{{ invoice_date }}</dd>
-        <dt>Station</dt><dd>{{ invoice.branch_name }}{% if emirate %}, {{ emirate }}{% endif %}</dd>
-        <dt>Issued by</dt><dd>{{ issued_by }}</dd>
-      </dl>
-    </div>
-    <div class="a4-box">
-      <div class="a4-box-title">Customer</div>
-      <dl class="a4-kv">
-        <dt>Customer</dt><dd>{{ invoice.customer_name|default:"—" }}</dd>
-        <dt>Mobile</dt><dd>{{ invoice.customer_mobile|default:"—" }}</dd>
-        <dt>Invoice Net</dt><dd>AED {{ invoice.net_amount|money }}</dd>
-      </dl>
-    </div>
-  </section>
-
-  {% if note.reason %}<p class="a4-note"><strong>Reason:</strong> {{ note.reason }}</p>{% endif %}
-
-  <section class="a4-bottom">
-    <div><p class="a4-note">All amounts in AED. VAT is included.</p></div>
-    <table class="a4-totals">
-      <tbody>
-        <tr class="muted"><td>Taxable amount</td><td class="num">{{ note.taxable_amount|money }}</td></tr>
-        <tr class="muted"><td>VAT @ {{ note.tax_percentage|floatformat:"-1" }}% (included)</td><td class="num">{{ note.tax_amount|money }}</td></tr>
-        <tr class="net"><td>CREDIT TOTAL</td><td class="num">AED {{ note.net_amount|money }}</td></tr>
-      </tbody>
-    </table>
-  </section>
-
-  <section class="a4-sign">
-    <div>Customer signature</div>
-    <div>Issued by · {{ issued_by }}</div>
-    <div>Station stamp</div>
-  </section>
+<main class="a4-receipt">
+  {% include "rental/partials/credit_note_receipt.html" %}
 </main>
-
-{% if autoprint %}<script>
-  window.addEventListener('load', function () {
-    var imgs = [].slice.call(document.images);
-    Promise.all(imgs.map(function (i) { return i.complete ? 0 : new Promise(function (r) { i.onload = i.onerror = r; }); }))
-      .then(function () { return document.fonts ? document.fonts.ready : 0; })
-      .then(function () { setTimeout(function () { window.print(); }, 150); });
-  });
-</script>{% endif %}
+{% include "rental/print/_autoprint.html" %}
 </body>
 </html>

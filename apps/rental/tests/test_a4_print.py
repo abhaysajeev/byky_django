@@ -1,6 +1,6 @@
 """The A4 tax invoice (client, 22 Nov 2026): the preview's Print button opens
-it in a new tab. Same figures as the receipt, same rules; the receipt itself
-is untouched."""
+it in a new tab -- the same receipt the preview shows, scaled to A4. Same
+rules; the receipt itself is untouched."""
 
 from django.utils import timezone
 
@@ -20,9 +20,9 @@ def test_the_a4_invoice_is_a_whole_page_with_the_receipts_figures(client_in, inv
     html = page.content.decode()
     assert html.lstrip().startswith("<!doctype html>") and "byky-print-a4.css" in html
     assert page.context["bill"] == receipt.context["bill"]          # one source of figures
-    for text in ("TAX INVOICE", "100297867200003", invoice.invoice_no, "MO 41", "(10%)",
-                 "AED 54.000", "VAT @ 5% (included)", "window.print()"):
-        assert text in html, text
+    # The preview's receipt itself, inside the A4 page -- no layout of its own.
+    assert receipt.content.decode().strip() in html
+    assert '<main class="a4-receipt">' in html and "window.print()" in html
 
 
 def test_print_0_leaves_the_dialog_closed(client_in, invoice):
