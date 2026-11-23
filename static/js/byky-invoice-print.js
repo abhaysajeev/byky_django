@@ -7,9 +7,9 @@
 
    While it loads only the veil shows, with a small spinner: the modal opens
    once, already holding the receipt -- never empty first. Clicking the veil
-   or pressing Escape while it loads cancels. Print itself is
-   byky-screen.js's [data-scr-print] (window.print); the receipt's own
-   stylesheet puts only the receipt on paper. Closing the open modal (X,
+   or pressing Escape while it loads cancels. Print opens the A4 copy --
+   the receipt URL's sibling print/ -- in a new tab, which opens the print
+   dialog itself (client, 22 Nov 2026); the preview is never printed. Closing the open modal (X,
    Close, veil, Escape) is byky-screen.js's too. */
 (function () {
   'use strict';
@@ -23,6 +23,16 @@
   var loader = veil && veil.querySelector('[data-invoice-loader]');
   var request = 0;          // the latest load; an older or cancelled one is ignored
   var loading = false;
+  var printUrl = '';        // the A4 copy of what the preview shows
+
+  function a4(receiptUrl) {
+    return receiptUrl.replace(/receipt\/?(\?.*)?$/, 'print/');
+  }
+
+  printButton.addEventListener('click', function () {
+    if (printButton.disabled || !printUrl) return;
+    window.open(printUrl, '_blank', 'noopener');
+  });
 
   function stopLoading() {
     loading = false;
@@ -59,6 +69,7 @@
   function open(url, number) {
     if (loading) return;    // one load at a time; a double click is one click
     var mine = ++request;
+    printUrl = a4(url);
     loading = true;
     numberSlot.textContent = number || '';
     modal.hidden = true;

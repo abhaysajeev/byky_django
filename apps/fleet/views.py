@@ -83,13 +83,14 @@ class FleetScreenView(PagePermissionMixin, ThemedTemplateView):
             "issue_targets_list": [{"id": value, "name": label} for value, label in IssueTarget.choices],
             "vehicle_types_list": list(
                 scoping.vehicle_types_for(user).filter(is_active=True)
-                .values("id", "vehicle_type_name")
+                .values("id", "vehicle_type_name", "category_id", "brand_id", "company_id")
             ),
             "uoms_list": list(
                 scoping.uoms_for(user).filter(is_active=True).values("id", "uom_name")
             ),
             "perm": {action: has_permission(user, self.page_code, action) for action in ACTIONS},
         })
+        context.update(vehicle_filter_lists(context["vehicle_types_list"], user))
         return context
 
     def render_to_response(self, context, **response_kwargs):
@@ -100,6 +101,23 @@ class FleetScreenView(PagePermissionMixin, ThemedTemplateView):
         )
         context.update(theme_drawers.resolve_all(specs, context))
         return super().render_to_response(context, **response_kwargs)
+
+
+def vehicle_filter_lists(types, user):
+    """The Vehicle drawer's Category and Brand dropdowns (filters for Vehicle
+    Type, owner 22 Nov 2026): only categories and brands that have an active
+    vehicle type, each brand with the categories it has types in."""
+    by_brand = {}
+    for row in types:
+        if row.get("brand_id"):
+            by_brand.setdefault(row["brand_id"], set()).add(row["category_id"])
+    category_ids = {row["category_id"] for row in types}
+    categories = list(scoping.categories_for(user).filter(is_active=True, pk__in=category_ids)
+                      .values("id", "category_name", "company_id"))
+    brands = [{**row, "category_ids": sorted(by_brand.get(row["id"], ()))}
+              for row in scoping.brands_for(user).filter(is_active=True, pk__in=list(by_brand))
+              .values("id", "brand_name", "company_id")]
+    return {"vehicle_categories_list": categories, "vehicle_brands_list": brands}
 
 
 class BrandListView(FleetScreenView):

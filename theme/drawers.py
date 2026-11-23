@@ -58,11 +58,31 @@ def resolve(spec, context):
             # row's id, so a save matches the row and not its display name.
             # Two companies can each have an "Operations" department, and
             # matching on the label would pick the wrong one.
+            parents = field.get("parents") or []
             field["resolved"] = [
-                {"id": v.get("id", ""), "name": v.get(key, "")} if isinstance(v, dict) else v
+                _option(v, key, parents) if isinstance(v, dict) else v
                 for v in values
             ]
+            if parents:
+                field["parent_fields"] = " ".join(p["field"] for p in parents)
     return out
+
+
+def _option(row, key, parents):
+    """One {id, name} option; with `parents` (a dependent select: Vehicle Type
+    under Category and Brand), also the parent ids it belongs to, as
+    `parent_attrs` [(field, "id id ...")] -- rendered as data-parent-<field>
+    on the <option> and read by byky-drawer.js's cascade. A key may hold one
+    id or a list (a brand that has types in several categories)."""
+    option = {"id": row.get("id", ""), "name": row.get(key, "")}
+    if parents:
+        attrs = []
+        for parent in parents:
+            value = row.get(parent["key"])
+            values = value if isinstance(value, list | tuple | set) else [value]
+            attrs.append((parent["field"], " ".join(str(v) for v in values if v not in (None, ""))))
+        option["parent_attrs"] = attrs
+    return option
 
 
 def resolve_all(specs, context):

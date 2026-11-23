@@ -1,0 +1,8 @@
+{% if autoprint %}<script>
+  /* Open the print dialog once the logo has loaded, so it is on the page. */
+  window.addEventListener('load', function () {
+    var imgs = [].slice.call(document.images);
+    Promise.all(imgs.map(function (i) { return i.complete ? 0 : new Promise(function (r) { i.onload = i.onerror = r; }); }))
+      .then(function () { setTimeout(function () { window.print(); }, 150); });
+  });
+</script>{% endif %}

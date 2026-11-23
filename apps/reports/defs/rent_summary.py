@@ -12,6 +12,8 @@ no meaning summed per station (Rent Details lists them per order).
 
 from collections import defaultdict
 
+from django.db.models import Q
+
 from apps.rental.counted import counted
 from apps.rental.scoping import invoices_for
 from apps.reports import common
@@ -39,7 +41,11 @@ class RentSummary(Report):
     title = "Rent Summary"
     sheet_title = "Rent Summary Report"
     page_code = "reports.rent_summary"
-    filters = ("state", "branch")
+    # More filters (client, 22 Nov 2026): who, which tablet, how paid, which
+    # discount and which customer or order. Per bill, so no vehicle filters --
+    # Rent Details has those.
+    filters = ("state", "branch", "cashier", "device", "payment_mode", "discount", "customer", "phone",
+               "order_no")
     unit = ("branch-day", "branch-days")
     empty = "No orders were settled in this range."
     description = "Settled orders per day and branch, by state, with how they were paid."
@@ -48,6 +54,11 @@ class RentSummary(Report):
         f = ctx.f
         # a cancelled order's (voided) invoice counts nowhere -- apps/rental/counted.py
         invoices = common.place(counted(invoices_for(ctx.user)).filter(issued_at__gte=f.since, issued_at__lt=f.until), f)
+        invoices = common.customer(common.cashier(invoices, f), f)
+        invoices = common.discount(common.payment_mode(invoices, f), f, invoice="")
+        if f.get("device"):
+            invoices = invoices.filter(Q(device__name__icontains=f.get("device"))
+                                       | Q(device__device_registration_id__icontains=f.get("device")))
         invoices = list(invoices.select_related("branch__location__state")
                         .only("id", "order_id", "issued_at", "net_amount", "branch__name",
                               "branch__location__state__name"))

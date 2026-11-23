@@ -142,8 +142,6 @@ PAGES = [
     # approve = approve or reject a report (web and manager app); update = back in service.
     ("fleet.service_request", "fleet", "Service & Maintenance", "fleet-service-request-list",
      ["read", "approve", "update"], 8, False),
-    # Photos with remarks from the tablet: view, and delete.
-    ("fleet.image_share", "fleet", "Image Sharing", "fleet-image-share-list", ["read", "delete"], 8, False),
     # What can be wrong -- the list the tablet offers when reporting.
     ("fleet.issue_type", "fleet", "Issue Type", "fleet-issue-type-list", CRUD_PRINT, 5, False),
     # Inspections from the tablet, with photos: view only.
@@ -170,6 +168,10 @@ PAGES = [
     # and Unblock themselves need Customer's Update.
     ("rental.blocked_customer", "rental", "Blocked Customers", "rental-blocked-customer-list",
      ["read", "print"], 2, False),
+    # Photos with remarks from the tablet: view, and delete. Listed under
+    # Rental since 22 Nov 2026 (client); the code keeps "fleet." so every
+    # role's grant carries over.
+    ("fleet.image_share", "rental", "Image Sharing", "fleet-image-share-list", ["read", "delete"], 2, False),
     ("rental.payment_mode", "rental", "Payment Mode", "rental-payment-mode-list", CRUD_PRINT, 3, False),
     ("rental.privileges", "rental", "Privileges", "rental-privileges", ["read", "update"], 9, False),
     ("discount.card_type", "discount", "Card Type", "discount-card-type-list", CRUD_PRINT, 1, False),
