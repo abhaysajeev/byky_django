@@ -75,6 +75,7 @@ LOCAL_APPS = [
     "apps.tracking",
     "apps.targets",
     "apps.incentives",
+    "apps.integrations",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -348,6 +349,15 @@ MONITORING_BODY_LIMIT = 64 * 1024       # bytes kept of each request/response bo
 MONITORING_REQUEST_DAYS = int(os.environ.get("MONITORING_REQUEST_DAYS", 30))
 MONITORING_ERROR_DAYS = int(os.environ.get("MONITORING_ERROR_DAYS", 90))
 MONITORING_PURGE_HOURS = 6              # how often the writer clears expired rows
+
+# -- ERPNext integration (apps/integrations, design/10-erpnext-integration.md) ------
+# ERPNext posts to /api/v1/integrations/erpnext/<slug> with a bearer token
+# (`manage.py erpnext_token create <label>`). Optional: an IP allow-list
+# (addresses or CIDR networks, comma separated; empty = any) and a signing
+# secret shared with byky_app's RMS Settings (empty = signatures not checked).
+ERPNEXT_ALLOWED_IPS = env_list("ERPNEXT_ALLOWED_IPS")
+ERPNEXT_SIGNING_SECRET = os.environ.get("ERPNEXT_SIGNING_SECRET", "")
+ERPNEXT_MAX_BODY = 256 * 1024           # bytes; larger bodies are answered 413
 
 # -- Parked sync calls (apps/sync) --------------------------------------------------
 # Resolved and dismissed issues are deleted this long after they were finished,

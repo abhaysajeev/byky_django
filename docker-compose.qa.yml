@@ -91,6 +91,10 @@ services:
       LOG_INGEST_KEY: ${LOG_INGEST_KEY:-}
       # Which copy sent a log (qa / dev): the log viewer's qa | dev switch.
       LOG_ENVIRONMENT: ${LOG_ENVIRONMENT:-}
+      # ERPNext's push (apps/integrations): optional sender allow-list and
+      # signing secret. Empty = any address / signatures not checked.
+      ERPNEXT_ALLOWED_IPS: ${ERPNEXT_ALLOWED_IPS:-}
+      ERPNEXT_SIGNING_SECRET: ${ERPNEXT_SIGNING_SECRET:-}
       POSTGRES_DB: ${POSTGRES_DB:-byky_qa}
       POSTGRES_USER: ${POSTGRES_USER:-byky_qa}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set a real password in .env}
