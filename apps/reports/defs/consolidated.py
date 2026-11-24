@@ -61,10 +61,10 @@ class Consolidated(Report):
     title = "Consolidated"
     sheet_title = "Consolidated Report"
     page_code = "reports.consolidated"
-    # More filters (client, 22 Nov 2026): order status, how paid, which
-    # discount, which vehicles were on it, and which customer or order.
+    # Filters (client, 22 and 24 Nov 2026): order status, how paid, which
+    # discount and which vehicles were on it. No customer or order filters.
     filters = ("state", "branch", "cashier", "device", "status", "payment_mode", "discount", "category",
-               "vehicle_type", "customer", "phone", "order_no")
+               "vehicle_type")
     statuses = order_status.CHOICES
     unit = ("tablet-day", "tablet-days")
     empty = "No orders were booked in this range."
@@ -74,7 +74,7 @@ class Consolidated(Report):
         f = ctx.f
         orders = orders_for(ctx.user).filter(booked_at__gte=f.since, booked_at__lt=f.until)
         orders = common.cashier(common.place(orders, f), f, order="")
-        orders = common.customer(common.payment_mode(orders, f, order=""), f, order="")
+        orders = common.payment_mode(orders, f, order="")
         orders = common.discount(orders, f)
         if f.any_vehicle:
             orders = orders.filter(Exists(OrderItem.objects.filter(common.vehicle_q(f), order=OuterRef("pk"))))

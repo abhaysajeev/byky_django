@@ -26,13 +26,17 @@
 }
 .bill * { box-sizing: border-box; }
 
-.bill .bill-head { display: flex; align-items: center; justify-content: space-between; gap: 3mm; }
+/* Letterhead (rental/partials/bill_head.html; client, 24 Nov 2026): the
+   company's legal name in two bold lines, the station's place under it,
+   the logo on the right. Black only -- it prints on thermal
+   paper too. */
+.bill .bill-head { display: flex; align-items: center; gap: 3mm; padding-bottom: 1mm; }
 .bill .bill-head-text { flex: 1; min-width: 0; }
-.bill .bill-head-text .station { font-weight: 700; font-size: 13px; }
-.bill .bill-head-text .emirate { font-weight: 700; font-size: 11px; margin-top: 1px; }
+.bill .bill-company { font-family: 'Arial Black', 'Arial Bold', Tahoma, Verdana, Arial, sans-serif; font-weight: 900; font-size: 12.5px; line-height: 1.25; letter-spacing: 0.1px; text-wrap: balance; }
+.bill .bill-place { display: flex; align-items: center; gap: 1.2mm; margin-top: 1.2mm; font-size: 9.5px; font-weight: 600; letter-spacing: 0.3px; line-height: 1.3; }
 .bill .bill-logo { height: 13mm; width: auto; flex: 0 0 auto; }
 
-.bill .bill-title-block { text-align: center; margin-top: 1mm; }
+.bill .bill-title-block { text-align: center; margin-top: 4mm; }
 .bill .bill-title { font-weight: 700; font-size: 12.5px; letter-spacing: 0.3px; }
 .bill .bill-trn { font-size: 10px; margin-top: 1px; }
 

@@ -29,7 +29,7 @@ def test_the_queue_shows_pending_requests_by_tab(client_in, world, pending):
     old = client_in.get("/discount/approval/list/")
     assert (old.status_code, old.url) == (302, "/rental/request/list/?kind=card_discount")
     body = client_in.get("/rental/request/list/?kind=card_discount").content.decode()
-    assert "Ours Anil" in body and "ORD-1001" in body and "Card discount" in body
+    assert "Ours Anil" in body and "ORD-1001" in body and pending.card_grade.name in body
     assert "No approved requests" in client_in.get("/rental/request/list/?kind=card_discount&tab=approved").content.decode()
 
 
@@ -63,6 +63,21 @@ def test_deciding_needs_the_approve_permission(client_in, world, pending):
     RolePermission.objects.filter(role=client_in.role, page__code="discount.approval").update(can_approve=False)
     assert post(client_in, f"/discount/approval/{pending.pk}/approve/", {}).status_code == 403
     assert "data-decision" not in client_in.get(f"/discount/approval/{pending.pk}/").content.decode()
+    assert "data-claim-approve" not in client_in.get(f"/discount/approval/{pending.pk}/").content.decode()
+
+
+def test_approve_is_one_click_and_reject_still_asks_for_remarks(client_in, world, pending):
+    """Client, 24 Nov 2026: Approve posts at once (button spinner, no remarks
+    dialog); Reject keeps its dialog with remarks."""
+    page = client_in.get(f"/discount/approval/{pending.pk}/").content.decode()
+    assert 'data-claim-approve><span class="scr-btn-spin"' in page
+    assert 'data-decision="approve"' not in page
+    assert 'data-decision="reject"' in page and "data-decision-remarks" in page
+
+    body = post(client_in, f"/discount/approval/{pending.pk}/approve/", {"remarks": ""}).json()
+    assert body["ok"] is True and body["redirect"] == "/rental/request/list/?tab=pending"
+    pending.refresh_from_db()
+    assert (pending.status, pending.remarks) == (ClaimStatus.APPROVED, "")
 
 
 def test_another_companys_request_is_not_found(client_in, world):
