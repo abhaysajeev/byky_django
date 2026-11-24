@@ -429,6 +429,9 @@ CELERY_BEAT_SCHEDULE = {
     "notifications-purge": {"task": "apps.notifications.tasks.purge", "schedule": crontab(hour=3, minute=45)},
     # Each target's required amount for the day, frozen soon after the business day starts.
     "targets-freeze-due": {"task": "apps.targets.tasks.freeze_due", "schedule": crontab(minute="*/15")},
+    # Punch-ins nobody closed, closed soon after each company's business day starts.
+    # A punch-in also closes them itself, so a missed run never blocks anyone.
+    "crew-auto-close": {"task": "apps.crew.tasks.auto_close_due", "schedule": crontab(minute="*/15")},
 }
 
 # -- Push notifications (apps/notifications) ---------------------------------------------

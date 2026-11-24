@@ -17,8 +17,8 @@ from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from apps.company.models import Branch, BranchType, Company, Country, Location, State
-from apps.crew import api
+from apps.company.models import Branch, BranchType, Company, CompanyConfig, Country, Location, State
+from apps.crew import api, services
 from apps.crew.models import (
     Attendance,
     AttendanceSource,
@@ -165,13 +165,21 @@ def mark(client, token, data, app="operator"):
     return call(client, MARK.format(app), data, token=token)
 
 
-DAY = datetime.date(2026, 8, 29)   # far enough back that an open punch-in is stale
+DAY = datetime.date(2026, 8, 29)   # a past business day: what is open on it gets auto-closed
+
+
+@pytest.fixture
+def day_start(world):
+    """BYKY's business day: 04:00 to 04:00 (Configurations). A shift that ends
+    after midnight then stays on its day."""
+    CompanyConfig.objects.update_or_create(company=world["company"],
+                                           defaults={"report_day_start": datetime.time(4)})
 
 
 # -- Marking: the two sources ------------------------------------------------------
 
 
-def test_a_qr_punch_in_and_out_across_midnight_pair_up(client, world, operator):
+def test_a_qr_punch_in_and_out_across_midnight_pair_up(client, world, operator, day_start):
     punch_in = qr("punch_in", local(DAY, 17, 2, 40))
     first = mark(client, operator, punch_in)
     assert first.status_code == 200, first.json()
@@ -295,6 +303,7 @@ def test_a_second_punch_in_while_one_is_open_is_refused(client, world, operator)
 
 
 def test_a_forgotten_punch_out_does_not_lock_the_next_day(client, world, operator):
+    """The job never ran: the next morning's punch-in closes yesterday's itself."""
     mark(client, operator, qr("punch_in", local(DAY, 9)))
     response = mark(client, operator, qr("punch_in", local(DAY + datetime.timedelta(days=1), 10)))
     assert response.json()["code"] == "ok"
@@ -302,8 +311,10 @@ def test_a_forgotten_punch_out_does_not_lock_the_next_day(client, world, operato
     history = call(client, HISTORY.format("operator"),
                    {"employee_code": "EMP001", "from_date": "2026-08-29", "to_date": "2026-08-30"},
                    token=operator).json()["data"]
-    statuses = [s["status"] for d in history["days"] for s in d["sessions"]]
-    assert statuses[0] == "missing_punch_out"
+    first = history["days"][0]["sessions"][0]
+    assert (first["status"], first["auto_closed"], first["closed_by"], first["worked_minutes"]) == (
+        "auto_closed", True, "day_end", None)
+    assert first["punch_out"]["source"] == "auto_close"
 
 
 def test_a_punch_out_with_nothing_open_is_refused(client, world, operator):
@@ -416,7 +427,7 @@ def test_the_mark_reply_matches_the_docs(client, world, operator):
 # -- History ---------------------------------------------------------------------------
 
 
-def test_history_keeps_a_next_day_punch_out_on_the_day_it_started(client, world, operator):
+def test_history_keeps_a_next_day_punch_out_on_the_day_it_started(client, world, operator, day_start):
     mark(client, operator, qr("punch_in", local(DAY, 9)))
     mark(client, operator, qr("punch_out", local(DAY, 13, 30)))
     mark(client, operator, qr("punch_in", local(DAY, 17)))
@@ -695,7 +706,11 @@ def client_in(client, world):
 
 
 def seed_day(client, token):
-    """EMP001: two shifts on the 29th, the second ending after midnight."""
+    """EMP001: two shifts on the 29th, the second ending after midnight (the
+    business day runs to 04:00)."""
+    CompanyConfig.objects.update_or_create(company=Employee.objects.get(employee_code="EMP001",
+                                                                         company__short_code="0598").company,
+                                           defaults={"report_day_start": datetime.time(4)})
     mark(client, token, qr("punch_in", local(DAY, 9)))
     mark(client, token, qr("punch_out", local(DAY, 13)))
     mark(client, token, qr("punch_in", local(DAY, 17)))
@@ -705,6 +720,7 @@ def seed_day(client, token):
 def test_the_screen_shows_one_row_per_employee_day(client, world, operator, manager):
     seed_day(client, operator)
     mark(client, manager, self_punch("punch_in", local(DAY, 8)), app="manager")
+    services.auto_close_due()
 
     web = client_in(client, world)
     body = web.get("/crew/attendance/list/", {"from": "2026-08-29", "to": "2026-08-29"}).content.decode()
@@ -714,7 +730,7 @@ def test_the_screen_shows_one_row_per_employee_day(client, world, operator, mana
     assert f'data-scr-href="/crew/attendance/{world["staff"].pk}/2026-08-29/?' in body   # opens the day
     assert "01:30" in body and "+1 day" in body               # last out, after midnight
     assert "12h 30m" in body                                  # worked: 4h + 8h30m
-    assert 'scr-badge-mandatory"><i></i>Missing punch-out' in body   # Meera never punched out
+    assert 'scr-badge-mandatory"><i></i>Auto-closed' in body   # Meera never punched out
     assert 'data-scr-open="attendance:add"' not in body        # read-only
     assert "scr-expand" not in body                            # the detail page replaced the sub-table
 
@@ -739,11 +755,17 @@ def test_the_detail_page_shows_an_unclosed_punch_and_the_roster(client, world, m
     DutyRoster.objects.create(employee=world["manager"], date=DAY, day_type=DutyRosterDayType.WORKING,
                               branch=world["auh2"],
                               shift1_start=aware(local(DAY, 8)), shift1_end=aware(local(DAY, 17)))
-    body = client_in(client, world).get(detail(world, "manager")).content.decode()
-
-    assert "Missing punch-out" in body and "No punch-out within 24 hours." in body
+    web = client_in(client, world)
+    body = web.get(detail(world, "manager")).content.decode()
+    assert "On duty" in body and "Not punched out yet." in body       # before the job has run
     assert "Working · Creek Park 2 · 08:00–17:00" in body
     assert "Manager phone" in body and "phone-m" in body
+
+    services.auto_close_due()
+    body = web.get(detail(world, "manager")).content.decode()
+    # Closed at the rostered shift's end, and the time counts.
+    assert "Auto-closed (duty roster time)" in body
+    assert "17:00:00" in body and "Counted" in body and "9h 00m" in body
 
 
 @pytest.mark.parametrize("path", ["{staff}/2026-08-30/", "{staff}/not-a-day/", "{outsider}/2026-08-29/"])
@@ -763,11 +785,12 @@ def test_the_detail_page_needs_read(client, world, operator):
     ({"source": "self"}, "Meera K", "Anil K"),
     ({"q": "EMP001"}, "Anil K", "Meera K"),
     ({"status": "complete"}, "Anil K", "Meera K"),
-    ({"status": "missing"}, "Meera K", "Anil K"),
+    ({"status": "auto_closed"}, "Meera K", "Anil K"),
 ])
 def test_the_screen_filters(client, world, operator, manager, params, shown, hidden):
     seed_day(client, operator)
     mark(client, manager, self_punch("punch_in", local(DAY, 8)), app="manager")
+    services.auto_close_due()
 
     web = client_in(client, world)
     body = web.get("/crew/attendance/list/", {"from": "2026-08-29", "to": "2026-08-29", **params}).content.decode()

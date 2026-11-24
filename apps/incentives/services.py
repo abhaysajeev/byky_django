@@ -381,13 +381,17 @@ def run_by_employee(run):
     return out
 
 
-def employee_totals(company, branches, first):
+def employee_totals(company, branches, first, *, approved_only=False, profile=None):
     """Every employee with lines paid in the month `first` across these
     stations (I5, 11 P7): one entry per station and profile, and the approved
     / draft totals. A daily special pays with its month, an annual profile at
     the financial year's end -- whichever its scheme says."""
     lines = (Line.objects.filter(run__company=company, run__branch__in=branches, run__payout_month=first)
              .select_related("employee", "run__branch", "run__profile"))
+    if approved_only:                 # the employee app's Team Incentive (24 Nov 2026)
+        lines = lines.filter(run__status=RunStatus.APPROVED)
+    if profile is not None:
+        lines = lines.filter(run__profile=profile)
     people = {}
     for line in lines:
         person = people.setdefault(line.employee.pk, {"employee": line.employee, "stations": {},
