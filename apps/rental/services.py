@@ -363,14 +363,15 @@ def _changed_after(orders, moment):
                          | Q(touched(CreditNote)) | Q(touched(CardDiscountClaim))).distinct()
 
 
-RECENT_INVOICES = 5
+RECENT_INVOICES = 5              # a customer's newest invoices (customers/lookup)
+RECENT_STATION_INVOICES = 30     # the station's newest (invoices/recent; client, 24 Nov 2026)
 
 
 def _invoices():
     return Invoice.objects.select_related("order", "issued_by").prefetch_related("items__order_item")
 
 
-def recent_invoices(branch, limit=RECENT_INVOICES):
+def recent_invoices(branch, limit=RECENT_STATION_INVOICES):
     """The station's newest invoices, from any of its tablets -- newest by when
     they were issued (the settle time on the tablet), so one uploaded late from
     offline sits where it happened, not where it arrived."""

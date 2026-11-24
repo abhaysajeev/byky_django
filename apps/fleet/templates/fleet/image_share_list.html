@@ -11,6 +11,7 @@
 {% block page_js %}
 {{ block.super }}
 <script src="{% static 'js/byky-screen.js' %}"></script>
+<script src="{% static 'js/byky-image-zoom.js' %}"></script>
 <script src="{% static 'js/byky-image-share.js' %}"></script>
 {% endblock page_js %}
 
@@ -113,7 +114,7 @@ and stops its photo being served -- the record is kept
       </button>
     </div>
     <div class="scr-modal-body">
-      <img data-share-img alt="Shared photo" />
+      <div class="scr-img-zoom" data-img-zoom><img data-share-img alt="Shared photo" /></div>
       <p class="scr-mon-wrap" data-share-remarks></p>
       <p class="scr-help" data-share-received></p>
     </div>

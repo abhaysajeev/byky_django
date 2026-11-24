@@ -12,9 +12,10 @@ no meaning summed per station (Rent Details lists them per order).
 
 from collections import defaultdict
 
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 
 from apps.rental.counted import counted
+from apps.rental.models import OrderItem
 from apps.rental.scoping import invoices_for
 from apps.reports import common
 from apps.reports.base import (
@@ -41,11 +42,12 @@ class RentSummary(Report):
     title = "Rent Summary"
     sheet_title = "Rent Summary Report"
     page_code = "reports.rent_summary"
-    # More filters (client, 22 Nov 2026): who, which tablet, how paid, which
-    # discount and which customer or order. Per bill, so no vehicle filters --
-    # Rent Details has those.
-    filters = ("state", "branch", "cashier", "device", "payment_mode", "discount", "customer", "phone",
-               "order_no")
+    # Filters (client, 22 and 24 Nov 2026): who, which tablet, how paid, which
+    # discount, and which vehicles -- a bill is kept when any of its vehicles
+    # matches, and shows its whole amounts (as Consolidated). No customer or
+    # order filters: Rent Details has those.
+    filters = ("state", "branch", "cashier", "device", "payment_mode", "discount", "category",
+               "vehicle_type")
     unit = ("branch-day", "branch-days")
     empty = "No orders were settled in this range."
     description = "Settled orders per day and branch, by state, with how they were paid."
@@ -54,7 +56,10 @@ class RentSummary(Report):
         f = ctx.f
         # a cancelled order's (voided) invoice counts nowhere -- apps/rental/counted.py
         invoices = common.place(counted(invoices_for(ctx.user)).filter(issued_at__gte=f.since, issued_at__lt=f.until), f)
-        invoices = common.customer(common.cashier(invoices, f), f)
+        invoices = common.cashier(invoices, f)
+        if f.any_vehicle:
+            invoices = invoices.filter(Exists(OrderItem.objects.filter(common.vehicle_q(f),
+                                                                       order=OuterRef("order"))))
         invoices = common.discount(common.payment_mode(invoices, f), f, invoice="")
         if f.get("device"):
             invoices = invoices.filter(Q(device__name__icontains=f.get("device"))

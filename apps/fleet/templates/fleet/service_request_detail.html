@@ -11,6 +11,7 @@
 {% block page_js %}
 {{ block.super }}
 <script src="{% static 'js/byky-screen.js' %}"></script>
+<script src="{% static 'js/byky-image-zoom.js' %}"></script>
 <script src="{% static 'js/byky-service-request.js' %}"></script>
 {% endblock page_js %}
 
@@ -105,7 +106,7 @@ is the only place for it.
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
       </button>
     </div>
-    <div class="scr-modal-body"><img src="{{ photo_full }}" alt="Photo of the issue" /></div>
+    <div class="scr-modal-body"><div class="scr-img-zoom" data-img-zoom><img src="{{ photo_full }}" alt="Photo of the issue" /></div></div>
   </div>
   {% endif %}
 
