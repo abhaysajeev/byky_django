@@ -1,6 +1,7 @@
 {% load static %}
 {% load money %}
 <div class="bill">
+  {% if bill.company %}<div class="bill-company">{{ bill.company|upper }}</div>{% endif %}
   <div class="bill-head">
     <div class="bill-head-text">
       <div class="station">{{ bill.station|upper }}</div>
