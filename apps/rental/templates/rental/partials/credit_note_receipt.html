@@ -1,14 +1,7 @@
 {% load static %}
 {% load money %}
 <div class="bill">
-  {% if invoice.company_name %}<div class="bill-company">{{ invoice.company_name|upper }}</div>{% endif %}
-  <div class="bill-head">
-    <div class="bill-head-text">
-      <div class="station">{{ invoice.branch_name|upper }}</div>
-      <div class="emirate">{{ emirate|upper }}</div>
-    </div>
-    <img class="bill-logo" src="{% static 'img/branding/byky-logo.png' %}" alt="BYKY" />
-  </div>
+  {% include "rental/partials/bill_head.html" with company=invoice.company_name station=invoice.branch_name emirate=emirate country=country %}
   <div class="bill-title-block">
     <div class="bill-title">TAX CREDIT NOTE</div>
     <div class="bill-trn">TRN : {{ invoice.company_trn|default:"—" }}</div>
