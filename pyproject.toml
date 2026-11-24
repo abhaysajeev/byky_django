@@ -14,12 +14,20 @@ python_files = ["test_*.py", "*_test.py"]
 # Two workers (pytest-xdist, requirements/dev.txt): ~120s instead of ~180s here.
 # Not "auto": four workers plus Postgres ran a 12 GB dev machine out of memory.
 # `pytest -n0` runs serially, e.g. to debug one test with a breakpoint.
-addopts = "--reuse-db -n 2 -m 'not exhaustive'"
+# CI runs four workers (.github/workflows/ci.yml, a 4-core runner) on top of this.
+addopts = "--reuse-db -n 2 -m 'not exhaustive and not migrations'"
 markers = [
     # Brute-force proofs of the fare algorithm (apps/fare/tests): they proved it
     # once and are re-run only when it changes -- pricing.py, or the order the
     # device fares API sends things in:  pytest -m exhaustive
     "exhaustive: brute-force proof, skipped by default; run with -m exhaustive",
+    # Data-migration history: each rolls the database back to an old migration
+    # and forward again (minutes each), and flushes every table after -- the
+    # seeded page registry included. The migrations they guard are applied on
+    # every database (dev, qa, live), so they run weekly and on demand
+    # (.github/workflows/migration-tests.yml), not on every push:
+    #   pytest --create-db -m migrations
+    "migrations: data-migration history tests, skipped by default; run with -m migrations",
     # The operator login's duty-roster check runs only in tests marked with
     # this (conftest.py: operator_roster_gate_off).
     "roster_gate: run the operator login's duty-roster check in this test",
