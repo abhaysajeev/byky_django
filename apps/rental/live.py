@@ -13,7 +13,7 @@ row back through `rows_json`, so scoping and formatting live only here.
 import datetime
 from decimal import Decimal
 
-from django.db.models import Prefetch, Q, Sum
+from django.db.models import Exists, OuterRef, Prefetch, Q, Sum
 from django.urls import reverse
 
 from apps.rental import money, order_status, scoping
@@ -77,6 +77,15 @@ def orders_for_day(user, params, day, zone, *, today):
     orders = orders.filter(is_direct_bill=params.get("tab") == "direct")
     if params.get("status") == "active":
         orders = orders.filter(status=OrderStatus.ACTIVE)
+    # An order is kept when any of its vehicles is of that category / type
+    # (client, 24 Nov 2026).
+    lines = Q()
+    if params.get("category", "").isdigit():
+        lines &= Q(vehicle__vehicle_type__category_id=int(params["category"]))
+    if params.get("vehicle_type", "").isdigit():
+        lines &= Q(vehicle__vehicle_type_id=int(params["vehicle_type"]))
+    if lines:
+        orders = orders.filter(Exists(OrderItem.objects.filter(lines, order=OuterRef("pk"))))
     text = params.get("q", "").strip()
     if text:
         orders = orders.filter(

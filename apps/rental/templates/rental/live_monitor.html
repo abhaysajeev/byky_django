@@ -73,7 +73,7 @@ no separate route.
     <form class="scr-toolbar scr-live-toolbar" data-live-filters>
       <div class="scr-search scr-live-search">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
-        <input type="text" name="q" placeholder="Order no, customer, mobile or vehicle" aria-label="Search" autocomplete="off" />
+        <input type="text" name="q" placeholder="Order, customer, vehicle" aria-label="Search" autocomplete="off" />
       </div>
       <button type="button" class="scr-btn-secondary scr-live-filter-toggle" data-live-filter-toggle aria-expanded="false">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 5h18M6 12h12M10 19h4"></path></svg>
@@ -87,6 +87,14 @@ no separate route.
         <select name="branch" class="scr-input scr-list-select" aria-label="Station">
           <option value="">All stations</option>
           {% for b in branches %}<option value="{{ b.id }}" data-state="{{ b.location__state_id }}">{{ b.name }}</option>{% endfor %}
+        </select>
+        <select name="category" class="scr-input scr-list-select" aria-label="Category">
+          <option value="">All categories</option>
+          {% for c in categories %}<option value="{{ c.id }}">{{ c.category_name }}</option>{% endfor %}
+        </select>
+        <select name="vehicle_type" class="scr-input scr-list-select" aria-label="Vehicle type">
+          <option value="">All vehicle types</option>
+          {% for t in vehicle_types %}<option value="{{ t.id }}" data-category="{{ t.category_id }}">{{ t.vehicle_type_name }}</option>{% endfor %}
         </select>
         <select name="status" class="scr-input scr-list-select" aria-label="Show">
           <option value="">Running + closed</option>

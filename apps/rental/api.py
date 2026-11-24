@@ -972,7 +972,7 @@ class OrderChangesView(_OperatorView):
 
 
 _RECENT_DESCRIPTION = f"""
-The station's **{services.RECENT_INVOICES} newest invoices**, issued on any tablet at this
+The station's **{services.RECENT_STATION_INVOICES} newest invoices**, issued on any tablet at this
 station -- newest first by `issued_at` (when the order was settled on the
 tablet, so one uploaded late from offline sits where it happened).
 
@@ -992,7 +992,7 @@ class InvoiceRecentView(_OperatorView):
 
     @extend_schema(
         tags=["Operator Invoices"],
-        summary=f"The station's last {services.RECENT_INVOICES} invoices",
+        summary=f"The station's last {services.RECENT_STATION_INVOICES} invoices",
         description=_RECENT_DESCRIPTION,
         request=envelope_request("InvoiceRecentEnvelope", InvoiceRecentRequest, request_data_required=False),
         responses=envelope_responses(

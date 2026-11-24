@@ -21,6 +21,7 @@ from apps.company.models import PaymentMode, State
 from apps.company.scoping import branches_for, companies_for, payment_modes_for
 from apps.discount import scoping as card_scoping
 from apps.discount.models import CardDiscountClaim, ClaimStatus
+from apps.fleet import scoping as fleet_scoping
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
@@ -1016,7 +1017,7 @@ def _card_requests(request, zone):
     if not may_see_card_requests(user) or (kind and kind != CARD_KIND):
         return CardDiscountClaim.objects.none()
     rows = (card_scoping.claims_for(user).filter(requires_approval=True)
-            .select_related("order", "branch", "requested_by"))
+            .select_related("order", "branch", "requested_by", "card_grade"))
     text = params.get("q", "").strip()
     if text:
         rows = rows.filter(Q(order__order_no__icontains=text) | Q(customer_name__icontains=text)
@@ -1033,7 +1034,9 @@ def _card_requests(request, zone):
 
 def _card_row(claim, zone):
     return {
-        "requested_at": claim.requested_at.astimezone(zone), "kind": CARD_KIND_LABEL,
+        # The card's grade in the grid (client, 24 Nov 2026); the kind filter
+        # still offers "Card discount".
+        "requested_at": claim.requested_at.astimezone(zone), "kind": claim.card_grade.name,
         "order_no": claim.order.order_no, "order_url": reverse("rental-order-detail", args=[claim.order_id]),
         "customer": claim.customer_name, "mobile": claim.mobile_full,
         "station": claim.branch.name if claim.branch_id else "",
@@ -1261,6 +1264,11 @@ class LiveMonitorView(RentalScreenView):
             "branches": list(branches.order_by("name").values("id", "name", "location__state_id")),
             "states": list(State.objects.filter(locations__branches__in=branches).distinct()
                            .order_by("name").values("id", "name")),
+            # Category / vehicle type filters (client, 24 Nov 2026), as the reports offer them.
+            "categories": list(fleet_scoping.categories_for(user).filter(is_active=True)
+                               .order_by("category_name").values("id", "category_name")),
+            "vehicle_types": list(fleet_scoping.vehicle_types_for(user).filter(is_active=True)
+                                  .order_by("vehicle_type_name").values("id", "vehicle_type_name", "category_id")),
             "rows_url": reverse("rental-live-rows"),
             "ws_url": settings.REALTIME_WS_URL,
         })

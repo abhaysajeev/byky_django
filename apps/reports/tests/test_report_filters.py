@@ -42,13 +42,22 @@ def test_rent_summary_by_discount_type(web, settled, source, pick, found):
     assert orders(data(web, "rent-summary", discount=pick)) == found
 
 
-def test_rent_summary_by_cashier_device_customer_and_order(web, settled):
+def test_rent_summary_by_cashier_and_device(web, settled):
     operator = User.objects.get(username="opr001")
     assert orders(data(web, "rent-summary", cashier=operator.pk)) == 1
     assert orders(data(web, "rent-summary", cashier=User.objects.get(username="rep.user").pk)) == 0
     assert orders(data(web, "rent-summary", device="no such tablet")) == 0
-    assert orders(data(web, "rent-summary", customer="ahmed", phone="501234567", order_no="231")) == 1
-    assert orders(data(web, "rent-summary", customer="nobody")) == 0
+    # No customer / order filters on Rent Summary (client, 24 Nov 2026): ignored.
+    assert orders(data(web, "rent-summary", customer="nobody", order_no="999")) == 1
+
+
+def test_rent_summary_by_vehicle_keeps_the_whole_bill(web, world, shop, settled):
+    """A bill with a vehicle of that type is kept, with its whole amounts."""
+    whole = data(web, "rent-summary")
+    Vehicle.objects.filter(pk=shop["dc02"].pk).update(vehicle_type=world["berg"])
+    picked = data(web, "rent-summary", vehicle_type=world["berg"].pk)
+    assert orders(picked) == 1 and picked["rows"] == whole["rows"]      # whole-bill amounts
+    assert orders(data(web, "rent-summary", category=world["berg"].category_id)) == 1
 
 
 def test_an_unknown_discount_type_is_all(web, settled):
@@ -64,12 +73,11 @@ def test_consolidated_by_order_status(web, mixed, status, found):
     assert orders(data(web, "consolidated", status=status)) == found
 
 
-def test_consolidated_by_payment_mode_discount_and_customer(web, world, mixed):
+def test_consolidated_by_payment_mode_and_discount(web, world, mixed):
     card = PaymentMode.objects.get(company=world["company"], name="Card")
     assert orders(data(web, "consolidated", payment_mode=card.pk)) == 1
     Invoice.objects.update(discount_source=DiscountSource.CARD)
     assert orders(data(web, "consolidated", discount="card")) == 1
-    assert orders(data(web, "consolidated", order_no="232")) == 1
 
 
 def test_consolidated_by_vehicle_type(web, world, shop, mixed):
@@ -78,11 +86,19 @@ def test_consolidated_by_vehicle_type(web, world, shop, mixed):
     assert orders(data(web, "consolidated", category=world["berg"].category_id)) >= 1
 
 
-def test_the_new_filters_are_in_the_bar(web, settled):
+def test_the_filters_in_each_bar(web, settled):
+    """Client, 22 and 24 Nov 2026: no customer, phone or order filters on
+    Consolidated or Rent Summary; Rent Summary gains category and type."""
     page = web.get("/reports/consolidated/").content.decode()
-    for name in ("payment_mode", "discount", "status", "vehicle_type", "order_no"):
+    for name in ("payment_mode", "discount", "status", "category", "vehicle_type"):
         assert f'name="{name}"' in page, name
     assert "Card + manager discount" in page
+    summary = web.get("/reports/rent-summary/").content.decode()
+    for name in ("payment_mode", "discount", "category", "vehicle_type"):
+        assert f'name="{name}"' in summary, name
+    for report in (page, summary):
+        for name in ("customer", "phone", "order_no"):
+            assert f'name="{name}"' not in report, name
 
 
 def test_clear_goes_back_to_the_business_day_not_the_opened_range(web, settled):
