@@ -12,6 +12,7 @@
 {% block page_js %}
 {{ block.super }}
 <script src="{% static 'js/byky-screen.js' %}"></script>
+<script src="{% static 'js/byky-image-zoom.js' %}"></script>
 <script src="{% static 'js/byky-card-approval.js' %}"></script>
 {% endblock page_js %}
 
@@ -33,7 +34,8 @@
       <a href="{{ list_url }}&amp;tab={{ back_tab }}" class="scr-btn-secondary">Back</a>
       {% if claim.status == "pending" and perm.approve %}
       <button type="button" class="scr-btn-danger" data-scr-modal-open="claim-decision" data-decision="reject">Reject</button>
-      <button type="button" class="scr-btn-primary" data-scr-modal-open="claim-decision" data-decision="approve">Approve</button>
+      {# Approves at once, no remarks dialog (client, 24 Nov 2026). #}
+      <button type="button" class="scr-btn-primary" data-claim-approve><span class="scr-btn-spin" aria-hidden="true"></span>Approve</button>
       {% elif can_revoke and perm.approve %}
       <button type="button" class="scr-btn-danger" data-scr-modal-open="claim-decision" data-decision="revoke">Revoke</button>
       {% endif %}
@@ -145,7 +147,7 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
       </button>
     </div>
-    <div class="scr-modal-body"><img src="{{ claim.photo_full }}" alt="Card photo" /></div>
+    <div class="scr-modal-body"><div class="scr-img-zoom" data-img-zoom><img src="{{ claim.photo_full }}" alt="Card photo" /></div></div>
   </div>
   {% endif %}
 

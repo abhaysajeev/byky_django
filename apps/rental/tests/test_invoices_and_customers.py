@@ -46,9 +46,11 @@ def lookup(client, token, customer):
 
 # -- invoices/recent -------------------------------------------------------------------
 
-def test_the_five_newest_invoices_by_issue_time(client, world, token, shop):
-    numbers = [rent_and_settle(client, world, shop, token, 200 + n, f"2026-10-0{n + 2} 18:00:00")["order_no"]
-               for n in range(6)]
+def test_the_thirty_newest_invoices_by_issue_time(client, world, token, shop):
+    """30 (client, 24 Nov 2026); the customer lookup keeps 5."""
+    numbers = [rent_and_settle(client, world, shop, token, 200 + n,
+                               f"2026-10-{n // 20 + 2:02d} {8 + n % 20 // 2:02d}:{n % 2 * 30:02d}:00")["order_no"]
+               for n in range(31)]
     # Settled last, but on the earliest day: not among the newest.
     early = rent_and_settle(client, world, shop, token, 300, "2026-10-01 09:00:00")["order_no"]
 

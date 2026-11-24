@@ -127,12 +127,17 @@
     current = btn.dataset.pk;
 
     logoModal.querySelector('[data-logo-station]').textContent = btn.dataset.station;
-    var image = logoModal.querySelector('[data-logo-image]');
+    var image = logoModal.querySelector('[data-logo-image]');          // the zoom box
+    var picture = image.querySelector('img') || image;
     var empty = logoModal.querySelector('[data-logo-empty]');
     var meta = logoModal.querySelector('[data-logo-meta]');
     var has = !!btn.dataset.logoUrl;
     image.hidden = !has;
-    if (has) image.src = btn.dataset.logoUrl + '?v=' + Date.now();
+    if (has) {
+      var url = btn.dataset.logoUrl + '?v=' + Date.now();
+      if (window.BykyImageZoom) window.BykyImageZoom.load(picture, url);   // never another station's logo
+      else picture.src = url;
+    }
     empty.hidden = has;
     meta.textContent = has
       ? (btn.dataset.logoName || 'logo.bmp') + ' · ' + kb(btn.dataset.logoSize)

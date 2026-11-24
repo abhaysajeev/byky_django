@@ -87,6 +87,20 @@ def test_filters_tab_status_station_emirate_and_vehicle_search(client_in, world,
     assert rows(client_in, branch=world["adc1"].pk + 999)["rows"] == []
 
 
+def test_category_and_vehicle_type_filters(client_in, world, shop):
+    """Client, 24 Nov 2026: an order is listed when any of its vehicles is of
+    that category / type; the page offers both lists."""
+    order = make_order(world, shop, "RENT-1")
+    vehicle_type = order.items.first().vehicle.vehicle_type
+    assert ids(rows(client_in, vehicle_type=vehicle_type.pk)) == ["RENT-1"]
+    assert ids(rows(client_in, category=vehicle_type.category_id)) == ["RENT-1"]
+    assert rows(client_in, vehicle_type=vehicle_type.pk + 999)["rows"] == []
+    assert rows(client_in, category=vehicle_type.category_id + 999)["rows"] == []
+    page = client_in.get(SCREEN).content.decode()
+    assert 'name="category"' in page and 'name="vehicle_type"' in page
+    assert f'data-category="{vehicle_type.category_id}"' in page
+
+
 def test_a_row_carries_the_legacy_fields(client_in, world, shop, user):
     order = make_order(world, shop, "ADC-1", lines=("active", "replaced"), created_by=user)
     Payment.objects.create(id=uuid7(), order=order, kind=PaymentKind.ADVANCE, mode=shop["cash"],

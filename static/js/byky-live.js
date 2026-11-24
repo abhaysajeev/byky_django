@@ -385,6 +385,15 @@
     });
     if (branchSel.selectedOptions[0] && branchSel.selectedOptions[0].hidden) branchSel.value = '';
   });
+  var categorySel = form.querySelector('[name="category"]'), typeSel = form.querySelector('[name="vehicle_type"]');
+  if (categorySel && typeSel) {
+    categorySel.addEventListener('change', function () {   // the vehicle types follow the category
+      Array.prototype.forEach.call(typeSel.options, function (o) {
+        o.hidden = !!(o.value && categorySel.value && o.dataset.category !== categorySel.value);
+      });
+      if (typeSel.selectedOptions[0] && typeSel.selectedOptions[0].hidden) typeSel.value = '';
+    });
+  }
   form.querySelectorAll('select').forEach(function (el) { el.addEventListener('change', reload); });
   var typing = null;
   form.querySelector('[name="q"]').addEventListener('input', function () {
