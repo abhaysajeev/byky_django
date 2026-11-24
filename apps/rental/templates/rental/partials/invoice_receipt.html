@@ -1,7 +1,7 @@
 {% load static %}
 {% load money %}
 <div class="bill">
-  {% include "rental/partials/bill_head.html" with company=bill.company station=bill.station emirate=bill.emirate country=bill.country %}
+  {% include "rental/partials/bill_head.html" with company=bill.company station=bill.station emirate=bill.emirate %}
   <div class="bill-title-block">
     <div class="bill-title">TAX INVOICE</div>
     {% if bill.discount_source == "complimentary" %}<div class="bill-title">COMPLIMENTARY</div>{% endif %}
