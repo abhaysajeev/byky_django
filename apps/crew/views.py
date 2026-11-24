@@ -29,6 +29,7 @@ from apps.crew.models import (
     AttendanceSource,
     BlockAction,
     CashierType,
+    ClosedBy,
     Designation,
     DutyRoster,
     DutyRosterDayType,
@@ -45,7 +46,7 @@ from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
 from core.enums import Channel
 from core.ordering import recent_first
-from core.timezones import zone_for
+from core.timezones import business_day_of, business_window, zone_for
 from theme import drawers as theme_drawers
 from theme.views import ThemedTemplateView
 
@@ -331,13 +332,16 @@ ATTENDANCE_PER_PAGE = 50
 DAY_STATUSES = [
     ("complete", "Complete"),
     ("on_duty", "On duty"),
-    ("missing", "Missing punch-out"),
+    ("auto_closed", "Auto-closed"),
 ]
 _DAY_STATUS_FILTER = {
-    "complete": Q(open_count=0, missing_count=0),
+    "complete": Q(open_count=0, auto_count=0),
     "on_duty": Q(open_count__gt=0),
-    "missing": Q(missing_count__gt=0),
+    "auto_closed": Q(auto_count__gt=0),
 }
+# The punch sources a person can pick: an auto-close is a punch-out, never a
+# punch-in, so it is not a filter for the list (which lists punch-ins).
+_PUNCH_IN_SOURCES = [(v, label) for v, label in AttendanceSource.choices if v != AttendanceSource.AUTO_CLOSE]
 
 
 def _date_param(value, default):
@@ -376,7 +380,7 @@ def _attendance_filters(request):
     if params.get("branch", "").isdigit():
         branch = int(params["branch"])
         punch_ins = punch_ins.filter(Q(employee_branch_id=branch) | Q(rms_branch_id=branch))
-    if params.get("source") in AttendanceSource.values:
+    if params.get("source") in dict(_PUNCH_IN_SOURCES):
         punch_ins = punch_ins.filter(source=params["source"])
     if params.get("designation", "").isdigit():
         punch_ins = punch_ins.filter(employee__designation_id=int(params["designation"]))
@@ -386,15 +390,14 @@ def _attendance_filters(request):
 def _attendance_days(request, punch_ins, zone):
     """One row per (employee, day), newest day first, with the counts its
     status comes from -- narrowed by `status` in the query string."""
-    stale = timezone.now() - services.OPEN_PUNCH_WINDOW
     days = (
         punch_ins
         .annotate(day=TruncDate("rms_scan_time", tzinfo=zone))
         .values("employee", "day")
         .annotate(
             shifts=Count("pk"),
-            open_count=Count("pk", filter=Q(punch_out__isnull=True, rms_scan_time__gt=stale)),
-            missing_count=Count("pk", filter=Q(punch_out__isnull=True, rms_scan_time__lte=stale)),
+            open_count=Count("pk", filter=Q(punch_out__isnull=True)),
+            auto_count=Count("pk", filter=Q(punch_out__source=AttendanceSource.AUTO_CLOSE)),
         )
         .order_by("-day", "employee__employee_code")
     )
@@ -405,8 +408,8 @@ def _attendance_days(request, punch_ins, zone):
 
 
 def _day_status(day):
-    if day["missing_count"]:
-        return "missing", "Missing punch-out"
+    if day["auto_count"]:
+        return "auto_closed", "Auto-closed"
     if day["open_count"]:
         return "on_duty", "On duty"
     return "complete", "Complete"
@@ -447,6 +450,14 @@ def _punch_detail(punch, zone, day):
     and its punch-out. A QR scan carries both phones; a self punch only the
     manager's own."""
     at = punch.rms_scan_time.astimezone(zone)
+    if punch.source == AttendanceSource.AUTO_CLOSE:
+        # Written by the server at the business-day start (24 Nov 2026).
+        return [
+            ("Time", at.strftime("%H:%M:%S") + ("  (+1 day)" if at.date() > day else "")),
+            ("Source", punch.get_source_display()),
+            ("Closed at", punch.get_closed_by_display()),
+            ("Worked time", "Counted" if punch.closed_by == ClosedBy.DUTY_ROSTER else "Not counted"),
+        ]
     rows = [
         ("Time", at.strftime("%H:%M:%S") + ("  (+1 day)" if at.date() > day else "")),
         ("Source", punch.get_source_display()),
@@ -477,7 +488,7 @@ def _punch_detail(punch, zone, day):
 _SESSION_STATUS = {
     services.SessionStatus.CLOSED: ("complete", "Complete"),
     services.SessionStatus.OPEN: ("on_duty", "On duty"),
-    services.SessionStatus.MISSING_PUNCH_OUT: ("missing", "Missing punch-out"),
+    services.SessionStatus.AUTO_CLOSED: ("auto_closed", "Auto-closed"),
 }
 
 
@@ -536,6 +547,11 @@ class AttendanceListView(CrewScreenView):
             punch_type=PunchType.PUNCH_IN, rms_scan_time__gte=today_start,
             rms_scan_time__lt=today_start + datetime.timedelta(days=1),
         )
+        company = getattr(user, "company", None)
+        business_start = today_start
+        if company is not None:
+            day_now = business_day_of(company, now)
+            business_start, _ = business_window(company, day_now, day_now)
         open_ins = scoping.attendance_for(user).filter(punch_type=PunchType.PUNCH_IN, punch_out__isnull=True)
         context.update({
             "rows": rows,
@@ -549,13 +565,12 @@ class AttendanceListView(CrewScreenView):
                 for k in ("q", "from", "to", "branch", "source", "status", "designation")
             ),
             "present_count": todays.values("employee").distinct().count(),
-            "on_duty_count": open_ins.filter(rms_scan_time__gt=now - services.OPEN_PUNCH_WINDOW).count(),
-            "missing_count": punch_ins.filter(
-                punch_out__isnull=True, rms_scan_time__lte=now - services.OPEN_PUNCH_WINDOW,
-            ).count(),
+            # Open in the current business day (an older one is auto-closed).
+            "on_duty_count": open_ins.filter(rms_scan_time__gte=business_start).count(),
+            "auto_closed_count": punch_ins.filter(punch_out__source=AttendanceSource.AUTO_CLOSE).count(),
             "qr_today": todays.filter(source=AttendanceSource.QR_SCAN).count(),
             "self_today": todays.filter(source=AttendanceSource.SELF).count(),
-            "sources_list": [{"id": v, "name": label} for v, label in AttendanceSource.choices],
+            "sources_list": [{"id": v, "name": label} for v, label in _PUNCH_IN_SOURCES],
             "statuses_list": [{"id": v, "name": label} for v, label in DAY_STATUSES],
             "export_url": reverse("crew-attendance-export"),
         })
@@ -598,13 +613,15 @@ class AttendanceDetailView(CrewScreenView):
         shifts = []
         for n, (punch_in, punch_out, status, worked) in enumerate(sessions, start=1):
             key, label = _SESSION_STATUS[status]
+            if punch_out is not None and punch_out.closed_by:
+                label = f"{label} ({punch_out.get_closed_by_display().lower()})"
             shifts.append({
                 "n": n, "status": key, "status_label": label, "worked": _duration(worked),
                 "punch_in": _punch_detail(punch_in, zone, day),
                 "punch_out": _punch_detail(punch_out, zone, day) if punch_out else None,
             })
         statuses = {shift["status"] for shift in shifts}
-        day_status = next(s for s in ("missing", "on_duty", "complete") if s in statuses)
+        day_status = next(s for s in ("auto_closed", "on_duty", "complete") if s in statuses)
         outs = [out.rms_scan_time.astimezone(zone) for _, out, _, _ in sessions if out is not None]
         last_out = max(outs) if outs else None
         worked = [w for *_, w in sessions if w is not None]

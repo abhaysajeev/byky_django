@@ -4,6 +4,7 @@ calculated and approved on the web.
 POST /api/v1/manager/incentives/branches   each station's month: target, achieved, its run
 POST /api/v1/manager/incentives/employees  each employee's month across stations
 POST /api/v1/manager/incentives/run        one station's run, by employee and by day
+  -- the same three on /api/v1/employee/: Team Incentive, by Team Scope, approved runs only
 POST /api/v1/employee/incentives/year      my year: total earned, months
 POST /api/v1/employee/incentives/month     my month: station summary and calendar
 
@@ -29,6 +30,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
 from apps.company.models import Branch
+from apps.crew import services as crew_services
 from apps.crew.models import DutyRoster, DutyRosterDayType
 from apps.incentives import services
 from apps.incentives.models import Line, Run, RunStatus
@@ -120,8 +122,17 @@ def run_period_json(run):
     return target_period_json(run)
 
 
-def manager_branches(company_ids, state_id, year, month, now=None, profile=None, day=None):
-    branches = _branches(company_ids, state_id)
+def _in_scope(branches, branch_ids):
+    """The stations a caller may see: all, or a supervisor's (Team Scope)."""
+    return branches if branch_ids is None else [b for b in branches if b.pk in branch_ids]
+
+
+def manager_branches(company_ids, state_id, year, month, now=None, profile=None, day=None, *,
+                     branch_ids=None, approved_only=False):
+    """Each station's period. `branch_ids` / `approved_only`: the employee
+    app's Team Incentive (24 Nov 2026) -- the caller's stations, approved
+    runs only (a draft can still change, so it reads as not calculated)."""
+    branches = _in_scope(_branches(company_ids, state_id), branch_ids)
     if profile is not None:
         today = targets.today_for(profile.company, now)
         started = [sp for sp in periods.profile_periods(profile) if sp[0] <= today] or periods.profile_periods(profile)
@@ -137,7 +148,10 @@ def manager_branches(company_ids, state_id, year, month, now=None, profile=None,
         run_q = {**MONTHLY_SALES, "period_start": first}
         period = period_json(year, month)
     with_target = set(Target.objects.filter(branch__in=branches, **target_q).values_list("branch_id", flat=True))
-    with_run = set(Run.objects.filter(branch__in=branches, **run_q).values_list("branch_id", flat=True))
+    runs = Run.objects.filter(branch__in=branches, **run_q)
+    if approved_only:
+        runs = runs.filter(status=RunStatus.APPROVED)
+    with_run = set(runs.values_list("branch_id", flat=True))
     rows = []
     totals = {"stations": 0, "met": 0, "approved_total": ZERO, "draft_total": ZERO}
     for branch in sorted(branches, key=lambda b: b.name.lower()):
@@ -145,6 +159,8 @@ def manager_branches(company_ids, state_id, year, month, now=None, profile=None,
             continue
         found = services.eligibility(branch, first, now, profile=profile)
         run = found["run"]
+        if approved_only and run is not None and not run.is_approved:
+            run = None
         rows.append({
             "branch_id": branch.pk, "code": branch.short_code, "name": branch.name,
             "state": branch.location.state.name if branch.location_id else "",
@@ -164,15 +180,20 @@ def manager_branches(company_ids, state_id, year, month, now=None, profile=None,
     return out
 
 
-def manager_employees(company_ids, state_id, year, month):
+def manager_employees(company_ids, state_id, year, month, *, branch_ids=None, approved_only=False,
+                      profile=None):
+    """Everyone paid in the month. `branch_ids` / `approved_only` / `profile`:
+    the employee app's Team Incentive -- only money earned at the caller's
+    stations, approved runs only, optionally one profile."""
     first, _ = targets.month_bounds(year, month)
-    branches = _branches(company_ids, state_id)
+    branches = _in_scope(_branches(company_ids, state_id), branch_ids)
     by_company = defaultdict(list)
     for b in branches:
         by_company[b.company].append(b)
     people = []
     for company, items in by_company.items():
-        people.extend(services.employee_totals(company, items, first))
+        people.extend(services.employee_totals(company, items, first, approved_only=approved_only,
+                                               profile=profile))
     people.sort(key=lambda r: (-r["total"], r["employee"].full_name))
     return {"period": period_json(year, month), "employees": [{
         "employee_id": p["employee"].pk, "employee_code": p["employee"].employee_code,
@@ -215,13 +236,66 @@ places.
 """
 
 
-class ManagerIncentiveBranchesView(_ManagerView):
-    """POST /api/v1/{app}/incentives/branches -- manager app only."""
+class _Team:
+    """Who the caller sees. Manager app: every station, drafts too. Employee
+    app (Team Incentive, owner 24 Nov 2026): the designation's Team Scope --
+    the whole company, or the stations they are Branch Supervisor of --
+    approved runs only."""
+
+    def __init__(self, branch_ids=None, approved_only=False):
+        self.branch_ids = branch_ids
+        self.approved_only = approved_only
+
+    def message(self, default):
+        return "No stations are assigned to you." if self.branch_ids == set() else default
+
+
+class _TeamView(_ManagerView):
+    def team_begin(self, request, app):
+        """(values, company_ids, _Team, None) or (None, None, None, the refusal)."""
+        if app != Channel.EMPLOYEE:
+            values, companies, refused = self.begin(request, app)
+            return values, companies, _Team(), refused
+        refused = other_app(request, app)
+        if refused:
+            return None, None, None, refused
+        employee = getattr(request.user, "employee", None)
+        if employee is None:
+            return None, None, None, envelope("not_an_employee", "This sign-in has no employee.", http_status=409)
+        try:
+            _, branch_ids = crew_services.team_scope_of(employee, app)
+        except crew_services.AttendanceRefused:
+            return None, None, None, envelope("no_team_scope", "You do not see a team's incentives.",
+                                              http_status=403)
+        _, request_data = request_parts(request)
+        form = self.form_class(data=request_data)
+        form.is_valid(raise_exception=True)
+        return form.validated_data, [employee.company_id], _Team(branch_ids, approved_only=True), None
+
+
+_TEAM_RULES = """
+**Employee app -- Team Incentive** (owner, 24 Nov 2026): the same call and
+reply for a supervisor, by the login's `employee.team_scope`: `company` sees
+every station, `branches` only the stations they are **Branch Supervisor** of
+(none assigned: an empty list, "No stations are assigned to you."), `own` is
+refused `no_team_scope`. Only **approved** runs: a draft reads as not
+calculated (`run: null`, `no_run`), and `draft` amounts are zero. A team
+member's money counts only where it was earned at the supervisor's stations.
+`employees` also takes `profile_id` here, to show one profile.
+"""
+
+_TEAM_REFUSALS = (
+    (403, "no_team_scope", "You do not see a team's incentives.", {}, "no_team_scope (employee)"),
+)
+
+
+class ManagerIncentiveBranchesView(_TeamView):
+    """POST /api/v1/{app}/incentives/branches -- manager app; employee app by Team Scope."""
 
     form_class = ManagerIncentivesRequest
 
     @extend_schema(
-        tags=["Manager Incentives"], summary="Each station's incentive month",
+        tags=["Manager Incentives", "Employee Incentives"], summary="Each station's incentive month",
         description="""
 Every station with a sales target or a run that month (optionally one
 `state_id`): its `target`, `achieved`, `percent`, whether it `met` the
@@ -232,7 +306,7 @@ Without `profile_id` this is the **monthly sales** profile's month, as before.
 With `profile_id` (and optionally `date`, a day inside the wanted period; the
 latest started period when left out) it is that profile's period: `period`
 is its dates and `profile` is added.
-""" + _MANAGER_RULES,
+""" + _MANAGER_RULES + _TEAM_RULES,
         request=envelope_request("ManagerIncentiveBranchesEnvelope", ManagerIncentivesRequest,
                                  request_data_required=False),
         responses=envelope_responses(
@@ -243,11 +317,12 @@ is its dates and `profile` is added.
                                                       "state": "Dubai", "target": "35000.00",
                                                       "achieved": "35000.00", "percent": "100.0", "met": True,
                                                       "month_ended": True, "run": _RUN}]}),
+            *_TEAM_REFUSALS,
             *_COMMON,
         ),
     )
     def post(self, request, app):
-        values, companies, refused = self.begin(request, app)
+        values, companies, team, refused = self.team_begin(request, app)
         if refused:
             return refused
         year, month = month_of(values, _company(request))
@@ -256,17 +331,18 @@ is its dates and `profile` is added.
             profile = TargetProfile.objects.filter(pk=values["profile_id"], company_id__in=companies).first()
             if profile is None:
                 return envelope("no_profile", "No such target profile.", http_status=404)
-        return envelope("ok", "Incentives.", manager_branches(companies, values.get("state_id"), year, month,
-                                                              _now(), profile, values.get("date")))
+        return envelope("ok", team.message("Incentives."), manager_branches(
+            companies, values.get("state_id"), year, month, _now(), profile, values.get("date"),
+            branch_ids=team.branch_ids, approved_only=team.approved_only))
 
 
-class ManagerIncentiveEmployeesView(_ManagerView):
-    """POST /api/v1/{app}/incentives/employees -- manager app only."""
+class ManagerIncentiveEmployeesView(_TeamView):
+    """POST /api/v1/{app}/incentives/employees -- manager app; employee app by Team Scope."""
 
     form_class = ManagerIncentivesRequest
 
     @extend_schema(
-        tags=["Manager Incentives"], summary="Each employee's incentive for a month",
+        tags=["Manager Incentives", "Employee Incentives"], summary="Each employee's incentive for a month",
         description="""
 Everyone **paid in** the month (optionally one `state_id`), highest first:
 `total` = `approved` + `draft`, `days` worked across stations, and one entry
@@ -274,7 +350,7 @@ per station **and profile** with its days, amount, run status, `run_id`,
 `profile` and `period`. A run is paid in the month its period ends, or at
 the financial year's end if its scheme says so -- so a daily special shows in
 its own month, an annual profile in the year's last month.
-""" + _MANAGER_RULES,
+""" + _MANAGER_RULES + _TEAM_RULES,
         request=envelope_request("ManagerIncentiveEmployeesEnvelope", ManagerIncentivesRequest,
                                  request_data_required=False),
         responses=envelope_responses(
@@ -287,24 +363,33 @@ its own month, an annual profile in the year's last month.
                                           "metric": "sales"},
                               "period": {"from_date": "2026-10-01", "to_date": "2026-10-31",
                                          "label": "October 2026"}}]}]}),
+            *_TEAM_REFUSALS,
             *_COMMON,
         ),
     )
     def post(self, request, app):
-        values, companies, refused = self.begin(request, app)
+        values, companies, team, refused = self.team_begin(request, app)
         if refused:
             return refused
         year, month = month_of(values, _company(request))
-        return envelope("ok", "Incentives.", manager_employees(companies, values.get("state_id"), year, month))
+        profile = None
+        if team.approved_only and values.get("profile_id"):
+            # The employee app's profile picker (the manager reply is unchanged).
+            profile = TargetProfile.objects.filter(pk=values["profile_id"], company_id__in=companies).first()
+            if profile is None:
+                return envelope("no_profile", "No such target profile.", http_status=404)
+        return envelope("ok", team.message("Incentives."), manager_employees(
+            companies, values.get("state_id"), year, month, branch_ids=team.branch_ids,
+            approved_only=team.approved_only, profile=profile))
 
 
-class ManagerIncentiveRunView(_ManagerView):
-    """POST /api/v1/{app}/incentives/run -- manager app only."""
+class ManagerIncentiveRunView(_TeamView):
+    """POST /api/v1/{app}/incentives/run -- manager app; employee app by Team Scope."""
 
     form_class = ManagerRunRequest
 
     @extend_schema(
-        tags=["Manager Incentives"], summary="One station's incentive run",
+        tags=["Manager Incentives", "Employee Incentives"], summary="One station's incentive run",
         description="""
 One run: by `run_id` (any profile), or `branch_id` + month for the monthly
 sales run (as before). Adds `run_id`, `profile` and `payout_month`; `period`
@@ -312,7 +397,7 @@ is the run's own dates. The figures it was worked out from
 (`target`, `achieved`, `work_days`, `basis` = achieved / working days), the
 `total`, then `employees` (highest first, with their roles' day counts) and
 `days` (who was paid what each working day).
-""" + _MANAGER_RULES,
+""" + _MANAGER_RULES + _TEAM_RULES,
         request=envelope_request("ManagerIncentiveRunEnvelope", ManagerRunRequest),
         responses=envelope_responses(
             (200, "ok", "Run.", {"period": _PERIOD, "branch": {"branch_id": 27, "code": "CPG1",
@@ -326,14 +411,19 @@ is the run's own dates. The figures it was worked out from
                                            "people": [{"employee_id": 51, "name": "Anas K", "role": "primary",
                                                        "amount": "12.50"}]}]}),
             (404, "no_run", "That station's month has not been calculated.", {}),
+            *_TEAM_REFUSALS,
             *_COMMON,
         ),
     )
     def post(self, request, app):
-        values, companies, refused = self.begin(request, app)
+        values, companies, team, refused = self.team_begin(request, app)
         if refused:
             return refused
         found = Run.objects.filter(company_id__in=companies).select_related("branch", "scheme", "profile")
+        if team.branch_ids is not None:
+            found = found.filter(branch_id__in=team.branch_ids)
+        if team.approved_only:
+            found = found.filter(status=RunStatus.APPROVED)
         if values.get("run_id"):
             run = found.filter(pk=values["run_id"]).first()
         else:

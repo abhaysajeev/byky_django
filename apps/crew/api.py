@@ -4,6 +4,7 @@ apps/crew/services.py (mark_attendance, attendance_history).
 POST /api/v1/{app}/attendance/mark     one punch, in or out
 POST /api/v1/{app}/attendance/history  an employee's punches for a day or range
 POST /api/v1/{app}/attendance/team     Team Attendance, manager and employee apps
+POST /api/v1/employee/attendance/method  today's attendance method (employee app)
 
 `{app}` decides the source: `operator` (the RMS app) scans an employee's QR
 code; `manager` marks its own user, and so does `employee` for staff whose
@@ -21,6 +22,7 @@ from apps.crew import services
 from apps.crew.models import AttendanceSource, PunchType
 from apps.crew.serializers import (
     AttendanceHistoryRequest,
+    AttendanceMethodRequest,
     QrAttendanceRequest,
     SelfAttendanceRequest,
     TeamAttendanceRequest,
@@ -77,6 +79,9 @@ _MARK_SAMPLE = {
 _MARK_IN_SAMPLE = {**_MARK_SAMPLE, "punch_type": "punch_in", "rms_scan_time": "2026-09-29 17:02:40",
                    "sync_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9", "punch_in_sync_id": None, "status": "open"}
 
+_METHOD_REFUSAL_DATA_QR = {"attendance_method": "qr_station", "business_date": "2026-11-25"}
+_METHOD_REFUSAL_DATA_SELF = {"attendance_method": "self", "business_date": "2026-11-25"}
+
 _MARK_DESCRIPTION = """
 One punch -- the same call for **punch_in** and **punch_out**.
 
@@ -91,17 +96,21 @@ One punch -- the same call for **punch_in** and **punch_out**.
   used when it is not sent, or none); `rms_installation_id` is optional.
   Always allowed.
 * `employee`: the same body as `manager` -- the signed-in employee's own
-  **Mark / Close attendance**, for staff whose attendance method is **Self**
-  (Supervisors, PROs). Anyone else is refused `self_attendance_not_allowed`:
-  the login reply's `employee.attendance_method` says which button the app
-  shows (`qr_station` the QR code, `self` Mark / Close, `not_required`
-  neither).
+  **Mark / Close attendance**, on a day whose attendance method is **Self**.
+  Any other day is refused `self_attendance_not_allowed`. Which button to
+  show comes from `POST attendance/method` (and the login reply's
+  `employee.attendance_method_today`).
 
 The request bodies differ per app: see the two schemas and examples below.
 
-**Attendance method** -- set on the Designation (an employee may override it).
-The operator app scans only staff whose method is `qr_station`; scanning
-anyone else is refused `attendance_method_mismatch`.
+**Attendance method -- the day's** (24 Nov 2026): rostered **Working as
+cashier or labour** that business day -> `qr_station`; any other day the
+permanent method (the Designation's, or the employee's own override). The
+operator app scans only on a `qr_station` day, else `attendance_method_mismatch`.
+A **punch_out follows its punch_in's method** (scanned in -> scanned out),
+even if the roster changed meanwhile. Both refusals carry `data`:
+`{"attendance_method": "...", "business_date": "YYYY-MM-DD"}` -- the method
+to use. **Do not filter scans by method on the tablet**: the server decides.
 
 **sync_id** -- a **UUIDv7** made on the device for this punch and resent
 **unchanged** on every retry. It becomes the record's id; a second call with
@@ -117,9 +126,14 @@ operator login), branches by `employee_branch_code` and `rms_branch_code`.
 `employee_name` and `rms_employee_name` are optional and **ignored**: the
 server records each name from the employee master.
 
-**Pairing** -- a punch_out closes the employee's open punch_in, even across
-midnight. A punch_in stays open for 24 hours; after that it is a missing
-punch-out and no longer blocks a new punch_in.
+**Pairing -- by business day** (the company's day start, 04:00 at BYKY):
+a punch_out closes the employee's open punch_in of that business day, even
+across midnight. One open punch_in per business day. At the next day start
+the server closes any punch_in nobody closed (an **auto-close**: source
+`auto_close`, at the rostered shift's end, else the day's end), so a
+forgotten punch-out never blocks the next morning. A real punch_out that
+arrives later (an offline queue) still closes its punch_in and replaces the
+auto-close.
 
 | Refusal | When |
 |---|---|
@@ -127,8 +141,8 @@ punch-out and no longer blocks a new punch_in.
 | `no_open_punch_in` | nothing to close -- if the punch_in is still queued offline, keep this punch_out queued and retry after it |
 | `punch_out_before_punch_in` | the punch_out's time is before its punch_in |
 | `qr_already_scanned` | this QR code was already used for this punch type |
-| `attendance_method_mismatch` | operator: this employee's method is not QR scan |
-| `self_attendance_not_allowed` | employee app: this employee's method is not Self |
+| `attendance_method_mismatch` | operator: today's method (or the punch_in's) is not QR scan |
+| `self_attendance_not_allowed` | employee app: today's method (or the punch_in's) is not Self |
 | `wrong_channel` | the token was signed in on another app than the URL's |
 """
 
@@ -183,10 +197,10 @@ class AttendanceMarkView(APIView):
             (403, "employee_inactive", "This employee is not active.", {}),
             (403, "not_your_attendance", "You can mark only your own attendance.", {},
              "not_your_attendance (manager, employee)"),
-            (403, "attendance_method_mismatch", "This employee's attendance is not taken by QR scan.", {},
-             "attendance_method_mismatch (operator)"),
-            (403, "self_attendance_not_allowed", "Your attendance is not marked in this app.", {},
-             "self_attendance_not_allowed (employee)"),
+            (403, "attendance_method_mismatch", "This employee's attendance is not taken by QR scan.",
+             _METHOD_REFUSAL_DATA_SELF, "attendance_method_mismatch (operator)"),
+            (403, "self_attendance_not_allowed", "Your attendance is not marked in this app.",
+             _METHOD_REFUSAL_DATA_QR, "self_attendance_not_allowed (employee)"),
             (409, "punch_in_open", "Already punched in. Punch out first.", {}),
             (409, "no_open_punch_in", "No punch in to close. Punch in first.", {}),
             (409, "punch_out_before_punch_in", "Punch out is earlier than the punch in.", {}),
@@ -228,7 +242,7 @@ class AttendanceMarkView(APIView):
             row, created = services.mark_attendance(session.user, source, values, device=session.device,
                                                     channel=app)
         except services.AttendanceRefused as refusal:
-            return envelope(refusal.code, refusal.message, http_status=refusal.status)
+            return envelope(refusal.code, refusal.message, refusal.data, http_status=refusal.status)
 
         data = _mark_json(row, zone)
         if not created:
@@ -266,7 +280,7 @@ _HISTORY_SAMPLE = {
             "punch_in": _PUNCH_IN_SAMPLE,
             "punch_out": {**_PUNCH_IN_SAMPLE, "sync_id": "01923f8e-5b2a-7c3d-9e4f-a1b2c3d4e5f6",
                           "time": "2026-09-30 01:05:12"},
-            "status": "closed", "worked_minutes": 482,
+            "status": "closed", "worked_minutes": 482, "auto_closed": False, "closed_by": None,
         }],
     }],
 }
@@ -282,8 +296,11 @@ operator and manager apps may name any employee of the company. Then one of
 
 A day lists the punch-ins made on it, each with its punch_out **even when that
 fell the next day** (a 17:00 to 01:00 shift stays on the day it started).
-`status` is `closed`, `open` (punched in, within 24 hours) or
-`missing_punch_out`. Days without a punch are left out. Dates are
+`status` is `closed`, `open` (punched in, not out yet) or `auto_closed`
+(closed by the server at the business-day start: `auto_closed: true`, the
+punch_out's `source` is `auto_close`, and `closed_by` says where its time came
+from -- `duty_roster` (the rostered shift's end; minutes counted) or `day_end`
+(no shift fitted; `worked_minutes` null)). Days without a punch are left out. Dates are
 `YYYY-MM-DD`, times `YYYY-MM-DD HH:MM:SS`, company time.
 """
 
@@ -348,7 +365,9 @@ class AttendanceHistoryView(APIView):
                 {"date": day.isoformat(), "sessions": [
                     {"punch_in": _punch_json(punch_in, zone),
                      "punch_out": _punch_json(punch_out, zone) if punch_out else None,
-                     "status": status, "worked_minutes": worked}
+                     "status": status, "worked_minutes": worked,
+                     "auto_closed": status == services.SessionStatus.AUTO_CLOSED,
+                     "closed_by": (punch_out.closed_by or None) if punch_out else None}
                     for punch_in, punch_out, status, worked in sessions
                 ]}
                 for day, sessions in days
@@ -372,7 +391,7 @@ _TEAM_STATION = {"branch_id": 12, "code": "AUH01", "name": "Creek Park 1"}
 
 _TEAM_SESSION_ROW = {
     "date": "2026-10-15", "row_type": "session", "attendance_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9",
-    "status": "checked_out", "missing_check_out": False,
+    "status": "checked_out", "missing_check_out": False, "auto_closed": False, "closed_by": None,
     "employee": {"employee_code": "BYKY014", "name": "Anil Kumar", "designation": "Cashier"},
     "source": "qr_scan", "station": _TEAM_STATION, "emirate": {"state_id": 1, "name": "Abu Dhabi"},
     "check_in": "2026-10-15 07:58:10", "check_out": "2026-10-15 16:02:44", "duration_minutes": 484,
@@ -381,6 +400,7 @@ _TEAM_SESSION_ROW = {
 
 _TEAM_NOT_CHECKED_IN_ROW = {
     "date": "2026-10-15", "row_type": "not_checked_in", "attendance_id": None, "status": "not_checked_in", "missing_check_out": False,
+    "auto_closed": False, "closed_by": None,
     "employee": {"employee_code": "BYKY031", "name": "Ravi S", "designation": "Labour"},
     "source": None, "station": None, "emirate": {"state_id": 1, "name": "Abu Dhabi"},
     "check_in": None, "check_out": None, "duration_minutes": None, "device_no": None,
@@ -425,8 +445,11 @@ day, newest check-in first, then that day's not-checked-in rows by name. Each
 row carries everything the detail screen shows -- there is no second call.
 
 * `status` -- `checked_in`, `checked_out` or `not_checked_in`. A check-in
-  left open for more than 24 hours stays `checked_in` with
-  `missing_check_out: true`.
+  nobody checked out is closed by the server at the next business-day start
+  (04:00 at BYKY): it reads `checked_out` with `auto_closed: true` and
+  `closed_by` -- `duty_roster` (check_out = the rostered shift's end) or
+  `day_end` (no shift fitted; `duration_minutes` null). `missing_check_out`
+  is the same as `auto_closed` (kept for older app builds).
 * `source` -- `qr_scan` (scanned at a station) or `self` (Mark attendance in
   the manager or employee app). A self check-in has no station: `station` is
   null, and it appears only in the whole-company list with no station or
@@ -551,7 +574,8 @@ def _team_row_json(row, zone, devices):
         return {
             "date": row["day"].isoformat(),
             "row_type": "not_checked_in", "attendance_id": None, "status": row["status"],
-            "missing_check_out": False, "employee": person, "source": None, "station": None,
+            "missing_check_out": False, "auto_closed": False, "closed_by": None,
+            "employee": person, "source": None, "station": None,
             "emirate": _emirate_json(branch), "check_in": None, "check_out": None, "duration_minutes": None,
             "device_no": None,
             "roster": {
@@ -567,10 +591,72 @@ def _team_row_json(row, zone, devices):
     return {
         "date": row["day"].isoformat(),
         "row_type": "session", "attendance_id": str(punch_in.pk), "status": row["status"],
-        "missing_check_out": row["missing_check_out"], "employee": person, "source": punch_in.source,
+        "missing_check_out": row["missing_check_out"], "auto_closed": row["auto_closed"],
+        "closed_by": row["closed_by"], "employee": person, "source": punch_in.source,
         "station": _station_json(station), "emirate": _emirate_json(station or named),
         "check_in": _local(punch_in.rms_scan_time, zone),
         "check_out": _local(punch_out.rms_scan_time, zone) if punch_out else None,
         "duration_minutes": row["worked_minutes"],
         "device_no": devices.get(punch_in.rms_installation_id), "roster": None,
     }
+
+
+# -- The day's attendance method ---------------------------------------------------
+
+_METHOD_SAMPLE = {
+    "attendance_method": "qr_station", "permanent_method": "self", "business_date": "2026-11-25",
+    "valid_until": "2026-11-26 04:00:00",
+    "roster": {"date": "2026-11-25", "day_type": "working", "role": "cashier", "branch_id": 12,
+               "branch": "Creek Park 4", "shift1_start": "2026-11-25 09:00:00",
+               "shift1_end": "2026-11-25 17:00:00", "shift2_start": None, "shift2_end": None},
+    "open_punch_in": None, "next_punch": "punch_in", "next_punch_method": "qr_station",
+}
+
+_METHOD_DESCRIPTION = """
+Which attendance button the employee app shows **now** (owner, 24 Nov 2026).
+No `request_data`. **Call it automatically -- no button**: every time the
+attendance screen opens, when the duty-roster push arrives, on pull-to-refresh,
+and once `valid_until` has passed.
+
+* `attendance_method` -- today's (business day `business_date`, which runs
+  from the company's day start, 04:00 at BYKY, until `valid_until`): rostered
+  **Working as cashier or labour** -> `qr_station` (show the QR code); any
+  other day the `permanent_method` (`qr_station`, `self` Mark / Close, or
+  `not_required` no button).
+* `next_punch` / `next_punch_method` -- what the next punch is and how: while a
+  punch-in is open (`open_punch_in`) the next punch is its punch-out, by the
+  punch-in's method, whatever the roster now says.
+* `roster` -- today's roster row (null when not rostered).
+
+The server checks every punch with the same rule; a refusal
+(`self_attendance_not_allowed`, `attendance_method_mismatch`) carries the
+method to use in `data`.
+"""
+
+
+class AttendanceMethodView(APIView):
+    """POST /api/v1/employee/attendance/method -- employee app only."""
+
+    authentication_classes = [AppJWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Employee Attendance"],
+        summary="Today's attendance method and the next punch",
+        description=_METHOD_DESCRIPTION,
+        request=envelope_request("AttendanceMethodEnvelope", AttendanceMethodRequest,
+                                 request_data_required=False),
+        responses=envelope_responses(
+            (200, "ok", "Attendance method.", _METHOD_SAMPLE),
+            (401, "not_authenticated", "Sign in first.", {}),
+            (403, "wrong_channel", "Not allowed on this app.", {}),
+            SERVER_ERROR,
+        ),
+    )
+    def post(self, request, app):
+        if app != Channel.EMPLOYEE:
+            return envelope("wrong_channel", "Not allowed on this app.", http_status=403)
+        refused = other_app(request, app)
+        if refused:
+            return refused
+        return envelope("ok", "Attendance method.", services.attendance_method_today(request.user.employee))

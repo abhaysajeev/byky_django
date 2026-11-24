@@ -54,7 +54,7 @@ punches come from the RMS app (QR scan) and the manager app (self).
       <div class="scr-form-head">
         <div class="scr-form-title-row">
           <h2 class="scr-form-title">Day</h2>
-          {% if status == "missing" %}<span class="scr-badge scr-badge-mandatory"><i></i>{{ status_label }}</span>
+          {% if status == "auto_closed" %}<span class="scr-badge scr-badge-mandatory"><i></i>{{ status_label }}</span>
           {% elif status == "on_duty" %}<span class="scr-badge scr-badge-anytime"><i></i>{{ status_label }}</span>
           {% else %}<span class="scr-badge scr-badge-approved"><i></i>{{ status_label }}</span>{% endif %}
         </div>
@@ -76,7 +76,7 @@ punches come from the RMS app (QR scan) and the manager app (self).
     <div class="scr-form-head">
       <div class="scr-form-title-row">
         <h2 class="scr-form-title">Shift {{ s.n }}{% if s.worked %} · {{ s.worked }}{% endif %}</h2>
-        {% if s.status == "missing" %}<span class="scr-badge scr-badge-mandatory"><i></i>{{ s.status_label }}</span>
+        {% if s.status == "auto_closed" %}<span class="scr-badge scr-badge-mandatory"><i></i>{{ s.status_label }}</span>
         {% elif s.status == "on_duty" %}<span class="scr-badge scr-badge-anytime"><i></i>{{ s.status_label }}</span>
         {% else %}<span class="scr-badge scr-badge-approved"><i></i>{{ s.status_label }}</span>{% endif %}
       </div>
@@ -101,8 +101,6 @@ punches come from the RMS app (QR scan) and the manager app (self).
           </div>
           {% elif s.status == "on_duty" %}
           <p class="scr-att-none"><span class="scr-badge scr-badge-anytime"><i></i>On duty</span> Not punched out yet.</p>
-          {% else %}
-          <p class="scr-att-none"><span class="scr-badge scr-badge-mandatory"><i></i>Missing punch-out</span> No punch-out within 24 hours.</p>
           {% endif %}
         </div>
       </div>

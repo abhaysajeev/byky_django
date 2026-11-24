@@ -55,6 +55,18 @@ class AttendanceSource(models.TextChoices):
 
     QR_SCAN = "qr_scan", "QR scanned"
     SELF = "self", "Self attendance"
+    # A punch-out the server wrote at the business-day start for a punch-in
+    # nobody closed (owner, 24 Nov 2026) -- services.auto_close.
+    AUTO_CLOSE = "auto_close", "Auto-closed"
+
+
+class ClosedBy(models.TextChoices):
+    """Where an auto-close took its time from: the end of the shift the
+    punch-in fell in (worked minutes count), or the business day's end when
+    no rostered shift fits (worked minutes are not counted)."""
+
+    DUTY_ROSTER = "duty_roster", "Duty roster time"
+    DAY_END = "day_end", "Day end"
 
 
 class PunchType(models.TextChoices):
@@ -404,6 +416,8 @@ class Attendance(TimeStampedModel):
     rms_scan_time = models.DateTimeField()
     rms_latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     rms_longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    # Set only on an auto-close punch-out (source auto_close).
+    closed_by = models.CharField(max_length=12, choices=ClosedBy.choices, blank=True, default="")
 
     class Meta:
         db_table = "attendance"
@@ -426,8 +440,23 @@ class Attendance(TimeStampedModel):
                     qr_generation_time__isnull=True, rms_employee__isnull=True, rms_branch__isnull=True,
                     employee_installation_id="", rms_employee_code="", rms_employee_name="",
                     employee_latitude__isnull=True,
+                )
+                # The server's own punch-out: no QR code, no scanning person,
+                # no position.
+                | models.Q(
+                    source=AttendanceSource.AUTO_CLOSE, punch_type=PunchType.PUNCH_OUT,
+                    qr_generation_time__isnull=True, rms_employee__isnull=True, rms_branch__isnull=True,
+                    employee_installation_id="", rms_employee_code="", rms_employee_name="",
+                    employee_latitude__isnull=True, rms_latitude__isnull=True,
                 ),
                 name="attendance_source_fields",
+            ),
+            # closed_by says where an auto-close took its time from; a real
+            # punch never has one.
+            models.CheckConstraint(
+                condition=(models.Q(source=AttendanceSource.AUTO_CLOSE) & ~models.Q(closed_by=""))
+                | (~models.Q(source=AttendanceSource.AUTO_CLOSE) & models.Q(closed_by="")),
+                name="attendance_closed_by_auto_only",
             ),
             # Only a punch-out closes a punch-in.
             models.CheckConstraint(
@@ -438,7 +467,8 @@ class Attendance(TimeStampedModel):
             # A QR scan always names the employee's branch; only a manager's
             # own punch may leave it empty.
             models.CheckConstraint(
-                condition=models.Q(source=AttendanceSource.SELF) | models.Q(employee_branch__isnull=False),
+                condition=models.Q(source__in=[AttendanceSource.SELF, AttendanceSource.AUTO_CLOSE])
+                | models.Q(employee_branch__isnull=False),
                 name="attendance_qr_has_employee_branch",
             ),
             # One QR code records one punch in and one punch out, whatever

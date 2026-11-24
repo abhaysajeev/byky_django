@@ -9,6 +9,7 @@ from apps.crew import api, duty_api, employee_api, leave_api
 urlpatterns = [
     path("attendance/mark", api.AttendanceMarkView.as_view(), name="api-app-attendance-mark"),
     path("attendance/history", api.AttendanceHistoryView.as_view(), name="api-app-attendance-history"),
+    path("attendance/method", api.AttendanceMethodView.as_view(), name="api-app-attendance-method"),
     path("leave/types", leave_api.LeaveTypesView.as_view(), name="api-app-leave-types"),
     path("leave/submit", leave_api.LeaveSubmitView.as_view(), name="api-app-leave-submit"),
     path("leave/my", leave_api.MyLeaveView.as_view(), name="api-app-leave-my"),
