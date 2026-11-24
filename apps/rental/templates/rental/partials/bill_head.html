@@ -1,13 +1,12 @@
 {% load static %}{% comment %}
 The receipt's letterhead -- invoice and credit note, preview and A4 (client,
-24 Nov 2026): the company's legal name, the station's place under a pin,
+24 Nov 2026): the company's legal name, the station's place under it,
 the logo on the right. Takes `company`, `station`, `emirate`.
 {% endcomment %}
 <div class="bill-head">
   <div class="bill-head-text">
     {% if company %}<div class="bill-company">{{ company|upper }}</div>{% endif %}
     <div class="bill-place">
-      <svg class="bill-pin" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z"/></svg>
       <span>{{ station|upper }}{% if emirate %}, {{ emirate|upper }}{% endif %}</span>
     </div>
   </div>
