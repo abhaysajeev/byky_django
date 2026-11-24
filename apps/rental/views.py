@@ -645,7 +645,6 @@ def _receipt(invoice, zone):
         # The tablet's transaction number, as sent at booking (owner, 28 Oct 2026).
         "trans_no": order.transaction_no or "—",
         "station": invoice.branch_name, "emirate": invoice.branch.location.state.name,
-        "country": invoice.branch.location.country.name,
         "company": invoice.company_name, "trn": invoice.company_trn or "—",
         "open_by": order.created_by.display_name if order.created_by_id else "—",
         "closed_by": invoice.issued_by.display_name,
@@ -929,7 +928,7 @@ def _credit_note_print(note, zone):
     return {
         "note": note, "invoice": invoice, "date": note.decided_at.astimezone(zone).strftime("%d-%m-%Y"),
         "invoice_date": invoice.issued_at.astimezone(zone).strftime("%d-%m-%Y"),
-        "emirate": invoice.branch.location.state.name, "country": invoice.branch.location.country.name,
+        "emirate": invoice.branch.location.state.name,
         "issued_by": note.decided_by.display_name
         if note.decided_by_id else "—",
     }
