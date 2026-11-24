@@ -1,7 +1,7 @@
 {% load static %}{% comment %}
 The receipt's letterhead -- invoice and credit note, preview and A4 (client,
-24 Nov 2026): the company's legal name, the station's place under a pin, a
-thin divider, the logo on the right. Takes `company`, `station`, `emirate`.
+24 Nov 2026): the company's legal name, the station's place under a pin,
+the logo on the right. Takes `company`, `station`, `emirate`.
 {% endcomment %}
 <div class="bill-head">
   <div class="bill-head-text">
@@ -11,6 +11,5 @@ thin divider, the logo on the right. Takes `company`, `station`, `emirate`.
       <span>{{ station|upper }}{% if emirate %}, {{ emirate|upper }}{% endif %}</span>
     </div>
   </div>
-  <div class="bill-head-rule" aria-hidden="true"></div>
   <img class="bill-logo" src="{% static 'img/branding/byky-logo.png' %}" alt="BYKY" />
 </div>
