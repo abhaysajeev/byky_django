@@ -29,7 +29,13 @@
       '<button type="button" class="scr-img-zoom-level" data-zoom="reset" aria-label="Reset zoom" title="Reset to 100%">100%</button>' +
       '<button type="button" class="scr-icon-btn" data-zoom="in" aria-label="Zoom in" title="Zoom in">' +
       '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg></button>';
-    box.insertBefore(bar, box.firstChild);
+    // The buttons sit on a frame around the scrolling box, not inside it, so
+    // scrolling or dragging a zoomed picture never moves them.
+    var frame = document.createElement('div');
+    frame.className = 'scr-img-zoom-frame';
+    box.parentNode.insertBefore(frame, box);
+    frame.appendChild(box);
+    frame.appendChild(bar);
     var label = bar.querySelector('[data-zoom="reset"]');
     var zoomOut = bar.querySelector('[data-zoom="out"]');
     var zoomIn = bar.querySelector('[data-zoom="in"]');
