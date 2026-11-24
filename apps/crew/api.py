@@ -607,7 +607,7 @@ _METHOD_SAMPLE = {
     "attendance_method": "qr_station", "permanent_method": "self", "business_date": "2026-11-25",
     "valid_until": "2026-11-26 04:00:00",
     "roster": {"date": "2026-11-25", "day_type": "working", "role": "cashier", "branch_id": 12,
-               "branch": "Creek Park 4", "shift1_start": "2026-11-25 09:00:00",
+               "branch": "Creek Park 4", "branch_code": "CP4", "shift1_start": "2026-11-25 09:00:00",
                "shift1_end": "2026-11-25 17:00:00", "shift2_start": None, "shift2_end": None},
     "open_punch_in": None, "next_punch": "punch_in", "next_punch_method": "qr_station",
 }
@@ -626,7 +626,8 @@ and once `valid_until` has passed.
 * `next_punch` / `next_punch_method` -- what the next punch is and how: while a
   punch-in is open (`open_punch_in`) the next punch is its punch-out, by the
   punch-in's method, whatever the roster now says.
-* `roster` -- today's roster row (null when not rostered).
+* `roster` -- today's roster row (null when not rostered); on a QR day the
+  QR code carries its `branch_code` as `employee_branch_code`.
 
 The server checks every punch with the same rule; a refusal
 (`self_attendance_not_allowed`, `attendance_method_mismatch`) carries the

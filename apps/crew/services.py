@@ -330,6 +330,8 @@ def attendance_method_today(employee, now=None):
         roster = {
             "date": row.date.isoformat(), "day_type": row.day_type, "role": _roster_role(row),
             "branch_id": row.branch_id, "branch": row.branch.name if row.branch_id else None,
+            # The QR code carries this as employee_branch_code (attendance/mark).
+            "branch_code": row.branch.short_code if row.branch_id else None,
             "shift1_start": _local_text(row.shift1_start, zone), "shift1_end": _local_text(row.shift1_end, zone),
             "shift2_start": _local_text(row.shift2_start, zone), "shift2_end": _local_text(row.shift2_end, zone),
         }

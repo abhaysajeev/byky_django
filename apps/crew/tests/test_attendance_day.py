@@ -164,7 +164,8 @@ def test_the_method_call_says_todays_method_and_next_punch(client, world, mechan
     assert (data["attendance_method"], data["permanent_method"], data["business_date"]) == (
         "qr_station", "self", today.isoformat())
     assert data["valid_until"] == f"{today + datetime.timedelta(days=1)} 00:00:00"
-    assert data["roster"]["role"] == "cashier" and data["roster"]["branch"] == "Creek Park 1"
+    assert (data["roster"]["role"], data["roster"]["branch"], data["roster"]["branch_code"]) == (
+        "cashier", "Creek Park 1", "AUH01")
     assert (data["open_punch_in"], data["next_punch"], data["next_punch_method"]) == (None, "punch_in", "qr_station")
     assert set(data) == set(base.api._METHOD_SAMPLE)
 
