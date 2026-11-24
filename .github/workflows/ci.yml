@@ -19,7 +19,9 @@ permissions:
 jobs:
   checks:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # A slow runner took 18-20 min before the 24 Nov 2026 speed-up; this is
+    # only the ceiling, not the expected time.
+    timeout-minutes: 30
 
     # The tests need a real Postgres 16: the schema uses sequences, generated
     # columns and triggers that SQLite does not have.
@@ -59,6 +61,20 @@ jobs:
       - name: Install
         run: pip install -r requirements/dev.txt
 
+      # A throwaway database: no crash safety needed, so Postgres need not wait
+      # for the disk on every commit. Never do this outside CI.
+      - name: Fast Postgres for this run only
+        env:
+          PGPASSWORD: byky
+        run: |
+          psql -h localhost -U byky -d byky -v ON_ERROR_STOP=1 \
+            -c "ALTER SYSTEM SET fsync = off" \
+            -c "ALTER SYSTEM SET synchronous_commit = off" \
+            -c "ALTER SYSTEM SET full_page_writes = off" \
+            -c "SELECT pg_reload_conf()"
+          psql -h localhost -U byky -d byky -Atc "SHOW fsync"
+          echo "CPU cores: $(nproc)"
+
       - name: Lint
         run: ruff check .
 
@@ -68,10 +84,10 @@ jobs:
       - name: API schema is valid
         run: python manage.py spectacular --validate --fail-on-warn --file /tmp/schema.yml
 
-      # pyproject.toml adds -n 2 (two workers) and skips the slow brute-force
-      # proofs (-m 'not exhaustive').
+      # pyproject.toml skips the brute-force proofs and the migration-history
+      # tests (-m); one worker per core here (public repo: a 4-core runner).
       - name: Tests
-        run: pytest --create-db
+        run: pytest --create-db -n $(nproc)
 
   image:
     runs-on: ubuntu-latest
