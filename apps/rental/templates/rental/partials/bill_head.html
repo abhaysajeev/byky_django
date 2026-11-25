@@ -1,0 +1,14 @@
+{% load static %}{% comment %}
+The receipt's letterhead -- invoice and credit note, preview and A4 (client,
+24 Nov 2026): the company's legal name, the station's place under it,
+the logo on the right. Takes `company`, `station`, `emirate`.
+{% endcomment %}
+<div class="bill-head">
+  <div class="bill-head-text">
+    {% if company %}<div class="bill-company">{{ company|upper }}</div>{% endif %}
+    <div class="bill-place">
+      <span>{{ station|upper }}{% if emirate %}, {{ emirate|upper }}{% endif %}</span>
+    </div>
+  </div>
+  <img class="bill-logo" src="{% static 'img/branding/byky-logo.png' %}" alt="BYKY" />
+</div>

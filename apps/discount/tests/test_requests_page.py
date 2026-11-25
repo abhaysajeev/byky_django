@@ -39,7 +39,10 @@ def test_both_kinds_are_listed_together_with_tab_counts(client_in, card, operato
     body = client_in.get(LIST).content.decode()
 
     assert "ORD-CARD" in body and "ORD-REQ" in body
-    assert "Card discount" in body and f"/discount/approval/{card.pk}/" in body
+    # The grid shows the card's grade (client, 24 Nov 2026); the kind filter
+    # still offers "Card discount".
+    assert card.card_grade.name in body and f"/discount/approval/{card.pk}/" in body
+    assert '<option value="card_discount"' in body and "Card discount" in body
     assert 'Pending <span class="scr-content-tab-count">2</span>' in body
 
 

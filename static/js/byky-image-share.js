@@ -14,7 +14,10 @@
 
   function open(thumb) {
     current = thumb;
-    img.src = thumb.dataset.full;
+    // Clears the last photo and shows a spinner until this one has loaded
+    // (it used to show the previous photo for a moment; client, 24 Nov 2026).
+    if (window.BykyImageZoom) window.BykyImageZoom.load(img, thumb.dataset.full);
+    else img.src = thumb.dataset.full;
     root.querySelector('[data-share-station]').textContent = thumb.dataset.station;
     root.querySelector('[data-share-shared]').textContent = thumb.dataset.shared;
     root.querySelector('[data-share-remarks]').textContent = thumb.dataset.remarks;
