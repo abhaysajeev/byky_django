@@ -17,6 +17,9 @@ from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 from django.utils import timezone
 
+# Run weekly and on demand, not on every push (pyproject.toml markers).
+pytestmark = pytest.mark.migrations
+
 # Devices is pinned too: a target only rolls back its own app, so without this
 # the old Device model these states build would not match the device table.
 DEVICES = ("devices", "0012_device_settings_company")
