@@ -24,10 +24,12 @@ import json
 import logging
 import os
 import queue
+import re
 import threading
 import time
 import urllib.error
 import urllib.request
+import uuid
 
 from django.conf import settings
 from django.db import close_old_connections
@@ -36,6 +38,16 @@ log = logging.getLogger("apps.monitoring")
 
 MAX_LOGS_PER_BATCH = 100            # the log server's limit
 RETRY_DELAY_SECONDS = 2.0
+MAX_ORDER_NOS = 50                  # a list reply (orders/changes) cannot make a huge field
+
+# The log server's "Order no" filter reads log.order_nos (owner, 24 Nov 2026).
+# Many order calls name the order only by its id, so ids are looked up too.
+ORDER_NO_KEYS = ("order_no",)
+ORDER_ID_KEYS = ("order_id", "order_sync_id")
+# Where the request's own sync_id IS the order's id.
+ORDER_SYNC_ID_URLS = ("api-app-order-create", "api-app-order-detail")
+_ORDER_NO_TEXT = re.compile(r'"order_no"\s*:\s*"([^"]{1,30})"')
+_ORDER_ID_TEXT = re.compile(r'"order_(?:sync_)?id"\s*:\s*"([0-9a-fA-F-]{36})"')
 
 _lock = threading.Lock()
 _queue = None
@@ -117,7 +129,10 @@ def ship(batch):
     try:
         if threading.current_thread() is _thread:
             close_old_connections()
-        documents = [document(fields, names) for fields, names in zip(batch, _names(batch), strict=True)]
+        refs = [order_refs(fields) for fields in batch]
+        numbers = _order_numbers(refs)
+        documents = [document(fields, names, order_nos(ref, numbers))
+                     for fields, names, ref in zip(batch, _names(batch), refs, strict=True)]
         for chunk in chunks(documents):
             _send(chunk)
     except Exception:                       # noqa: BLE001
@@ -163,15 +178,87 @@ def _body(text):
     return value if isinstance(value, dict) else {"value": value}
 
 
-def document(fields, names):
+def _uuid(value):
+    if not isinstance(value, str):
+        return None
+    try:
+        return str(uuid.UUID(value))
+    except ValueError:
+        return None
+
+
+def _walk(node, numbers, ids):
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in ORDER_NO_KEYS and isinstance(value, str) and value.strip():
+                numbers.add(value.strip())
+            elif key in ORDER_ID_KEYS and _uuid(value):
+                ids.add(_uuid(value))
+            else:
+                _walk(value, numbers, ids)
+    elif isinstance(node, list):
+        for value in node:
+            _walk(value, numbers, ids)
+
+
+def order_refs(fields):
+    """(order numbers, order ids) one log names, from its request and reply.
+    A body cut short in the log is not JSON: the text that was kept is
+    searched instead."""
+    numbers, ids = set(), set()
+    for key, cut in (("request_body", "request_truncated"), ("response_body", "response_truncated")):
+        text = fields.get(key) or ""
+        if not text:
+            continue
+        try:
+            parsed = json.loads(text)
+        except (ValueError, TypeError):
+            parsed = None
+        if parsed is None or fields.get(cut):
+            numbers.update(_ORDER_NO_TEXT.findall(text))
+            ids.update(filter(None, (_uuid(v) for v in _ORDER_ID_TEXT.findall(text))))
+        if parsed is not None:
+            _walk(parsed, numbers, ids)
+            if key == "request_body" and fields.get("url_name") in ORDER_SYNC_ID_URLS and isinstance(parsed, dict):
+                data = parsed.get("request_data")
+                sync_id = _uuid(data.get("sync_id")) if isinstance(data, dict) else None
+                if sync_id:
+                    ids.add(sync_id)
+    return numbers, ids
+
+
+def _order_numbers(refs):
+    """{order id: order number} for every id a batch names: one query. A
+    lookup failure only leaves those numbers out."""
+    ids = set().union(*(found for _, found in refs)) if refs else set()
+    if not ids:
+        return {}
+    try:
+        from apps.rental.models import Order
+
+        return {str(pk): number for pk, number in Order.objects.filter(pk__in=ids).values_list("pk", "order_no")}
+    except Exception:                       # noqa: BLE001
+        return {}
+
+
+def order_nos(ref, numbers):
+    """The sorted order numbers of one log, at most MAX_ORDER_NOS."""
+    direct, ids = ref
+    found = set(direct) | {numbers[i] for i in ids if i in numbers}
+    return sorted(found)[:MAX_ORDER_NOS]
+
+
+def document(fields, names, orders=None):
     """One log for the log server: the device as `device_id`, the request body
     as `form_data`, everything else (response included) under `log` -- with
     `environment`, the copy that sent it (qa / dev; None when unset), so one
-    viewer can tell the two deployments on the VPS apart."""
+    viewer can tell the two deployments on the VPS apart, and `order_nos`, the
+    orders the call was about (the viewer's Order no filter)."""
     record = {k: v for k, v in fields.items() if k not in ("request_body", "response_body")}
     record.update(names)
     record["response"] = _body(fields["response_body"])
     record["environment"] = settings.LOG_ENVIRONMENT or None
+    record["order_nos"] = list(orders or [])
     return {
         "device_id": fields["installation_id"] or (f"ip:{fields['ip']}" if fields["ip"] else "unknown"),
         "form_data": _body(fields["request_body"]),
