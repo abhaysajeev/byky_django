@@ -1,13 +1,7 @@
 {% load static %}
 {% load money %}
 <div class="bill">
-  <div class="bill-head">
-    <div class="bill-head-text">
-      <div class="station">{{ bill.station|upper }}</div>
-      <div class="emirate">{{ bill.emirate|upper }}</div>
-    </div>
-    <img class="bill-logo" src="{% static 'img/branding/byky-logo.png' %}" alt="BYKY" />
-  </div>
+  {% include "rental/partials/bill_head.html" with company=bill.company station=bill.station emirate=bill.emirate %}
   <div class="bill-title-block">
     <div class="bill-title">TAX INVOICE</div>
     {% if bill.discount_source == "complimentary" %}<div class="bill-title">COMPLIMENTARY</div>{% endif %}

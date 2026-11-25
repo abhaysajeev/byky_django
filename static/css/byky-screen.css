@@ -1168,6 +1168,27 @@ textarea.scr-mon-json { display: block; width: 100%; min-height: 420px; resize: 
 .scr-photo-thumb img { display: block; width: 100%; max-height: 240px; object-fit: contain; transition: transform 0.18s; }
 .scr-photo-thumb:hover img { transform: scale(1.04); }
 .scr-photo-modal { width: min(900px, 94vw); }
+/* Zoom inside an image viewer (static/js/byky-image-zoom.js; client, 24 Nov 2026). */
+.scr-img-zoom { position: relative; max-height: 75vh; overflow: auto; text-align: center; border-radius: 10px; min-height: 120px; }
+.scr-img-zoom.is-zoomed { cursor: grab; text-align: left; }
+.scr-img-zoom.is-dragging { cursor: grabbing; user-select: none; }
+.scr-img-zoom.is-zoomed img { margin: 0; border-radius: 0; }
+.scr-img-zoom-frame { position: relative; }
+.scr-img-zoom-frame:has(> [data-img-zoom][hidden]) { display: none; }
+.scr-img-zoom-bar { position: absolute; top: 8px; right: 18px; z-index: 2; display: inline-flex; align-items: center; gap: 4px; padding: 4px; border: 1px solid #eeedf5; border-radius: 11px; background: rgba(255, 255, 255, 0.94); box-shadow: 0 4px 14px rgba(26, 22, 64, 0.08); }
+.scr-img-zoom-bar .scr-icon-btn:disabled { opacity: 0.4; cursor: default; }
+.scr-img-zoom-level { min-width: 52px; height: 30px; border: 0; background: transparent; font: inherit; font-size: 12px; font-weight: 600; color: #6b6790; cursor: pointer; border-radius: 8px; }
+.scr-img-zoom-level:hover { background: #fbfaff; color: #1a1640; }
+.scr-img-zoom-wait { display: none; position: absolute; top: 50%; left: 50%; width: 26px; height: 26px; margin: -13px 0 0 -13px; border: 3px solid #eeedf5; border-top-color: #d81f26; border-radius: 50%; animation: scrBtnSpin 0.8s linear infinite; }
+.scr-img-zoom.is-loading .scr-img-zoom-wait { display: block; }
+.scr-img-zoom.is-loading img, .scr-img-zoom-frame:has(.is-loading) .scr-img-zoom-bar { visibility: hidden; }
+.scr-img-zoom-error { margin: 40px 0; color: #9490bb; font-size: 13px; }
+.scr-img-zoom-logo { max-height: 260px; min-height: 0; }
+.scr-head-actions a.is-disabled { pointer-events: none; opacity: 0.5; }
+@media (max-width: 767.98px) {
+  .scr-img-zoom-bar .scr-icon-btn { width: 36px; height: 36px; }
+  .scr-img-zoom-level { height: 36px; }
+}
 .scr-photo-modal .scr-modal-body img { display: block; max-width: 100%; max-height: 75vh; margin: 0 auto; border-radius: 10px; }
 /* Image Sharing (fleet/image_share_list.html): a small photo per row, and the
    remarks under the full photo in its dialog. */
@@ -1234,10 +1255,12 @@ textarea.scr-mon-json { display: block; width: 100%; min-height: 420px; resize: 
 
 /* Toolbar */
 .scr-live-toolbar { flex-wrap: wrap; gap: 10px; }
-.scr-live-search { flex: 1 1 260px; max-width: none; }
-.scr-live-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-.scr-live-filters .scr-list-select { min-width: 150px; }
-.scr-live-filters input[type="date"].scr-input { width: 150px; height: 38px; }
+/* A narrower search leaves room for six filters on one line (client, 24 Nov 2026). */
+.scr-live-search { flex: 1 1 180px; max-width: 260px; min-width: 150px; }
+.scr-live-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; flex: 0 1 auto; }
+.scr-live-filters .scr-list-select { min-width: 0; width: 128px; }
+.scr-live-filters select[name="vehicle_type"], .scr-live-filters select[name="status"] { width: 156px; }
+.scr-live-filters input[type="date"].scr-input { width: 132px; height: 38px; }
 .scr-live-filter-toggle { display: none; align-items: center; gap: 7px; }
 
 /* Table */
