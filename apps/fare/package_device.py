@@ -106,6 +106,8 @@ def _package_json(package):
         "qualifies": {"promotion_for": package.promotion_for, "lower": _band(package, package.lower_value),
                       "upper": _band(package, package.upper_value)},
         "promotion_type": package.promotion_type,
+        # May card and manager discounts be added under this package? (owner, 26 Nov 2026)
+        "include_regular_discounts": package.include_regular_discounts,
         "items": [
             {"item_id": r.pk, "vehicle_type_id": r.vehicle_type_id, "package_minutes": r.package_minutes,
              "value": None if quantity or r.value is None else str(r.value)}

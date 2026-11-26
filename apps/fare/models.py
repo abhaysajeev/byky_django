@@ -198,6 +198,11 @@ class FareSeason(PricedModel):
     name = models.CharField("Season Name", max_length=100)
     start_date = models.DateField("From Date")
     end_date = models.DateField("To Date")
+    # Owner, 26 Nov 2026: a special price may be an offer that card and manager
+    # discounts must not be added to. Default off. Data only: sent to the
+    # tablet in the fare download, which decides; the server does not check it.
+    # The fare's own base price has no such flag -- discounts always apply.
+    include_regular_discounts = models.BooleanField("Include regular discounts", default=False)
 
     class Meta:
         db_table = "fare_season"
@@ -233,6 +238,11 @@ class FareRule(PricedModel):
     # midnight" is common. The window is [start, end); 1440 is midnight.
     start_minute = models.PositiveSmallIntegerField()
     end_minute = models.PositiveSmallIntegerField()
+    # Owner, 26 Nov 2026: a special price may be an offer that card and manager
+    # discounts must not be added to. Default off. Data only: sent to the
+    # tablet in the fare download, which decides; the server does not check it.
+    # The fare's own base price has no such flag -- discounts always apply.
+    include_regular_discounts = models.BooleanField("Include regular discounts", default=False)
 
     class Meta:
         db_table = "fare_rule"
@@ -360,6 +370,10 @@ class Package(ApprovalMixin, TimeStampedModel):
     free_or_package_price = models.CharField(
         "Free / Package Price", max_length=15, choices=FreeOrPackagePrice.choices, default=FreeOrPackagePrice.FREE,
     )
+    # Owner, 26 Nov 2026: whether card and manager discounts may be added to a
+    # rental under this package. Default off. Data only, sent in the package
+    # download; the tablet decides.
+    include_regular_discounts = models.BooleanField("Include regular discounts", default=False)
 
     class Meta:
         db_table = "package"

@@ -86,6 +86,7 @@ def test_a_package_comes_whole(client, world, token):
         "level": "company", "valid_from": "2026-01-01", "valid_to": "2026-12-31",
         "qualifies": {"promotion_for": "quantity", "lower": "1", "upper": "3"},
         "promotion_type": "quantity",
+        "include_regular_discounts": False,                                      # the default (26 Nov 2026)
         "items": [{"item_id": first.pk, "vehicle_type_id": world["monaco"].pk, "package_minutes": 45,
                    "value": None}],
         "free_items": {"mode": "package_price", "items": [

@@ -92,6 +92,7 @@ class PackageSpec:
     free_item_selectable: bool
     free_item_selectable_note: str
     free_or_package_price: str
+    include_regular_discounts: bool
     items: tuple
     free_items: tuple
     time_slabs: tuple
@@ -302,6 +303,7 @@ def parse(data):
     time_slab_applicable = bool(data.get("time_slab_applicable"))
     free_item_selectable = bool(data.get("free_item_selectable"))
     free_item_selectable_note = str(data.get("free_item_selectable_note") or "").strip()
+    include_regular_discounts = data.get("include_regular_discounts") in (True, "true", "1", 1, "on")
     free_or_package_price = reader.choice(data.get("free_or_package_price"), "", "Free / Package Price",
                                         FreeOrPackagePrice.values, "Free or Package Price")
 
@@ -333,6 +335,7 @@ def parse(data):
         lower_value=lower_value, upper_value=upper_value, promotion_type=promotion_type,
         time_slab_applicable=time_slab_applicable, free_item_selectable=free_item_selectable,
         free_item_selectable_note=free_item_selectable_note, free_or_package_price=free_or_package_price,
+        include_regular_discounts=include_regular_discounts,
         items=items, free_items=free_items, time_slabs=time_slabs,
     )
     return Parsed(spec, reader.errors, meta)
@@ -373,6 +376,7 @@ def serialise(package):
         "time_slab_applicable": package.time_slab_applicable, "free_item_selectable": package.free_item_selectable,
         "free_item_selectable_note": package.free_item_selectable_note,
         "free_or_package_price": package.free_or_package_price, "is_active": package.is_active,
+        "include_regular_discounts": package.include_regular_discounts,
         "items": [_item_json(r) for r in package.items.all()],
         "free_items": [_free_item_json(r) for r in package.free_items.all()],
         "time_slabs": [_time_slab_json(r) for r in package.time_slabs.all()],
