@@ -114,9 +114,42 @@
     if (status === 'Sick Leave' || status === 'Casual Leave' || status === ON_LEAVE) return 'scr-badge-rejected';
     return 'scr-badge-pending';
   }
+  /* A shift past midnight (owner, 26 Nov 2026): its end is before its start,
+     so it ends the next day -- shown as "(+1)" on chips and labels. */
+  function endsNextDay(start, end) { return !!(start && end && end < start); }
+  function shiftSpan(start, end, sep) {
+    return start + (sep || '–') + end + (endsNextDay(start, end) ? ' (+1)' : '');
+  }
   function shiftLabel(rec) {
     if (!rec || rec.status !== 'Working' || !rec.shift1_start) return '';
-    return rec.shift1_start + ' – ' + rec.shift1_end;
+    return shiftSpan(rec.shift1_start, rec.shift1_end, ' – ');
+  }
+  /* "Ends next day · Fri, 27 Nov 2026" under an end time before its start. */
+  function nextDayText(dateIso) {
+    var d = new Date(dateIso + 'T00:00:00');
+    d.setDate(d.getDate() + 1);
+    return 'Ends next day · ' + d.toLocaleDateString('en-US', { weekday: 'short' }) + ', ' + d.getDate() + ' ' +
+      d.toLocaleDateString('en-US', { month: 'short' }) + ' ' + d.getFullYear();
+  }
+  function syncNextDay(startEl, endEl, dateIso) {
+    if (!endEl) return;
+    var hint = endEl.nextElementSibling;
+    if (!hint || !hint.hasAttribute('data-next-day-hint')) {
+      hint = document.createElement('div');
+      hint.className = 'scr-next-day-hint';
+      hint.setAttribute('data-next-day-hint', '');
+      endEl.parentNode.insertBefore(hint, endEl.nextSibling);
+    }
+    var show = !!dateIso && !endEl.hidden && endsNextDay(startEl && startEl.value, endEl.value);
+    hint.hidden = !show;
+    hint.textContent = show ? nextDayText(dateIso) : '';
+  }
+  /* Both shifts of a drawer built from apps/crew/drawers.py (the _hhmm fields). */
+  function syncDrawerNextDay(drawer, dateIso) {
+    if (!drawer) return;
+    var f = function (name) { return drawer.querySelector('[data-field="' + name + '"]'); };
+    syncNextDay(f('shift1_start_hhmm'), f('shift1_end_hhmm'), dateIso);
+    syncNextDay(f('shift2_start_hhmm'), f('shift2_end_hhmm'), dateIso);
   }
 
   // Which branch someone is working is a fact about one day, never about the
@@ -219,12 +252,18 @@
       shift2_end_hhmm: (rec && rec.shift2_end) || '',
     };
     editDayDrawer.__bykyFill('edit', record);
+    syncDrawerNextDay(editDayDrawer, dateIso);
     var host = editDayDrawer.querySelector('[data-days-host="employee_key"]');
     if (host) host.innerHTML = '<div class="scr-help" style="padding:0">' + emp.name + ' (' + emp.emp_no + ') · ' + fullDayLabel(dateIso) + '</div>';
     if (window.bootstrap && bootstrap.Offcanvas) bootstrap.Offcanvas.getOrCreateInstance(editDayDrawer).show();
   }
 
   if (editDayDrawer) {
+    ['input', 'change'].forEach(function (type) {
+      editDayDrawer.addEventListener(type, function () {
+        syncDrawerNextDay(editDayDrawer, editDayContext && editDayContext.dateIso);
+      });
+    });
     editDayDrawer.addEventListener('click', function (e) {
       var button = e.target.closest('[data-scr-save]');
       if (!button || !editDayContext) return;
@@ -275,8 +314,8 @@
   }
   function shiftLines(rec) {
     if (!rec || rec.status !== 'Working' || !rec.shift1_start) return '';
-    return '<span class="scr-wk-chip-time">' + rec.shift1_start + '–' + rec.shift1_end + '</span>' +
-      (rec.shift2_start ? '<span class="scr-wk-chip-time">' + rec.shift2_start + '–' + rec.shift2_end + '</span>' : '');
+    return '<span class="scr-wk-chip-time">' + shiftSpan(rec.shift1_start, rec.shift1_end) + '</span>' +
+      (rec.shift2_start ? '<span class="scr-wk-chip-time">' + shiftSpan(rec.shift2_start, rec.shift2_end) + '</span>' : '');
   }
 
   // One day of one station: the cover in words first (the gap a planner is
@@ -389,6 +428,7 @@
         var dateIso = addBtn.dataset.wkDay;
         addToDayContext = { branchId: branchNameToId[branchName] || '', branchName: branchName, dateIso: dateIso };
         addToDayDrawer.__bykyFill('add', null);
+        syncDrawerNextDay(addToDayDrawer, dateIso);
         // Pre-set to whichever button was clicked, editable, and saved as
         // the day's role. The Employee combo lists every Cashier and Labour
         // employee, whatever the Role (owner, 5 Nov 2026).
@@ -441,9 +481,15 @@
         if (addShift1Start && addShift1Start.value) return;
         branchShiftDefaults(addToDayContext.branchId, addToDayContext.dateIso).then(function (defaults) {
           if (defaults.shift1 && addShift1Start && !addShift1Start.value) { addShift1Start.value = defaults.shift1.start; addShift1End.value = defaults.shift1.end; }
+          syncDrawerNextDay(addToDayDrawer, addToDayContext && addToDayContext.dateIso);
         });
       });
     }
+    ['input', 'change'].forEach(function (type) {
+      addToDayDrawer.addEventListener(type, function () {
+        syncDrawerNextDay(addToDayDrawer, addToDayContext && addToDayContext.dateIso);
+      });
+    });
 
     addToDayDrawer.addEventListener('click', function (e) {
       var button = e.target.closest('[data-scr-save]');
@@ -496,6 +542,7 @@
             if (addShift2End) addShift2End.value = '';
             var shift2Toggle = addToDayDrawer.querySelector('[data-field="add_shift2"]');
             if (shift2Toggle) { shift2Toggle.checked = false; shift2Toggle.dispatchEvent(new Event('change')); }
+            syncDrawerNextDay(addToDayDrawer, addToDayContext.dateIso);
             // The next cashier added to the same day is a Secondary: the day now has a Primary.
             var nextType = addToDayDrawer.querySelector('[data-field="cashier_type"]');
             if (nextType) nextType.value = 'secondary';
@@ -571,7 +618,7 @@
             ['Branch', rec && rec.status === 'Working' ? rec.branch : ''],
             ['Cashier type', rec && rec.cashier_type ? CASHIER_TYPE_LABEL[rec.cashier_type] : ''],
             ['Shift 1', shiftLabel(rec)],
-            ['Shift 2', rec && rec.shift2_start ? rec.shift2_start + ' – ' + rec.shift2_end : ''],
+            ['Shift 2', rec && rec.shift2_start ? shiftSpan(rec.shift2_start, rec.shift2_end, ' – ') : ''],
             ['Leave request', isLeave(rec) ? rec.leave_reference : ''],
           ],
           empty: rec ? 'No station or shift for this day.' : 'Nothing is rostered for this day.',
@@ -681,7 +728,17 @@
       }
       var monthMatrix = R.matrix[emp.emp_no] || {};
       host.innerHTML = week.days.map(function (day) { return dayCard(emp, day, monthMatrix); }).join('');
+      host.querySelectorAll('[data-emp-day]').forEach(syncCardNextDay);
     }
+
+    function syncCardNextDay(card) {
+      syncNextDay(card.querySelector('[data-emp-day-shift1-start]'), card.querySelector('[data-emp-day-shift1-end]'), card.dataset.empDay);
+      syncNextDay(card.querySelector('[data-emp-day-shift2-start]'), card.querySelector('[data-emp-day-shift2-end]'), card.dataset.empDay);
+    }
+    host.addEventListener('input', function (e) {
+      var card = e.target.closest('[data-emp-day]');
+      if (card) syncCardNextDay(card);
+    });
 
     host.addEventListener('change', function (e) {
       var card = e.target.closest('[data-emp-day]');
@@ -703,9 +760,11 @@
         if (s1 && !s1.value) {
           branchShiftDefaults(e.target.value, card.dataset.empDay).then(function (defaults) {
             if (defaults.shift1 && !s1.value) { s1.value = defaults.shift1.start; s1e.value = defaults.shift1.end; }
+            syncCardNextDay(card);
           });
         }
       }
+      syncCardNextDay(card);
     });
 
     employeeHidden.addEventListener('change', renderDays);

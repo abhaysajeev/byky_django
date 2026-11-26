@@ -141,6 +141,29 @@
     };
   }
 
+  /* The selected branch's business-day start ("04:00"): a shift past midnight
+     must end by it. Missing means midnight, so none can (as on the server). */
+  function dayStart() {
+    var opt = select.options[select.selectedIndex];
+    return (opt && opt.dataset.dayStart) || '00:00';
+  }
+
+  /* "Next day" beside the end time of a shift past midnight (end before start). */
+  function syncNextDay(cell) {
+    var io = inputs(cell);
+    var tag = cell.querySelector('[data-wt-next]');
+    if (!tag) {
+      tag = document.createElement('span');
+      tag.className = 'scr-wt-next';
+      tag.setAttribute('data-wt-next', '');
+      tag.textContent = 'Next day';
+      cell.appendChild(tag);
+    }
+    var start = normalise(io.start.value), end = normalise(io.end.value);
+    tag.hidden = !(TIME.test(start) && TIME.test(end) && end < start);
+    cell.classList.toggle('is-overnight', !tag.hidden);
+  }
+
   function clearMarks() {
     cells.forEach(function (cell) { cell.classList.remove('is-invalid'); cell.removeAttribute('title'); });
   }
@@ -155,6 +178,7 @@
       setTime(io.start, s ? s.start : '');
       setTime(io.end, s ? s.end : '');
       io.start.disabled = io.end.disabled = !branch || !canUpdate;
+      syncNextDay(cell);
     });
   }
 
@@ -186,8 +210,12 @@
         errors.push({ field: label, message: 'Use a 24-hour time such as 08:30.' });
         return;
       }
-      if (s.end <= s.start) {
-        errors.push({ field: label, message: 'End must be after start. A shift cannot run past midnight; a full day is 00:00 to 23:59.' });
+      if (s.end === s.start) {
+        errors.push({ field: label, message: 'Start and end cannot be the same; a full day is 00:00 to 23:59.' });
+        return;
+      }
+      if (s.end < s.start && s.end > dayStart()) {
+        errors.push({ field: label, message: 'A shift past midnight must end by ' + dayStart() + '.' });
         return;
       }
       (byDay[s.week_day] = byDay[s.week_day] || {})[s.shift_number] = s;
@@ -195,6 +223,18 @@
     UAE_WEEK.forEach(function (day) {
       var shiftsOfDay = byDay[day];
       if (!shiftsOfDay) return;
+      var numbers = Object.keys(shiftsOfDay).map(Number);
+      var overnight = numbers.filter(function (n) { return shiftsOfDay[n].end < shiftsOfDay[n].start; });
+      if (overnight.length && Math.min.apply(null, overnight) < Math.max.apply(null, numbers)) {
+        errors.push({ field: DAYS[day] + ' shift ' + Math.min.apply(null, overnight), message: 'Only the last shift of a day can run past midnight.' });
+      }
+      // Yesterday's shift past midnight: today's first shift starts after it ends.
+      var yesterday = (day + 6) % 7;
+      var before = byDay[yesterday] || {};
+      var carried = Object.keys(before).map(Number).filter(function (n) { return before[n].end < before[n].start; });
+      if (carried.length && shiftsOfDay[1] && shiftsOfDay[1].start <= before[carried[0]].end) {
+        errors.push({ field: DAYS[day] + ' shift 1', message: 'Must start after ' + DAYS[yesterday] + ' shift ' + carried[0] + ' ends (' + before[carried[0]].end + ').' });
+      }
       var previousEnd = null;
       for (var n = 1; n <= MAX_SHIFTS; n++) {
         var s = shiftsOfDay[n];
@@ -236,7 +276,7 @@
   // flatpickr reports a picked time as "change"; typing fires "input".
   cells.forEach(function (cell) {
     ['input', 'change'].forEach(function (type) {
-      cell.addEventListener(type, function () { cell.classList.remove('is-invalid'); cell.removeAttribute('title'); });
+      cell.addEventListener(type, function () { cell.classList.remove('is-invalid'); cell.removeAttribute('title'); syncNextDay(cell); });
     });
   });
 
@@ -252,7 +292,7 @@
 
   function setCaption() {
     caption.textContent = branch
-      ? branch.name + ' · 24-hour clock; a full day is 00:00 to 23:59. Leave a shift empty if it is not worked.'
+      ? branch.name + ' · 24-hour clock; a full day is 00:00 to 23:59. An end before the start runs past midnight, ending by ' + dayStart() + ' the next day. Leave a shift empty if it is not worked.'
       : 'Choose a branch to see its shifts. 24-hour clock; a full day is 00:00 to 23:59.';
   }
 

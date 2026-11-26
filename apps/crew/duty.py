@@ -47,12 +47,6 @@ def upcoming(company, at=None):
     return today, today + datetime.timedelta(days=UPCOMING_DAYS - 1)
 
 
-def _ends_next_day(start, end, zone):
-    if start is None or end is None:
-        return None
-    return timezone.localtime(end, zone).date() > timezone.localtime(start, zone).date()
-
-
 def role_of(row):
     """The role a roster day is worked as (owner, 5 Nov 2026): `cashier` or
     `labour` on a Working day -- its own, or the employee's designation for a
@@ -91,10 +85,10 @@ def day_json(row, day, zone):
         "state": branch.location.state.name if branch else None,
         "shift1_start": services._hhmm(row.shift1_start, zone),
         "shift1_end": services._hhmm(row.shift1_end, zone),
-        "shift1_ends_next_day": _ends_next_day(row.shift1_start, row.shift1_end, zone),
+        "shift1_ends_next_day": services._ends_next_day(row.shift1_start, row.shift1_end, zone),
         "shift2_start": services._hhmm(row.shift2_start, zone),
         "shift2_end": services._hhmm(row.shift2_end, zone),
-        "shift2_ends_next_day": _ends_next_day(row.shift2_start, row.shift2_end, zone),
+        "shift2_ends_next_day": services._ends_next_day(row.shift2_start, row.shift2_end, zone),
         **services._leave_fields(row),
     }
 

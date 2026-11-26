@@ -432,6 +432,9 @@ CELERY_BEAT_SCHEDULE = {
     # Punch-ins nobody closed, closed soon after each company's business day starts.
     # A punch-in also closes them itself, so a missed run never blocks anyone.
     "crew-auto-close": {"task": "apps.crew.tasks.auto_close_due", "schedule": crontab(minute="*/15")},
+    # Duty ended, still punched in: one push, 15 minutes after the rostered shift end.
+    "crew-punch-out-reminders": {"task": "apps.crew.tasks.punch_out_reminders_due",
+                                 "schedule": crontab(minute="*/5")},
 }
 
 # -- Push notifications (apps/notifications) ---------------------------------------------

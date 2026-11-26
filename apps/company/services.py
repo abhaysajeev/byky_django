@@ -8,6 +8,11 @@ the two ever disagreeing about when a branch is open.
 The legacy stored one window per branch per day (RmsWorkingHours, minutes from
 midnight) and never crossed midnight -- 0 of its 560 rows do. "Open all day"
 was 0-1439, which is 00:00-23:59 here.
+
+A shift may run past midnight (owner, 26 Nov 2026): an end earlier than its
+start ends the next day. It must be the day's last shift and end by the
+company's business-day start (CompanyConfig.report_day_start, 04:00 at BYKY),
+so attendance auto-close at the day start never cuts a shift still running.
 """
 
 import datetime
@@ -129,13 +134,34 @@ def week_day_of(moment):
     return moment.weekday()
 
 
+def previous_week_day(day):
+    """The WeekDay value before `day` (Monday's is Sunday)."""
+    return (day - 1) % 7
+
+
+def ends_next_day(start, end):
+    """True for a shift that runs past midnight -- its end is before its start."""
+    return end < start
+
+
+def shift_covers(week_day, start, end, day, minute):
+    """Whether a working-time shift (`week_day`, `start`, `end`) covers
+    `minute` on weekday `day`. Start and end minutes both count. A shift past
+    midnight covers its own day from `start` and the next day up to `end`."""
+    if not ends_next_day(start, end):
+        return week_day == day and start <= minute <= end
+    return ((week_day == day and minute >= start)
+            or (week_day == previous_week_day(day) and minute <= end))
+
+
 def branch_open_state(branch, at=None):
     """OPEN, CLOSED or NOT_SET for `branch` at `at` (default now).
 
-    Open means the company-local time falls inside one of that day's shifts,
-    start and end minutes both included -- so 00:00-23:59 is the whole day.
-    A day with no shift is closed. A branch with no working time at all is
-    NOT_SET: nobody has said when it opens, which is not the same as closed.
+    Open means the company-local time falls inside one of the shifts,
+    start and end minutes both included -- so 00:00-23:59 is the whole day;
+    yesterday's shift past midnight counts until its end. A day with no shift
+    is closed. A branch with no working time at all is NOT_SET: nobody has
+    said when it opens, which is not the same as closed.
     """
     rows = list(
         BranchWorkingTime.objects
@@ -149,7 +175,7 @@ def branch_open_state(branch, at=None):
     day = week_day_of(now)
     minute = now.time().replace(second=0, microsecond=0)
     for week_day, start, end in rows:
-        if week_day == day and start <= minute <= end:
+        if shift_covers(week_day, start, end, day, minute):
             return OPEN
     return CLOSED
 
@@ -162,6 +188,7 @@ def schedule_for(branch):
             "shift_number": row.shift_number,
             "start": row.start_time.strftime("%H:%M"),
             "end": row.end_time.strftime("%H:%M"),
+            "ends_next_day": ends_next_day(row.start_time, row.end_time),
         }
         for row in BranchWorkingTime.objects.filter(branch=branch, is_active=True)
         .order_by("week_day", "shift_number")
@@ -175,17 +202,21 @@ def _time(text):
         return None
 
 
-def validate_schedule(shifts):
+def validate_schedule(shifts, day_start=datetime.time.min):
     """(rows, errors) for a posted week.
 
     `rows` are dicts of week_day, shift_number, start_time, end_time -- only the
     shifts actually worked. `errors` are {"field", "message"} pairs naming the
-    day and shift, e.g. "Monday shift 2". The rules:
+    day and shift, e.g. "Monday shift 2". `day_start` is the company's
+    business-day start (core.timezones.day_start_for). The rules:
 
       - a shift has both times or neither (neither = not worked)
-      - end is after start; a shift never crosses midnight
+      - start and end differ; an end before the start runs past midnight
+      - a shift past midnight is the day's last and ends by `day_start`
+        (owner, 26 Nov 2026) -- no day start saved means midnight, so none can
       - shifts in a day are consecutive: shift 2 needs shift 1
-      - each shift starts after the previous one ends
+      - each shift starts after the previous one ends, and a day's first
+        shift after the previous day's shift past midnight ends
     """
     if not isinstance(shifts, list):
         return [], [{"field": "Schedule", "message": "Send the week as a list of shifts."}]
@@ -218,11 +249,16 @@ def validate_schedule(shifts):
         if start is None or end is None:
             errors.append({"field": label, "message": "Use a 24-hour time such as 08:30."})
             continue
-        if end <= start:
+        if end == start:
             errors.append({
                 "field": label,
-                "message": "End must be after start. A shift cannot run past midnight; "
-                           "a full day is 00:00 to 23:59.",
+                "message": "Start and end cannot be the same; a full day is 00:00 to 23:59.",
+            })
+            continue
+        if ends_next_day(start, end) and end > day_start:
+            errors.append({
+                "field": label,
+                "message": f"A shift past midnight must end by {day_start.strftime('%H:%M')}.",
             })
             continue
         if number in by_day.setdefault(day, {}):
@@ -233,6 +269,23 @@ def validate_schedule(shifts):
     rows = []
     for day in sorted(by_day, key=UAE_WEEK.index):       # errors read in screen order
         shifts_of_day = by_day[day]
+        overnight = [n for n, (s, e) in shifts_of_day.items() if ends_next_day(s, e)]
+        if overnight and min(overnight) < max(shifts_of_day):
+            errors.append({
+                "field": f"{day.label} shift {min(overnight)}",
+                "message": "Only the last shift of a day can run past midnight.",
+            })
+        # Yesterday's shift past midnight: today's first shift starts after it ends.
+        yesterday = WeekDay(previous_week_day(day))
+        carried = [(n, e) for n, (s, e) in by_day.get(yesterday, {}).items() if ends_next_day(s, e)]
+        if carried and 1 in shifts_of_day:
+            carried_number, carried_end = carried[0]
+            if shifts_of_day[1][0] <= carried_end:
+                errors.append({
+                    "field": f"{day.label} shift 1",
+                    "message": f"Must start after {yesterday.label} shift {carried_number} ends "
+                               f"({carried_end.strftime('%H:%M')}).",
+                })
         previous_end = None
         for number in SHIFTS:
             if number not in shifts_of_day:

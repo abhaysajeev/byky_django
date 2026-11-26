@@ -129,7 +129,7 @@ def test_the_call_is_in_the_api_docs(client, db):
 def test_the_working_time_of_the_asked_day(client, company, station):
     mapped(company, station)
     BranchWorkingTime.objects.create(branch=station, week_day=WeekDay.FRIDAY, shift_number=2,
-                                     start_time=datetime.time(16), end_time=datetime.time(23, 59))
+                                     start_time=datetime.time(16), end_time=datetime.time(2))   # past midnight
     BranchWorkingTime.objects.create(branch=station, week_day=WeekDay.FRIDAY, shift_number=1,
                                      start_time=datetime.time(8), end_time=datetime.time(13))
     BranchWorkingTime.objects.create(branch=station, week_day=WeekDay.SATURDAY, shift_number=1,
@@ -140,8 +140,8 @@ def test_the_working_time_of_the_asked_day(client, company, station):
 
     assert (friday["date"], friday["week_day"], friday["week_day_name"], friday["is_set"]) == (
         "2026-10-09", WeekDay.FRIDAY, "Friday", True)
-    assert friday["shifts"] == [{"shift_number": 1, "start": "08:00", "end": "13:00"},
-                                {"shift_number": 2, "start": "16:00", "end": "23:59"}]
+    assert friday["shifts"] == [{"shift_number": 1, "start": "08:00", "end": "13:00", "ends_next_day": False},
+                                {"shift_number": 2, "start": "16:00", "end": "02:00", "ends_next_day": True}]
     assert (sunday["shifts"], sunday["is_set"]) == ([], True)          # no shift that day: closed
     assert friday["open_now"] in ("open", "closed")
 

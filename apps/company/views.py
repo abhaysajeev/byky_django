@@ -34,6 +34,7 @@ from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
 from core.ordering import recent_first
+from core.timezones import day_start_for
 from theme import drawers as theme_drawers
 from theme.views import ThemedTemplateView
 
@@ -397,10 +398,14 @@ class BranchWorkingTimeView(CompanyScreenView):
         branches = (
             scoping.branches_for(self.request.user)
             .filter(is_active=True)
-            .select_related("location")
+            .select_related("location", "company")
             .annotate(shift_count=Count("working_times"))
             .order_by("name")
         )
+        day_starts = {}
+        for b in branches:
+            if b.company_id not in day_starts:
+                day_starts[b.company_id] = day_start_for(b.company).strftime("%H:%M")
         selected = self.request.GET.get("branch") or ""
         context.update({
             "days": [{"value": day.value, "label": day.label} for day in UAE_WEEK],
@@ -410,6 +415,8 @@ class BranchWorkingTimeView(CompanyScreenView):
                     "id": b.pk, "name": b.name, "code": b.short_code,
                     "location": b.location.name if b.location_id else "",
                     "has_schedule": b.shift_count > 0,
+                    # A shift past midnight must end by this (the company's business-day start).
+                    "day_start": day_starts[b.company_id],
                 }
                 for b in branches
             ],
@@ -620,7 +627,8 @@ class BranchWorkingTimeSave(writes.WriteView):
         if branch is None:
             return _schedule_invalid([{"field": "Branch", "message": "Choose a branch first."}])
 
-        rows, errors = company_services.validate_schedule(data.get("shifts", []))
+        rows, errors = company_services.validate_schedule(
+            data.get("shifts", []), day_start=day_start_for(branch.company))
         if errors:
             return _schedule_invalid(errors)
 
@@ -661,7 +669,10 @@ class BranchWorkingTimeAssign(writes.WriteView):
                 "field": "Branches", "message": "One or more branches were not found.",
             }])
 
-        rows, errors = company_services.validate_schedule(data.get("shifts", []))
+        # The earliest business-day start of the branches' companies: the week
+        # must suit every branch it is copied to.
+        day_start = min(day_start_for(branch.company) for branch in branches)
+        rows, errors = company_services.validate_schedule(data.get("shifts", []), day_start=day_start)
         if errors:
             return _schedule_invalid(errors)
 
