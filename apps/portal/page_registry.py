@@ -176,6 +176,9 @@ PAGES = [
     # Rental since 22 Nov 2026 (client); the code keeps "fleet." so every
     # role's grant carries over.
     ("fleet.image_share", "rental", "Image Sharing", "fleet-image-share-list", ["read", "delete"], 2, False),
+    # Owner, 26 Nov 2026: Delete is Cancel (entries are never deleted), Approve is Resolve.
+    ("rental.suspense", "rental", "Suspense Entries", "rental-suspense-list",
+     ["create", "read", "update", "delete", "approve"], 2, False),
     ("rental.payment_mode", "rental", "Payment Mode", "rental-payment-mode-list", CRUD_PRINT, 3, False),
     ("rental.privileges", "rental", "Privileges", "rental-privileges", ["read", "update"], 9, False),
     ("discount.card_type", "discount", "Card Type", "discount-card-type-list", CRUD_PRINT, 1, False),
