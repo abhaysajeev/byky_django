@@ -125,10 +125,11 @@
     return shiftSpan(rec.shift1_start, rec.shift1_end, ' – ');
   }
   /* "Ends next day · Fri, 27 Nov 2026" under an end time before its start. */
-  function nextDayText(dateIso) {
+  var MOON_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>';
+  function nextDayDate(dateIso) {
     var d = new Date(dateIso + 'T00:00:00');
     d.setDate(d.getDate() + 1);
-    return 'Ends next day · ' + d.toLocaleDateString('en-US', { weekday: 'short' }) + ', ' + d.getDate() + ' ' +
+    return d.toLocaleDateString('en-US', { weekday: 'short' }) + ', ' + d.getDate() + ' ' +
       d.toLocaleDateString('en-US', { month: 'short' }) + ' ' + d.getFullYear();
   }
   function syncNextDay(startEl, endEl, dateIso) {
@@ -136,13 +137,14 @@
     var hint = endEl.nextElementSibling;
     if (!hint || !hint.hasAttribute('data-next-day-hint')) {
       hint = document.createElement('div');
-      hint.className = 'scr-next-day-hint';
+      hint.className = 'byky-next-day';
+      hint.setAttribute('role', 'note');
       hint.setAttribute('data-next-day-hint', '');
       endEl.parentNode.insertBefore(hint, endEl.nextSibling);
     }
     var show = !!dateIso && !endEl.hidden && endsNextDay(startEl && startEl.value, endEl.value);
     hint.hidden = !show;
-    hint.textContent = show ? nextDayText(dateIso) : '';
+    hint.innerHTML = show ? MOON_ICON + '<span>Ends next day · <strong>' + nextDayDate(dateIso) + '</strong></span>' : '';
   }
   /* Both shifts of a drawer built from apps/crew/drawers.py (the _hhmm fields). */
   function syncDrawerNextDay(drawer, dateIso) {

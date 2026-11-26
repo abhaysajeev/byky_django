@@ -373,11 +373,11 @@ def test_the_page_reads_in_the_uae_week_and_invents_no_times(client_in, station)
     # Regression: byky-screen.js pages and filters every .scr-row/.scr-search on
     # the screen -- with those classes the modal's search hid the week's days.
     assert 'class="scr-row' not in html and 'class="scr-search' not in html
-    # Regression: <input type="time"> shows AM/PM on a 12-hour computer; the
-    # 56 shift times use flatpickr in 24-hour mode instead.
-    assert 'type="time"' not in html
-    assert html.count('class="scr-input scr-shift-time"') == 7 * 4 * 2
-    assert "vendor/libs/flatpickr/flatpickr.js" in html
+    # The 56 shift times use the duty roster's own picker, <input type="time">
+    # (owner, 26 Nov 2026); each end time carries a hidden "+1 day" badge.
+    assert html.count('type="time" class="scr-input scr-shift-time"') == 7 * 4 * 2
+    assert html.count('data-wt-next hidden') == 7 * 4
+    assert "vendor/libs/flatpickr/flatpickr.js" not in html
 
 
 def test_the_branch_in_the_url_is_preselected(client_in, station):

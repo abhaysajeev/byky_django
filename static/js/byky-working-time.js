@@ -10,9 +10,10 @@
  * The rules checked here mirror apps/company/services.py::validate_schedule.
  * They run first only to point at the bad cells; the server decides.
  *
- * Times use flatpickr in 24-hour mode, never <input type="time">: that shows
- * AM/PM on any computer set to a 12-hour clock, though the screen is 24-hour.
- * Values are always "HH:MM", as the server stores and sends them.
+ * Times use the browser's own time picker, <input type="time">, exactly as the
+ * duty roster's drawers do (owner, 26 Nov 2026). Its value is always "HH:MM"
+ * (24-hour), as the server stores and sends it, whatever clock it displays.
+ * A shift past midnight gets a "+1 day" badge on its end time.
  *
  * Posting, the toast and the error modal come from byky-crud.js
  * (window.BykyCrud), so CSRF handling exists in one place.
@@ -116,21 +117,7 @@
     return /^\d:\d\d$/.test(v) ? '0' + v : v;
   }
 
-  /* One 24-hour, time-only picker per input. disableMobile stops flatpickr
-     handing phones the native time control, which can show AM/PM again. */
-  root.querySelectorAll('.scr-shift-time').forEach(function (input) {
-    if (typeof flatpickr === 'undefined') return;   // still accepts typed HH:MM
-    flatpickr(input, {
-      enableTime: true, noCalendar: true, dateFormat: 'H:i', time_24hr: true,
-      allowInput: true, minuteIncrement: 1, disableMobile: true
-    });
-  });
-
   function setTime(input, value) {
-    var fp = input._flatpickr;
-    if (fp) {
-      if (value) fp.setDate(value, false, 'H:i'); else fp.clear(false);
-    }
     input.value = value || '';
   }
 
@@ -148,20 +135,14 @@
     return (opt && opt.dataset.dayStart) || '00:00';
   }
 
-  /* "Next day" beside the end time of a shift past midnight (end before start). */
+  /* "+1 day" on the end time of a shift past midnight (end before start). */
   function syncNextDay(cell) {
     var io = inputs(cell);
-    var tag = cell.querySelector('[data-wt-next]');
-    if (!tag) {
-      tag = document.createElement('span');
-      tag.className = 'scr-wt-next';
-      tag.setAttribute('data-wt-next', '');
-      tag.textContent = 'Next day';
-      cell.appendChild(tag);
-    }
+    var badge = cell.querySelector('[data-wt-next]');
     var start = normalise(io.start.value), end = normalise(io.end.value);
-    tag.hidden = !(TIME.test(start) && TIME.test(end) && end < start);
-    cell.classList.toggle('is-overnight', !tag.hidden);
+    var overnight = TIME.test(start) && TIME.test(end) && end < start;
+    if (badge) badge.hidden = !overnight;
+    io.end.title = overnight ? 'Ends the next day' : '';
   }
 
   function clearMarks() {
