@@ -10,9 +10,10 @@
  * The rules checked here mirror apps/company/services.py::validate_schedule.
  * They run first only to point at the bad cells; the server decides.
  *
- * Times use flatpickr in 24-hour mode, never <input type="time">: that shows
- * AM/PM on any computer set to a 12-hour clock, though the screen is 24-hour.
- * Values are always "HH:MM", as the server stores and sends them.
+ * Times use the browser's own time picker, <input type="time">, exactly as the
+ * duty roster's drawers do (owner, 26 Nov 2026). Its value is always "HH:MM"
+ * (24-hour), as the server stores and sends it, whatever clock it displays.
+ * A shift past midnight gets a "+1 day" badge on its end time.
  *
  * Posting, the toast and the error modal come from byky-crud.js
  * (window.BykyCrud), so CSRF handling exists in one place.
@@ -116,21 +117,7 @@
     return /^\d:\d\d$/.test(v) ? '0' + v : v;
   }
 
-  /* One 24-hour, time-only picker per input. disableMobile stops flatpickr
-     handing phones the native time control, which can show AM/PM again. */
-  root.querySelectorAll('.scr-shift-time').forEach(function (input) {
-    if (typeof flatpickr === 'undefined') return;   // still accepts typed HH:MM
-    flatpickr(input, {
-      enableTime: true, noCalendar: true, dateFormat: 'H:i', time_24hr: true,
-      allowInput: true, minuteIncrement: 1, disableMobile: true
-    });
-  });
-
   function setTime(input, value) {
-    var fp = input._flatpickr;
-    if (fp) {
-      if (value) fp.setDate(value, false, 'H:i'); else fp.clear(false);
-    }
     input.value = value || '';
   }
 
@@ -139,6 +126,23 @@
       start: cell.querySelector('[data-edge="start"]'),
       end: cell.querySelector('[data-edge="end"]')
     };
+  }
+
+  /* The selected branch's business-day start ("04:00"): a shift past midnight
+     must end by it. Missing means midnight, so none can (as on the server). */
+  function dayStart() {
+    var opt = select.options[select.selectedIndex];
+    return (opt && opt.dataset.dayStart) || '00:00';
+  }
+
+  /* "+1 day" on the end time of a shift past midnight (end before start). */
+  function syncNextDay(cell) {
+    var io = inputs(cell);
+    var badge = cell.querySelector('[data-wt-next]');
+    var start = normalise(io.start.value), end = normalise(io.end.value);
+    var overnight = TIME.test(start) && TIME.test(end) && end < start;
+    if (badge) badge.hidden = !overnight;
+    io.end.title = overnight ? 'Ends the next day' : '';
   }
 
   function clearMarks() {
@@ -155,6 +159,7 @@
       setTime(io.start, s ? s.start : '');
       setTime(io.end, s ? s.end : '');
       io.start.disabled = io.end.disabled = !branch || !canUpdate;
+      syncNextDay(cell);
     });
   }
 
@@ -186,8 +191,12 @@
         errors.push({ field: label, message: 'Use a 24-hour time such as 08:30.' });
         return;
       }
-      if (s.end <= s.start) {
-        errors.push({ field: label, message: 'End must be after start. A shift cannot run past midnight; a full day is 00:00 to 23:59.' });
+      if (s.end === s.start) {
+        errors.push({ field: label, message: 'Start and end cannot be the same; a full day is 00:00 to 23:59.' });
+        return;
+      }
+      if (s.end < s.start && s.end > dayStart()) {
+        errors.push({ field: label, message: 'A shift past midnight must end by ' + dayStart() + '.' });
         return;
       }
       (byDay[s.week_day] = byDay[s.week_day] || {})[s.shift_number] = s;
@@ -195,6 +204,18 @@
     UAE_WEEK.forEach(function (day) {
       var shiftsOfDay = byDay[day];
       if (!shiftsOfDay) return;
+      var numbers = Object.keys(shiftsOfDay).map(Number);
+      var overnight = numbers.filter(function (n) { return shiftsOfDay[n].end < shiftsOfDay[n].start; });
+      if (overnight.length && Math.min.apply(null, overnight) < Math.max.apply(null, numbers)) {
+        errors.push({ field: DAYS[day] + ' shift ' + Math.min.apply(null, overnight), message: 'Only the last shift of a day can run past midnight.' });
+      }
+      // Yesterday's shift past midnight: today's first shift starts after it ends.
+      var yesterday = (day + 6) % 7;
+      var before = byDay[yesterday] || {};
+      var carried = Object.keys(before).map(Number).filter(function (n) { return before[n].end < before[n].start; });
+      if (carried.length && shiftsOfDay[1] && shiftsOfDay[1].start <= before[carried[0]].end) {
+        errors.push({ field: DAYS[day] + ' shift 1', message: 'Must start after ' + DAYS[yesterday] + ' shift ' + carried[0] + ' ends (' + before[carried[0]].end + ').' });
+      }
       var previousEnd = null;
       for (var n = 1; n <= MAX_SHIFTS; n++) {
         var s = shiftsOfDay[n];
@@ -236,7 +257,7 @@
   // flatpickr reports a picked time as "change"; typing fires "input".
   cells.forEach(function (cell) {
     ['input', 'change'].forEach(function (type) {
-      cell.addEventListener(type, function () { cell.classList.remove('is-invalid'); cell.removeAttribute('title'); });
+      cell.addEventListener(type, function () { cell.classList.remove('is-invalid'); cell.removeAttribute('title'); syncNextDay(cell); });
     });
   });
 
@@ -252,7 +273,7 @@
 
   function setCaption() {
     caption.textContent = branch
-      ? branch.name + ' · 24-hour clock; a full day is 00:00 to 23:59. Leave a shift empty if it is not worked.'
+      ? branch.name + ' · 24-hour clock; a full day is 00:00 to 23:59. An end before the start runs past midnight, ending by ' + dayStart() + ' the next day. Leave a shift empty if it is not worked.'
       : 'Choose a branch to see its shifts. 24-hour clock; a full day is 00:00 to 23:59.';
   }
 

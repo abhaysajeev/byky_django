@@ -323,3 +323,98 @@ def test_a_real_punch_never_has_closed_by(world):
                    employee=world["staff"], employee_code="EMP001", employee_name="Anil K",
                    rms_installation_id="phone-e", rms_scan_time=aware(local(DAY, 9)),
                    closed_by=ClosedBy.DAY_END).save(force_insert=True)
+
+
+# -- Shifts past midnight in attendance/method (owner, 26 Nov 2026) --------------------------
+
+
+def test_the_method_call_says_when_a_shift_ends_the_next_day(client, world, mechanic, staff_app, day_start):
+    now = timezone.now()
+    today = business_day_of(world["company"], now)
+    row = rostered(mechanic, today, start=(8, 0), end=(12, 0), second=((18, 0), (23, 0)))
+    row.shift2_end = aware(local(today + datetime.timedelta(days=1), 2, 0))   # 02:00 the next day
+    row.save()
+
+    roster = call(client, METHOD.format("employee"), {}, token=staff_app).json()["data"]["roster"]
+    assert (roster["shift1_ends_next_day"], roster["shift2_ends_next_day"]) == (False, True)
+    assert set(roster) == set(base.api._METHOD_SAMPLE["roster"])
+
+
+# -- Punch-out reminder (owner, 26 Nov 2026) --------------------------------------------------
+
+
+def _with_token(staff_app):
+    from apps.portal.session_models import AppSession
+
+    AppSession.objects.filter(user__username__iexact="EMP001", channel=Channel.EMPLOYEE,
+                              logged_out_at__isnull=True).update(push_token="fcm-anil")
+
+
+def _reminders():
+    from apps.notifications.models import Action, Notification
+
+    return list(Notification.objects.filter(action=Action.PUNCH_OUT_REMINDER).order_by("created_on"))
+
+
+def test_a_reminder_goes_15_minutes_after_the_shift_end_once(world, staff_app, day_start):
+    _with_token(staff_app)
+    rostered(world["staff"], DAY, start=(9, 0), end=(17, 0))
+    row = punch_in(world, local(DAY, 9, 5))
+
+    assert services.punch_out_reminders_due(now=aware(local(DAY, 17, 14))) == 0     # not yet
+    assert services.punch_out_reminders_due(now=aware(local(DAY, 17, 15))) == 1
+    assert services.punch_out_reminders_due(now=aware(local(DAY, 17, 40))) == 0     # once only
+
+    [push] = _reminders()
+    assert (push.session.push_token, push.title, push.android_channel) == ("fcm-anil", "Punch out", "employee_alerts")
+    assert push.body == "Your duty ended at 17:00. Please scan your QR at the station to punch out."
+    assert (push.subject_type, str(push.subject_id), push.data["method"]) == ("attendance", str(row.pk), "qr_station")
+    assert push.data["shift_end"] == f"{DAY} 17:00:00"
+
+
+def test_a_self_punch_in_is_told_to_punch_out_in_the_app(world, staff_app, day_start):
+    _with_token(staff_app)
+    rostered(world["staff"], DAY, start=(9, 0), end=(13, 0), second=((17, 0), (23, 0)))
+    punch_in(world, local(DAY, 17, 2), source=AttendanceSource.SELF)
+
+    assert services.punch_out_reminders_due(now=aware(local(DAY, 13, 30))) == 0    # the shift it fell in is shift 2
+    assert services.punch_out_reminders_due(now=aware(local(DAY, 23, 15))) == 1
+    assert _reminders()[0].body == "Your duty ended at 23:00. Please punch out in the app."
+
+
+@pytest.mark.parametrize("roster", ["none", "off", "after_last_shift"])
+def test_no_reminder_without_a_rostered_shift(world, staff_app, day_start, roster):
+    _with_token(staff_app)
+    if roster == "off":
+        rostered(world["staff"], DAY, day_type=DutyRosterDayType.WEEK_OFF)
+    if roster == "after_last_shift":
+        rostered(world["staff"], DAY, start=(9, 0), end=(13, 0))
+    punch_in(world, local(DAY, 14))
+    assert services.punch_out_reminders_due(now=aware(local(NEXT, 3, 0))) == 0
+
+
+def test_no_reminder_once_punched_out(world, staff_app, day_start):
+    _with_token(staff_app)
+    rostered(world["staff"], DAY, start=(9, 0), end=(17, 0))
+    row = punch_in(world, local(DAY, 9))
+    services.auto_close(row)                                     # closed (any punch-out)
+    assert services.punch_out_reminders_due(now=aware(local(DAY, 18))) == 0
+
+
+def test_signed_out_now_reminded_after_signing_in(world, staff_app, day_start):
+    from apps.portal.session_models import AppSession
+
+    rostered(world["staff"], DAY, start=(9, 0), end=(17, 0))
+    punch_in(world, local(DAY, 9))
+    AppSession.objects.update(push_token="")                     # no phone to tell
+    assert services.punch_out_reminders_due(now=aware(local(DAY, 17, 20))) == 0
+    _with_token(staff_app)
+    assert services.punch_out_reminders_due(now=aware(local(DAY, 17, 25))) == 1
+
+
+def test_auto_close_still_closes_at_the_shift_end(world, day_start):
+    """rostered_shift_end was split out of auto_close_time; the close is unchanged."""
+    rostered(world["staff"], DAY, start=(9, 0), end=(17, 0))
+    row = punch_in(world, local(DAY, 9))
+    assert services.rostered_shift_end(row) == aware(local(DAY, 17))
+    assert services.auto_close_time(row) == (aware(local(DAY, 17)), ClosedBy.DUTY_ROSTER)

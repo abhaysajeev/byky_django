@@ -824,6 +824,19 @@ textarea.scr-drawer-input { height: auto; min-height: 72px; padding: 10px 13px; 
 .scr-wt-cell.is-invalid { background: #fdeced; box-shadow: inset 0 0 0 1px #eba7a9; }
 .scr-wt-cell.is-invalid .scr-input { border-color: #d81f26; }
 .scr-wt-dash { color: #a9a6c4; }
+/* A shift past midnight: a "+1 day" badge on the end time's top-right corner, so
+   the row keeps its height and every column stays aligned. */
+.scr-wt-cell { display: grid; grid-template-columns: minmax(96px, 1fr) auto minmax(96px, 1fr); }
+.scr-wt-cell > .scr-input, .scr-wt-end { min-width: 0; }
+.scr-wt-end { position: relative; display: block; }
+.scr-wt-plus1 {
+  position: absolute; top: -8px; right: -6px; z-index: 1; padding: 2px 6px; border-radius: 99px;
+  background: #efedfc; border: 1px solid #fff; box-shadow: 0 1px 2px rgba(26, 22, 64, 0.08);
+  font-size: 9.5px; font-weight: 700; line-height: 1.3; letter-spacing: 0.02em; color: #5a4fc8;
+  white-space: nowrap; pointer-events: none;
+}
+.scr-wt-plus1[hidden] { display: none; }
+.scr-wt-cell .scr-input[type="time"] { padding: 0 8px; }
 
 .scr-wt-grid tbody { transition: filter 0.2s ease, opacity 0.2s ease; }
 .scr-wt-grid tbody.is-loading { filter: blur(2px); opacity: 0.55; pointer-events: none; user-select: none; }

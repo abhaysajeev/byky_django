@@ -5,12 +5,10 @@
 
 {% block vendor_css %}
 {{ block.super }}
-<link rel="stylesheet" href="{% static 'vendor/libs/flatpickr/flatpickr.css' %}" />
 {% endblock vendor_css %}
 
 {% block vendor_js %}
 {{ block.super }}
-<script src="{% static 'vendor/libs/flatpickr/flatpickr.js' %}"></script>
 {% endblock vendor_js %}
 
 {% block page_css %}
@@ -51,7 +49,7 @@
         <label class="scr-label" for="wt-branch">Branch<span class="scr-required">*</span></label>
         <select id="wt-branch" class="scr-input" data-wt-branch>
           <option value="">Select a branch</option>
-          {% for b in wt_branches %}<option value="{{ b.id }}"{% if selected_branch == b.id|stringformat:"d" %} selected{% endif %}>{{ b.name }}</option>{% endfor %}
+          {% for b in wt_branches %}<option value="{{ b.id }}" data-day-start="{{ b.day_start }}"{% if selected_branch == b.id|stringformat:"d" %} selected{% endif %}>{{ b.name }}</option>{% endfor %}
         </select>
       </div>
     </div>
@@ -91,9 +89,12 @@
                 {% for n in shifts %}
                 <td>
                   <div class="scr-wt-cell" data-wt-cell data-day="{{ day.value }}" data-shift="{{ n }}" data-label="{{ day.label }} shift {{ n }}">
-                    <input type="text" class="scr-input scr-shift-time" data-edge="start" placeholder="HH:MM" maxlength="5" autocomplete="off" disabled aria-label="{{ day.label }} shift {{ n }} start" />
+                    <input type="time" class="scr-input scr-shift-time" data-edge="start" disabled aria-label="{{ day.label }} shift {{ n }} start" />
                     <span class="scr-wt-dash">&ndash;</span>
-                    <input type="text" class="scr-input scr-shift-time" data-edge="end" placeholder="HH:MM" maxlength="5" autocomplete="off" disabled aria-label="{{ day.label }} shift {{ n }} end" />
+                    <span class="scr-wt-end">
+                      <input type="time" class="scr-input scr-shift-time" data-edge="end" disabled aria-label="{{ day.label }} shift {{ n }} end" />
+                      <span class="scr-wt-plus1" data-wt-next hidden>+1 day</span>
+                    </span>
                   </div>
                 </td>
                 {% endfor %}

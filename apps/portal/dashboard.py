@@ -7,9 +7,9 @@ unless the company says otherwise).
 
 A station's **today** starts when its first shift of the day starts and runs
 to local midnight, so a bill settled just after closing still counts for the
-day. Shifts never cross midnight (company.services.validate_schedule), so the
-business day always sits inside one calendar day. A station with no shifts
-today counts the whole calendar day.
+day. A station with no shifts today counts the whole calendar day. A shift
+past midnight (owner, 26 Nov 2026) keeps the station open after midnight until
+it ends; its sales after midnight count on the calendar day they happen.
 """
 
 import datetime
@@ -25,6 +25,7 @@ from django.utils import timezone
 
 from apps.company.models import BranchWorkingTime
 from apps.company.scoping import branches_for
+from apps.company.services import ends_next_day, previous_week_day, shift_covers
 from apps.crew.models import Attendance, PunchType
 from apps.devices.models import DeviceMapping, DeviceStatus
 from apps.fleet.scoping import vehicles_for
@@ -75,13 +76,18 @@ def branch_days(branch_ids, now, zone):
     minute = local.time().replace(second=0, microsecond=0)
 
     today = defaultdict(list)
-    for branch_id, start, end in (
+    carried = defaultdict(list)        # yesterday's shifts past midnight
+    yesterday = previous_week_day(local.weekday())
+    for branch_id, week_day, start, end in (
         BranchWorkingTime.objects
-        .filter(branch_id__in=branch_ids, is_active=True, week_day=local.weekday())
+        .filter(branch_id__in=branch_ids, is_active=True, week_day__in=(local.weekday(), yesterday))
         .order_by("branch_id", "shift_number")
-        .values_list("branch_id", "start_time", "end_time")
+        .values_list("branch_id", "week_day", "start_time", "end_time")
     ):
-        today[branch_id].append((start, end))
+        if week_day == local.weekday():
+            today[branch_id].append((week_day, start, end))
+        elif ends_next_day(start, end):
+            carried[branch_id].append((week_day, start, end))
     has_hours = set(
         BranchWorkingTime.objects.filter(branch_id__in=branch_ids, is_active=True)
         .values_list("branch_id", flat=True).distinct()
@@ -90,15 +96,19 @@ def branch_days(branch_ids, now, zone):
     days = {}
     for branch_id in branch_ids:
         shifts = today.get(branch_id)
+        # Start and end minutes both count; yesterday's shift past midnight
+        # counts until its end -- company.services.shift_covers, as branch_open_state.
+        open_now = any(shift_covers(wd, start, end, local.weekday(), minute)
+                       for wd, start, end in (shifts or []) + carried.get(branch_id, []))
         if shifts:
             days[branch_id] = {
-                "hours": " · ".join(f"{start:%H:%M}–{end:%H:%M}" for start, end in shifts),
-                # Start and end minutes both count, as in company.services.branch_open_state.
-                "state": OPEN if any(start <= minute <= end for start, end in shifts) else CLOSED,
-                "starts": datetime.datetime.combine(local.date(), shifts[0][0], tzinfo=zone),
+                "hours": " · ".join(f"{start:%H:%M}–{end:%H:%M}" + (" (+1)" if ends_next_day(start, end) else "")
+                                    for _, start, end in shifts),
+                "state": OPEN if open_now else CLOSED,
+                "starts": datetime.datetime.combine(local.date(), shifts[0][1], tzinfo=zone),
             }
         elif branch_id in has_hours:
-            days[branch_id] = {"hours": "Closed today", "state": CLOSED, "starts": midnight}
+            days[branch_id] = {"hours": "Closed today", "state": OPEN if open_now else CLOSED, "starts": midnight}
         else:
             days[branch_id] = {"hours": "No hours set", "state": NOT_SET, "starts": midnight}
     return days

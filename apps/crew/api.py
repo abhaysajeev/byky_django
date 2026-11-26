@@ -608,7 +608,8 @@ _METHOD_SAMPLE = {
     "valid_until": "2026-11-26 04:00:00",
     "roster": {"date": "2026-11-25", "day_type": "working", "role": "cashier", "branch_id": 12,
                "branch": "Creek Park 4", "branch_code": "CP4", "shift1_start": "2026-11-25 09:00:00",
-               "shift1_end": "2026-11-25 17:00:00", "shift2_start": None, "shift2_end": None},
+               "shift1_end": "2026-11-25 17:00:00", "shift2_start": "2026-11-25 20:00:00",
+               "shift2_end": "2026-11-26 02:00:00", "shift1_ends_next_day": False, "shift2_ends_next_day": True},
     "open_punch_in": None, "next_punch": "punch_in", "next_punch_method": "qr_station",
 }
 
@@ -628,6 +629,9 @@ and once `valid_until` has passed.
   punch-in's method, whatever the roster now says.
 * `roster` -- today's roster row (null when not rostered); on a QR day the
   QR code carries its `branch_code` as `employee_branch_code`.
+  `shift1_ends_next_day` / `shift2_ends_next_day` are true when that shift
+  runs past midnight (its end is on the next day, by the day start) -- show
+  "Ends next day" (owner, 26 Nov 2026).
 
 The server checks every punch with the same rule; a refusal
 (`self_attendance_not_allowed`, `attendance_method_mismatch`) carries the

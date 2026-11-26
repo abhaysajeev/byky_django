@@ -148,8 +148,14 @@ field.readonly       always read-only -- a value this screen displays but
               </label>
 
             {% elif f.kind == "checkbox" %}
-              <label class="byky-switch-row" for="{{ f.id }}">
-                <input type="checkbox" id="{{ f.id }}" class="byky-switch-input" data-field="{{ f.id }}"{% if f.enables %} data-enables="{{ f.enables }}"{% endif %}{% if f.checked %} data-default-checked="true"{% endif %} />
+              {% comment %}
+              The drawer's id in front: two drawers on one page with the same
+              checkbox field (the duty roster's Edit Day and Add to Day both
+              have add_shift2) otherwise share an id, and the label toggles the
+              other drawer's hidden box. Scripts find it by data-field.
+              {% endcomment %}
+              <label class="byky-switch-row" for="{{ spec.drawer_id }}-{{ f.id }}">
+                <input type="checkbox" id="{{ spec.drawer_id }}-{{ f.id }}" class="byky-switch-input" data-field="{{ f.id }}"{% if f.enables %} data-enables="{{ f.enables }}"{% endif %}{% if f.checked %} data-default-checked="true"{% endif %} />
                 <span class="byky-switch"></span>
                 <span class="byky-switch-label">{{ f.placeholder|default:"Enabled" }}</span>
               </label>

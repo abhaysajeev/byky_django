@@ -423,8 +423,8 @@ _STATION_SAMPLE = {
                "state": "Abu Dhabi", "is_active": True, "mapped_since": "2026-10-09 10:15:00"},
     "working_time": {
         "date": "2026-10-09", "week_day": 3, "week_day_name": "Thursday", "is_set": True,
-        "shifts": [{"shift_number": 1, "start": "08:00", "end": "13:00"},
-                   {"shift_number": 2, "start": "16:00", "end": "23:59"}],
+        "shifts": [{"shift_number": 1, "start": "08:00", "end": "13:00", "ends_next_day": False},
+                   {"shift_number": 2, "start": "16:00", "end": "02:00", "ends_next_day": True}],
         "open_now": "open",
     },
 }
@@ -444,7 +444,9 @@ whose working time is sent.
 **Told here:** the station's identity -- `branch_id`, code, name, location,
 state, whether it is active, since when this tablet is mapped to it -- and its
 **working time** for `date`: that weekday's `shifts` (1-4, `HH:MM`, company
-time; none = closed that day), `is_set` (false when the station has no working
+time; none = closed that day; `ends_next_day: true` when the shift runs past
+midnight -- its `end` is on the next day, by the business-day start),
+`is_set` (false when the station has no working
 time at all), and `open_now` -- `open` / `closed` / `not_set` at this moment
 (today's state, whatever `date` asks). Settings, receipt numbering and the
 rest still come at login. `branch.is_active: false` means the station is
@@ -462,7 +464,9 @@ def _working_time(branch, day):
     return {
         "date": day.isoformat(), "week_day": week_day, "week_day_name": WeekDay(week_day).label,
         "is_set": bool(rows),
-        "shifts": [{"shift_number": n, "start": start.strftime("%H:%M"), "end": end.strftime("%H:%M")}
+        "shifts": [{"shift_number": n, "start": start.strftime("%H:%M"), "end": end.strftime("%H:%M"),
+                    # An end before the start: the shift runs past midnight (owner, 26 Nov 2026).
+                    "ends_next_day": company_services.ends_next_day(start, end)}
                    for wd, n, start, end in sorted(rows, key=lambda r: r[1]) if wd == week_day],
         "open_now": company_services.branch_open_state(branch),
     }

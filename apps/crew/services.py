@@ -45,6 +45,7 @@ from core.timezones import (
     business_day_of,
     business_day_range,
     business_window,
+    day_start_for,
     zone_for,
 )
 
@@ -308,6 +309,14 @@ def attendance_method_for(employee, at=None):
     return method_for_row(employee, row)
 
 
+def _ends_next_day(start, end, zone):
+    """True when a roster shift ends on the day after it starts (the
+    station's own clock), None when either time is missing."""
+    if start is None or end is None:
+        return None
+    return timezone.localtime(end, zone).date() > timezone.localtime(start, zone).date()
+
+
 def _local_text(moment, zone):
     return timezone.localtime(moment, zone).strftime("%Y-%m-%d %H:%M:%S") if moment else None
 
@@ -334,6 +343,9 @@ def attendance_method_today(employee, now=None):
             "branch_code": row.branch.short_code if row.branch_id else None,
             "shift1_start": _local_text(row.shift1_start, zone), "shift1_end": _local_text(row.shift1_end, zone),
             "shift2_start": _local_text(row.shift2_start, zone), "shift2_end": _local_text(row.shift2_end, zone),
+            # The roster APIs' own flag (apps/crew/duty.py): the end is on the next day.
+            "shift1_ends_next_day": _ends_next_day(row.shift1_start, row.shift1_end, zone),
+            "shift2_ends_next_day": _ends_next_day(row.shift2_start, row.shift2_end, zone),
         }
     return {
         "attendance_method": method,
@@ -379,6 +391,22 @@ def _check_method(row, channel, open_in=None):
 # -- Auto-close --------------------------------------------------------------------
 
 
+def rostered_shift_end(punch_in):
+    """The end of the rostered shift a punch-in falls in: shift 1, then shift
+    2, the first that ends after the punch-in, on a Working day of its business
+    day. None when there is none (not rostered, a day off, or a punch-in after
+    the day's last shift)."""
+    company = punch_in.employee.company
+    day = business_day_of(company, punch_in.rms_scan_time)
+    row = DutyRoster.objects.filter(employee_id=punch_in.employee_id, date=day,
+                                    day_type=DutyRosterDayType.WORKING).first()
+    if row is not None:
+        for shift_end in (row.shift1_end, row.shift2_end):
+            if shift_end is not None and shift_end > punch_in.rms_scan_time:
+                return shift_end
+    return None
+
+
 def auto_close_time(punch_in):
     """(time, closed_by) for closing an open punch-in: the end of the rostered
     shift (shift 1, then shift 2) that ends after the punch-in on its business
@@ -386,12 +414,9 @@ def auto_close_time(punch_in):
     company = punch_in.employee.company
     day = business_day_of(company, punch_in.rms_scan_time)
     _, day_end = business_day_bounds(company, day)
-    row = DutyRoster.objects.filter(employee_id=punch_in.employee_id, date=day,
-                                    day_type=DutyRosterDayType.WORKING).first()
-    if row is not None:
-        for shift_end in (row.shift1_end, row.shift2_end):
-            if shift_end is not None and shift_end > punch_in.rms_scan_time:
-                return min(shift_end, day_end), ClosedBy.DUTY_ROSTER
+    shift_end = rostered_shift_end(punch_in)
+    if shift_end is not None:
+        return min(shift_end, day_end), ClosedBy.DUTY_ROSTER
     return day_end, ClosedBy.DAY_END
 
 
@@ -423,6 +448,45 @@ def _lock(employee_id):
     """One employee's punches are decided one at a time: two tablets scanning
     the same person at once, or the job and a punch, cannot both act."""
     Employee.objects.select_for_update().filter(pk=employee_id).first()
+
+
+# -- Punch-out reminder ---------------------------------------------------------------
+# Owner, 26 Nov 2026: someone on the duty roster whose shift has ended and who
+# has not punched out is told once, REMINDER_DELAY after the shift end, on the
+# employee app. Not for people with no roster; managers are not told.
+
+REMINDER_DELAY = datetime.timedelta(minutes=15)
+
+
+def punch_out_reminders_due(now=None):
+    """The beat job (apps/crew/tasks.py), every 5 minutes: one push per open
+    punch-in whose rostered shift ended at least REMINDER_DELAY ago. A
+    punch-in is never reminded twice; someone signed out of the app gets it
+    when they next sign in, if the punch-in is still open (auto-close ends it
+    at the day start). Returns how many pushes were written."""
+    from apps.notifications import employee as employee_push
+    from apps.notifications.models import Action, Notification, SubjectType
+
+    now = now or timezone.now()
+    open_ins = list(Attendance.objects
+                    .filter(punch_type=PunchType.PUNCH_IN, punch_out__isnull=True,
+                            rms_scan_time__gte=now - datetime.timedelta(days=2), rms_scan_time__lte=now,
+                            employee__user__isnull=False)
+                    .select_related("employee__company", "employee__user"))
+    reminded = {str(subject_id) for subject_id in Notification.objects
+                .filter(subject_type=SubjectType.ATTENDANCE, action=Action.PUNCH_OUT_REMINDER,
+                        subject_id__in=[row.pk for row in open_ins])
+                .values_list("subject_id", flat=True)}
+    sent = 0
+    for punch_in in open_ins:
+        if str(punch_in.pk) in reminded:
+            continue
+        shift_end = rostered_shift_end(punch_in)
+        if shift_end is None or now < shift_end + REMINDER_DELAY:
+            continue
+        if employee_push.punch_out_reminder(punch_in, shift_end, now=now):
+            sent += 1
+    return sent
 
 
 def auto_close_due(now=None):
@@ -1092,6 +1156,10 @@ def _check_day(entry, *, branches_qs):
         if shift2_start is None or shift2_end is None:
             errors.append({"field": f"{label} — Shift 2", "message": "Enter both of Shift 2's times, or remove it."})
 
+    if not errors:
+        errors += _overnight_errors(label, on_date, branch.company, zone,
+                                    (shift1_start, shift1_end), (shift2_start, shift2_end) if has_shift2 else None)
+
     if errors:
         return errors, {}
 
@@ -1101,6 +1169,32 @@ def _check_day(entry, *, branches_qs):
         remarks=(entry.get("remarks") or "")[:200],
     )
     return errors, fields
+
+
+def _overnight_errors(label, on_date, company, zone, shift1, shift2):
+    """Shifts past midnight on a roster day (owner, 26 Nov 2026): only the
+    day's last shift may run past midnight, and it must end by the company's
+    business-day start (04:00 at BYKY) -- the moment attendance auto-close
+    runs, so it never cuts a shift still running. Shift 2 starts after Shift 1
+    ends. No day start saved means midnight, so no shift may run past it."""
+    day_start = day_start_for(company)
+    latest = datetime.datetime.combine(on_date + datetime.timedelta(days=1), day_start, tzinfo=zone)
+    late_text = f"A shift past midnight must end by {day_start.strftime('%H:%M')}."
+    errors = []
+    shifts = [("Shift 1", shift1)] + ([("Shift 2", shift2)] if shift2 else [])
+    for name, (start, end) in shifts:
+        if end - start >= datetime.timedelta(days=1):
+            errors.append({"field": f"{label} — {name}", "message": "Start and end cannot be the same."})
+        elif end.date() > on_date and end > latest:
+            errors.append({"field": f"{label} — {name}", "message": late_text})
+    if shift2:
+        if shift1[1].date() > on_date:
+            errors.append({"field": f"{label} — Shift 1",
+                           "message": "Only the last shift can run past midnight."})
+        elif shift2[0] <= shift1[1]:
+            errors.append({"field": f"{label} — Shift 2",
+                           "message": f"Shift 2 must start after Shift 1 ends ({_hhmm(shift1[1], zone)})."})
+    return errors
 
 
 def _combine(on_date, hhmm, zone):
