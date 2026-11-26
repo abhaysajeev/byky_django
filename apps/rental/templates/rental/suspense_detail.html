@@ -1,0 +1,165 @@
+{% extends layout_path %}
+{% load static %}
+{% load money %}
+
+{% block title %}Suspense entry · {{ entry.branch.name }} - Rental{% endblock title %}
+
+{% block vendor_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'vendor/libs/flatpickr/flatpickr.css' %}" />
+{% endblock vendor_css %}
+
+{% block vendor_js %}
+{{ block.super }}
+<script src="{% static 'vendor/libs/flatpickr/flatpickr.js' %}"></script>
+{% endblock vendor_js %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+<script src="{% static 'js/byky-datepicker.js' %}"></script>
+<script src="{% static 'js/byky-suspense.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+<div class="scr" data-suspense data-orders-url="{{ orders_url }}" data-resolve-url="{{ resolve_url }}" data-cancel-url="{{ cancel_url }}">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Rental</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <a href="{{ list_url }}">Suspense Entries</a>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>{{ entry.branch.name }} · {{ entry.entry_date|date:"d M Y" }}</b>
+      </div>
+      <h1 class="scr-title scr-sus-title">
+        <span class="scr-sus-amount is-{{ entry.kind }}">{% if entry.kind == 'short' %}−{% else %}+{% endif %}AED {{ entry.amount|money }}</span>
+        <span class="scr-badge {% if entry.kind == 'short' %}scr-badge-mandatory{% else %}scr-badge-active{% endif %}"><i></i>{{ entry.get_kind_display }}</span>
+      </h1>
+      <p class="scr-sub">{{ entry.branch.name }} · collection of {{ entry.entry_date|date:"l, d M Y" }}</p>
+    </div>
+    <div class="scr-head-actions">
+      <a href="{{ list_url }}" class="scr-btn-secondary">Back</a>
+      {% if entry.status == "open" %}
+      {% if perm.delete %}<button type="button" class="scr-btn-danger" data-scr-modal-open="suspense-cancel">Cancel entry</button>{% endif %}
+      {% if perm.update %}
+      <button type="button" class="scr-btn-secondary" data-scr-open="suspense:edit" data-record-id="{{ row.json_id }}">Edit</button>
+      {% endif %}
+      {% if perm.approve %}<button type="button" class="scr-btn-primary" data-scr-modal-open="suspense-resolve">Mark resolved</button>{% endif %}
+      {% endif %}
+    </div>
+  </div>
+  {{ row.fields_json|json_script:row.json_id }}
+
+  <div class="scr-sus-detail-grid">
+    <div class="scr-card">
+      <div class="scr-form-head">
+        <div class="scr-form-title-row">
+          <h2 class="scr-form-title">Entry</h2>
+          <span class="scr-badge {% if entry.status == 'open' %}scr-badge-pending{% elif entry.status == 'resolved' %}scr-badge-approved{% else %}scr-badge-inactive{% endif %}"><i></i>{{ entry.get_status_display }}</span>
+        </div>
+      </div>
+      <div class="scr-form-body scr-mon-body">
+        <div class="scr-detail-rows">
+          <div class="scr-detail-row"><span class="scr-detail-label">Branch</span><span class="scr-detail-value">{{ entry.branch.name }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Date</span><span class="scr-detail-value">{{ entry.entry_date|date:"d M Y" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Type</span><span class="scr-detail-value">{{ entry.get_kind_display }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Amount</span><span class="scr-detail-value"><b>AED {{ entry.amount|money }}</b></span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Remarks</span><span class="scr-detail-value scr-mon-wrap">{{ entry.remarks|default:"—" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Added</span><span class="scr-detail-value">{{ row.created_on|date:"d M Y, H:i" }}{% if row.created_by %} · {{ row.created_by }}{% endif %}</span></div>
+          {% if entry.status == "resolved" %}
+          <div class="scr-detail-row"><span class="scr-detail-label">Resolved</span><span class="scr-detail-value">{{ resolved_at|date:"d M Y, H:i" }}{% if resolved_by %} · {{ resolved_by }}{% endif %}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Resolution</span><span class="scr-detail-value scr-mon-wrap">{{ entry.resolution_remarks|default:"—" }}</span></div>
+          {% elif entry.status == "cancelled" %}
+          <div class="scr-detail-row"><span class="scr-detail-label">Cancelled</span><span class="scr-detail-value">{{ cancelled_at|date:"d M Y, H:i" }}{% if cancelled_by %} · {{ cancelled_by }}{% endif %}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Reason</span><span class="scr-detail-value scr-mon-wrap">{{ entry.cancel_reason }}</span></div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="scr-card">
+      <div class="scr-form-head"><div class="scr-form-title-row"><h2 class="scr-form-title">Suspected orders</h2><span class="scr-toolbar-count">{{ orders|length }}</span></div></div>
+      {% if orders %}
+      <div class="scr-table-scroll scr-sb">
+        <table>
+          <thead><tr><th>Order</th><th>Booked</th><th>Customer</th><th class="scr-sus-num">Net (AED)</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for o in orders %}
+            <tr>
+              <td><a class="scr-link-blue" href="{{ o.url }}">{{ o.no }}</a></td>
+              <td class="scr-state">{{ o.booked_at|date:"H:i" }}</td>
+              <td class="scr-state">{{ o.customer|default:"—" }}</td>
+              <td class="scr-sus-num">{% if o.net_amount is not None %}{{ o.net_amount|money }}{% else %}—{% endif %}</td>
+              <td class="scr-state">{{ o.status_label|default:"—" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="scr-form-body scr-mon-body"><p class="scr-sus-card-none">No order was named. The admin team will trace it from the day's orders.</p></div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if entry.status == "open" and perm.approve %}
+  <div class="scr-modal-veil" data-scr-modal-veil="suspense-resolve" hidden></div>
+  <div class="scr-modal" data-scr-modal="suspense-resolve" hidden>
+    <div class="scr-modal-head">
+      <div>
+        <div class="scr-modal-title">Mark resolved</div>
+        <p class="scr-modal-sub">Only a label: it records that the difference was fixed by hand. No order or invoice changes.</p>
+      </div>
+      <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+      </button>
+    </div>
+    <div class="scr-modal-body">
+      <div class="scr-field">
+        <label class="scr-label" for="sus-resolve-note">How it was resolved</label>
+        <textarea id="sus-resolve-note" class="scr-input scr-textarea" rows="3" maxlength="500" data-sus-note placeholder="Optional"></textarea>
+      </div>
+    </div>
+    <div class="scr-modal-foot">
+      <button type="button" class="scr-btn-secondary" data-scr-modal-close>Back</button>
+      <button type="button" class="scr-btn-primary" data-sus-go="resolve"><span class="scr-btn-spin" aria-hidden="true"></span>Mark resolved</button>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if entry.status == "open" and perm.delete %}
+  <div class="scr-modal-veil" data-scr-modal-veil="suspense-cancel" hidden></div>
+  <div class="scr-modal" data-scr-modal="suspense-cancel" hidden>
+    <div class="scr-modal-head">
+      <div>
+        <div class="scr-modal-title">Cancel this entry</div>
+        <p class="scr-modal-sub">It stays on record as Cancelled; entries are never deleted.</p>
+      </div>
+      <button type="button" class="scr-drawer-close" data-scr-modal-close aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+      </button>
+    </div>
+    <div class="scr-modal-body">
+      <div class="scr-field">
+        <label class="scr-label" for="sus-cancel-note">Reason <span class="scr-required">*</span></label>
+        <textarea id="sus-cancel-note" class="scr-input scr-textarea" rows="3" maxlength="500" data-sus-note placeholder="Why is this entry not needed?"></textarea>
+      </div>
+    </div>
+    <div class="scr-modal-foot">
+      <button type="button" class="scr-btn-secondary" data-scr-modal-close>Back</button>
+      <button type="button" class="scr-btn-danger" data-sus-go="cancel"><span class="scr-btn-spin" aria-hidden="true"></span>Cancel entry</button>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{% include "byky/partials/drawer.html" with save_url=save_url_suspense spec=drawer_suspense module_label="Rental · Suspense Entries" %}
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}

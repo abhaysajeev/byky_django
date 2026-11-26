@@ -1,0 +1,196 @@
+{% extends layout_path %}
+{% load static %}
+{% load money %}
+
+{% block title %}Suspense Entries - Rental{% endblock title %}
+
+{% block vendor_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'vendor/libs/flatpickr/flatpickr.css' %}" />
+{% endblock vendor_css %}
+
+{% block vendor_js %}
+{{ block.super }}
+<script src="{% static 'vendor/libs/flatpickr/flatpickr.js' %}"></script>
+{% endblock vendor_js %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+<script src="{% static 'js/byky-datepicker.js' %}"></script>
+<script src="{% static 'js/byky-suspense.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+{% comment %}
+Suspense entries (apps/rental/suspense.py): a branch's collection came in short
+or in excess and the field team could not say against which order. Admins
+resolve them by hand; Resolved is a label only. Never deleted -- cancelled.
+{% endcomment %}
+<div class="scr" data-suspense data-orders-url="{{ orders_url }}" data-today="{{ today|date:'d M Y' }}">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>Rental</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Suspense Entries</b>
+      </div>
+      <h1 class="scr-title">Suspense Entries</h1>
+      <p class="scr-sub">Collection amounts that came in short or in excess, kept until the admin team resolves them.</p>
+    </div>
+    <div class="scr-head-actions">
+      {% if perm.create %}
+      <button type="button" class="scr-btn-primary" data-scr-open="suspense:add">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+        Add Suspense Entry
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="scr-card" data-scr-server-paged>
+    <form method="get" class="scr-toolbar scr-mon-toolbar" data-scr-autosubmit>
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="text" name="q" value="{{ params.q }}" placeholder="Order no or remarks" aria-label="Search" />
+      </div>
+      <div class="scr-mon-dates">
+        <input type="date" name="from" class="scr-input" value="{{ params.from }}" aria-label="From date" title="From date" />
+        <span>to</span>
+        <input type="date" name="to" class="scr-input" value="{{ params.to }}" aria-label="To date" title="To date" />
+      </div>
+      <select name="branch" class="scr-input scr-list-select" aria-label="Branch">
+        <option value="">All branches</option>
+        {% for b in branches %}<option value="{{ b.id }}"{% if params.branch == b.id|stringformat:"s" %} selected{% endif %}>{{ b.name }}</option>{% endfor %}
+      </select>
+      <select name="kind" class="scr-input scr-list-select" aria-label="Type">
+        <option value="">Short and excess</option>
+        {% for value, label in kinds %}<option value="{{ value }}"{% if params.kind == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+      <select name="status" class="scr-input scr-list-select" aria-label="Status">
+        <option value="all"{% if status == "all" %} selected{% endif %}>All statuses</option>
+        {% for value, label in statuses %}<option value="{{ value }}"{% if status == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+      <button type="submit" class="scr-btn">Filter</button>
+      {% if filtered %}<a href="{% url 'rental-suspense-list' %}" class="scr-btn-secondary">Clear</a>{% endif %}
+      <div class="scr-sus-view" role="group" aria-label="View">
+        <button type="button" class="scr-sus-view-btn is-on" data-sus-view="list" aria-pressed="true" title="List view">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"></path></svg>
+          <span>List</span>
+        </button>
+        <button type="button" class="scr-sus-view-btn" data-sus-view="grid" aria-pressed="false" title="Grid view">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect></svg>
+          <span>Grid</span>
+        </button>
+      </div>
+      <span class="scr-toolbar-count">{{ page.paginator.count }} entr{{ page.paginator.count|pluralize:"y,ies" }}</span>
+    </form>
+
+    {% if rows %}
+    <div class="scr-table-scroll scr-sb" data-sus-pane="list">
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Branch</th>
+            <th>Type</th>
+            <th class="scr-sus-num">Amount (AED)</th>
+            <th>Suspected orders</th>
+            <th>Status</th>
+            <th>Added by</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr class="scr-sus-row" data-href="{{ r.url }}" data-record-id="{{ r.json_id }}" data-pk="{{ r.pk }}">
+            <td class="scr-state">{{ r.date|date:"d M Y" }}</td>
+            <td class="scr-sus-branch">{{ r.branch }}</td>
+            <td><span class="scr-badge {% if r.kind == 'short' %}scr-badge-mandatory{% else %}scr-badge-active{% endif %}"><i></i>{{ r.kind_label }}</span></td>
+            <td class="scr-sus-num scr-sus-amount is-{{ r.kind }}">{% if r.kind == 'short' %}−{% else %}+{% endif %}{{ r.amount|money }}</td>
+            <td class="scr-sus-orders-cell">
+              {% if r.orders %}<div class="scr-sus-chips">{% for o in r.orders %}<a class="scr-sus-chip" href="{{ o.url }}">{{ o.no }}</a>{% endfor %}</div>
+              {% else %}<span class="scr-state">—</span>{% endif %}
+            </td>
+            <td><span class="scr-badge {% if r.status == 'open' %}scr-badge-pending{% elif r.status == 'resolved' %}scr-badge-approved{% else %}scr-badge-inactive{% endif %}"><i></i>{{ r.status_label }}</span></td>
+            <td class="scr-state">{{ r.created_by|default:"—" }}</td>
+            <td>
+              <div class="scr-row-actions">
+                <a class="scr-icon-btn" href="{{ r.url }}" title="View" aria-label="View">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                </a>
+                {% if perm.update and r.status == "open" %}
+                <button type="button" class="scr-icon-btn" data-scr-open="suspense:edit" title="Edit" aria-label="Edit">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5"></path></svg>
+                </button>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {{ r.fields_json|json_script:r.json_id }}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="scr-sus-grid" data-sus-pane="grid" hidden>
+      {% for r in rows %}
+      <article class="scr-sus-card is-{{ r.status }}" data-href="{{ r.url }}" data-record-id="{{ r.json_id }}">
+        <header class="scr-sus-card-head">
+          <div>
+            <div class="scr-sus-card-branch">{{ r.branch }}</div>
+            <div class="scr-sus-card-date">{{ r.date|date:"D, d M Y" }}</div>
+          </div>
+          <span class="scr-badge {% if r.status == 'open' %}scr-badge-pending{% elif r.status == 'resolved' %}scr-badge-approved{% else %}scr-badge-inactive{% endif %}"><i></i>{{ r.status_label }}</span>
+        </header>
+        <div class="scr-sus-card-amount">
+          <span class="scr-sus-amount is-{{ r.kind }}">{% if r.kind == 'short' %}−{% else %}+{% endif %}AED {{ r.amount|money }}</span>
+          <span class="scr-badge {% if r.kind == 'short' %}scr-badge-mandatory{% else %}scr-badge-active{% endif %}"><i></i>{{ r.kind_label }}</span>
+        </div>
+        <div class="scr-sus-card-field">
+          <span class="scr-sus-card-label">Suspected orders</span>
+          {% if r.orders %}<div class="scr-sus-chips">{% for o in r.orders %}<a class="scr-sus-chip" href="{{ o.url }}">{{ o.no }}</a>{% endfor %}</div>
+          {% else %}<span class="scr-sus-card-none">Not known</span>{% endif %}
+        </div>
+        {% if r.remarks %}<p class="scr-sus-card-remarks">{{ r.remarks }}</p>{% endif %}
+        <footer class="scr-sus-card-foot">
+          <span>{{ r.created_by|default:"—" }} · {{ r.created_on|date:"d M, H:i" }}</span>
+          {% if perm.update and r.status == "open" %}
+          <button type="button" class="scr-btn-secondary scr-sus-card-edit" data-scr-open="suspense:edit">Edit</button>
+          {% endif %}
+        </footer>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="scr-empty">
+      <span class="scr-empty-ico">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a9a6c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"></rect><path d="M2 10h20M7 15h3"></path></svg>
+      </span>
+      <div>
+        <div class="scr-empty-title">{% if filtered %}Nothing matches these filters{% else %}No open suspense entries{% endif %}</div>
+        <p class="scr-empty-sub">Add one when a branch's collection comes in short or in excess.</p>
+      </div>
+      {% if perm.create %}
+      <button type="button" class="scr-btn-primary" data-scr-open="suspense:add">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+        Add Suspense Entry
+      </button>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% include "byky/partials/server_pager.html" %}
+  </div>
+</div>
+
+{% include "byky/partials/drawer.html" with save_url=save_url_suspense spec=drawer_suspense module_label="Rental · Suspense Entries" %}
+{% include "byky/partials/confirm_modal.html" %}
+{% include "byky/partials/message_modal.html" %}
+{% endblock %}

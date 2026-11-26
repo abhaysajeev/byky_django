@@ -203,7 +203,7 @@ field.readonly       always read-only -- a value this screen displays but
               in step -- the checkboxes stay the source of truth, so the value
               survives prefill and reset like any other field.
               {% endcomment %}
-              <div class="byky-multi" data-field="{{ f.id }}" data-placeholder="{{ f.placeholder|default:'Select one or more' }}">
+              <div class="byky-multi" data-field="{{ f.id }}" data-placeholder="{{ f.placeholder|default:'Select one or more' }}"{% if f.searchable %} data-searchable data-search-placeholder="{{ f.search_label|default:'Search' }}"{% endif %}{% if f.empty_text %} data-empty-text="{{ f.empty_text }}"{% endif %}>
                 <div class="byky-multi-control" tabindex="0" role="button" aria-haspopup="listbox">
                   <span class="byky-multi-pills"></span>
                   <span class="byky-multi-placeholder">{{ f.placeholder|default:"Select one or more" }}</span>
