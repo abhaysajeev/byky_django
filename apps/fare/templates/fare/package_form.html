@@ -212,6 +212,15 @@ for why this pass doesn't need either.
           <label class="scr-label" for="package-free-note">Free Item Note</label>
           <input id="package-free-note" class="scr-input" maxlength="255" autocomplete="off" data-package-field="free_item_selectable_note" />
         </div>
+        <div class="scr-field scr-fare-span scr-fare-discounts">
+          <span class="scr-label" id="package-discounts-label">Include regular discounts</span>
+          <div class="scr-toggle-row scr-control-height">
+            <button type="button" class="scr-toggle" role="switch" aria-checked="false" aria-labelledby="package-discounts-label"
+                    data-package-field="include_regular_discounts"><i></i></button>
+            <span class="scr-toggle-label" data-toggle-state>Off</span>
+          </div>
+          <div class="scr-help">Off: card and manager discounts are not added to rentals under this package. The tablet applies it.</div>
+        </div>
       </div>
     </div>
   </div>
@@ -283,16 +292,15 @@ for why this pass doesn't need either.
     <ul class="scr-msg-list" data-item-errors hidden></ul>
     <div class="scr-grid scr-fare-grid-3">
       <div class="scr-field scr-fare-span">
-        <label class="scr-label" for="item-vehicle-type">Vehicle Type<span class="scr-required">*</span></label>
-        <select id="item-vehicle-type" class="scr-input" data-item-vehicle-type>
-          <option value="">Select vehicle type</option>
-          {% for v in vehicle_types %}<option value="{{ v.id }}" data-company="{{ v.company }}">{{ v.name }}</option>{% endfor %}
-        </select>
-      </div>
-      <div class="scr-field">
-        <label class="scr-label" for="item-package">Package Time (min)<span class="scr-required">*</span></label>
-        <input id="item-package" class="scr-input" inputmode="numeric" maxlength="4" autocomplete="off"
-               data-item-package data-num="minutes" data-min="1" data-max="1440" placeholder="e.g. 30" />
+        <label class="scr-label" for="item-fare">Fare<span class="scr-required">*</span></label>
+        <div class="scr-combo scr-fare-picker" data-fare-picker="item">
+          <input id="item-fare" type="text" class="scr-input scr-combo-input" placeholder="Search vehicle type or minutes" autocomplete="off"
+                 role="combobox" aria-expanded="false" aria-autocomplete="list" data-fare-picker-input />
+          <div class="scr-combo-list" role="listbox" hidden data-fare-picker-list></div>
+        </div>
+        <div class="scr-help" data-fare-picker-help>Fares in force within the package's dates, at its scope.</div>
+        <input type="hidden" data-item-vehicle-type />
+        <input type="hidden" data-item-package />
       </div>
       <div class="scr-field" data-item-value-wrap>
         <label class="scr-label" for="item-value"><span data-item-value-label>Value</span><span class="scr-required">*</span></label>
@@ -354,16 +362,15 @@ for why this pass doesn't need either.
         <input id="slab-to" class="scr-input" data-slab-to placeholder="HH:MM" maxlength="5" autocomplete="off" />
       </div>
       <div class="scr-field scr-fare-span">
-        <label class="scr-label" for="slab-vehicle-type">Vehicle Type<span class="scr-required">*</span></label>
-        <select id="slab-vehicle-type" class="scr-input" data-slab-vehicle-type>
-          <option value="">Select vehicle type</option>
-          {% for v in vehicle_types %}<option value="{{ v.id }}" data-company="{{ v.company }}">{{ v.name }}</option>{% endfor %}
-        </select>
-      </div>
-      <div class="scr-field">
-        <label class="scr-label" for="slab-package">Package Time (min)<span class="scr-required">*</span></label>
-        <input id="slab-package" class="scr-input" inputmode="numeric" maxlength="4" autocomplete="off"
-               data-slab-package data-num="minutes" data-min="1" data-max="1440" placeholder="e.g. 30" />
+        <label class="scr-label" for="slab-fare">Fare<span class="scr-required">*</span></label>
+        <div class="scr-combo scr-fare-picker" data-fare-picker="slab">
+          <input id="slab-fare" type="text" class="scr-input scr-combo-input" placeholder="Search vehicle type or minutes" autocomplete="off"
+                 role="combobox" aria-expanded="false" aria-autocomplete="list" data-fare-picker-input />
+          <div class="scr-combo-list" role="listbox" hidden data-fare-picker-list></div>
+        </div>
+        <div class="scr-help" data-fare-picker-help>Fares in force within the package's dates, at its scope.</div>
+        <input type="hidden" data-slab-vehicle-type />
+        <input type="hidden" data-slab-package />
       </div>
       <div class="scr-field">
         <label class="scr-label" for="slab-value"><span data-slab-value-label>Value</span><span class="scr-required">*</span></label>

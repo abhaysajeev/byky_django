@@ -80,6 +80,24 @@
     flatpickr(el, { enableTime: true, noCalendar: true, dateFormat: 'H:i', time_24hr: true,
                     allowInput: true, minuteIncrement: 1, disableMobile: true });
   }
+  /* Include regular discounts (owner, 26 Nov 2026): a .scr-toggle, flipped by
+     byky-screen.js's delegated handler; On / Off and aria-checked follow it. */
+  function isOn(el) { return !!(el && el.classList.contains('is-on')); }
+  function setOn(el, on) {
+    if (!el) return;
+    el.classList.toggle('is-on', !!on);
+    showOn(el);
+  }
+  function showOn(el) {
+    el.setAttribute('aria-checked', isOn(el) ? 'true' : 'false');
+    var state = el.parentNode.querySelector('[data-toggle-state]');
+    if (state) state.textContent = isOn(el) ? 'On' : 'Off';
+  }
+  function discountsBadge(on) {
+    return on ? '<span class="scr-badge scr-badge-active"><i></i>Included</span>'
+              : '<span class="scr-badge scr-badge-inactive"><i></i>Excluded</span>';
+  }
+
   function hhmm(value) { var v = (value || '').trim(); return /^\d:\d\d$/.test(v) ? '0' + v : v; }
   function setTime(el, value) {
     if (el._flatpickr) { if (value) el._flatpickr.setDate(value, false, 'H:i'); else el._flatpickr.clear(false); }
@@ -236,7 +254,7 @@
       return;
     }
     host.innerHTML = '<div class="scr-table-scroll scr-sb scr-fare-table"><table><thead><tr>' +
-      '<th>Applies on</th><th>Time</th><th class="scr-fare-num">Basic fare</th><th class="scr-fare-num">Grace</th>' +
+      '<th>Applies on</th><th>Time</th><th>Regular discounts</th><th class="scr-fare-num">Basic fare</th><th class="scr-fare-num">Grace</th>' +
       '<th class="scr-fare-num" data-concurrent>Interval</th><th class="scr-fare-num" data-concurrent>Conc. fare</th>' +
       '<th class="scr-fare-num" data-concurrent>Conc. grace</th>' +
       (canSave ? '<th></th>' : '') + '</tr></thead><tbody>' + rules.map(function (r) {
@@ -247,6 +265,7 @@
           (note ? '<span class="scr-fare-note">' + esc(note) + '</span>' : '') +
           (never ? '<span class="scr-fare-warn">Never applies</span><span class="scr-fare-warn-why">' + esc(never) + '</span>' : '') +
           '</td><td>' + esc(windowLabel(r)) + '</td>' +
+          '<td>' + discountsBadge(r.include_regular_discounts) + '</td>' +
           '<td class="scr-fare-num">' + money(r.price.base_fare) + '</td>' +
           '<td class="scr-fare-num">' + esc(r.price.grace_minutes) + ' min</td>' +
           '<td class="scr-fare-num" data-concurrent>' + minutes(r.price.concurrent_interval_minutes) + '</td>' +
@@ -271,7 +290,8 @@
     var days = seasonDays(s);
     var hidden = s.rules.filter(function (r) { return marks.never[r.key]; }).length;
     return dateLabel(s.start_date) + ' – ' + dateLabel(s.end_date) + (days ? ' · ' + days + ' day' + (days === 1 ? '' : 's') : '') +
-      ' · base AED ' + money(s.base.base_fare) + ' · ' + s.rules.length + ' special price' + (s.rules.length === 1 ? '' : 's') +
+      ' · base AED ' + money(s.base.base_fare) + (s.include_regular_discounts ? '' : ' · discounts excluded') +
+      ' · ' + s.rules.length + ' special price' + (s.rules.length === 1 ? '' : 's') +
       (hidden ? ' · <span class="scr-fare-warn-inline">' + hidden + ' never appl' + (hidden === 1 ? 'ies' : 'y') + '</span>' : '');
   }
 
@@ -307,6 +327,15 @@
           '</div>' +
           '<h3 class="scr-fare-sub">Season base fare</h3>' +
           '<div class="scr-grid scr-fare-grid-3" data-season-price>' + priceFields('season-' + s.key, s.base, true) + '</div>' +
+          '<div class="scr-field scr-fare-discounts">' +
+            '<span class="scr-label" id="season-discounts-' + esc(s.key) + '">Include regular discounts</span>' +
+            '<div class="scr-toggle-row scr-control-height">' +
+              '<button type="button" class="scr-toggle' + (s.include_regular_discounts ? ' is-on' : '') + '" role="switch" aria-checked="' +
+                (s.include_regular_discounts ? 'true' : 'false') + '" aria-labelledby="season-discounts-' + esc(s.key) + '" data-season-discounts><i></i></button>' +
+              '<span class="scr-toggle-label" data-toggle-state>' + (s.include_regular_discounts ? 'On' : 'Off') + '</span>' +
+            '</div>' +
+            '<div class="scr-help">Off: card and manager discounts are not added to rentals at the season base fare. The tablet applies it.</div>' +
+          '</div>' +
           '<div class="scr-fare-sub-row"><h3 class="scr-fare-sub">Special pricing in ' + esc(s.name || 'this season') + '</h3>' +
             (canSave ? '<button type="button" class="scr-btn scr-btn-small" data-fare-add-rule="' + esc(s.key) + '">Add price</button>' : '') + '</div>' +
           '<p class="scr-help scr-fare-season-help">Selected days → Every day → season base fare.' +
@@ -480,6 +509,9 @@
   var ruleTo = ruleBox.querySelector('[data-rule-to]');
   var ruleErrors = ruleBox.querySelector('[data-rule-errors]');
   var rulePriceHost = ruleBox.querySelector('[data-fare-price-host="rule"]');
+  var ruleDiscounts = ruleBox.querySelector('[data-rule-discounts]');
+  /* byky-screen.js flips .is-on; On / Off and aria-checked follow it. */
+  ruleDiscounts.addEventListener('click', function () { setTimeout(function () { showOn(ruleDiscounts); }, 0); });
   ruleBox.querySelector('[data-rule-days]').innerHTML = options.days.map(function (d) {
     return '<label class="scr-fare-day"><input type="checkbox" value="' + d.value + '" /><span>' + d.short + '</span></label>';
   }).join('');
@@ -496,7 +528,7 @@
     var base = owner === 'fare' ? readPrice($('[data-fare-price-host="base"]')) : season(owner).base;
     var rule = existing ? copy(existing) : {
       key: newKey(), id: null, kind: owner === 'fare' ? 'single_date' : 'every_day', weekdays: [],
-      on_date: '', start: '', end: '', price: copy(base)
+      on_date: '', start: '', end: '', price: copy(base), include_regular_discounts: false
     };
     dialog = { owner: owner, rule: rule, isNew: !existing };
 
@@ -513,6 +545,7 @@
     setTime(ruleFrom, rule.start);
     setTime(ruleTo, rule.end === '24:00' ? '00:00' : rule.end);
     rulePriceHost.innerHTML = priceFields('rule', rule.price, true);
+    setOn(ruleDiscounts, rule.include_regular_discounts);
     ruleErrors.hidden = true;
     showKind();
     Crud.open('fare-rule');
@@ -527,6 +560,7 @@
     rule.start = hhmm(ruleFrom.value);
     rule.end = hhmm(ruleTo.value);
     rule.price = readPrice(rulePriceHost);
+    rule.include_regular_discounts = isOn(ruleDiscounts);
     return rule;
   }
 
@@ -675,12 +709,23 @@
     }
     if (t.closest('[data-fare-add-season]')) {
       var s = { key: newKey(), id: null, name: '', start_date: '', end_date: '',
-                base: readPrice($('[data-fare-price-host="base"]')), rules: [] };
+                base: readPrice($('[data-fare-price-host="base"]')), rules: [], include_regular_discounts: false };
       state.seasons.push(s);
       openSeason = s.key;
       renderSeasons();
       $('[data-season="' + s.key + '"] [data-season-field="name"]').focus();
       changed();
+      return;
+    }
+    var flag = t.closest('[data-season-discounts]');
+    if (flag) {
+      setTimeout(function () {
+        var owner = season(flag.closest('[data-season]').dataset.season);
+        owner.include_regular_discounts = isOn(flag);
+        showOn(flag);
+        refreshSeasonHead(owner);
+        changed();
+      }, 0);
       return;
     }
     var toggle = t.closest('[data-season-toggle]');

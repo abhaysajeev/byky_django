@@ -246,6 +246,15 @@ the server's check endpoint, never from the browser.
         <input id="rule-to" class="scr-input" data-rule-to placeholder="HH:MM" maxlength="5" autocomplete="off" />
       </div>
       <div class="scr-help scr-fare-span">00:00 in "To" means midnight, so 00:00 – 00:00 is all day. A window cannot run past midnight.</div>
+      <div class="scr-field scr-fare-span scr-fare-discounts">
+        <span class="scr-label" id="rule-discounts-label">Include regular discounts</span>
+        <div class="scr-toggle-row scr-control-height">
+          <button type="button" class="scr-toggle" role="switch" aria-checked="false" aria-labelledby="rule-discounts-label"
+                  data-rule-discounts><i></i></button>
+          <span class="scr-toggle-label" data-toggle-state>Off</span>
+        </div>
+        <div class="scr-help">Off: card and manager discounts are not added to rentals at this price. The tablet applies it.</div>
+      </div>
     </div>
     <div class="scr-grid scr-fare-grid-3 scr-fare-price-grid" data-fare-price-host="rule"></div>
   </div>

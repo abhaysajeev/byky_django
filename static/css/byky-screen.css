@@ -1005,6 +1005,8 @@ textarea.scr-drawer-input { height: auto; min-height: 72px; padding: 10px 13px; 
 .scr-fare-grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .scr-fare-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .scr-fare-span { grid-column: 1 / -1; }
+/* Include regular discounts (26 Nov 2026): its own block under a season's prices. */
+.scr-fare-season-body .scr-fare-discounts { margin-top: 16px; }
 .scr-span-2 { grid-column: span 2; }
 .scr-span-3 { grid-column: span 3; }
 /* A non-input control (radios, a switch, a read-out) at an input's height, so

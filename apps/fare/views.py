@@ -360,8 +360,12 @@ class PackageFormView(PackageScreenView):
                  "category": v.category.category_name}
                 for v in vehicle_types
             ],
-            "branches": [{"id": b.pk, "name": b.name, "company": b.company_id} for b in branches],
+            "branches": [{"id": b.pk, "name": b.name, "company": b.company_id, "location": b.location_id}
+                         for b in branches],
             "locations": [{"id": location.pk, "name": location.name} for location in locations],
+            # The Fare picker on every row (owner, 26 Nov 2026): a row picks one
+            # of these instead of typing a vehicle type and package minutes.
+            "fares": package_services.fare_choices(user),
         }
         context.update({
             "package": package,

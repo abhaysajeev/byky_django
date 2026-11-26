@@ -8,6 +8,18 @@ from apps.fare.models import Package, PackageFreeItem, PackageItem
 from apps.fare.package_services import Invalid, NotFound
 
 
+@pytest.fixture(autouse=True)
+def fares_to_pick(world):
+    """Package rows pick existing fares (owner, 26 Nov 2026): every vehicle
+    type these tests use has a 30-min company fare over 2026."""
+    from apps.fare.tests.conftest import make_fare
+    from core.enums import ApprovalStatus
+
+    for name in ("monaco", "berg"):
+        if name in world:
+            make_fare(world, vehicle_type=world[name], approval_status=ApprovalStatus.APPROVED, is_active=True)
+
+
 def item(key, vehicle_type, package=30, value="10.00"):
     row = {"key": key, "vehicle_type": vehicle_type, "package_minutes": package}
     if value is not None:
