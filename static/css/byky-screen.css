@@ -826,7 +826,8 @@ textarea.scr-drawer-input { height: auto; min-height: 72px; padding: 10px 13px; 
 .scr-wt-dash { color: #a9a6c4; }
 /* A shift past midnight: a "+1 day" badge on the end time's top-right corner, so
    the row keeps its height and every column stays aligned. */
-.scr-wt-cell > .scr-input, .scr-wt-end { flex: 1 1 0; min-width: 0; }
+.scr-wt-cell { display: grid; grid-template-columns: minmax(96px, 1fr) auto minmax(96px, 1fr); }
+.scr-wt-cell > .scr-input, .scr-wt-end { min-width: 0; }
 .scr-wt-end { position: relative; display: block; }
 .scr-wt-plus1 {
   position: absolute; top: -8px; right: -6px; z-index: 1; padding: 2px 6px; border-radius: 99px;
