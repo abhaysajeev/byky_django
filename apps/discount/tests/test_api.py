@@ -304,7 +304,7 @@ def test_the_operators_note_is_kept_apart_from_the_deciders(client, world, token
     claim.status, claim.decided_at, claim.remarks = ClaimStatus.APPROVED, claim.requested_at, "Card checked"
     claim.save()
     status = call(client, "/api/v1/operator/card-discounts/approval/status",
-                  {"order_id": data["order_id"], "sync_id": data["sync_id"]}, token=token).json()["data"]
+                  {"order_id": data["order_id"]}, token=token).json()["data"]["requests"][0]
     assert (status["request_remarks"], status["remarks"]) == ("Regular customer, card shown", "Card checked")
 
     without = approval_data(approval_world, sync_id=str(uuid7()))
@@ -408,22 +408,27 @@ def requested(client, world, token, approval_world):
     return {**approval_world, "data": data, "claim": CardDiscountClaim.objects.get(pk=data["sync_id"])}
 
 
-def status(client, token, order_id, sync_id):
-    return call(client, STATUS, {"order_id": str(order_id), "sync_id": str(sync_id)}, token=token)
+def status(client, token, order_id, **extra):
+    return call(client, STATUS, {"order_id": str(order_id), **extra}, token=token)
+
+
+def requests_of(client, token, order_id):
+    return status(client, token, order_id).json()["data"]["requests"]
 
 
 def test_a_pending_request(client, world, token, requested):
     data = requested["data"]
-    body = status(client, token, data["order_id"], data["sync_id"]).json()
+    body = status(client, token, data["order_id"]).json()
     assert body["code"] == "ok" and body["message"] == "Approval status."
-    assert body["data"] == {
+    assert body["data"] == {"order_id": data["order_id"], "requests": [{
         "sync_id": data["sync_id"], "order_id": data["order_id"], "status": "pending",
         "card_discount_id": requested["current"].pk, "card_type_name": "Corporate", "card_grade_name": "Gold",
         "bill_amount": "120.000", "discount_percent": "15.00", "discount_amount": "18.000", "net_amount": "102.000",
         "requested_at": "2026-09-30 17:05:00", "decided_at": None, "remarks": "", "request_remarks": "",
         "revoked_at": None, "revoke_note": "",
-    }
-    assert shape({**body["data"], "decided_at": "x"}) == shape(api._STATUS_SAMPLE)
+    }]}
+    assert shape({**body["data"]["requests"][0], "decided_at": "x"}) == shape(api._STATUS_SAMPLE["requests"][0])
+    assert set(body["data"]) == set(api._STATUS_SAMPLE)
 
 
 @pytest.mark.parametrize("approve, expected", [(True, "approved"), (False, "rejected")])
@@ -432,8 +437,7 @@ def test_a_decided_request(client, world, token, requested, approve, expected):
 
     approver = requested["claim"].requested_by
     services.decide_claim(approver, requested["claim"], approve, "Card checked")
-    data = requested["data"]
-    body = status(client, token, data["order_id"], data["sync_id"]).json()["data"]
+    [body] = requests_of(client, token, requested["data"]["order_id"])
     assert body["status"] == expected and body["remarks"] == "Card checked"
     assert body["decided_at"] is not None
 
@@ -442,33 +446,54 @@ def test_a_cancelled_request(client, world, token, requested):
     from apps.discount import services
 
     services.cancel_pending_for_order(requested["order"])
-    data = requested["data"]
-    body = status(client, token, data["order_id"], data["sync_id"]).json()["data"]
+    [body] = requests_of(client, token, requested["data"]["order_id"])
     assert body["status"] == "cancelled" and body["decided_at"] is not None
 
 
-def test_the_order_and_request_must_agree(client, world, token, requested):
+def test_every_request_of_the_order_newest_first(client, world, token, requested):
+    """Owner, 27 Nov 2026: rejected, then asked again -- both come back."""
+    from apps.discount import services
+
+    services.decide_claim(requested["claim"].requested_by, requested["claim"], False, "Card expired")
+    again = approval_data(requested, sync_id=str(uuid7()), requested_at="2026-09-30 17:20:00")
+    assert request_approval(client, token, again).json()["code"] == "ok"
+
+    rows = requests_of(client, token, again["order_id"])
+    assert [(r["sync_id"], r["status"]) for r in rows] == [
+        (again["sync_id"], "pending"), (requested["data"]["sync_id"], "rejected")]
+
+
+def test_another_orders_requests_are_not_listed(client, world, token, requested):
     other_order = make_order(requested["customer"], order_no="ORD-2002")
-    for order_id, sync_id in [
-        (other_order.pk, requested["data"]["sync_id"]),             # right request, wrong order
-        (requested["data"]["order_id"], uuid7()),                    # unknown request
-    ]:
-        response = status(client, token, order_id, sync_id)
-        assert response.status_code == 404
-        assert response.json() == {"code": "request_not_found", "message": "No approval request found.",
-                                   "data": {}}
+    assert requests_of(client, token, other_order.pk) == []                  # an order with no request
 
 
-def test_another_companys_request_is_not_found(client, world, token, requested):
+def test_an_unknown_order(client, world, token, requested):
+    response = status(client, token, uuid7())
+    assert response.status_code == 404
+    assert response.json() == {"code": "unknown_order", "message": "No order with that id.", "data": {}}
+
+
+def test_status_of_another_companys_order_is_unknown(client, world, token, requested):
+    type(requested["order"]).objects.filter(pk=requested["order"].pk).update(company=world["other"])
+    assert status(client, token, requested["data"]["order_id"]).json()["code"] == "unknown_order"
+
+
+def test_another_companys_request_is_not_listed(client, world, token, requested):
     CardDiscountClaim.objects.filter(pk=requested["data"]["sync_id"]).update(company=world["other"])
+    assert requests_of(client, token, requested["data"]["order_id"]) == []
+
+
+def test_a_sync_id_an_older_build_sends_is_ignored(client, world, token, requested):
     data = requested["data"]
-    assert status(client, token, data["order_id"], data["sync_id"]).json()["code"] == "request_not_found"
+    body = status(client, token, data["order_id"], sync_id=str(uuid7())).json()
+    assert body["code"] == "ok" and [r["sync_id"] for r in body["data"]["requests"]] == [data["sync_id"]]
 
 
 @pytest.mark.parametrize("request_data, field, message", [
+    ({}, "order_id", "is required"),
     ({"sync_id": "01923f8e-5b2a-7c3d-9e4f-a1b2c3d4e5f6"}, "order_id", "is required"),
-    ({"order_id": "01923f8e-5b2a-7c3d-9e4f-a1b2c3d4e5f6"}, "sync_id", "is required"),
-    ({"order_id": "nope", "sync_id": "01923f8e-5b2a-7c3d-9e4f-a1b2c3d4e5f6"}, "order_id", "must be an order's sync_id"),
+    ({"order_id": "nope"}, "order_id", "must be an order's sync_id"),
 ])
 def test_status_fields_are_checked(client, world, token, request_data, field, message):
     response = call(client, STATUS, request_data, token=token)
@@ -477,7 +502,7 @@ def test_status_fields_are_checked(client, world, token, request_data, field, me
 
 
 def test_status_is_for_the_operator_app_only(client, world, token):
-    ids = {"order_id": str(uuid7()), "sync_id": str(uuid7())}
+    ids = {"order_id": str(uuid7())}
     assert call(client, "/api/v1/manager/card-discounts/approval/status", ids, token=token).json()["code"] == \
         "wrong_channel"
     assert call(client, STATUS, ids).status_code == 401

@@ -349,7 +349,7 @@ class ApprovalRequestView(APIView):
 
 # -- Approval status ---------------------------------------------------------------
 
-_STATUS_SAMPLE = {
+_STATUS_REQUEST = {
     "sync_id": "01923f8e-5b2a-7c3d-9e4f-a1b2c3d4e5f6", "order_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9",
     "status": "approved",
     "card_discount_id": 12, "card_type_name": "Corporate", "card_grade_name": "Gold",
@@ -358,10 +358,25 @@ _STATUS_SAMPLE = {
     "request_remarks": "Regular customer, card shown",
     "revoked_at": None, "revoke_note": "",
 }
+_STATUS_SAMPLE = {
+    "order_id": "01923e1c-0a11-7b22-8c33-d4e5f6a7b8c9",
+    "requests": [
+        _STATUS_REQUEST,
+        {**_STATUS_REQUEST, "sync_id": "01923f8a-1c2d-7e3f-8a4b-c5d6e7f8a9b0", "status": "rejected",
+         "card_type_name": "Corporate", "card_grade_name": "Silver", "discount_percent": "10.00",
+         "discount_amount": "12.00", "net_amount": "108.00", "requested_at": "2026-09-30 16:58:10",
+         "decided_at": "2026-09-30 17:01:05", "remarks": "Card expired", "request_remarks": ""},
+    ],
+}
 
 _STATUS_DESCRIPTION = """
-Where one approval request stands. `request_data`: the request's own `sync_id`
-and the `order_id` it was made for -- both required, and they must agree.
+Every card-discount approval request made against one order, with where each
+stands. `request_data`: `order_id` only (the order's `sync_id`). A `sync_id`
+an older build still sends is ignored.
+
+`requests` is newest first; an order with no request gives `[]`. Only one can
+be `pending` at a time, so while waiting for a decision, the `pending` one is
+the request just raised -- match it by its `sync_id`.
 
 * `pending` -- not decided yet; ask again later.
 * `approved` -- bill with the discount (the figures are the ones sent).
@@ -376,6 +391,9 @@ and the `order_id` it was made for -- both required, and they must agree.
 cancelled); `remarks` is the approver's note, `request_remarks` the operator's
 own note sent with the request -- "" when none. Times `YYYY-MM-DD HH:MM:SS`,
 company time.
+
+**Changed 27 Nov 2026:** `sync_id` is no longer sent, and the reply is the
+order's list of requests instead of one request.
 """
 
 
@@ -397,13 +415,13 @@ class ApprovalStatusView(APIView):
 
     @extend_schema(
         tags=["Operator Discount Cards"],
-        summary="Where an approval request stands",
+        summary="Every approval request of an order, with its status",
         description=_STATUS_DESCRIPTION,
         request=envelope_request("ApprovalStatusEnvelope", ApprovalStatusRequest),
         responses=envelope_responses(
             (200, "ok", "Approval status.", _STATUS_SAMPLE),
-            (400, "invalid_request", "sync_id is required.", {"errors": {"sync_id": "is required"}}),
-            (404, "request_not_found", "No approval request found.", {}),
+            (400, "invalid_request", "order_id is required.", {"errors": {"order_id": "is required"}}),
+            (404, "unknown_order", "No order with that id.", {}),
             (401, "not_authenticated", "Sign in first.", {}),
             (403, "wrong_channel", "Not allowed on this app.", {}),
             (409, "device_not_mapped", "This device has no station.", {}),
@@ -424,24 +442,30 @@ class ApprovalStatusView(APIView):
 
         company = branch.company
         try:
-            claim = services.approval_status(company, form.validated_data["order_id"],
-                                             form.validated_data["sync_id"])
+            claims = services.approval_status(company, form.validated_data["order_id"])
         except services.DiscountRefused as refusal:
             return envelope(refusal.code, refusal.message, http_status=refusal.status)
 
         zone = zone_for(company)
         return envelope("ok", "Approval status.", {
-            "sync_id": str(claim.pk), "order_id": str(claim.order_id), "status": claim.status,
-            "card_discount_id": claim.card_discount_id,
-            "card_type_name": claim.card_type.name, "card_grade_name": claim.card_grade.name,
-            "bill_amount": _amount(claim.bill_amount), "discount_percent": _percent(claim.discount_percent),
-            "discount_amount": _amount(claim.discount_amount), "net_amount": _amount(claim.net_amount),
-            "requested_at": claim.requested_at.astimezone(zone).strftime("%Y-%m-%d %H:%M:%S"),
-            "decided_at": claim.decided_at.astimezone(zone).strftime("%Y-%m-%d %H:%M:%S")
-            if claim.decided_at else None,
-            "remarks": claim.remarks,
-            "request_remarks": claim.request_remarks,
-            "revoked_at": claim.revoked_at.astimezone(zone).strftime("%Y-%m-%d %H:%M:%S")
-            if claim.revoked_at else None,
-            "revoke_note": claim.revoke_note,
+            "order_id": str(form.validated_data["order_id"]),
+            "requests": [_status_row(claim, zone) for claim in claims],
         })
+
+
+def _status_row(claim, zone):
+    """One request in the approval/status reply."""
+
+    def at(value):
+        return value.astimezone(zone).strftime("%Y-%m-%d %H:%M:%S") if value else None
+
+    return {
+        "sync_id": str(claim.pk), "order_id": str(claim.order_id), "status": claim.status,
+        "card_discount_id": claim.card_discount_id,
+        "card_type_name": claim.card_type.name, "card_grade_name": claim.card_grade.name,
+        "bill_amount": _amount(claim.bill_amount), "discount_percent": _percent(claim.discount_percent),
+        "discount_amount": _amount(claim.discount_amount), "net_amount": _amount(claim.net_amount),
+        "requested_at": at(claim.requested_at), "decided_at": at(claim.decided_at),
+        "remarks": claim.remarks, "request_remarks": claim.request_remarks,
+        "revoked_at": at(claim.revoked_at), "revoke_note": claim.revoke_note,
+    }
