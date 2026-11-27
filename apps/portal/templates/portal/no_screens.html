@@ -1,0 +1,11 @@
+{% extends layout_path %}
+
+{% block title %}No screens assigned{% endblock title %}
+
+{% block content %}
+<div class="card">
+  <div class="card-body">
+    {% include "byky/partials/empty_state.html" with icon="tabler-lock" title="No screens are assigned to your role yet" text="Ask your administrator to give your role access to the screens you need." %}
+  </div>
+</div>
+{% endblock content %}

@@ -22,8 +22,9 @@ PASSWORD = "Byky#2026"
 LIVE = [(code, url_name) for code, _module, _name, url_name, _actions, _order, retired in PAGES
         if url_name and not retired]
 RETIRED = [code for code, *_rest, retired in PAGES if retired]
-# Signing in always lands somewhere: the dashboard needs no permission.
-OPEN_TO_ANY_ROLE = {"general.dashboard"}
+# Every screen is granted per role -- the dashboard too since Dashboard
+# Privileges (owner, 27 Nov 2026); `/` then lands on the first sidebar screen.
+OPEN_TO_ANY_ROLE = set()
 
 
 @pytest.fixture

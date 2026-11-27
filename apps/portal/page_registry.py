@@ -21,6 +21,9 @@ CRUD_PRINT_APPROVE = CRUD_PRINT + ["approve"]
 
 DASHBOARD_SVG = "M3 10.5 12 3l9 7.5"
 DASHBOARD_SVG2 = "M5 9.8V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.8"
+# A shield with a tick: who may open the dashboard (owner, 27 Nov 2026).
+DASHBOARD_PRIVILEGES_SVG = "M12 3 4 6v6c0 5 3.4 8.7 8 9 4.6-.3 8-4 8-9V6l-8-3"
+DASHBOARD_PRIVILEGES_SVG2 = "M9 12l2 2 4-4"
 COMPANY_SVG = (
     "M4 21V4a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v17M15 9h4a1 1 0 0 1 1 1v11"
     "M3 21h18M8 7h3M8 11h3M8 15h3"
@@ -74,11 +77,15 @@ MODULES = [
 # top-level sidebar link rather than inside a group.
 PAGE_ICONS = {
     "general.dashboard": (DASHBOARD_SVG, DASHBOARD_SVG2),
+    "general.privileges": (DASHBOARD_PRIVILEGES_SVG, DASHBOARD_PRIVILEGES_SVG2),
 }
 
 # code, module, name, url name, actions, sort order, retired
 PAGES = [
     ("general.dashboard", "general", "Dashboard", "dashboard", ["read"], 0, False),
+    # Which roles may open the dashboard (owner, 27 Nov 2026).
+    ("general.privileges", "general", "Dashboard Privileges", "dashboard-privileges", ["read", "update"], 1,
+     False),
 
     ("company.country_state", "company", "Country & State", "company-country-state-list", CRUD_PRINT, 1, False),
     ("company.company", "company", "Company", "company-company-list", CRUD_PRINT_APPROVE, 2, False),
