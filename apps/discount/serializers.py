@@ -66,8 +66,7 @@ class ApprovalRequest(serializers.Serializer):
 
 
 class ApprovalStatusRequest(serializers.Serializer):
-    """One approval request, by its own sync_id and the order it is for --
-    both must agree."""
+    """Every approval request of one order (owner, 27 Nov 2026). A sync_id an
+    older build still sends is ignored."""
 
     order_id = serializers.UUIDField(error_messages={**REQUIRED, "invalid": "must be an order's sync_id"})
-    sync_id = serializers.UUIDField(error_messages={**REQUIRED, "invalid": "must be a UUID"})

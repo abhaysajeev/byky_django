@@ -513,11 +513,12 @@ def cancel_unused_for_order(order, *, keep=None, now=None):
     )
 
 
-def approval_status(company, order_id, sync_id):
-    """The one approval request with this sync_id, on this order, of this
-    company -- or request_not_found, whichever of the three does not match."""
-    claim = (CardDiscountClaim.objects.select_related("card_type", "card_grade")
-             .filter(pk=sync_id, order_id=order_id, company=company).first())
-    if claim is None:
-        raise DiscountRefused("request_not_found", "No approval request found.", 404)
-    return claim
+def approval_status(company, order_id):
+    """Every card-discount request made against this order of this company,
+    newest first (owner, 27 Nov 2026: by order only, no sync_id). An order with
+    none gives an empty list; an order of another company, or none, is
+    unknown_order."""
+    if not Order.objects.filter(pk=order_id, company=company).exists():
+        raise DiscountRefused("unknown_order", "No order with that id.", 404)
+    return list(CardDiscountClaim.objects.select_related("card_type", "card_grade")
+                .filter(order_id=order_id, company=company).order_by("-requested_at", "-created_on"))
