@@ -472,7 +472,8 @@
     if (!drawer || !drawer.__bykyFill) return;   // a .scr-drawer screen: leave it alone
     var record = null;
     if (parts[1] === 'edit') {
-      var row = btn.closest('.scr-row');
+      /* a table row, or any card that carries its record's json_script id */
+      var row = btn.closest('.scr-row, [data-record-id]');
       var node = row && document.getElementById(row.dataset.recordId);
       record = node ? JSON.parse(node.textContent) : null;
     }

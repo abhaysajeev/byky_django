@@ -6,6 +6,18 @@ from apps.fare.models import Package
 from apps.fare.tests.conftest import make_package, post
 from apps.portal.models import RolePermission
 
+
+@pytest.fixture(autouse=True)
+def fares_to_pick(world):
+    """Package rows pick existing fares (owner, 26 Nov 2026): every vehicle
+    type these tests use has a 30-min company fare over 2026."""
+    from apps.fare.tests.conftest import make_fare
+    from core.enums import ApprovalStatus
+
+    for name in ("monaco", "berg"):
+        if name in world:
+            make_fare(world, vehicle_type=world[name], approval_status=ApprovalStatus.APPROVED, is_active=True)
+
 SAVE = "/fare/package/save/"
 
 

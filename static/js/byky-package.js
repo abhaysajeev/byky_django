@@ -26,6 +26,8 @@
   var PROMOTION_LABEL = { quantity: 'Quantity', amount: 'Amount', percentage: 'Percentage', package_price: 'Package Price' };
   var VEHICLE_NAME = {};
   options.vehicle_types.forEach(function (v) { VEHICLE_NAME[v.id] = v.name; });
+  var BRANCH_NAME = {};
+  options.branches.forEach(function (b) { BRANCH_NAME[b.id] = b.name; });
 
   var state = { items: initial.items || [], free_items: initial.free_items || [], time_slabs: initial.time_slabs || [] };
   var errors = [];
@@ -99,6 +101,7 @@
   var freeOrPackagePriceWrap = $('[data-package-free-price-wrap]');
   var timeSlabToggle = $('[data-package-field="time_slab_applicable"]');
   var freeItemToggle = $('[data-package-field="free_item_selectable"]');
+  var discountsToggle = $('[data-package-field="include_regular_discounts"]');
   var freeNoteWrap = $('[data-package-free-note-wrap]');
   var freeNote = $('[data-package-field="free_item_selectable_note"]');
   var freeItemsCard = $('[data-package-free-items-card]');
@@ -154,6 +157,7 @@
     freeOrPackagePrice.value = initial.free_or_package_price || 'free';
     setToggle(timeSlabToggle, initial.time_slab_applicable);
     setToggle(freeItemToggle, initial.free_item_selectable);
+    setToggle(discountsToggle, initial.include_regular_discounts);
     freeNote.value = initial.free_item_selectable_note || '';
     applyFilters();
     showLevel();
@@ -221,6 +225,7 @@
       promotion_type: promotionType.value,
       time_slab_applicable: toggledOn(timeSlabToggle), free_item_selectable: toggledOn(freeItemToggle),
       free_item_selectable_note: freeNote.value.trim(), free_or_package_price: freeOrPackagePrice.value,
+      include_regular_discounts: toggledOn(discountsToggle),
       items: state.items, free_items: state.free_items, time_slabs: state.time_slabs
     };
   }
@@ -377,6 +382,125 @@
   var itemValueWrap = itemBox.querySelector('[data-item-value-wrap]');
   var itemErrors = itemBox.querySelector('[data-item-errors]');
 
+  // -- Fare picker (owner, 26 Nov 2026) ------------------------------------------------
+  /* A row picks an existing fare instead of a typed vehicle type and package
+     minutes: only the fares of the package's company, in force within its
+     dates, at its scope (a company fare always; a branch fare when the
+     package is the company's, or covers the package's branch / a branch in
+     its location -- package_services.fits_scope, which re-checks on save).
+     The pick fills two hidden inputs; the rest of the dialog is unchanged. */
+  var FARES = options.fares || [];
+  var LEVEL_LABEL = { company: 'Company', branch: 'Branch' };
+
+  function fareFits(f) {
+    var companyId = company ? company.value : '';
+    if (companyId && String(f.company) !== String(companyId)) return false;
+    var from = isoOf(validFrom), to = isoOf(validTo);
+    if (from && f.valid_to < from) return false;
+    if (to && f.valid_from > to) return false;
+    var lvl = level();
+    if (f.level === 'company' || !lvl || lvl === 'company') return true;
+    if (lvl === 'branch') return !!branch.value && f.branches.indexOf(+branch.value) !== -1;
+    return !!location.value && f.locations.indexOf(+location.value) !== -1;
+  }
+  function fareMain(vehicleType, minutes) {
+    return (VEHICLE_NAME[vehicleType] || 'Vehicle type') + ' · ' + minutes + ' min';
+  }
+  function fareSub(f) {
+    var scope = f.level === 'company' ? LEVEL_LABEL.company
+      : f.branches.length === 1 ? (BRANCH_NAME[f.branches[0]] || '1 branch') : f.branches.length + ' branches';
+    return dateLabel(f.valid_from) + ' – ' + dateLabel(f.valid_to) + ' · ' + scope;
+  }
+
+  function makePicker(box, prefix) {
+    var wrap = box.querySelector('[data-fare-picker]');
+    var input = wrap.querySelector('[data-fare-picker-input]');
+    var list = wrap.querySelector('[data-fare-picker-list]');
+    var typeEl = box.querySelector('[data-' + prefix + '-vehicle-type]');
+    var minutesEl = box.querySelector('[data-' + prefix + '-package]');
+    var shown = [], active = -1;
+
+    function matches(query) {
+      var words = query.toLowerCase().split(/\s+/).filter(Boolean);
+      return FARES.filter(fareFits).filter(function (f) {
+        var text = (f.vehicle_type_name + ' ' + f.package_minutes + ' min ' + fareSub(f)).toLowerCase();
+        return words.every(function (w) { return text.indexOf(w) !== -1; });
+      });
+    }
+    function close() { list.hidden = true; input.setAttribute('aria-expanded', 'false'); active = -1; }
+    function render() {
+      shown = matches(input.value).slice(0, 40);
+      list.innerHTML = '';
+      if (!shown.length) {
+        var empty = document.createElement('div');
+        empty.className = 'scr-combo-empty';
+        empty.textContent = FARES.filter(fareFits).length
+          ? 'No fare matches.' : 'No fare in force for these dates and scope. Add it in Fare Entry first.';
+        list.appendChild(empty);
+      }
+      shown.forEach(function (f, i) {
+        var item = document.createElement('div');
+        item.className = 'scr-combo-item' + (i === active ? ' is-active' : '');
+        item.setAttribute('role', 'option');
+        item.dataset.index = i;
+        item.innerHTML = '<span class="scr-combo-item-main">' + esc(fareMain(f.vehicle_type, f.package_minutes)) + '</span>' +
+          '<span class="scr-combo-item-sub">' + esc(fareSub(f)) + '</span>';
+        list.appendChild(item);
+      });
+      list.hidden = false;
+      input.setAttribute('aria-expanded', 'true');
+    }
+    function pick(f) {
+      typeEl.value = f.vehicle_type;
+      minutesEl.value = f.package_minutes;
+      input.value = fareMain(f.vehicle_type, f.package_minutes);
+      input.classList.remove('is-invalid');
+      close();
+    }
+    input.addEventListener('focus', function () { render(); });
+    input.addEventListener('input', function () {
+      typeEl.value = ''; minutesEl.value = '';     // typing undoes the pick until a fare is chosen
+      active = -1;
+      render();
+    });
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (list.hidden) render();
+        active = Math.max(0, Math.min(shown.length - 1, active + (e.key === 'ArrowDown' ? 1 : -1)));
+        render();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (shown[active >= 0 ? active : 0]) pick(shown[active >= 0 ? active : 0]);
+      } else if (e.key === 'Escape' && !list.hidden) {
+        e.preventDefault();
+        e.stopPropagation();                         // closes the list, not the dialog
+        close();
+      }
+    });
+    list.addEventListener('mousedown', function (e) {
+      var item = e.target.closest('.scr-combo-item');
+      if (!item) return;
+      e.preventDefault();                            // keep focus in the input
+      pick(shown[+item.dataset.index]);
+    });
+    input.addEventListener('blur', function () { setTimeout(close, 120); });
+
+    return {
+      set: function (vehicleType, minutes) {
+        typeEl.value = vehicleType || '';
+        minutesEl.value = minutes || '';
+        input.value = vehicleType && minutes ? fareMain(vehicleType, minutes) : '';
+        input.classList.remove('is-invalid');
+        close();
+      },
+      chosen: function () { return !!(typeEl.value && minutesEl.value); },
+      flag: function () { input.classList.add('is-invalid'); }
+    };
+  }
+
+  var itemFare = makePicker(itemBox, 'item');
+
   function listFor(name) { return state[name]; }
 
   function openItem(listName, key) {
@@ -386,8 +510,7 @@
     itemDialog = { list: listName, key: row.key, isNew: !existing };
     itemBox.querySelector('[data-item-title]').textContent = (existing ? 'Edit ' : 'Add ') +
       (listName === 'items' ? 'promotion item' : 'free item');
-    itemVehicleType.value = row.vehicle_type || '';
-    itemPackage.value = row.package_minutes || '';
+    itemFare.set(row.vehicle_type, row.package_minutes);
     itemValue.value = row.value == null ? '' : row.value;
     var showValue = !(listName === 'items' && promotionType.value === 'quantity');
     itemBox.querySelector('[data-item-value-label]').textContent =
@@ -396,13 +519,14 @@
     itemValue.disabled = !showValue;
     itemErrors.hidden = true;
     itemErrors.innerHTML = '';
-    markNumber(itemPackage, ''); markNumber(itemValue, '');
+    markNumber(itemValue, '');
     Crud.open('package-item');
   }
 
   function saveItem() {
     var showValue = !itemValueWrap.hidden;
-    var bad = !itemVehicleType.value || checkNumbers(itemBox);
+    var bad = checkNumbers(itemBox);
+    if (!itemFare.chosen()) { itemFare.flag(); bad = true; }
     if (bad) {
       itemErrors.innerHTML = '<li class="scr-msg-item">Fix the highlighted fields.</li>';
       itemErrors.hidden = false;
@@ -435,6 +559,7 @@
   var slabPackage = slabBox.querySelector('[data-slab-package]');
   var slabValue = slabBox.querySelector('[data-slab-value]');
   var slabErrors = slabBox.querySelector('[data-slab-errors]');
+  var slabFare = makePicker(slabBox, 'slab');
   [slabFrom, slabTo].forEach(timePicker);
 
   function showSlabDateMode() {
@@ -455,14 +580,13 @@
     slabDay.value = row.day || 'all_days';
     setTime(slabFrom, row.from);
     setTime(slabTo, row.to === '24:00' ? '00:00' : row.to);
-    slabVehicleType.value = row.vehicle_type || '';
-    slabPackage.value = row.package_minutes || '';
+    slabFare.set(row.vehicle_type, row.package_minutes);
     slabValue.value = row.value == null ? '' : row.value;
     slabBox.querySelector('[data-slab-value-label]').textContent = freeValueLabel();
     slabErrors.hidden = true;
     slabErrors.innerHTML = '';
     showSlabDateMode();
-    markNumber(slabPackage, ''); markNumber(slabValue, '');
+    markNumber(slabValue, '');
     Crud.open('package-slab');
   }
 
@@ -470,7 +594,8 @@
     var dateMode = (slabBox.querySelector('[data-slab-date-mode]:checked') || {}).value || 'all_dates';
     var specificDate = dateMode === 'specific_date' ? isoOf(slabDate) : '';
     var from = hhmm(slabFrom.value), to = hhmm(slabTo.value);
-    var bad = checkNumbers(slabBox) || !slabVehicleType.value ||
+    if (!slabFare.chosen()) slabFare.flag();
+    var bad = checkNumbers(slabBox) || !slabFare.chosen() ||
       (dateMode === 'specific_date' && !specificDate) ||
       !/^\d\d:\d\d$/.test(from) || !/^\d\d:\d\d$/.test(to);
     if (!bad && to <= from) bad = true;
@@ -600,6 +725,9 @@
   root.addEventListener('click', function (e) {
     if (e.target.closest('[data-package-field="time_slab_applicable"], [data-package-field="free_item_selectable"]')) {
       setTimeout(function () { showRuleFields(); changed(); }, 0);
+    }
+    if (e.target.closest('[data-package-field="include_regular_discounts"]')) {
+      setTimeout(function () { showToggleState(discountsToggle); changed(); }, 0);
     }
   });
 

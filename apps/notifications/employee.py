@@ -1,6 +1,7 @@
 """Pushes about people, not orders (owner, 30 Oct 2026): the employee app is told
 when their leave is decided, their duty roster changes from today on, or a
-tablet marks their attendance; a new leave request tells the station's leave
+tablet marks their attendance, or their rostered duty ended while they are
+still punched in (owner, 26 Nov 2026); a new leave request tells the station's leave
 approvers (employee app) and the company's managers (manager app).
 
 Same outbox as services.notify -- one Notification per recipient session,
@@ -150,3 +151,22 @@ def attendance_marked(row, now=None):
          " · ".join(part for part in (station, at) if part), AndroidChannel.EMPLOYEE_ALERTS),
     ], tag=f"attendance:{row.pk}",
         data={"attendance_id": row.pk, "punch_type": row.punch_type, "branch_id": row.rms_branch_id}, now=now)
+
+
+def punch_out_reminder(punch_in, shift_end, now=None):
+    """Duty ended and the employee is still punched in (owner, 26 Nov 2026):
+    once, to their employee-app sessions. The punch-out is by the punch-in's
+    method -- a QR punch-in closes with a scan at the station."""
+    now = now or timezone.now()
+    employee = punch_in.employee
+    zone = zone_for(employee.company)
+    at = shift_end.astimezone(zone).strftime("%H:%M")
+    by_qr = punch_in.source == "qr_scan"
+    body = (f"Your duty ended at {at}. Please scan your QR at the station to punch out." if by_qr
+            else f"Your duty ended at {at}. Please punch out in the app.")
+    return _write(employee.company_id, SubjectType.ATTENDANCE, punch_in.pk, Action.PUNCH_OUT_REMINDER, [
+        (Audience.EMPLOYEE, _employee_sessions([_user_id(employee)], now), "Punch out", body,
+         AndroidChannel.EMPLOYEE_ALERTS),
+    ], tag=f"punch_out_reminder:{punch_in.pk}",
+        data={"attendance_id": punch_in.pk, "shift_end": shift_end.astimezone(zone).strftime("%Y-%m-%d %H:%M:%S"),
+              "method": "qr_station" if by_qr else "self"}, now=now)

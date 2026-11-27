@@ -84,6 +84,10 @@ class QrAttendanceRequest(SelfAttendanceRequest):
         return _pairs(values, "employee", "rms")
 
 
+class AttendanceMethodRequest(serializers.Serializer):
+    """No fields: the signed-in employee, now."""
+
+
 class AttendanceHistoryRequest(serializers.Serializer):
     """One employee -- the caller by default; one day (`date`), a range
     (`from_date` + `to_date`), or neither for today."""

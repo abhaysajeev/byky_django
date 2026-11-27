@@ -138,8 +138,10 @@ def test_the_days_fares_come_whole_in_first_match_order(client, world, token):
         "weekdays": [5, 6], "start": "14:00", "end": "24:00",
         "price": {"base_fare": "50.000", "grace_minutes": 5, "concurrent_interval_minutes": 10,
                   "concurrent_fare": "10.000", "concurrent_grace_minutes": 0},
+        "include_regular_discounts": False,                                      # the default (26 Nov 2026)
     }
     assert [s["name"] for s in company["seasons"]] == ["Eid", "Summer"]            # the shorter first
+    assert {s["include_regular_discounts"] for s in company["seasons"]} == {False}
     assert company["seasons"][1]["special_prices"][0]["start"] == "16:00"
     # The same fares as the Swagger example: it shows exactly what a device gets.
     assert shape(data) == shape(api._FARES_SAMPLE)

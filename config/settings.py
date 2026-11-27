@@ -75,6 +75,7 @@ LOCAL_APPS = [
     "apps.tracking",
     "apps.targets",
     "apps.incentives",
+    "apps.integrations",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -349,6 +350,15 @@ MONITORING_REQUEST_DAYS = int(os.environ.get("MONITORING_REQUEST_DAYS", 30))
 MONITORING_ERROR_DAYS = int(os.environ.get("MONITORING_ERROR_DAYS", 90))
 MONITORING_PURGE_HOURS = 6              # how often the writer clears expired rows
 
+# -- ERPNext integration (apps/integrations, design/10-erpnext-integration.md) ------
+# ERPNext posts to /api/v1/integrations/erpnext/<slug> with a bearer token
+# (`manage.py erpnext_token create <label>`). Optional: an IP allow-list
+# (addresses or CIDR networks, comma separated; empty = any) and a signing
+# secret shared with byky_app's RMS Settings (empty = signatures not checked).
+ERPNEXT_ALLOWED_IPS = env_list("ERPNEXT_ALLOWED_IPS")
+ERPNEXT_SIGNING_SECRET = os.environ.get("ERPNEXT_SIGNING_SECRET", "")
+ERPNEXT_MAX_BODY = 256 * 1024           # bytes; larger bodies are answered 413
+
 # -- Parked sync calls (apps/sync) --------------------------------------------------
 # Resolved and dismissed issues are deleted this long after they were finished,
 # by the same 6-hourly purge; open ones are never deleted.
@@ -410,11 +420,21 @@ CELERY_BEAT_SCHEDULE = {
     "photos-purge-unattached": {"task": "apps.photos.tasks.purge_unattached", "schedule": crontab(hour=3, minute=15)},
     # A preview the upload could not queue (Redis down) is made here instead.
     "photos-missing-previews": {"task": "apps.photos.tasks.make_missing_previews", "schedule": crontab(minute=40)},
+    # Cart holds that expired or whose tablet signed out (apps/rental/holds.py).
+    # Reads already ignore them; this keeps the one-open-hold index tidy.
+    "rental-release-stale-holds": {"task": "apps.rental.tasks.release_stale_holds",
+                                   "schedule": crontab(minute="*/5")},
     # Notifications the change could not queue (Redis down), and retries due.
     "notifications-send-due": {"task": "apps.notifications.tasks.send_due", "schedule": crontab()},
     "notifications-purge": {"task": "apps.notifications.tasks.purge", "schedule": crontab(hour=3, minute=45)},
     # Each target's required amount for the day, frozen soon after the business day starts.
     "targets-freeze-due": {"task": "apps.targets.tasks.freeze_due", "schedule": crontab(minute="*/15")},
+    # Punch-ins nobody closed, closed soon after each company's business day starts.
+    # A punch-in also closes them itself, so a missed run never blocks anyone.
+    "crew-auto-close": {"task": "apps.crew.tasks.auto_close_due", "schedule": crontab(minute="*/15")},
+    # Duty ended, still punched in: one push, 15 minutes after the rostered shift end.
+    "crew-punch-out-reminders": {"task": "apps.crew.tasks.punch_out_reminders_due",
+                                 "schedule": crontab(minute="*/5")},
 }
 
 # -- Push notifications (apps/notifications) ---------------------------------------------

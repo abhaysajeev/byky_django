@@ -21,6 +21,8 @@ from django.db.models import Prefetch
 from apps.company.scoping import branches_for, companies_for, locations_for
 from apps.fare import package_payload
 from apps.fare.models import (
+    Fare,
+    FareLevel,
     Package,
     PackageFreeItem,
     PackageFreeItemTimeSlab,
@@ -99,6 +101,63 @@ def _context(user, spec, meta, package=None):
     return {"company": company, "branch": branch, "location": location}, errors
 
 
+def _fares(company):
+    """Active, approved fares of `company`, with their branch links."""
+    return (Fare.objects.filter(company=company, is_active=True, approval_status=ApprovalStatus.APPROVED)
+            .prefetch_related("branch_links__branch"))
+
+
+def fare_choices(user):
+    """Every fare a package row may pick, for the form's searchable picker:
+    the vehicle type, the package minutes, the dates and the scope. The page
+    narrows them to the package's company, scope and dates as it is filled."""
+    fares = (Fare.objects.filter(company__in=companies_for(user), is_active=True,
+                                 approval_status=ApprovalStatus.APPROVED)
+             .select_related("vehicle_type").prefetch_related("branch_links__branch")
+             .order_by("vehicle_type__vehicle_type_name", "package_minutes", "valid_from"))
+    return [{
+        "id": f.pk, "company": f.company_id, "vehicle_type": f.vehicle_type_id,
+        "vehicle_type_name": f.vehicle_type.vehicle_type_name, "package_minutes": f.package_minutes,
+        "valid_from": f.valid_from.isoformat(), "valid_to": f.valid_to.isoformat(), "level": f.level,
+        "branches": sorted(link.branch_id for link in f.branch_links.all()),
+        "locations": sorted({link.branch.location_id for link in f.branch_links.all()}),
+    } for f in fares]
+
+
+def fits_scope(fare, level, branch, location):
+    """Whether a fare can price rentals under a package of this scope: a
+    company-level fare always; a branch fare when the package is the
+    company's, or the fare covers the package's branch / a branch in its
+    location."""
+    if fare.level == FareLevel.COMPANY or level == PackageLevel.COMPANY:
+        return True
+    links = list(fare.branch_links.all())
+    if level == PackageLevel.BRANCH:
+        return branch is not None and any(link.branch_id == branch.pk for link in links)
+    return location is not None and any(link.branch.location_id == location.pk for link in links)
+
+
+def _fare_errors(spec, context):
+    """Every row's vehicle type and package minutes must be an existing fare
+    that is in force within the package's dates and fits its scope -- package
+    minutes are picked from fares, never typed (owner, 26 Nov 2026)."""
+    company = context["company"]
+    if company is None or spec is None:
+        return []
+    fares = [f for f in _fares(company).filter(valid_from__lte=spec.valid_to, valid_to__gte=spec.valid_from)
+             if fits_scope(f, spec.level, context["branch"], context["location"])]
+    known = {(f.vehicle_type_id, f.package_minutes) for f in fares}
+    errors = []
+    for label, rows in (("Promotion Items", spec.items), ("Free Promotion Items", spec.free_items),
+                        ("Free Item Time Slabs", spec.time_slabs)):
+        for row in rows:
+            if (row.vehicle_type, row.package_minutes) not in known:
+                errors.append(_error(label, f"{row.package_minutes} min has no active fare for this vehicle type "
+                                            "in the package's dates and scope. Pick one from the fare list.",
+                                     key=row.key))
+    return errors
+
+
 def _own_ids(meta, package):
     """An item/free-item/time-slab id must belong to the package being saved --
     never a way to reach into another package's rows."""
@@ -143,6 +202,8 @@ def save_package(user, data):
             spec = parsed.spec
             context, scope_errors = _context(user, spec, meta, package)
             errors = _issues(parsed.errors) + scope_errors + (_own_ids(meta, package) if spec else [])
+            if not scope_errors:
+                errors += _fare_errors(spec, context)
             if errors:
                 raise Invalid(errors)
 
@@ -181,6 +242,7 @@ def _write(user, package, context, spec, meta):
     package.free_item_selectable = spec.free_item_selectable
     package.free_item_selectable_note = spec.free_item_selectable_note
     package.free_or_package_price = spec.free_or_package_price
+    package.include_regular_discounts = spec.include_regular_discounts
     package.is_active = meta["is_active"]
     package.modified_by = user
     package.save()

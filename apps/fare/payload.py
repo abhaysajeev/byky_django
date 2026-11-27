@@ -9,8 +9,13 @@ The shape:
 
   {pk, lock_version, company, vehicle_type, level, branches: [id],
    valid_from, valid_to, is_active, package_minutes, base: PRICE,
-   rules:   [{key, id, kind, weekdays: [0-6], on_date, start, end, price: PRICE}],
-   seasons: [{key, id, name, start_date, end_date, base: PRICE, rules: [...]}]}
+   rules:   [{key, id, kind, weekdays: [0-6], on_date, start, end, price: PRICE,
+              include_regular_discounts}],
+   seasons: [{key, id, name, start_date, end_date, base: PRICE, rules: [...],
+              include_regular_discounts}]}
+
+include_regular_discounts (owner, 26 Nov 2026) is a plain on/off carried in
+meta, not in the pricing spec: it never changes a price or an overlap check.
 
   PRICE = {base_fare, grace_minutes, concurrent_interval_minutes,
            concurrent_fare, concurrent_grace_minutes}
@@ -167,6 +172,7 @@ def _rules(reader, rows, owner, meta, season_key=None):
         price = reader.price(row.get("price"), key, where)
         meta["rule_ids"][key] = _id(row.get("id"))
         meta["rule_season"][key] = season_key
+        meta["rule_discounts"][key] = row.get("include_regular_discounts") in (True, "true", "1", 1, "on")
         if None in (start, end, price) or (kind == RuleKind.SINGLE_DATE and on_date is None):
             continue
         rules.append(Rule(key, kind, start, end, price, frozenset(weekdays), on_date))
@@ -186,6 +192,7 @@ def parse(data):
         "branches": sorted({b for b in (_id(x) for x in data.get("branches") or []) if b}),
         "is_active": data.get("is_active") not in (False, "false", "0", 0, None),
         "rule_ids": {}, "rule_season": {}, "season_ids": {},
+        "rule_discounts": {}, "season_discounts": {},
     }
     if not meta["vehicle_type"]:
         reader.fail("", "Vehicle type", "Choose a vehicle type.", missing=True)
@@ -211,6 +218,7 @@ def parse(data):
         name = str(row.get("name") or "").strip()
         label = name or "Season"
         meta["season_ids"][key] = _id(row.get("id"))
+        meta["season_discounts"][key] = row.get("include_regular_discounts") in (True, "true", "1", 1, "on")
         start = reader.date(row.get("start_date"), key, f"{label} · From date")
         end = reader.date(row.get("end_date"), key, f"{label} · To date")
         season_base = reader.price(row.get("base"), key, f"{label} · base fare")
@@ -252,6 +260,7 @@ def _rule(row):
         "key": f"r{row.pk}", "id": row.pk, "kind": row.kind, "weekdays": sorted(row.weekdays),
         "on_date": row.on_date.isoformat() if row.on_date else "",
         "start": _hhmm(row.start_minute), "end": _hhmm(row.end_minute), "price": _price(row),
+        "include_regular_discounts": row.include_regular_discounts,
     }
 
 
@@ -270,6 +279,7 @@ def serialise(fare):
                 "key": f"s{season.pk}", "id": season.pk, "name": season.name,
                 "start_date": season.start_date.isoformat(), "end_date": season.end_date.isoformat(),
                 "base": _price(season),
+                "include_regular_discounts": season.include_regular_discounts,
                 "rules": [_rule(r) for r in rules if r.season_id == season.pk],
             }
             for season in fare.seasons.all()

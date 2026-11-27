@@ -803,3 +803,33 @@ class TestRideListRequest(_RequestDatesMixin):
         choices=TestRideMode.values, required=False, allow_blank=True,
         error_messages={"invalid_choice": "must be customer or staff"})
     page = whole_number_field(min_value=1, required=False, default=1)
+
+
+# -- Cart holds (apps/rental/holds.py) -----------------------------------------------
+
+
+class CartAddRequest(serializers.Serializer):
+    """One vehicle into this tablet's cart. `sync_id` (UUIDv7) becomes the
+    hold's id; `added_at` is the tablet's clock, kept for the record only --
+    the 10 minutes run on the server's."""
+
+    sync_id = uuid7_field()
+    vehicle_id = whole_number_field(min_value=1)
+    added_at = datetime_field(required=False, allow_null=True)
+
+
+class CartEmptyRequest(serializers.Serializer):
+    """cart/clear and cart/status take nothing: `request_data: {}`."""
+
+
+class CartRemoveRequest(serializers.Serializer):
+    """One vehicle out of this tablet's cart: by the hold's `sync_id` or by
+    `vehicle_id` -- one of them."""
+
+    sync_id = uuid7_field(required=False, allow_null=True)
+    vehicle_id = whole_number_field(min_value=1, required=False, allow_null=True)
+
+    def validate(self, values):
+        if (values.get("sync_id") is None) == (values.get("vehicle_id") is None):
+            raise serializers.ValidationError({"sync_id": "send sync_id or vehicle_id, one of them"})
+        return values

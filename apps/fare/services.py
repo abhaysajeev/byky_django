@@ -417,6 +417,7 @@ def _write(user, fare, context, spec, meta):
     for season in spec.seasons:
         row = existing_seasons.get(meta["season_ids"].get(season.key)) or FareSeason(fare=fare)
         row.name, row.start_date, row.end_date = season.name.strip(), season.start, season.end
+        row.include_regular_discounts = bool(meta.get("season_discounts", {}).get(season.key))
         _apply_price(row, season.base, direct_rent=direct_rent)
         row.save()
         season_rows[season.key] = row
@@ -430,6 +431,7 @@ def _write(user, fare, context, spec, meta):
         row.weekdays = sorted(rule.weekdays)
         row.on_date = rule.on_date
         row.start_minute, row.end_minute = rule.start, rule.end
+        row.include_regular_discounts = bool(meta.get("rule_discounts", {}).get(rule.key))
         _apply_price(row, rule.price, direct_rent=direct_rent)
         row.save()
 
@@ -502,6 +504,8 @@ def _device_rules(rules):
             "weekdays": sorted(r.weekdays or []),
             "start": pricing.hhmm(r.start_minute), "end": pricing.hhmm(r.end_minute),
             "price": _device_price(r),
+            # May card and manager discounts be added to this price? (owner, 26 Nov 2026)
+            "include_regular_discounts": r.include_regular_discounts,
         }
         for r in rules
     ]
@@ -520,6 +524,7 @@ def _device_fare(fare):
                 "id": s.pk, "name": s.name,
                 "start_date": s.start_date.isoformat(), "end_date": s.end_date.isoformat(),
                 "price": _device_price(s),
+                "include_regular_discounts": s.include_regular_discounts,
                 "special_prices": _device_rules(r for r in rules if r.season_id == s.pk),
             }
             for s in seasons

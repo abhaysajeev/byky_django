@@ -1,0 +1,93 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}Message {{ message.pk }} - ERPNext Inbox{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+{% comment %}
+One ERPNext message as it arrived: its envelope, the record's fields, any
+problems found in it, and the whole body. Read only in step 1.
+{% endcomment %}
+<div class="scr">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>ERPNext</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <a href="{% url 'integrations-erpnext-inbox' %}">ERPNext Inbox</a>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>Message {{ message.pk }}</b>
+      </div>
+      <h1 class="scr-title">{{ message.doctype|default:"Unknown record" }}{% if message.erp_name %} · {{ message.erp_name }}{% endif %}</h1>
+      <p class="scr-sub">Message {{ message.pk }} · received {{ message.received_at|date:"d M Y, H:i:s" }}</p>
+    </div>
+    <div class="scr-head-actions">
+      {% if message.action %}<span class="scr-badge scr-badge-{{ message.badge }}"><i></i>{{ message.action|capfirst }}</span>{% endif %}
+      <a href="{% url 'integrations-erpnext-inbox' %}" class="scr-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"></path></svg>
+        Back
+      </a>
+    </div>
+  </div>
+
+  {% if message.problems %}
+  <div class="scr-card scr-mon-card">
+    <div class="scr-form-head"><h2 class="scr-form-title">Problems</h2></div>
+    <div class="scr-form-body">
+      <ul class="scr-mon-message-full">{% for problem in message.problems %}<li>{{ problem }}</li>{% endfor %}</ul>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="scr-mon-grid scr-mon-grid-wide">
+    <div class="scr-card">
+      <div class="scr-form-head"><h2 class="scr-form-title">{% if fields %}Record{% else %}Body{% endif %}</h2></div>
+      <div class="scr-form-body">
+        {% if fields %}
+        <div class="scr-detail-rows">
+          {% for key, value in fields %}
+          <div class="scr-detail-row"><span class="scr-detail-label">{{ key }}</span><span class="scr-detail-value scr-mon-wrap">{% if value is None or value == "" %}—{% else %}{{ value }}{% endif %}</span></div>
+          {% endfor %}
+        </div>
+        <details class="scr-mon-original">
+          <summary>Whole message as received</summary>
+          <pre class="scr-mon-json">{{ body }}</pre>
+        </details>
+        {% else %}
+        <pre class="scr-mon-json">{{ body|default:"(empty)" }}</pre>
+        {% endif %}
+      </div>
+    </div>
+    <div class="scr-card">
+      <div class="scr-form-head"><h2 class="scr-form-title">Message</h2></div>
+      <div class="scr-form-body scr-mon-body">
+        <div class="scr-detail-rows">
+          <div class="scr-detail-row"><span class="scr-detail-label">Record type</span><span class="scr-detail-value">{{ message.doctype|default:"—" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">ERPNext name</span><span class="scr-detail-value scr-mon-wrap">{{ message.erp_name|default:"—" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Action</span><span class="scr-detail-value">{{ message.action|default:"—"|capfirst }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Modified in ERPNext</span><span class="scr-detail-value">{{ message.erp_modified|default:"—" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Company</span><span class="scr-detail-value">{{ message.company_name|default:"—" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Event id</span><span class="scr-detail-value scr-mon-wrap">{{ message.event_id }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Received</span><span class="scr-detail-value">{{ message.received_at|date:"d M Y, H:i:s" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Address</span><span class="scr-detail-value scr-mon-wrap">/api/v1/integrations/erpnext/{{ message.slug }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">From</span><span class="scr-detail-value">{{ message.source_ip|default:"—" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Sender</span><span class="scr-detail-value scr-mon-wrap">{{ message.user_agent|default:"—" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Token</span><span class="scr-detail-value">{{ message.token.label|default:"—" }}</span></div>
+          <div class="scr-detail-row"><span class="scr-detail-label">Status</span><span class="scr-detail-value">{{ message.get_status_display }}</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

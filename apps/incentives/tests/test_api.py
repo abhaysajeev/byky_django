@@ -153,8 +153,10 @@ def test_the_operator_app_gets_no_incentives(client, world, operator, clock):  #
 def test_each_app_only_its_own_calls(client, world, manager, staff_app, clock):  # noqa: F811
     assert call(client, YEAR.replace("/v1/employee/", "/v1/manager/"), {}, token=manager).json()["code"] == (
         "wrong_channel")
+    # Team Incentive: the employee app may call these by Team Scope -- an Own
+    # scope is refused (apps/incentives/tests/test_team_api.py).
     assert call(client, BRANCHES.replace("/v1/manager/", "/v1/employee/"), {}, token=staff_app).json()["code"] == (
-        "wrong_channel")
+        "no_team_scope")
 
 
 def test_the_incentive_endpoints_are_in_the_api_docs(client, db):

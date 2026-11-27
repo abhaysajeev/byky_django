@@ -105,4 +105,42 @@ PAYMENT_MODE = {
     ],
 }
 
-SPECS = {"drawer_customer": CUSTOMER, "drawer_payment_mode": PAYMENT_MODE}
+# Suspense Entries (owner, 26 Nov 2026; apps/rental/suspense.py). Suspected
+# orders are optional and change with the branch and date: byky-suspense.js
+# reloads them (BykyMulti.setOptions) from rental-suspense-orders.
+SUSPENSE = {
+    "drawer_id": "drawerSuspense",
+    "scr_name": "suspense",
+    "model": "rental.SuspenseEntry",
+    "add_label": "Add Suspense Entry",
+    "title_field": "title",
+    "hide_active": True,
+    "sections": [
+        {
+            "title": "Collection",
+            "fields": [
+                {"id": "branch", "label": "Branch", "kind": "select", "required": True,
+                 "options_from": "suspense_branches_list", "option_key": "name", "width": 12},
+                {"id": "entry_date", "label": "Date", "kind": "date", "required": True,
+                 "help": "The collection's business day."},
+                {"id": "kind", "label": "Type", "kind": "select", "required": True,
+                 "options_from": "suspense_kinds_list", "option_key": "name"},
+                {"id": "amount", "label": "Amount (AED)", "kind": "number", "required": True, "width": 12,
+                 "help": "Always positive. The type says whether it is short or excess."},
+            ],
+        },
+        {
+            "title": "Details",
+            "fields": [
+                {"id": "suspected_orders", "label": "Suspected orders", "kind": "multiselect", "width": 12,
+                 "options_from": "suspense_no_orders", "placeholder": "Optional: pick one or more orders",
+                 "searchable": True, "search_label": "Search order no",
+                 "empty_text": "Pick a branch and a date to list its orders.",
+                 "help": "Leave empty if you do not know which order it was."},
+                {"id": "remarks", "label": "Remarks", "kind": "textarea", "width": 12},
+            ],
+        },
+    ],
+}
+
+SPECS = {"drawer_customer": CUSTOMER, "drawer_payment_mode": PAYMENT_MODE, "drawer_suspense": SUSPENSE}
