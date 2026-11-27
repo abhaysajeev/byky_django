@@ -26,10 +26,14 @@ from apps.portal.auth import (
     sign_in_web,
 )
 from apps.portal.permissions import PagePermissionMixin
+from apps.portal.services import has_permission
 from apps.portal.session_models import AppSession, LogoutReason
 from core.middleware import SESSION_ID_KEY, SESSION_USER_KEY
 from core.network import client_ip
+from theme.menu import first_screen
 from theme.views import ThemedTemplateView
+
+DASHBOARD = "general.dashboard"
 
 
 @never_cache
@@ -121,10 +125,21 @@ def change_password_view(request):
 
 @never_cache
 def home_view(request):
-    """`/` is the dashboard once signed in."""
+    """`/` once signed in: the dashboard if the role may open it, else the
+    first screen in the user's sidebar (owner, 27 Nov 2026); a role with no
+    screen at all is told so rather than refused."""
     if not request.user:
         return redirect("login")
-    return redirect("dashboard")
+    if has_permission(request.user, DASHBOARD, "read"):
+        return redirect("dashboard")
+    url_name = first_screen(request.user)
+    if url_name:
+        return redirect(url_name)
+    return NoScreensView.as_view()(request)
+
+
+class NoScreensView(ThemedTemplateView):
+    template_name = "portal/no_screens.html"
 
 
 class DashboardView(PagePermissionMixin, ThemedTemplateView):
@@ -135,7 +150,9 @@ class DashboardView(PagePermissionMixin, ThemedTemplateView):
     modules that own those numbers are built -- nothing is seeded to make the
     page look busy.
 
-    No `page_code` -- deliberately. `general.dashboard` stays registered in
+    Guarded by `general.dashboard` Read (owner, 27 Nov 2026: Dashboard
+    Privileges). A role without it lands on its first sidebar screen instead
+    (home_view). Until then it was open to everyone:
     `page_registry.py` (other consumers, e.g. the app `permissions_for`
     response, still see it), but the web view itself is never permission-gated:
     any signed-in user lands here regardless of what their role's
@@ -143,6 +160,7 @@ class DashboardView(PagePermissionMixin, ThemedTemplateView):
     doesn't 403 on its own landing page.
     """
 
+    page_code = "general.dashboard"
     template_name = "portal/dashboard.html"
 
     def get_context_data(self, **kwargs):
@@ -210,6 +228,8 @@ def dashboard_live_view(request):
     page, so the page's poller can stop instead of fetching HTML forever."""
     if not request.user:
         return JsonResponse({"detail": "Signed out."}, status=401)
+    if not has_permission(request.user, DASHBOARD, "read"):
+        return JsonResponse({"detail": "Not allowed."}, status=403)
     return JsonResponse(dashboard.live_payload(request.user))
 
 
@@ -221,6 +241,8 @@ def dashboard_stations_view(request):
     (dashboard.branch_day). A future day is refused: nothing has happened."""
     if not request.user:
         return JsonResponse({"detail": "Signed out."}, status=401)
+    if not has_permission(request.user, DASHBOARD, "read"):
+        return JsonResponse({"detail": "Not allowed."}, status=403)
     today = timezone.now().astimezone(dashboard._zone(request.user)).date()
     raw = request.GET.get("date") or today.isoformat()
     try:
