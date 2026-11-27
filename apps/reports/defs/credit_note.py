@@ -3,7 +3,7 @@ sample's title said "Card Discount" by mistake).
 
 **Approved** credit notes, by approval time -- a credit note has no separate
 issue date; it is issued when approved. Item Description is the credited
-bill's vehicles. Actual Collection is the bill's net less the credit note.
+bill's vehicles. Net After Credit Notes is the bill's net less the credit note.
 """
 
 from django.db.models import Exists, OuterRef, Prefetch
@@ -63,7 +63,7 @@ class CreditNoteDetails(Report):
             Column("tax", "Invoice Tax Amount (AED)", MONEY),
             Column("net", "Invoice Net Amount (AED)", MONEY),
             Column("credit", "Credit Note Amount (AED)", MONEY),
-            Column("actual", "Actual Collection Amount (AED)", MONEY),
+            Column("actual", "Net After Credit Notes (AED)", MONEY),
         ]
         rows = []
         for note in notes:
@@ -80,4 +80,4 @@ class CreditNoteDetails(Report):
         return paged(shown, page, per_page, columns=columns, total=total, count=len(rows),
                      kpis=[Kpi("Credit notes", len(rows), COUNT), Kpi("Credit note amount", total.get("credit", ZERO)),
                            Kpi("Invoice net", total.get("net", ZERO)),
-                           Kpi("Actual collection", total.get("actual", ZERO))])
+                           Kpi("Net after credit notes", total.get("actual", ZERO))])

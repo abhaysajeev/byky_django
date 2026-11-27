@@ -242,13 +242,57 @@ def test_figures_that_do_not_agree_are_refused(client, token, shop, returned, ov
     assert_nothing_settled(returned)
 
 
-def test_a_bill_not_paid_in_full_is_refused_and_nothing_written(client, token, shop, returned):
+# -- A balance left by the customer (owner, 27 Nov 2026) ----------------------------
+
+
+def test_a_bill_settles_with_a_balance_left(client, token, shop, returned):
+    """The customer paid 5 of the 10 still owed: the bill keeps its real net,
+    the order shows the 5 unpaid."""
     request_data = bill(returned, shop)
     request_data["payments"][0]["amount"] = "5.00"
 
     body = settle(client, token, request_data)
 
-    assert body["code"] == "balance_not_settled" and "105.00" in body["message"]
+    assert body["code"] == "ok", body
+    data = body["data"]
+    assert (data["net_amount"], data["paid_amount"], data["balance_due"], data["payment_status"]) == (
+        "110.000", "105.000", "5.000", "balance_due")
+    order = Order.objects.get(pk=returned["sync_id"])
+    assert (order.status, order.payment_status, order.balance_due) == (
+        OrderStatus.COMPLETED, PaymentStatus.BALANCE_DUE, Decimal("5.000"))
+    assert Invoice.objects.get().net_amount == Decimal("110.000")
+
+
+def test_a_bill_settles_with_no_payment_at_settle(client, token, shop, returned):
+    body = settle(client, token, bill(returned, shop, payments=[]))
+
+    assert body["code"] == "ok", body
+    assert (body["data"]["paid_amount"], body["data"]["balance_due"]) == ("100.000", "10.000")
+
+
+def test_a_bill_paid_in_full_is_still_paid(client, token, shop, returned):
+    body = settle(client, token, bill(returned, shop))
+
+    assert (body["data"]["balance_due"], body["data"]["payment_status"]) == ("0.000", "paid")
+
+
+def test_paying_more_than_the_bill_is_refused_and_nothing_written(client, token, shop, returned):
+    request_data = bill(returned, shop)
+    request_data["payments"][0]["amount"] = "15.00"
+
+    body = settle(client, token, request_data)
+
+    assert body["code"] == "overpaid" and "refund the extra 5.000" in body["message"]
+    assert_nothing_settled(returned)
+
+
+def test_refunding_more_than_was_received_is_refused(client, token, shop, returned):
+    refund = {"sync_id": str(uuid7()), "kind": "refund", "payment_mode_id": shop["card"].pk,
+              "amount": "120.00", "reference_no": "", "paid_at": "2026-10-02 17:13:30"}
+
+    body = settle(client, token, bill(returned, shop, payments=[refund]))
+
+    assert body["code"] == "refund_exceeds_received"
     assert_nothing_settled(returned)
 
 
@@ -365,4 +409,4 @@ def test_a_payment_kind_other_than_settlement_or_refund_is_refused(client, token
 def test_the_settle_endpoint_is_in_the_api_docs(client, db):
     schema = client.get("/api/schema/").content.decode()
 
-    assert "/api/v1/{app}/orders/settle" in schema and "balance_not_settled" in schema
+    assert "/api/v1/{app}/orders/settle" in schema and "overpaid" in schema and "refund_exceeds_received" in schema

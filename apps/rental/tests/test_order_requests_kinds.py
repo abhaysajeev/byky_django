@@ -82,6 +82,16 @@ def test_one_live_request_of_each_kind(client, token, booked, first, second, cod
     assert call(client, ASK, ask(booked, kind=second), token=token).json()["code"] == code
 
 
+def test_a_complimentary_must_still_refund_its_advance(client, token, manager, shop, booked):
+    """Net 0: the AED 100 advance kept is more than the bill (owner, 27 Nov 2026)."""
+    request_id = approved_free(client, token, manager, booked)
+    return_all(client, token, booked)
+
+    body = call(client, SETTLE, free_bill(booked, shop, request_id, payments=[]), token=token).json()
+
+    assert body["code"] == "overpaid", body
+
+
 def test_a_card_discount_and_a_pending_complimentary_go_together(client, token, shop, booked, card):
     make_claim(card, shop["ahmed"], status=ClaimStatus.PENDING, order=Order.objects.get(pk=booked["sync_id"]))
     assert call(client, ASK, ask(booked, kind="complimentary"), token=token).json()["code"] == "ok"

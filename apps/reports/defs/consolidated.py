@@ -5,7 +5,7 @@ how many, how many still running or cancelled, replaced vehicles, the first
 and last receipt number, reprints, discounted and complimentary orders, and
 the money of the **settled** ones among them -- bill (net less VAT), VAT,
 discount, rounding, net, payments by mode, approved credit notes and the
-actual collection (net less them).
+net after credit notes (net less them).
 """
 
 from collections import defaultdict
@@ -136,7 +136,7 @@ class Consolidated(Report):
             Column("net", "Net Amount (AED)", MONEY),
             *common.pay_columns(PAY, with_other),
             Column("credit", "Credit Note Amount (AED)", MONEY),
-            Column("actual", "Actual Collection Amount (AED)", MONEY),
+            Column("actual", "Net After Credit Notes (AED)", MONEY),
         ]
 
         rows = []
@@ -169,7 +169,7 @@ class Consolidated(Report):
             shown, page, per_page, columns=columns, total=grand, count=len(rows),
             kpis=[Kpi("Orders", grand.get("orders", 0), COUNT), Kpi("Running", grand.get("running", 0), COUNT),
                   Kpi("Net amount", grand.get("net", ZERO)),
-                  Kpi("Actual collection", grand.get("actual", ZERO))],
+                  Kpi("Net after credit notes", grand.get("actual", ZERO))],
         )
 
 

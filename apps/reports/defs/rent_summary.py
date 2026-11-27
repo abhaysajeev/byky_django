@@ -3,7 +3,7 @@
 Settled orders by **settle time** (the invoice's issue), the basis agreed for
 collections (apps/rental/reports.py): one row per day x station, in one block
 per state with its TOTAL, then the GRAND TOTAL. Credit notes are the approved
-ones on those bills; Actual Collection is the net less them. Payments are each
+ones on those bills; Net After Credit Notes is the net less them. Payments are each
 bill's advance and settlement less refunds, by mode.
 
 The sheet's "Referance Number (AED)" is left out: a payment's reference has
@@ -91,7 +91,7 @@ class RentSummary(Report):
             Column("orders", "Total No Of Order", COUNT),
             Column("net", "Net Bill Amount (AED)", MONEY),
             Column("credit", "Credit Note Amount (AED)", MONEY),
-            Column("actual", "Actual Collection Amount (AED)", MONEY),
+            Column("actual", "Net After Credit Notes (AED)", MONEY),
             *common.pay_columns(PAY, with_other),
         ]
 
@@ -114,5 +114,5 @@ class RentSummary(Report):
             rows, page, per_page, columns=columns, total=grand, count=len(data), blocks=True,
             kpis=[Kpi("Orders", grand.get("orders", 0), COUNT), Kpi("Net bill", grand.get("net", ZERO)),
                   Kpi("Credit notes", grand.get("credit", ZERO)),
-                  Kpi("Actual collection", grand.get("actual", ZERO))],
+                  Kpi("Net after credit notes", grand.get("actual", ZERO))],
         )

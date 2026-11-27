@@ -45,7 +45,7 @@ REVIEWED = {
     "apps/reports/defs/credit_note.py": (1, "counted()"),
     "apps/reports/defs/customer_card.py": (1, "counted()"),
     "apps/reports/defs/customer_rent.py": (2, "invoices and notes counted()"),
-    "apps/reports/defs/rent_details.py": (6, "totals counted(); a cancelled row's money blank"),
+    "apps/reports/defs/rent_details.py": (4, "totals counted(); a cancelled row's money blank; balance by counted_q"),
     "apps/reports/defs/rent_summary.py": (3, "invoices counted(); helpers counted()"),
     "apps/targets/services.py": (1, "achieved: credit notes counted(), completed orders only"),
 }

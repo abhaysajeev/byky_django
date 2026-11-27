@@ -745,7 +745,9 @@ card slip or cheque.
 | order `amount_received`, `amount_refunded`, `paid_amount` | each payment, from booking on |
 
 Until then they are `null`. `payment_status` is `pending` while the order is
-active and `paid` once it is settled (blank for a cancelled order).
+active, `paid` once it is settled and paid in full, and `balance_due` once it is
+settled with part of the bill unpaid -- `balance_due` then says how much (blank
+for a cancelled order).
 
 **`fare_details`** (optional per item, for now) -- the fare terms the tablet
 priced that line on, sent as one object: `fare_id`, `applied` (`base`,
@@ -1178,7 +1180,7 @@ class OrderReturnView(_OperatorView):
 _SETTLE_ERRORS = (
     "order_not_synced", "sync_id_conflict", "order_closed", "items_still_out", "amount_mismatch",
     "rounding_mismatch",
-    "balance_not_settled", "unknown_card_claim", "card_discount_revoked", "card_claim_not_approved",
+    "overpaid", "refund_exceeds_received", "unknown_card_claim", "card_discount_revoked", "card_claim_not_approved",
     "unknown_card_discount",
     "unknown_discount_request", "discount_request_not_approved", "discount_mismatch",
     "approved_discount_not_applied", "unknown_complimentary_request", "complimentary_request_not_approved",
@@ -1259,10 +1261,16 @@ order approved as complimentary must settle with it
 (`approved_complimentary_not_applied`). The invoice prints as usual, marked
 COMPLIMENTARY.
 
-**`payments`** -- `settlement` for the balance, `refund` for money handed back
-when the customer paid more than the bill. After them the bill must be paid
-in full: what was received minus refunded = `net_amount`
-(`balance_not_settled`; nothing is written). A bill of 0 settles too.
+**`payments`** -- only the money actually taken: `settlement` for what the
+customer paid now, `refund` for money handed back when they paid more than the
+bill. After them, what was received minus refunded may be **less** than
+`net_amount` (owner, 27 Nov 2026): the customer left a balance, the bill still
+settles at its real `net_amount`, and the reply's `balance_due` /
+`payment_status: "balance_due"` show what is unpaid (the field staff makes it
+good outside the books; it is never collected through this API). It may never
+be **more** (`overpaid`: refund the extra), and the refunds may never exceed
+what was received (`refund_exceeds_received`); either way nothing is written. A
+bill of 0 settles too, so a complimentary ride must refund its advance.
 
 **`star_rating`** (optional) -- the customer's rating of this rental, 1 to 5
 with at most one decimal (`4.5`, `5`, `2.5`); leave it out or send null when
@@ -1318,6 +1326,7 @@ _SETTLE_EXAMPLES = [
         payments=[{"sync_id": "01923e1c-0a16-7b22-8c33-d4e5f6a7b8c9", "kind": "refund", "payment_mode_id": 1,
                    "amount": "6.500", "reference_no": "", "paid_at": "2026-10-02 17:13:30"}],
     ),
+    _settle_example("customer left a balance: only the AED 100 advance paid, 4.500 due", {}, payments=[]),
     _settle_example(
         "complimentary, the AED 100 advance refunded",
         {"complimentary": {"request_sync_id": "01923e2b-99cc-7b22-8c33-d4e5f6a7b8c9"}},

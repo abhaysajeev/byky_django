@@ -291,3 +291,17 @@ def test_one_live_credit_note_per_order_is_enforced_by_the_database(client, toke
     with pytest.raises(IntegrityError), transaction.atomic():
         CreditNote.objects.create(id=uuid7(), company=settled.company, branch=settled.branch, order=settled,
                                   invoice=settled.invoice, source="device", status="pending")
+
+
+def test_a_balance_left_shows_on_the_order_and_the_printed_bill(client, token, shop, returned, web):
+    """Owner, 27 Nov 2026: the bill settles with 5.00 unpaid; the order page and
+    the printed invoice say so, the bill keeps its net."""
+    request_data = settling.bill(returned, shop)
+    request_data["payments"][0]["amount"] = "5.00"
+    assert settling.settle(client, token, request_data)["code"] == "ok"
+    order = Order.objects.get(pk=returned["sync_id"])
+
+    detail = web.get(f"/rental/order/{order.pk}/").content.decode()
+    assert "Balance due" in detail and "AED 5.00" in detail
+    receipt = web.get(f"/rental/invoice/{order.invoice.pk}/receipt/").content.decode()
+    assert "Balance" in receipt and "AED 5.00" in receipt and "AED 110.00" in receipt
