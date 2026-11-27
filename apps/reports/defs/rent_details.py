@@ -150,13 +150,14 @@ class RentDetails(Report):
             Column("phone", "Phone No", part=order, width=16),
             Column("initial", "Initial Order Amount (AED)", MONEY, part=order),
             Column("collected", "Collected  Amount (AED)", MONEY, part=order),
-            Column("deposit", "Deposit/Balance to Pay (AED)", MONEY, part=order),
+            # What the customer left unpaid on a settled bill (owner, 27 Nov 2026).
+            Column("balance", "Balance to Pay (AED)", MONEY, part=order),
             Column("rounding", "Rounded Difference", MONEY, part=order),
             Column("tax_pct", "Tax Percentage", PERCENT, part=order, width=10),
             Column("tax", "Tax Amount (AED)", MONEY, part=order),
             Column("net", "Net Amount (AED)", MONEY, part=order),
             Column("credit", "Credit Note Amount (AED)", MONEY, part=order),
-            Column("actual", "Actual Collection Amount (AED)", MONEY, part=order),
+            Column("actual", "Net After Credit Notes (AED)", MONEY, part=order),
             *common.pay_columns(PAY, with_other, part=order),
             Column("refs", "Referance Number", part=order, width=18),
             Column("vehicle_no", "Vehicle Number", part="line", width=14),
@@ -193,7 +194,6 @@ class RentDetails(Report):
                             "discount_claim__card_type", "discount_claim__card_grade")
             .annotate(
                 initial=_sum(OrderItem.objects.filter(order=OuterRef("pk"), status__in=common.BILLING), "base_fare"),
-                advance=_sum(Payment.objects.filter(order=OuterRef("pk"), kind=PaymentKind.ADVANCE), "amount"),
             )
             .prefetch_related(Prefetch(
                 "items", to_attr="shown",
@@ -235,7 +235,7 @@ class RentDetails(Report):
             "phone": order.customer_mobile,
             "initial": order.initial if live else None,
             "collected": order.paid_amount if live else None,
-            "deposit": (order.paid_amount - order.net_amount if settled else order.advance) if live else None,
+            "balance": order.net_amount - order.paid_amount if live and settled else None,
             "rounding": order.rounding_adjustment if settled else None,
             "tax_pct": order.tax_percentage if settled else None,
             "tax": order.tax_amount if settled else None,
@@ -276,7 +276,8 @@ class RentDetails(Report):
             rounding=Coalesce(Sum("rounding_adjustment", filter=settled), ZERO, output_field=_DEC),
             tax=Coalesce(Sum("tax_amount", filter=settled), ZERO, output_field=_DEC),
             net=Coalesce(Sum("net_amount", filter=settled), ZERO, output_field=_DEC),
-            balance=Coalesce(Sum(F("paid_amount") - F("net_amount"), filter=settled), ZERO, output_field=_DEC),
+            balance=Coalesce(Sum(F("net_amount") - F("paid_amount"), filter=settled & counted_q("")), ZERO,
+                             output_field=_DEC),
             complimentary=Coalesce(Sum("invoice__discount_amount", filter=settled & Q(
                 invoice__discount_source=DiscountSource.COMPLIMENTARY)), ZERO, output_field=_DEC),
             manager=Coalesce(Sum(_part("manager_discount_amount", DiscountSource.MANAGER), filter=settled),
@@ -284,10 +285,6 @@ class RentDetails(Report):
             card_discount=Coalesce(Sum(_part("card_discount_amount", DiscountSource.CARD), filter=settled),
                                    ZERO, output_field=_DEC),
         )
-        # running orders' advances (a cancelled one's no longer counts)
-        advance = (counted(Payment.objects.filter(order__in=orders.exclude(status=OrderStatus.COMPLETED).values("pk"),
-                                                  kind=PaymentKind.ADVANCE))
-                   .aggregate(s=Coalesce(Sum("amount"), ZERO, output_field=_DEC))["s"])
         credit = (counted(CreditNote.objects.filter(order__in=ids, status=CreditNoteStatus.APPROVED))
                   .aggregate(s=Coalesce(Sum("net_amount"), ZERO, output_field=_DEC))["s"])
         initial = (counted(OrderItem.objects.filter(order__in=ids, status__in=common.BILLING))
@@ -301,7 +298,7 @@ class RentDetails(Report):
             sign = -1 if row["kind"] == PaymentKind.REFUND else 1
             paid[common.bucket(row["mode__name"])] += sign * (row["total"] or ZERO)
         return {
-            "initial": initial, "collected": agg["collected"], "deposit": agg["balance"] + advance,
+            "initial": initial, "collected": agg["collected"], "balance": agg["balance"],
             "rounding": agg["rounding"], "tax": agg["tax"], "net": agg["net"], "credit": credit,
             "actual": agg["net"] - credit, **common.pay_cells(paid),
             "supervisor": agg["complimentary"] + agg["manager"], "card_discount": agg["card_discount"],

@@ -137,7 +137,7 @@ def test_rent_details_shows_the_bill_once_and_each_vehicle(web, settled):
 
     [order] = page_rows(d)
     c = order["cells"]
-    assert (c["status"], c["customer"], c["initial"], c["collected"], c["deposit"]) == (
+    assert (c["status"], c["customer"], c["initial"], c["collected"], c["balance"]) == (
         "Received", "Ahmed Al Mansoori", "100.000", "110.000", "0.000")
     assert (c["tax_pct"], c["tax"], c["net"], c["credit"], c["actual"], c["bill"]) == (
         "5.00", "5.240", "110.000", "0.000", "110.000", "104.760")

@@ -24,7 +24,7 @@ the same gap crew.EmployeeBlockLog fills for staff.
 import re
 
 from django.db import models
-from django.db.models import Case, F, Value, When
+from django.db.models import Case, F, Q, Value, When
 
 from core.models import ApprovalMixin, TimeStampedModel
 
@@ -211,6 +211,9 @@ class OrderStatus(models.TextChoices):
 class PaymentStatus(models.TextChoices):
     PENDING = "pending", "Pending"      # on rent: the bill is not made yet
     PAID = "paid", "Paid"               # settled, paid in full
+    # Settled with part of the bill unpaid (owner, 27 Nov 2026): the field
+    # staff makes it good outside the books; the bill keeps its real net.
+    BALANCE_DUE = "balance_due", "Balance due"
 
 
 class OrderItemStatus(models.TextChoices):
@@ -286,13 +289,15 @@ class Order(TimeStampedModel):
     paid_amount = models.GeneratedField(
         expression=PAID, output_field=models.DecimalField(**MONEY), db_persist=True,
     )
-    # Blank until settle (no bill yet); then 0 -- settle needs the bill paid.
+    # Blank until settle (no bill yet); then what the customer left unpaid
+    # (0 when paid in full) -- never below 0, settle refuses overpaying.
     balance_due = models.GeneratedField(
         expression=F("net_amount") - PAID, output_field=models.DecimalField(**MONEY), db_persist=True,
     )
     payment_status = models.GeneratedField(
         expression=Case(
             When(status=OrderStatus.ACTIVE, then=Value(PaymentStatus.PENDING)),
+            When(Q(status=OrderStatus.COMPLETED, net_amount__gt=PAID), then=Value(PaymentStatus.BALANCE_DUE)),
             When(status=OrderStatus.COMPLETED, then=Value(PaymentStatus.PAID)),
             default=None,
         ),
@@ -328,6 +333,12 @@ class Order(TimeStampedModel):
 
     def __str__(self):
         return self.order_no
+
+    @property
+    def payment_status_label(self):
+        """"Paid" / "Balance due" / "Pending" -- a generated field has no
+        get_payment_status_display (its choices sit on the output field)."""
+        return PaymentStatus(self.payment_status).label if self.payment_status else ""
 
 
 class OrderItem(TimeStampedModel):

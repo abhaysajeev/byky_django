@@ -148,7 +148,9 @@ ORDER_ERRORS = {
     "amount_mismatch": (400, "The amounts do not add up.", False),
     # The bill's round-off does not follow the company's money settings (CR1).
     "rounding_mismatch": (400, "The round-off does not follow the money settings.", False),
-    "balance_not_settled": (409, "The bill is not paid in full.", False),
+    # A bill may settle with a balance (owner, 27 Nov 2026), never with more paid than billed.
+    "overpaid": (409, "More was paid than the bill: refund the extra.", False),
+    "refund_exceeds_received": (409, "More was refunded than was received.", False),
     "unknown_card_claim": (404, "That card-discount request is not on this order.", False),
     "card_discount_revoked": (409, "That card-discount approval was revoked. Bill without it.", False),
     "card_claim_not_approved": (409, "That card-discount request is not approved.", False),
@@ -929,7 +931,10 @@ def settle_order(session, values, request_data, reply_for):
     Every vehicle must already be back. The tablet works out the whole bill
     and sends it; the server stores it as sent after the basic checks -- the
     subtotal is the returned lines' totals, the net adds up, and after this
-    call's payments the bill is paid in full (so `paid` is always true).
+    call's payments no more than the bill is paid. Less is allowed (owner, 27
+    Nov 2026): the customer left a balance, which the field staff makes good
+    outside the books -- the bill keeps its real net, `balance_due` shows the
+    rest and `payment_status` is `balance_due`.
 
     VAT is included in the fares (client, 3 Oct 2026): net_amount = subtotal
     - discount_amount + rounding_adjustment, nothing added for VAT.
@@ -1021,10 +1026,16 @@ def settle_order(session, values, request_data, reply_for):
         _record_payments(session, order, payments, _payment_modes(order.company, payments))
 
         order.refresh_from_db()
-        if order.paid_amount != values["net_amount"]:
+        if order.amount_refunded > order.amount_received:
             raise OrderRefused(
-                "balance_not_settled",
-                f"Paid {order.paid_amount} against a bill of {values['net_amount']}: the bill is not paid in full.",
+                "refund_exceeds_received",
+                f"Refunded {order.amount_refunded} but only {order.amount_received} was received.",
+            )
+        if order.paid_amount > values["net_amount"]:
+            raise OrderRefused(
+                "overpaid",
+                f"Paid {order.paid_amount} against a bill of {values['net_amount']}: "
+                f"refund the extra {order.paid_amount - values['net_amount']}.",
             )
 
         order.subtotal, order.tax_percentage = values["subtotal"], values["tax_percentage"]
