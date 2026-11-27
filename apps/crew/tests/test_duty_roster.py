@@ -340,14 +340,57 @@ def test_an_end_before_start_becomes_an_overnight_shift(cashier, world):
     has no date of its own), so "end before start" reads as an overnight
     shift, not a typo -- business-logic.md section 2.1 does not restrict this
     to Shift 2."""
+    _day_start(world)
     days = [one_day("2026-09-20", day_type="working", role="cashier", branch=world["branch"].pk,
-                    shift1_start="17:00", shift1_end="08:00")]
+                    shift1_start="17:00", shift1_end="02:00")]
 
     written = services.save_week(cashier, days, user=None, branches_qs=Branch.objects.all())
 
     row = written[0]
     assert row.shift1_end.date() > row.shift1_start.date()
-    assert timezone.localtime(row.shift1_end).strftime("%H:%M") == "08:00"
+    assert timezone.localtime(row.shift1_end).strftime("%H:%M") == "02:00"
+
+
+# -- Shifts past midnight end by the business-day start (owner, 26 Nov 2026) --------------
+
+
+def _day_start(world, at=datetime.time(4)):
+    from apps.company.models import CompanyConfig
+
+    CompanyConfig.objects.update_or_create(company=world["branch"].company, defaults={"report_day_start": at})
+
+
+def _night(cashier, world, **shifts):
+    days = [one_day("2026-09-20", day_type="working", role="cashier", branch=world["branch"].pk, **shifts)]
+    return services.save_week(cashier, days, user=None, branches_qs=Branch.objects.all())
+
+
+def test_a_shift_past_midnight_saves_up_to_the_day_start(cashier, world):
+    _day_start(world)
+    row = _night(cashier, world, shift1_start="18:00", shift1_end="04:00")[0]
+    assert timezone.localtime(row.shift1_end).strftime("%Y-%m-%d %H:%M") == "2026-09-21 04:00"
+
+
+@pytest.mark.parametrize("shifts, field, message", [
+    ({"shift1_start": "18:00", "shift1_end": "05:00"}, "Shift 1", "A shift past midnight must end by 04:00."),
+    ({"shift1_start": "09:00", "shift1_end": "09:00"}, "Shift 1", "Start and end cannot be the same."),
+    ({"shift1_start": "08:00", "shift1_end": "12:00", "shift2_start": "18:00", "shift2_end": "06:00"},
+     "Shift 2", "A shift past midnight must end by 04:00."),
+    ({"shift1_start": "20:00", "shift1_end": "01:00", "shift2_start": "02:00", "shift2_end": "03:00"},
+     "Shift 1", "Only the last shift can run past midnight."),
+    ({"shift1_start": "08:00", "shift1_end": "14:00", "shift2_start": "13:00", "shift2_end": "18:00"},
+     "Shift 2", "Shift 2 must start after Shift 1 ends (14:00)."),
+])
+def test_roster_shifts_past_midnight_are_checked(cashier, world, shifts, field, message):
+    _day_start(world)
+    with pytest.raises(services.Invalid) as refused:
+        _night(cashier, world, **shifts)
+    assert any(field in e["field"] and e["message"] == message for e in refused.value.errors), refused.value.errors
+
+
+def test_with_no_day_start_no_roster_shift_runs_past_midnight(cashier, world):
+    with pytest.raises(services.Invalid, match="must end by 00:00"):
+        _night(cashier, world, shift1_start="18:00", shift1_end="02:00")
 
 
 def test_a_missing_shift_time_is_refused_by_name(cashier, world):
@@ -798,3 +841,14 @@ def test_the_add_to_day_employee_list_is_not_narrowed_by_role(client_in, cashier
 
     assert 'data-combo-filter-field="category"' not in body
     assert 'data-field="category"' in body                         # Add to Day and Edit Day keep a Role
+
+
+def test_each_drawers_shift2_toggle_has_its_own_id(client_in):
+    """Regression (26 Nov 2026): Edit Day and Add to Day both rendered
+    id="add_shift2", so Add to Day's label toggled Edit Day's hidden box and
+    Shift 2 could not be switched on."""
+    body = client_in.get("/crew/duty-roster/").content.decode()
+    assert 'id="add_shift2"' not in body
+    for drawer in ("drawerDutyRosterDay", "drawerDutyRosterAddToDay"):
+        assert body.count(f'id="{drawer}-add_shift2"') == 1
+        assert f'for="{drawer}-add_shift2"' in body

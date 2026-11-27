@@ -436,8 +436,9 @@ class CompanyConfig(TimeStampedModel):
     """A company's own settings: one row per company, made on first save.
 
     report_day_start -- the business day's start for report windows: set to
-    04:00, a report opens on yesterday 04:00 -> today 03:59 (reports only).
-    Empty keeps the calendar day."""
+    04:00, a report opens on yesterday 04:00 -> today 03:59. Target days and
+    attendance (auto-close, the day's attendance method; 24 Nov 2026) follow
+    it too. Empty keeps the calendar day."""
 
     company = models.OneToOneField(Company, on_delete=models.CASCADE, related_name="config")
     report_day_start = models.TimeField(null=True, blank=True)

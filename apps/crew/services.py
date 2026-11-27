@@ -25,6 +25,7 @@ from apps.crew.models import (
     AttendanceMethod,
     AttendanceSource,
     BlockAction,
+    ClosedBy,
     DutyRoster,
     DutyRosterDayType,
     Employee,
@@ -37,8 +38,16 @@ from apps.crew.models import (
 )
 from apps.notifications import employee as employee_push
 from core.enums import Channel
+from core.ids import uuid7
 from core.scoping import scoped_to
-from core.timezones import business_date_for, business_day_range, zone_for
+from core.timezones import (
+    business_date_for,
+    business_day_of,
+    business_day_range,
+    business_window,
+    day_start_for,
+    zone_for,
+)
 
 # A document inside this many days counts as needing attention.
 EXPIRY_WARNING_DAYS = 30
@@ -177,46 +186,73 @@ def expiry_state(expiry, today=None):
 # -- Attendance (apps/crew/api.py) --------------------------------------------
 #
 # One row per punch. A punch-out closes the employee's open punch-in, even
-# across midnight (17:00 -> 01:00). A punch-in is "open" for OPEN_PUNCH_WINDOW
-# after it happened; past that nobody can close it and it reads as a missing
-# punch-out -- so a forgotten punch-out yesterday never locks anyone out today.
+# across midnight (17:00 -> 01:00). Everything is decided by the company's
+# BUSINESS DAY (CompanyConfig.report_day_start, 04:00 at BYKY -- the same day
+# the reports use; owner, 24 Nov 2026):
+#
+# * a punch-in is open until its punch-out; one open punch-in per business day;
+# * at the business-day start every punch-in of the day before that nobody
+#   closed gets a punch-out written by the server (source auto_close) at the
+#   end of the rostered shift it fell in, else at the day's end -- the beat job
+#   auto_close_due, and also on the spot when that person next punches in, so
+#   the morning punch-in never waits for the job;
+# * a real punch-out that reaches the server later (an offline tablet) replaces
+#   the auto-close of its day;
+# * the attendance method is the day's: Working as cashier or labour on the
+#   duty roster means QR at the station, any other day the person's permanent
+#   method (attendance_method_for). A punch-out follows its punch-in's method.
 
-OPEN_PUNCH_WINDOW = datetime.timedelta(hours=24)
 HISTORY_MAX_DAYS = 31
 
 
 class AttendanceRefused(Exception):
     """A punch the server will not record. `code` is the contract with the
-    apps; `message` is what the person reads."""
+    apps; `message` is what the person reads; `data` goes in the reply."""
 
-    def __init__(self, code, message, status=409):
+    def __init__(self, code, message, status=409, data=None):
         super().__init__(code)
         self.code = code
         self.message = message
         self.status = status
+        self.data = data
 
 
 class SessionStatus:
     CLOSED = "closed"
     OPEN = "open"
-    MISSING_PUNCH_OUT = "missing_punch_out"
+    AUTO_CLOSED = "auto_closed"
 
 
-def session_status(punch_in, now=None):
-    """closed, open (still inside the window) or missing_punch_out."""
-    if _has_punch_out(punch_in):
-        return SessionStatus.CLOSED
-    now = now or timezone.now()
-    if punch_in.rms_scan_time > now - OPEN_PUNCH_WINDOW:
-        return SessionStatus.OPEN
-    return SessionStatus.MISSING_PUNCH_OUT
+def _punch_out_of(punch_in):
+    try:
+        return punch_in.punch_out
+    except Attendance.DoesNotExist:
+        return None
 
 
 def _has_punch_out(punch_in):
-    try:
-        return punch_in.punch_out is not None
-    except Attendance.DoesNotExist:
-        return False
+    return _punch_out_of(punch_in) is not None
+
+
+def session_status(punch_in, now=None):
+    """closed, open or auto_closed (closed by the server at the day start).
+    `now` is accepted for the callers' convenience; the status no longer
+    depends on the clock."""
+    punch_out = _punch_out_of(punch_in)
+    if punch_out is None:
+        return SessionStatus.OPEN
+    if punch_out.source == AttendanceSource.AUTO_CLOSE:
+        return SessionStatus.AUTO_CLOSED
+    return SessionStatus.CLOSED
+
+
+def worked_minutes(punch_in, punch_out):
+    """Punch-in to punch-out in whole minutes; None while open, and for an
+    auto-close at the day's end -- no rostered shift says when they left, so
+    nothing is counted (owner, 24 Nov 2026)."""
+    if punch_out is None or punch_out.closed_by == ClosedBy.DAY_END:
+        return None
+    return int((punch_out.rms_scan_time - punch_in.rms_scan_time).total_seconds() // 60)
 
 
 def _employee_by_code(company, code, refusal):
@@ -233,18 +269,251 @@ def _branch_by_code(company, code, field):
     return branch
 
 
-def _open_punch_in(employee, at):
-    """The punch-in a punch at `at` would find open: the latest one with no
-    punch-out that happened within OPEN_PUNCH_WINDOW before `at`."""
-    return (
-        Attendance.objects
-        .filter(
-            employee=employee, punch_type=PunchType.PUNCH_IN, punch_out__isnull=True,
-            rms_scan_time__gt=at - OPEN_PUNCH_WINDOW, rms_scan_time__lte=at,
-        )
-        .order_by("-rms_scan_time")
-        .first()
+# -- The business day and the day's method ---------------------------------------
+
+
+def business_day_bounds(company, day):
+    """UTC [start, end) of one business day."""
+    return business_window(company, day, day)
+
+
+def roster_day_of(employee, at=None):
+    """(business day of `at`, that day's DutyRoster row or None)."""
+    day = business_day_of(employee.company, at or timezone.now())
+    row = (DutyRoster.objects.filter(employee=employee, date=day)
+           .select_related("branch", "employee__designation").first())
+    return day, row
+
+
+def _roster_role(row):
+    """cashier / labour on a Working day, else None (same rule as
+    apps/crew/duty.py::role_of, which imports this module)."""
+    if row is None or row.day_type != DutyRosterDayType.WORKING:
+        return None
+    return row.role or row.employee.designation.roster_category or None
+
+
+def method_for_row(employee, row):
+    if _roster_role(row) in (RosterCategory.CASHIER, RosterCategory.LABOUR):
+        return AttendanceMethod.QR_STATION
+    return employee.attendance_rule
+
+
+def attendance_method_for(employee, at=None):
+    """The attendance method on the business day of `at` (owner, 20 and 24 Nov
+    2026): Working as cashier or labour on the duty roster -> QR at the
+    station; any other day (not rostered, week off, leave) -> the permanent
+    method (the employee's own, else the designation's). Nothing is written
+    back to the employee or designation."""
+    _, row = roster_day_of(employee, at)
+    return method_for_row(employee, row)
+
+
+def _ends_next_day(start, end, zone):
+    """True when a roster shift ends on the day after it starts (the
+    station's own clock), None when either time is missing."""
+    if start is None or end is None:
+        return None
+    return timezone.localtime(end, zone).date() > timezone.localtime(start, zone).date()
+
+
+def _local_text(moment, zone):
+    return timezone.localtime(moment, zone).strftime("%Y-%m-%d %H:%M:%S") if moment else None
+
+
+def attendance_method_today(employee, now=None):
+    """The employee app's POST attendance/method (24 Nov 2026): today's method
+    and what the next punch must be. While a punch-in is open the next punch
+    is its punch-out, by the punch-in's method (`next_punch_method`)."""
+    now = now or timezone.now()
+    company, zone = employee.company, zone_for(employee.company)
+    day, row = roster_day_of(employee, now)
+    start, end = business_day_bounds(company, day)
+    method = method_for_row(employee, row)
+    open_in = (Attendance.objects
+               .filter(employee=employee, punch_type=PunchType.PUNCH_IN, punch_out__isnull=True,
+                       rms_scan_time__gte=start, rms_scan_time__lt=end)
+               .order_by("-rms_scan_time").first())
+    roster = None
+    if row is not None:
+        roster = {
+            "date": row.date.isoformat(), "day_type": row.day_type, "role": _roster_role(row),
+            "branch_id": row.branch_id, "branch": row.branch.name if row.branch_id else None,
+            # The QR code carries this as employee_branch_code (attendance/mark).
+            "branch_code": row.branch.short_code if row.branch_id else None,
+            "shift1_start": _local_text(row.shift1_start, zone), "shift1_end": _local_text(row.shift1_end, zone),
+            "shift2_start": _local_text(row.shift2_start, zone), "shift2_end": _local_text(row.shift2_end, zone),
+            # The roster APIs' own flag (apps/crew/duty.py): the end is on the next day.
+            "shift1_ends_next_day": _ends_next_day(row.shift1_start, row.shift1_end, zone),
+            "shift2_ends_next_day": _ends_next_day(row.shift2_start, row.shift2_end, zone),
+        }
+    return {
+        "attendance_method": method,
+        "permanent_method": employee.attendance_rule,
+        "business_date": day.isoformat(),
+        "valid_until": _local_text(end, zone),
+        "roster": roster,
+        "open_punch_in": ({"sync_id": str(open_in.pk), "time": _local_text(open_in.rms_scan_time, zone),
+                           "source": open_in.source} if open_in is not None else None),
+        "next_punch": (PunchType.PUNCH_OUT if open_in is not None else PunchType.PUNCH_IN).value,
+        "next_punch_method": (_METHOD_OF_SOURCE.get(open_in.source, method) if open_in is not None else method),
+    }
+
+
+def _method_refusal(code, message, employee, at, method):
+    day = business_day_of(employee.company, at)
+    return AttendanceRefused(code, message, status=403,
+                             data={"attendance_method": method, "business_date": day.isoformat()})
+
+
+_METHOD_OF_SOURCE = {AttendanceSource.QR_SCAN: AttendanceMethod.QR_STATION,
+                     AttendanceSource.SELF: AttendanceMethod.SELF}
+
+
+def _check_method(row, channel, open_in=None):
+    """The punch's method against the day's (punch-in) or its punch-in's
+    (punch-out). The manager app's own punch is always allowed."""
+    if row.source == AttendanceSource.SELF and channel == Channel.MANAGER:
+        return
+    if row.punch_type == PunchType.PUNCH_OUT and open_in is not None:
+        needed = _METHOD_OF_SOURCE.get(open_in.source, open_in.source)
+    else:
+        needed = attendance_method_for(row.employee, row.rms_scan_time)
+    if row.source == AttendanceSource.SELF and needed != AttendanceMethod.SELF:
+        raise _method_refusal("self_attendance_not_allowed", "Your attendance is not marked in this app.",
+                              row.employee, row.rms_scan_time, needed)
+    if row.source == AttendanceSource.QR_SCAN and needed != AttendanceMethod.QR_STATION:
+        raise _method_refusal("attendance_method_mismatch",
+                              "This employee's attendance is not taken by QR scan.",
+                              row.employee, row.rms_scan_time, needed)
+
+
+# -- Auto-close --------------------------------------------------------------------
+
+
+def rostered_shift_end(punch_in):
+    """The end of the rostered shift a punch-in falls in: shift 1, then shift
+    2, the first that ends after the punch-in, on a Working day of its business
+    day. None when there is none (not rostered, a day off, or a punch-in after
+    the day's last shift)."""
+    company = punch_in.employee.company
+    day = business_day_of(company, punch_in.rms_scan_time)
+    row = DutyRoster.objects.filter(employee_id=punch_in.employee_id, date=day,
+                                    day_type=DutyRosterDayType.WORKING).first()
+    if row is not None:
+        for shift_end in (row.shift1_end, row.shift2_end):
+            if shift_end is not None and shift_end > punch_in.rms_scan_time:
+                return shift_end
+    return None
+
+
+def auto_close_time(punch_in):
+    """(time, closed_by) for closing an open punch-in: the end of the rostered
+    shift (shift 1, then shift 2) that ends after the punch-in on its business
+    day; else that business day's end. Never past the day's end."""
+    company = punch_in.employee.company
+    day = business_day_of(company, punch_in.rms_scan_time)
+    _, day_end = business_day_bounds(company, day)
+    shift_end = rostered_shift_end(punch_in)
+    if shift_end is not None:
+        return min(shift_end, day_end), ClosedBy.DUTY_ROSTER
+    return day_end, ClosedBy.DAY_END
+
+
+def auto_close(punch_in):
+    """Write the server's punch-out for one open punch-in. The caller holds
+    the employee's lock and has checked its business day is over."""
+    at, closed_by = auto_close_time(punch_in)
+    row = Attendance(
+        id=uuid7(), source=AttendanceSource.AUTO_CLOSE, punch_type=PunchType.PUNCH_OUT,
+        punch_in=punch_in, employee_id=punch_in.employee_id, employee_code=punch_in.employee_code,
+        employee_name=punch_in.employee_name, employee_branch_id=punch_in.employee_branch_id,
+        rms_installation_id="", rms_scan_time=at, closed_by=closed_by,
     )
+    row.save(force_insert=True)
+    return row
+
+
+def _close_stale(employee, before):
+    """Auto-close every open punch-in of `employee` made before `before` (a
+    business-day start that has passed). Caller holds the lock."""
+    stale = (Attendance.objects
+             .filter(employee=employee, punch_type=PunchType.PUNCH_IN, punch_out__isnull=True,
+                     rms_scan_time__lt=before)
+             .select_related("employee__company").order_by("rms_scan_time"))
+    return [auto_close(punch_in) for punch_in in stale]
+
+
+def _lock(employee_id):
+    """One employee's punches are decided one at a time: two tablets scanning
+    the same person at once, or the job and a punch, cannot both act."""
+    Employee.objects.select_for_update().filter(pk=employee_id).first()
+
+
+# -- Punch-out reminder ---------------------------------------------------------------
+# Owner, 26 Nov 2026: someone on the duty roster whose shift has ended and who
+# has not punched out is told once, REMINDER_DELAY after the shift end, on the
+# employee app. Not for people with no roster; managers are not told.
+
+REMINDER_DELAY = datetime.timedelta(minutes=15)
+
+
+def punch_out_reminders_due(now=None):
+    """The beat job (apps/crew/tasks.py), every 5 minutes: one push per open
+    punch-in whose rostered shift ended at least REMINDER_DELAY ago. A
+    punch-in is never reminded twice; someone signed out of the app gets it
+    when they next sign in, if the punch-in is still open (auto-close ends it
+    at the day start). Returns how many pushes were written."""
+    from apps.notifications import employee as employee_push
+    from apps.notifications.models import Action, Notification, SubjectType
+
+    now = now or timezone.now()
+    open_ins = list(Attendance.objects
+                    .filter(punch_type=PunchType.PUNCH_IN, punch_out__isnull=True,
+                            rms_scan_time__gte=now - datetime.timedelta(days=2), rms_scan_time__lte=now,
+                            employee__user__isnull=False)
+                    .select_related("employee__company", "employee__user"))
+    reminded = {str(subject_id) for subject_id in Notification.objects
+                .filter(subject_type=SubjectType.ATTENDANCE, action=Action.PUNCH_OUT_REMINDER,
+                        subject_id__in=[row.pk for row in open_ins])
+                .values_list("subject_id", flat=True)}
+    sent = 0
+    for punch_in in open_ins:
+        if str(punch_in.pk) in reminded:
+            continue
+        shift_end = rostered_shift_end(punch_in)
+        if shift_end is None or now < shift_end + REMINDER_DELAY:
+            continue
+        if employee_push.punch_out_reminder(punch_in, shift_end, now=now):
+            sent += 1
+    return sent
+
+
+def auto_close_due(now=None):
+    """The beat job (apps/crew/tasks.py), hourly: for every company whose
+    business day has started, auto-close the punch-ins of earlier days that
+    nobody closed. Idempotent; returns how many it closed."""
+    from apps.company.models import Company
+
+    now = now or timezone.now()
+    closed = 0
+    for company in Company.objects.all():
+        start, _ = business_day_bounds(company, business_day_of(company, now))
+        employee_ids = set(
+            Attendance.objects
+            .filter(employee__company=company, punch_type=PunchType.PUNCH_IN, punch_out__isnull=True,
+                    rms_scan_time__lt=start)
+            .values_list("employee_id", flat=True)
+        )
+        for employee_id in employee_ids:
+            with transaction.atomic():
+                _lock(employee_id)
+                employee = Employee.objects.select_related("company").get(pk=employee_id)
+                closed += len(_close_stale(employee, start))
+    return closed
+
+
+# -- Mark ----------------------------------------------------------------------------
 
 
 def mark_attendance(user, source, values, device=None, channel=None):
@@ -260,10 +529,10 @@ def mark_attendance(user, source, values, device=None, channel=None):
     own: a code naming anyone else is refused. It has no station, so its
     branch is optional -- the user's home branch when not sent, else none.
 
-    The attendance method (Designation, or the employee's own override) is
-    enforced (15 Oct 2026): the employee app self-marks only staff whose
-    method is Self; the operator app scans only staff whose method is QR.
-    The manager app's own punch is always allowed.
+    The attendance method is the punch's business day's (attendance_method_for,
+    24 Nov 2026): the employee app self-marks only on a Self day, the operator
+    app scans only on a QR day; a punch-out follows its punch-in's method. The
+    manager app's own punch is always allowed.
     """
     company = user.employee.company
     sync_id = values["sync_id"]
@@ -281,9 +550,6 @@ def mark_attendance(user, source, values, device=None, channel=None):
         if code and code != employee.employee_code:
             raise AttendanceRefused("not_your_attendance", "You can mark only your own attendance.",
                                     status=403)
-        if channel == Channel.EMPLOYEE and employee.attendance_rule != AttendanceMethod.SELF:
-            raise AttendanceRefused("self_attendance_not_allowed",
-                                    "Your attendance is not marked in this app.", status=403)
         employee_branch = (_branch_by_code(company, branch_code, "employee_branch_code")
                            if branch_code else employee.branch)
         installation_id = (values.get("rms_installation_id") or "").strip() or (
@@ -296,9 +562,6 @@ def mark_attendance(user, source, values, device=None, channel=None):
         raise AttendanceRefused("employee_blocked", "This employee is blocked.", status=403)
     if not employee.is_active:
         raise AttendanceRefused("employee_inactive", "This employee is not active.", status=403)
-    if source == AttendanceSource.QR_SCAN and employee.attendance_rule != AttendanceMethod.QR_STATION:
-        raise AttendanceRefused("attendance_method_mismatch",
-                                "This employee's attendance is not taken by QR scan.", status=403)
 
     row = Attendance(
         id=sync_id,
@@ -328,10 +591,8 @@ def mark_attendance(user, source, values, device=None, channel=None):
 
     try:
         with transaction.atomic():
-            # One employee's punches are decided one at a time: two tablets
-            # scanning the same person at once cannot both find nothing open.
-            Employee.objects.select_for_update().filter(pk=employee.pk).first()
-            _check_sequence(row)
+            _lock(employee.pk)
+            _check_sequence(row, channel)
             row.save(force_insert=True)
             if source == AttendanceSource.QR_SCAN:
                 # A tablet marked someone else: they are told (owner, 30 Oct 2026).
@@ -345,47 +606,63 @@ def mark_attendance(user, source, values, device=None, channel=None):
     return row, True
 
 
-def _check_sequence(row):
-    """Punch in only when nothing is open; punch out closes what is open."""
-    at = row.rms_scan_time
+def _check_sequence(row, channel=None, now=None):
+    """Punch in only when nothing is open that business day; punch out closes
+    what is open. Runs under the employee's lock."""
+    employee, at = row.employee, row.rms_scan_time
+    company = employee.company
+    start, end = business_day_bounds(company, business_day_of(company, at))
+
     if row.punch_type == PunchType.PUNCH_IN:
-        open_in = (
-            Attendance.objects
-            .filter(
-                employee=row.employee, punch_type=PunchType.PUNCH_IN, punch_out__isnull=True,
-                rms_scan_time__gt=at - OPEN_PUNCH_WINDOW, rms_scan_time__lt=at + OPEN_PUNCH_WINDOW,
-            )
-            .exists()
-        )
+        _check_method(row, channel)
+        # A punch-in left open on an earlier, finished business day is closed
+        # now, so the job not having run never blocks anyone (24 Nov 2026).
+        today_start, _ = business_day_bounds(company, business_day_of(company, now or timezone.now()))
+        _close_stale(employee, min(start, today_start))
+        open_in = Attendance.objects.filter(
+            employee=employee, punch_type=PunchType.PUNCH_IN, punch_out__isnull=True,
+            rms_scan_time__gte=start, rms_scan_time__lt=end,
+        ).exists()
         if open_in:
             raise AttendanceRefused("punch_in_open", "Already punched in. Punch out first.")
         return
 
-    open_in = _open_punch_in(row.employee, at)
+    open_in = (Attendance.objects
+               .filter(employee=employee, punch_type=PunchType.PUNCH_IN, punch_out__isnull=True,
+                       rms_scan_time__gte=start, rms_scan_time__lte=at)
+               .order_by("-rms_scan_time").first())
+    replaced = None
+    if open_in is None:
+        # Closed by the server at the day start, and the real punch-out has
+        # only now arrived (an offline tablet): the real one takes its place.
+        replaced = (Attendance.objects
+                    .filter(employee=employee, source=AttendanceSource.AUTO_CLOSE,
+                            punch_in__rms_scan_time__gte=start, punch_in__rms_scan_time__lte=at)
+                    .select_related("punch_in").order_by("-punch_in__rms_scan_time").first())
+        open_in = replaced.punch_in if replaced is not None else None
     if open_in is None:
         later = Attendance.objects.filter(
-            employee=row.employee, punch_type=PunchType.PUNCH_IN, punch_out__isnull=True,
-            rms_scan_time__gt=at, rms_scan_time__lt=at + OPEN_PUNCH_WINDOW,
+            employee=employee, punch_type=PunchType.PUNCH_IN, punch_out__isnull=True,
+            rms_scan_time__gt=at, rms_scan_time__lt=end,
         ).exists()
         if later:
             raise AttendanceRefused(
                 "punch_out_before_punch_in", "Punch out is earlier than the punch in.",
             )
         raise AttendanceRefused("no_open_punch_in", "No punch in to close. Punch in first.")
+    _check_method(row, channel, open_in)
+    if replaced is not None:
+        replaced.delete()
     row.punch_in = open_in
 
 
 def attendance_sessions(punch_ins, now=None):
     """(punch_in, punch_out or None, status, worked_minutes) for each punch-in
     of a queryset -- the unit both the history API and the screen show."""
-    now = now or timezone.now()
     out = []
     for punch_in in punch_ins:
-        punch_out = punch_in.punch_out if _has_punch_out(punch_in) else None
-        worked = None
-        if punch_out is not None:
-            worked = int((punch_out.rms_scan_time - punch_in.rms_scan_time).total_seconds() // 60)
-        out.append((punch_in, punch_out, session_status(punch_in, now), worked))
+        punch_out = _punch_out_of(punch_in)
+        out.append((punch_in, punch_out, session_status(punch_in, now), worked_minutes(punch_in, punch_out)))
     return out
 
 
@@ -512,7 +789,10 @@ def team_attendance(company, branch_ids, from_date, to_date=None, *, state_id=No
         rows.append({
             "day": timezone.localtime(punch_in.rms_scan_time, zone).date(),
             "status": TeamStatus.CHECKED_OUT if punch_out is not None else TeamStatus.CHECKED_IN,
-            "missing_check_out": state == SessionStatus.MISSING_PUNCH_OUT,
+            # No real check-out: kept for app builds that flag it (24 Nov 2026).
+            "missing_check_out": state == SessionStatus.AUTO_CLOSED,
+            "auto_closed": state == SessionStatus.AUTO_CLOSED,
+            "closed_by": punch_out.closed_by or None if punch_out is not None else None,
             "employee": punch_in.employee, "punch_in": punch_in, "punch_out": punch_out,
             "worked_minutes": worked, "roster": None,
         })
@@ -535,6 +815,7 @@ def team_attendance(company, branch_ids, from_date, to_date=None, *, state_id=No
             continue
         rows.append({
             "day": entry.date, "status": TeamStatus.NOT_CHECKED_IN, "missing_check_out": False,
+            "auto_closed": False, "closed_by": None,
             "employee": entry.employee, "punch_in": None, "punch_out": None,
             "worked_minutes": None, "roster": entry,
         })
@@ -875,6 +1156,10 @@ def _check_day(entry, *, branches_qs):
         if shift2_start is None or shift2_end is None:
             errors.append({"field": f"{label} — Shift 2", "message": "Enter both of Shift 2's times, or remove it."})
 
+    if not errors:
+        errors += _overnight_errors(label, on_date, branch.company, zone,
+                                    (shift1_start, shift1_end), (shift2_start, shift2_end) if has_shift2 else None)
+
     if errors:
         return errors, {}
 
@@ -884,6 +1169,32 @@ def _check_day(entry, *, branches_qs):
         remarks=(entry.get("remarks") or "")[:200],
     )
     return errors, fields
+
+
+def _overnight_errors(label, on_date, company, zone, shift1, shift2):
+    """Shifts past midnight on a roster day (owner, 26 Nov 2026): only the
+    day's last shift may run past midnight, and it must end by the company's
+    business-day start (04:00 at BYKY) -- the moment attendance auto-close
+    runs, so it never cuts a shift still running. Shift 2 starts after Shift 1
+    ends. No day start saved means midnight, so no shift may run past it."""
+    day_start = day_start_for(company)
+    latest = datetime.datetime.combine(on_date + datetime.timedelta(days=1), day_start, tzinfo=zone)
+    late_text = f"A shift past midnight must end by {day_start.strftime('%H:%M')}."
+    errors = []
+    shifts = [("Shift 1", shift1)] + ([("Shift 2", shift2)] if shift2 else [])
+    for name, (start, end) in shifts:
+        if end - start >= datetime.timedelta(days=1):
+            errors.append({"field": f"{label} — {name}", "message": "Start and end cannot be the same."})
+        elif end.date() > on_date and end > latest:
+            errors.append({"field": f"{label} — {name}", "message": late_text})
+    if shift2:
+        if shift1[1].date() > on_date:
+            errors.append({"field": f"{label} — Shift 1",
+                           "message": "Only the last shift can run past midnight."})
+        elif shift2[0] <= shift1[1]:
+            errors.append({"field": f"{label} — Shift 2",
+                           "message": f"Shift 2 must start after Shift 1 ends ({_hhmm(shift1[1], zone)})."})
+    return errors
 
 
 def _combine(on_date, hhmm, zone):
@@ -1273,8 +1584,9 @@ def employee_profile(employee, channel=Channel.EMPLOYEE):
     """Everything the app's profile screen shows. Every field comes straight
     off Employee/Designation -- nothing here is invented for the app.
 
-    `attendance_method` tells the employee app which attendance button to
-    show (qr_station: the QR code; self: Mark / Close; not_required: none),
+    `attendance_method` is the permanent method (qr_station / self /
+    not_required); `attendance_method_today` the day's, from the duty roster
+    (attendance_method_for) -- the attendance button to show today;
     `team_scope` whether Team Attendance is offered (anything but own),
     `can_approve_leave` whether to show Leave Requests to decide: always in
     the manager app; in the employee app for a Leave Request approver of any
@@ -1298,6 +1610,8 @@ def employee_profile(employee, channel=Channel.EMPLOYEE):
         "company": employee.company.name,
         "can_approve_leave": leave.is_approver(employee, channel),
         "attendance_method": employee.attendance_rule,
+        # The day's method (duty roster; 24 Nov 2026) -- the button to show.
+        "attendance_method_today": attendance_method_for(employee),
         "team_scope": team_scope_for(employee, channel),
     }
 

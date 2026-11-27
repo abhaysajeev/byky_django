@@ -48,6 +48,34 @@ def test_a_check_and_a_resend(client, world, token, assets):
     assert Photo.objects.get(pk=data["photo_id"]).status == "attached"
 
 
+def test_one_photo_can_cover_several_assets_of_the_station(client, world, token, assets):
+    """Owner, 18 Nov 2026: a photo of a shelf or a corner shows several assets,
+    so the same photo_id is sent on each asset's check."""
+    from apps.fleet.models import Asset
+
+    second = Asset.objects.create(company=world["company"], asset_code="CAM-2", asset_type=assets["cam"].asset_type,
+                                  branch=world["adc1"], approval_status=assets["cam"].approval_status)
+    first = check_data(client, token, assets["cam"])
+    assert call(client, CHECK, first, token=token).json()["code"] == "ok"
+    attached_at = Photo.objects.get(pk=first["photo_id"]).attached_at
+
+    again = call(client, CHECK, check_data(client, token, second, photo_id=first["photo_id"]), token=token).json()
+    assert again["code"] == "ok" and again["data"]["photo_id"] == first["photo_id"]
+    assert AssetCheck.objects.filter(photo_id=first["photo_id"]).count() == 2
+    assert Photo.objects.get(pk=first["photo_id"]).attached_at == attached_at     # its first attach time stays
+
+
+def test_a_photo_on_another_stations_check_is_refused(client, world, token, assets):
+    first = check_data(client, token, assets["cam"])
+    assert call(client, CHECK, first, token=token).json()["code"] == "ok"
+    other = orders.sign_in_tablet(client, world, code="OPR002", installation_id="till-2", branch=world["adc2"])
+
+    response = call(client, CHECK, check_data(client, token, assets["away"], photo_id=first["photo_id"]), token=other)
+
+    assert (response.status_code, response.json()["code"]) == (409, "photo_in_use")
+    assert AssetCheck.objects.count() == 1
+
+
 def test_remarks_are_optional(client, world, token, assets):
     data = check_data(client, token, assets["cam"], status="active")
     del data["remarks"]

@@ -16,6 +16,8 @@ import time
 
 from django.utils import timezone
 
+from apps.integrations.erpnext import API_PREFIX as PERSONAL_PREFIX
+from apps.integrations.erpnext import PERSONAL_SLUGS
 from apps.monitoring import writer
 from apps.monitoring.redact import body_text
 from core import request_context
@@ -43,6 +45,9 @@ class RequestLogMiddleware:
             response = self.get_response(request)
             if request.content_type.startswith("multipart/"):
                 body = _multipart_summary(request, body)
+            elif _personal(request.path):
+                body = json.dumps({"redacted": "personal data (ERPNext employee)",
+                                   "bytes": len(body or b"")}).encode()
             try:
                 response["X-Request-ID"] = str(request.request_id)
                 writer.enqueue(writer.REQUEST, _row(request, response, body, started_at,
@@ -52,6 +57,13 @@ class RequestLogMiddleware:
             return response
         finally:
             request_context.end(token)
+
+
+def _personal(path):
+    """An ERPNext employee message (apps/integrations): its body is personal
+    data, kept in the ERPNext inbox only -- never in this log or on the log
+    server."""
+    return any(path.startswith(f"{PERSONAL_PREFIX}{slug}") for slug in PERSONAL_SLUGS)
 
 
 def _multipart_summary(request, body):

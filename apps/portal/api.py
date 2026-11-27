@@ -229,7 +229,7 @@ _EMPLOYEE_LOGIN_SUCCESS_DATA = {
         "branch_id": None, "branch": None, "mobile": "", "email": "", "photo_url": None,
         "company": "BY KY SPORT & LEISURE EQUIPMENT RENTAL & TRADING LLC",
         "can_approve_leave": False,
-        "attendance_method": "qr_station", "team_scope": "own",
+        "attendance_method": "qr_station", "attendance_method_today": "qr_station", "team_scope": "own",
     },
     "roster": _ROSTER_SAMPLE,
     "money": {"decimal_places": 2, "round_off_mode": "upward", "round_off_step": "0.25"},
@@ -262,7 +262,7 @@ _MANAGER_LOGIN_SUCCESS_DATA = {
         "branch_id": None, "branch": None, "mobile": "0500000000", "email": "meera@byky.test", "photo_url": None,
         "company": "BY KY SPORT & LEISURE EQUIPMENT RENTAL & TRADING LLC",
         "can_approve_leave": True,
-        "attendance_method": "self", "team_scope": "company",
+        "attendance_method": "self", "attendance_method_today": "self", "team_scope": "company",
     },
     "money": {"decimal_places": 2, "round_off_mode": "upward", "round_off_step": "0.25"},
 }
@@ -309,9 +309,11 @@ class LoginView(PublicAPIView):
             "(always in the manager app; in the employee app for a station's Leave Request "
             "approver). The employee roster's days carry `leave_type` / `leave_reference` "
             "on an approved-leave day (status `On Leave`). "
-            "`employee.attendance_method` (employee app) picks the attendance button: "
-            "`qr_station` shows the QR code, `self` Mark / Close attendance, `not_required` "
-            "neither. `employee.team_scope` is `company`, `branches` or `own`: Team "
+            "`employee.attendance_method` is the permanent method (`qr_station`, `self`, "
+            "`not_required`); `employee.attendance_method_today` is today's, from the duty "
+            "roster (Working as cashier or labour -> `qr_station`) -- the button to show at "
+            "login. After login the app reads it from `POST attendance/method`. "
+            "`employee.team_scope` is `company`, `branches` or `own`: Team "
             "Attendance is offered unless `own`; the manager app is always `company`. "
             "Both are read at login -- a change on the web reaches the app at its next "
             "login (the server applies it at once). "
@@ -519,11 +521,18 @@ class PushTokenView(APIView):
             "| the employee | a duty roster save changes any of their days from today on (one push "
             "per save) | Duty roster updated · 2–8 Nov | `duty_roster` · `updated` |\n"
             "| the employee | an operator app scans their QR code (punch in / out) | Punched in · "
-            "Creek Park 1 · 09:02 | `attendance` · `marked` |\n\n"
+            "Creek Park 1 · 09:02 | `attendance` · `marked` |\n"
+            "| the employee | on the duty roster (Working), still punched in 15 minutes after the "
+            "rostered shift ended -- once per punch-in (owner, 26 Nov 2026) | Punch out · Your duty "
+            "ended at 18:00. Please scan your QR at the station to punch out. (or: Please punch out "
+            "in the app.) | `attendance` · `reminder` |\n\n"
             "`data` adds: `leave_request_id` (and `employee_id` for a new request); for the roster "
             "`employee_id`, `from_date`, `to_date` (the changed range); for attendance "
-            "`attendance_id`, `punch_type`, `branch_id`. `tag`: `leave_request:<id>`, "
-            "`duty_roster:<employee_id>` (a newer roster push replaces the older), `attendance:<id>`. "
+            "`attendance_id`, `punch_type`, `branch_id`; for the punch-out reminder "
+            "`attendance_id` (the open punch-in), `shift_end`, `method` (`qr_station` / `self`: "
+            "how to punch out). `tag`: `leave_request:<id>`, "
+            "`duty_roster:<employee_id>` (a newer roster push replaces the older), `attendance:<id>`, "
+            "`punch_out_reminder:<attendance_id>`. "
             "A manager's new-leave push uses `approvals_new`."
         ),
         request=envelope_request("PushTokenEnvelope", PushTokenRequest),

@@ -13,11 +13,18 @@ from django.urls import reverse
 
 from apps.company.scoping import companies_for
 from apps.company.writes import WriteView, _errors, _payload
-from apps.rental import credit_notes, services
+from apps.rental import credit_notes, services, suspense
 from apps.rental import requests as order_requests
 from apps.rental.forms import CustomerForm
-from apps.rental.models import CreditNote, Customer, DecisionChannel, OrderRequest, OrderRequestKind
-from apps.rental.scoping import customers_for
+from apps.rental.models import (
+    CreditNote,
+    Customer,
+    DecisionChannel,
+    OrderRequest,
+    OrderRequestKind,
+    SuspenseEntry,
+)
+from apps.rental.scoping import customers_for, suspense_for
 
 
 class CustomerSave(WriteView):
@@ -210,3 +217,61 @@ class RequestRevoke(_RequestWrite):
         return self.answer(lambda data: order_requests.revoke(
             request.user, pk, self.company_ids(), DecisionChannel.WEB, str(data.get("note") or "")),
             "Approval revoked.")
+
+
+# -- Suspense entries (owner, 26 Nov 2026; apps/rental/suspense.py) ----------------------
+# Create needs Create, edit Update, Resolve Approve, Cancel Delete -- entries are
+# never deleted, so the Delete right is what cancels one.
+
+
+class _SuspenseWrite(WriteView):
+    model = SuspenseEntry
+    page_code = "rental.suspense"
+
+    def entry(self, pk):
+        return get_object_or_404(suspense_for(self.request.user), pk=pk)
+
+    @staticmethod
+    def invalid(exc):
+        return JsonResponse({"ok": False, "code": "invalid", "errors": exc.errors}, status=400)
+
+
+class SuspenseSave(_SuspenseWrite):
+    def post(self, request, *args, **kwargs):
+        data = _payload(request)
+        pk = data.get("pk") or None
+        if not self.may("update" if pk else "create"):
+            return self.refused()
+        entry = self.entry(pk) if pk else None
+        try:
+            entry = suspense.save(request.user, data, entry)
+        except suspense.SuspenseInvalid as exc:
+            return self.invalid(exc)
+        return JsonResponse({"ok": True, "pk": str(entry.pk),
+                             "message": "Suspense entry updated." if pk else "Suspense entry added."})
+
+
+class SuspenseResolve(_SuspenseWrite):
+    def post(self, request, pk, *args, **kwargs):
+        if not self.may("approve"):
+            return self.refused()
+        entry = self.entry(pk)
+        try:
+            suspense.resolve(request.user, entry, _payload(request).get("remarks"))
+        except suspense.SuspenseInvalid as exc:
+            return self.invalid(exc)
+        return JsonResponse({"ok": True, "message": "Marked resolved.",
+                             "redirect": reverse("rental-suspense-detail", args=[entry.pk])})
+
+
+class SuspenseCancel(_SuspenseWrite):
+    def post(self, request, pk, *args, **kwargs):
+        if not self.may("delete"):
+            return self.refused()
+        entry = self.entry(pk)
+        try:
+            suspense.cancel(request.user, entry, _payload(request).get("reason"))
+        except suspense.SuspenseInvalid as exc:
+            return self.invalid(exc)
+        return JsonResponse({"ok": True, "message": "Suspense entry cancelled.",
+                             "redirect": reverse("rental-suspense-detail", args=[entry.pk])})

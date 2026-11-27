@@ -49,7 +49,7 @@ Read-only. One row per employee per day; the row opens that day's detail page
       <div><div class="scr-tile-val">{{ on_duty_count }}</div><div class="scr-tile-lab">On duty now</div></div>
     </div>
     <div class="scr-tile">
-      <div><div class="scr-tile-val">{{ missing_count }}</div><div class="scr-tile-lab">Missing punch-outs</div></div>
+      <div><div class="scr-tile-val">{{ auto_closed_count }}</div><div class="scr-tile-lab">Auto-closed</div></div>
     </div>
     <div class="scr-tile">
       <div><div class="scr-tile-val">{{ qr_today }} / {{ self_today }}</div><div class="scr-tile-lab">QR / Self today</div></div>
@@ -119,7 +119,7 @@ Read-only. One row per employee per day; the row opens that day's detail page
             <td class="scr-state scr-mon-num">{{ r.shifts }}</td>
             <td class="scr-state">{{ r.branch }}</td>
             <td>
-              {% if r.status == "missing" %}<span class="scr-badge scr-badge-mandatory"><i></i>{{ r.status_label }}</span>
+              {% if r.status == "auto_closed" %}<span class="scr-badge scr-badge-mandatory"><i></i>{{ r.status_label }}</span>
               {% elif r.status == "on_duty" %}<span class="scr-badge scr-badge-anytime"><i></i>{{ r.status_label }}</span>
               {% else %}<span class="scr-badge scr-badge-approved"><i></i>{{ r.status_label }}</span>{% endif %}
             </td>

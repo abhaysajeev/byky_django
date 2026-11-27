@@ -22,7 +22,7 @@ class UnknownVehicleType(Exception):
     """Not this branch's company's, or it, or its category, is not active and approved."""
 
 
-def device_vehicles(branch, *, vehicle_category_id=None, vehicle_type_id=None, at=None):
+def device_vehicles(branch, *, vehicle_category_id=None, vehicle_type_id=None, at=None, session=None):
     """Every vehicle at `branch` for the operator app, nested category ->
     vehicle type -> vehicles. "At" means `current_branch` -- set by hand for
     now, by Inventory Branch Mapping later; this function does not change.
@@ -70,6 +70,10 @@ def device_vehicles(branch, *, vehicle_category_id=None, vehicle_type_id=None, a
     held = under_maintenance(vehicle.pk for vehicle in vehicles)
     warehouse = in_warehouse_service(vehicle.pk for vehicle in vehicles)
     zone = zone_for(branch.company)
+    # Cart holds at a multi-device station, as this tablet sees them (apps/rental/holds.py).
+    from apps.rental import holds
+
+    carts = holds.station_view(branch, session, zone)
 
     categories = {}
     for vehicle in vehicles:
@@ -92,7 +96,7 @@ def device_vehicles(branch, *, vehicle_category_id=None, vehicle_type_id=None, a
             "vehicle_name": vehicle.vehicle_name, "rfid_epc": vehicle.rfid_epc,
             "uom": vehicle.uom.uom_name, "is_available": vehicle.is_available,
             **_rental_status(vehicle, rentals.get(vehicle.pk), zone, held.get(vehicle.pk), on_test.get(vehicle.pk),
-                             in_warehouse=vehicle.pk in warehouse),
+                             in_warehouse=vehicle.pk in warehouse, cart_hold=carts.get(vehicle.pk)),
         })
         type_entry["vehicle_count"] += 1
         entry["vehicle_count"] += 1
@@ -109,7 +113,8 @@ def device_vehicles(branch, *, vehicle_category_id=None, vehicle_type_id=None, a
     }
 
 
-def _rental_status(vehicle, rental, zone, service_request_no=None, test_ride=None, *, in_warehouse=False):
+def _rental_status(vehicle, rental, zone, service_request_no=None, test_ride=None, *, in_warehouse=False,
+                   cart_hold=None):
     rental_json = None
     if rental is not None:
         order_no, expected_end = rental
@@ -134,7 +139,11 @@ def _rental_status(vehicle, rental, zone, service_request_no=None, test_ride=Non
             "test_ride_id": str(test_ride.pk), "test_no": test_ride.test_no,
             "expected_end_time": timezone.localtime(test_ride.expected_end_at, zone).strftime("%Y-%m-%d %H:%M:%S"),
         },
-        "can_rent": vehicle.is_available and rental is None and test_ride is None and not in_warehouse,
+        # In a tablet's cart at a multi-device station (owner, 18 Nov 2026):
+        # another tablet's hold makes it unrentable here; this tablet's own does not.
+        "cart_hold": cart_hold,
+        "can_rent": (vehicle.is_available and rental is None and test_ride is None and not in_warehouse
+                     and (cart_hold is None or cart_hold["mine"])),
     }
 
 

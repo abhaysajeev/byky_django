@@ -21,8 +21,8 @@ from core.enums import Channel
 from core.models import User
 from core.timezones import business_date_for
 
-world, fresh_throttle, operator, manager, staff_app = (
-    base.world, base.fresh_throttle, base.operator, base.manager, base.staff_app)
+world, fresh_throttle, operator, manager, staff_app, day_start = (
+    base.world, base.fresh_throttle, base.operator, base.manager, base.staff_app, base.day_start)
 
 TEAM = "/api/v1/{}/attendance/team"
 
@@ -111,7 +111,7 @@ def test_a_row_carries_every_detail(client, world, manager, day):
     assert rows["EMP001"] == {
         "date": "2026-08-29", "row_type": "session", "attendance_id": rows["EMP001"]["attendance_id"],
         "status": "checked_out",
-        "missing_check_out": False,
+        "missing_check_out": False, "auto_closed": False, "closed_by": None,
         "employee": {"employee_code": "EMP001", "name": "Anil K", "designation": "Cashier"},
         "source": "qr_scan", "station": {"branch_id": world["auh1"].pk, "code": "AUH01", "name": "Creek Park 1"},
         "emirate": {"state_id": world["auh1"].location.state_id, "name": "Abu Dhabi"},
@@ -128,11 +128,19 @@ def test_a_row_carries_every_detail(client, world, manager, day):
     assert set(rows["EMP001"]) == set(rows["EMP003"])
 
 
-def test_a_check_in_open_past_a_day_reads_as_missing_check_out(client, manager, day):
+def test_a_check_in_nobody_closed_is_auto_closed_and_flagged(client, manager, day):
     rows = {row["employee"]["employee_code"]: row for row in listed(client, manager)["rows"]}
+    assert (rows["EMP002"]["status"], rows["EMP002"]["auto_closed"]) == ("checked_in", False)   # job not run
 
-    assert (rows["EMP002"]["status"], rows["EMP002"]["missing_check_out"]) == ("checked_in", True)
-    assert rows["EMP002"]["check_out"] is None and rows["EMP002"]["duration_minutes"] is None
+    services.auto_close_due()
+    data = listed(client, manager)
+    rows = {row["employee"]["employee_code"]: row for row in data["rows"]}
+    # Not rostered: closed at the day's end, and the minutes are not counted.
+    assert (rows["EMP002"]["status"], rows["EMP002"]["auto_closed"], rows["EMP002"]["closed_by"],
+            rows["EMP002"]["missing_check_out"]) == ("checked_out", True, "day_end", True)
+    assert rows["EMP002"]["check_out"] == "2026-08-30 00:00:00" and rows["EMP002"]["duration_minutes"] is None
+    # No tab of its own: it counts as checked out.
+    assert data["counts"] == {"all": 4, "checked_in": 0, "checked_out": 3, "not_checked_in": 1}
 
 
 @pytest.mark.parametrize("status, expected", [
@@ -159,7 +167,7 @@ def test_search_by_code_or_name(client, manager, day, search, expected):
     assert [code for code, _ in codes(listed(client, manager, search=search))] == expected
 
 
-def test_a_shift_across_midnight_stays_on_the_day_it_started(client, world, operator, manager):
+def test_a_shift_across_midnight_stays_on_the_day_it_started(client, world, operator, manager, day_start):
     mark(client, operator, qr("punch_in", local(DAY, 22)))
     mark(client, operator, qr("punch_out", local(DAY + datetime.timedelta(days=1), 2)))
 

@@ -152,6 +152,16 @@
 /* A .byky-help warning about something rather than describing the field --
    e.g. Device Mapping's "this branch doesn't allow a second device" note. */
 .byky-help-danger { color: #d81f26; }
+/* A roster shift that ends after midnight: "Ends next day · Fri, 27 Nov 2026" under its
+   end time, in the same box as the Add Shift 2 row (owner, 26 Nov 2026). */
+.byky-next-day {
+  display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 8px 12px;
+  border: 1px solid #eeedf5; background: #fbfaff; border-radius: 11px;
+  font-size: 11.5px; font-weight: 500; line-height: 1.35; color: #6b6790;
+}
+.byky-next-day svg { flex: 0 0 auto; color: #7a6fd6; }
+.byky-next-day strong { font-weight: 600; color: #1a1640; }
+.byky-next-day[hidden] { display: none; }
 
 /* ── inputs ───────────────────────────────────────────────────────── */
 .byky-input {

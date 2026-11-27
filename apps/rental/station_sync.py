@@ -87,6 +87,7 @@ class Push:
     session_id: int = 0
     android_channel: str = CHANNEL
     ttl_seconds: int = TTL_SECONDS
+    silent: bool = False             # data only, no tray entry (cart changes)
 
 
 def order_changed(order, action, *, device=None, item=None, new_item=None):
@@ -505,3 +506,52 @@ def parked_push(issue_id, at):
     if issue is None or issue.branch_id is None or not issue.branch.is_multi_device:
         return 0
     return _send(issue, parked_message(issue, at), issue.device_id)
+
+
+# -- Cart holds (owner, 18 Nov 2026) --------------------------------------------------------
+# A vehicle put in or taken out of a tablet's cart at a multi-device station
+# (apps/rental/holds.py). Data only -- no tray entry per cart tap; the tablet
+# calls cart/status (or vehicles) to refresh. A missed one costs nothing: a
+# booking of a held vehicle is refused anyway.
+
+CART_TTL_SECONDS = 600
+
+
+def cart_changed(branch_id, vehicle_id, action, device_id):
+    """After this transaction commits, tell the station's other tablets.
+    `action` is `added` or `removed`; `device_id` acted (not told)."""
+    at = timezone.now()
+
+    def queue():
+        try:
+            from apps.rental.tasks import station_cart_push
+
+            station_cart_push.delay(branch_id, vehicle_id, action, device_id, at.isoformat())
+        except Exception:
+            log.warning("station sync for cart of vehicle %s not queued", vehicle_id, exc_info=True)
+
+    transaction.on_commit(queue)
+
+
+def cart_message(branch, vehicle_id, action, at):
+    from core.timezones import zone_for
+
+    return Push(
+        title="", body="",
+        data={"type": "cart_changed", "vehicle_id": str(vehicle_id), "action": action,
+              "branch_id": str(branch.pk), "at": at.astimezone(zone_for(branch.company)).strftime(TIME_FORMAT)},
+        tag=f"cart:{vehicle_id}", collapse_key=f"cart:{vehicle_id}", ttl_seconds=CART_TTL_SECONDS, silent=True,
+    )
+
+
+def cart_push(branch_id, vehicle_id, action, device_id, at):
+    """The worker's side of cart_changed. Returns how many were sent."""
+    from apps.company.models import Branch
+
+    branch = Branch.objects.select_related("company").filter(pk=branch_id).first()
+    if branch is None:
+        return 0
+    from types import SimpleNamespace
+
+    # _send takes anything with a branch_id (the station's other tablets).
+    return _send(SimpleNamespace(branch_id=branch.pk), cart_message(branch, vehicle_id, action, at), device_id)

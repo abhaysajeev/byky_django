@@ -38,6 +38,7 @@ class Action(models.TextChoices):
     COMPLETED = "completed", "Back in service"     # a service request, on the web
     UPDATED = "updated", "Updated"                 # a duty roster saved
     MARKED = "marked", "Marked"                    # attendance marked for them on a tablet
+    PUNCH_OUT_REMINDER = "reminder", "Punch-out reminder"  # attendance: duty ended, still punched in
 
 
 class Audience(models.TextChoices):

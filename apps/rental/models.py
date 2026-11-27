@@ -1010,3 +1010,129 @@ class TestRide(TimeStampedModel):
 
     def __str__(self):
         return self.test_no
+
+
+class HoldRelease(models.TextChoices):
+    """Why a cart hold ended (apps/rental/holds.py)."""
+
+    REMOVED = "removed", "Removed from the cart"
+    CLEARED = "cleared", "Cart cleared"
+    BOOKED = "booked", "Booked"
+    EXPIRED = "expired", "Expired"
+    LOGOUT = "logout", "Tablet signed out"
+
+
+class VehicleHold(TimeStampedModel):
+    """A vehicle in one operator tablet's cart at a multi-device station
+    (apps/rental/holds.py). While it is live no other tablet there can cart or
+    book that vehicle.
+
+    Owner, 18 Nov 2026: multi-device stations only (Branch.is_multi_device);
+    10 minutes from the tablet's last cart call; booking by another tablet is
+    refused. No legacy counterpart -- the legacy had no cart.
+
+    Live = not released, not expired, its session still signed in. Expired and
+    signed-out holds are released lazily (holds.release_stale), so the unique
+    index below holds one open row per vehicle."""
+
+    id = models.UUIDField(primary_key=True, editable=False)    # the tablet's sync_id
+    company = models.ForeignKey("company.Company", on_delete=models.PROTECT, related_name="+")
+    branch = models.ForeignKey("company.Branch", on_delete=models.PROTECT, related_name="+")
+    vehicle = models.ForeignKey("fleet.Vehicle", on_delete=models.PROTECT, related_name="holds")
+    device = models.ForeignKey("devices.Device", on_delete=models.PROTECT, related_name="+")
+    session = models.ForeignKey("portal.AppSession", on_delete=models.PROTECT, related_name="+")
+    user = models.ForeignKey("core.User", on_delete=models.PROTECT, related_name="+")
+    device_added_at = models.DateTimeField(null=True, blank=True)   # tablet time, for the record
+    added_at = models.DateTimeField()                               # server time
+    expires_at = models.DateTimeField()                             # server time
+    released_at = models.DateTimeField(null=True, blank=True)
+    release_reason = models.CharField(max_length=10, choices=HoldRelease.choices, blank=True)
+
+    class Meta:
+        db_table = "vehicle_hold"
+        ordering = ["added_at"]
+        constraints = [
+            # One open hold per vehicle.
+            models.UniqueConstraint(fields=["vehicle"], condition=models.Q(released_at__isnull=True),
+                                    name="uniq_open_hold_per_vehicle"),
+            models.CheckConstraint(
+                condition=(models.Q(released_at__isnull=True, release_reason="")
+                           | models.Q(released_at__isnull=False) & ~models.Q(release_reason="")),
+                name="vehicle_hold_release_consistent",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["branch", "released_at"], name="vehicle_hold_branch_open"),
+            models.Index(fields=["session", "released_at"], name="vehicle_hold_session_open"),
+        ]
+
+    def __str__(self):
+        return f"{self.vehicle_id} held by device {self.device_id}"
+
+
+class SuspenseKind(models.TextChoices):
+    EXCESS = "excess", "Excess"
+    SHORT = "short", "Short"
+
+
+class SuspenseStatus(models.TextChoices):
+    OPEN = "open", "Open"
+    RESOLVED = "resolved", "Resolved"
+    CANCELLED = "cancelled", "Cancelled"
+
+
+class SuspenseEntry(TimeStampedModel):
+    """A collection difference the field team could not put against an order
+    (owner, 26 Nov 2026; apps/rental/suspense.py): a branch's cash came in
+    short or in excess by `amount` on its business day `entry_date`. The
+    suspected orders are optional -- they may not know which order it was.
+
+    The admin team investigates and fixes it by hand, outside this screen, then
+    marks the entry Resolved; resolving is a label only and changes no order
+    or invoice. Entries are edited while Open and never deleted -- Cancel.
+    New: the legacy had no such record."""
+
+    id = models.UUIDField(primary_key=True, editable=False)
+    company = models.ForeignKey("company.Company", on_delete=models.PROTECT, related_name="+")
+    branch = models.ForeignKey("company.Branch", on_delete=models.PROTECT, related_name="suspense_entries")
+    entry_date = models.DateField()                                  # the collection's business day
+    kind = models.CharField(max_length=10, choices=SuspenseKind.choices)
+    amount = models.DecimalField(**MONEY)                            # always positive; `kind` gives the sign
+    suspected_orders = models.ManyToManyField(Order, blank=True, related_name="suspense_entries")
+    remarks = models.TextField(blank=True)
+    status = models.CharField(max_length=10, choices=SuspenseStatus.choices, default=SuspenseStatus.OPEN)
+    resolved_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolution_remarks = models.TextField(blank=True)
+    cancelled_by = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    cancel_reason = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "suspense_entry"
+        ordering = ["-entry_date", "-created_on"]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(amount__gt=0), name="suspense_amount_positive"),
+            models.CheckConstraint(
+                condition=(models.Q(status="resolved", resolved_at__isnull=False)
+                           | ~models.Q(status="resolved") & models.Q(resolved_at__isnull=True)),
+                name="suspense_resolved_consistent",
+            ),
+            models.CheckConstraint(
+                condition=(models.Q(status="cancelled", cancelled_at__isnull=False) & ~models.Q(cancel_reason="")
+                           | ~models.Q(status="cancelled") & models.Q(cancelled_at__isnull=True)),
+                name="suspense_cancelled_consistent",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["company", "entry_date"], name="suspense_company_date"),
+            models.Index(fields=["status"], name="suspense_status"),
+        ]
+
+    def __str__(self):
+        return f"{self.get_kind_display()} {self.amount} at {self.branch_id} on {self.entry_date}"
+
+    @property
+    def signed_amount(self):
+        """Excess as +, Short as -."""
+        return self.amount if self.kind == SuspenseKind.EXCESS else -self.amount

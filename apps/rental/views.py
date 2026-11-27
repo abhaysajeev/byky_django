@@ -25,7 +25,7 @@ from apps.fleet import scoping as fleet_scoping
 from apps.portal.permissions import PagePermissionMixin
 from apps.portal.screens import PrivilegeScreenView
 from apps.portal.services import has_permission
-from apps.rental import blocked, drawers, forms, live, order_status, scoping
+from apps.rental import blocked, drawers, forms, live, order_status, scoping, suspense
 from apps.rental.models import (
     CREDIT_NOTE_LIVE,
     CreditNoteSource,
@@ -42,6 +42,8 @@ from apps.rental.models import (
     OrderRequestStatus,
     OrderStatus,
     PaymentKind,
+    SuspenseKind,
+    SuspenseStatus,
 )
 from core import money
 from core.ordering import recent_first
@@ -1370,3 +1372,153 @@ class TestRideListView(RentalScreenView):
             "filtered": any(params.get(k) for k in ("q", "state", "branch", "status", "mode", "from", "to")),
         })
         return context
+
+
+# -- Suspense entries (owner, 26 Nov 2026; apps/rental/suspense.py) ----------------------
+
+SUSPENSE_PER_PAGE = 30
+
+
+def _user_name(user):
+    return (user.display_name or user.username) if user is not None else ""
+
+
+def _suspense_row(entry, zone):
+    """One entry as the list row, the grid card and the edit drawer read it."""
+    orders = list(entry.suspected_orders.all())
+    return {
+        "pk": str(entry.pk),
+        "url": reverse("rental-suspense-detail", args=[entry.pk]),
+        "branch": entry.branch.name,
+        "date": entry.entry_date,
+        "kind": entry.kind,
+        "kind_label": entry.get_kind_display(),
+        "amount": entry.amount,
+        "orders": [{"no": o.order_no, "url": reverse("rental-order-detail", args=[o.pk])} for o in orders],
+        "remarks": entry.remarks,
+        "status": entry.status,
+        "status_label": entry.get_status_display(),
+        "created_by": _user_name(entry.created_by),
+        "created_on": timezone.localtime(entry.created_on, zone),
+        "json_id": f"scr-record-suspense-{entry.pk}",
+        "fields_json": {
+            "pk": str(entry.pk),
+            "title": f"{entry.branch.name} · {entry.entry_date:%d %b %Y}",
+            "branch": str(entry.branch_id),
+            "entry_date": f"{entry.entry_date:%d %b %Y}",
+            "kind": entry.kind,
+            "amount": str(money.quantize(entry.amount, money.places_for(entry.company, entry.branch))),
+            "suspected_orders": [str(o.pk) for o in orders],
+            "remarks": entry.remarks,
+        },
+    }
+
+
+def _suspense_drawer_lists(user):
+    branches = branches_for(user).filter(is_active=True).order_by("name")
+    return {
+        "suspense_branches_list": list(branches.values("id", "name")),
+        "suspense_kinds_list": [{"id": value, "name": label} for value, label in SuspenseKind.choices],
+        "suspense_no_orders": [],
+        "save_url_suspense": reverse("rental-suspense-save"),
+        "orders_url": reverse("rental-suspense-orders"),
+    }
+
+
+class SuspenseListView(RentalScreenView):
+    """Collection differences the field team could not put against an order,
+    as a list or as cards (the toggle is per browser). Filters by date range,
+    branch, type and status; Open by default."""
+
+    template_name = "rental/suspense_list.html"
+    page_code = "rental.suspense"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        params = self.request.GET
+        company = getattr(user, "company", None)
+        zone = zone_for(company)
+        entries = (scoping.suspense_for(user)
+                   .select_related("branch", "company", "created_by").prefetch_related("suspected_orders"))
+        status = params.get("status", SuspenseStatus.OPEN)
+        if status in SuspenseStatus.values:
+            entries = entries.filter(status=status)
+        if params.get("kind") in SuspenseKind.values:
+            entries = entries.filter(kind=params["kind"])
+        if (params.get("branch") or "").isdigit():
+            entries = entries.filter(branch_id=int(params["branch"]))
+        start, end = _date_param(params.get("from")), _date_param(params.get("to"))
+        if start:
+            entries = entries.filter(entry_date__gte=start)
+        if end:
+            entries = entries.filter(entry_date__lte=end)
+        text = params.get("q", "").strip()
+        if text:
+            entries = entries.filter(Q(remarks__icontains=text)
+                                     | Q(suspected_orders__order_no__icontains=text)).distinct()
+        page = Paginator(entries.order_by("-entry_date", "-created_on"), SUSPENSE_PER_PAGE).get_page(
+            params.get("page"))
+        query = params.copy()
+        query.pop("page", None)
+        context.update(_suspense_drawer_lists(user))
+        context.update({
+            "rows": [_suspense_row(entry, zone) for entry in page.object_list],
+            "page": page, "query": query.urlencode(), "params": params, "status": status,
+            "statuses": SuspenseStatus.choices, "kinds": SuspenseKind.choices,
+            "branches": context["suspense_branches_list"],
+            "filtered": any(params.get(k) for k in ("q", "branch", "kind", "from", "to")) or "status" in params,
+            "today": suspense.today_for(company) if company else timezone.localdate(),
+        })
+        return context
+
+
+class SuspenseDetailView(RentalScreenView):
+    template_name = "rental/suspense_detail.html"
+    page_code = "rental.suspense"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        entry = (scoping.suspense_for(self.request.user)
+                 .select_related("branch", "company", "created_by", "resolved_by", "cancelled_by")
+                 .prefetch_related("suspected_orders").filter(pk=kwargs["pk"]).first())
+        if entry is None:
+            raise Http404
+        zone = zone_for(entry.company)
+        orders = order_status.with_display_status(entry.suspected_orders.all().order_by("booked_at"))
+        context.update(_suspense_drawer_lists(self.request.user))
+        context.update({
+            "entry": entry,
+            "row": _suspense_row(entry, zone),
+            "orders": [{
+                "no": o.order_no, "url": reverse("rental-order-detail", args=[o.pk]),
+                "booked_at": timezone.localtime(o.booked_at, zone), "net_amount": o.net_amount,
+                "customer": o.customer_name, "status_label": order_status.label(o.display_status),
+            } for o in orders],
+            "resolved_by": _user_name(entry.resolved_by),
+            "cancelled_by": _user_name(entry.cancelled_by),
+            "resolved_at": timezone.localtime(entry.resolved_at, zone) if entry.resolved_at else None,
+            "cancelled_at": timezone.localtime(entry.cancelled_at, zone) if entry.cancelled_at else None,
+            "list_url": reverse("rental-suspense-list"),
+            "resolve_url": reverse("rental-suspense-resolve", args=[entry.pk]),
+            "cancel_url": reverse("rental-suspense-cancel", args=[entry.pk]),
+        })
+        return context
+
+
+class SuspenseOrders(PagePermissionMixin, View):
+    """GET ?branch=&date= -> that branch's orders on that business day, for the
+    drawer's Suspected orders picker."""
+
+    page_code = "rental.suspense"
+
+    def get(self, request, *args, **kwargs):
+        branch_id = request.GET.get("branch", "")
+        branch = (branches_for(request.user).filter(pk=int(branch_id)).select_related("company").first()
+                  if branch_id.isdigit() else None)
+        day = suspense._parse_date(request.GET.get("date"))
+        if branch is None or day is None:
+            return JsonResponse({"ok": True, "orders": []})
+        zone, places = suspense.zone_and_places(branch.company, branch)
+        orders = [suspense.order_option(o, zone, places) for o in suspense.orders_for_day(request.user, branch, day)]
+        return JsonResponse({"ok": True, "orders": orders})

@@ -1,0 +1,94 @@
+{% extends layout_path %}
+{% load static %}
+
+{% block title %}ERPNext Inbox - ERPNext{% endblock title %}
+
+{% block page_css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/byky-screen.css' %}" />
+{% endblock page_css %}
+
+{% block page_js %}
+{{ block.super }}
+<script src="{% static 'js/byky-screen.js' %}"></script>
+{% endblock page_js %}
+
+{% block content %}
+{% comment %}
+Every message ERPNext has sent (apps/integrations), newest first, exactly as it
+came. Step 1 of design/10-erpnext-integration.md: kept and shown only -- nothing
+is written to RMS from here yet. A row opens the message.
+{% endcomment %}
+<div class="scr">
+
+  <div class="scr-head">
+    <div>
+      <div class="scr-crumb">
+        <span>ERPNext</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <b>ERPNext Inbox</b>
+      </div>
+      <h1 class="scr-title">ERPNext Inbox</h1>
+      <p class="scr-sub">Changes ERPNext has sent, kept as they arrived. Nothing is applied to RMS yet — approving them comes next.</p>
+    </div>
+  </div>
+
+  <div class="scr-card" data-scr-server-paged>
+    <form method="get" class="scr-toolbar scr-mon-toolbar" data-scr-autosubmit>
+      <div class="scr-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9490bb" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+        <input type="text" name="q" value="{{ params.q }}" placeholder="ERPNext name, event id or message no" aria-label="Search messages" />
+      </div>
+      <select name="doctype" class="scr-input scr-list-select" aria-label="Record type">
+        <option value="">Any record type</option>
+        {% for doctype, count in doctypes %}<option value="{{ doctype }}"{% if params.doctype == doctype %} selected{% endif %}>{{ doctype }} ({{ count }})</option>{% endfor %}
+      </select>
+      <select name="action" class="scr-input scr-list-select" aria-label="Action">
+        <option value="">Any action</option>
+        {% for action in actions %}<option value="{{ action }}"{% if params.action == action %} selected{% endif %}>{{ action|capfirst }}</option>{% endfor %}
+      </select>
+      <select name="problems" class="scr-input scr-list-select" aria-label="Problems">
+        <option value="">Any problems</option>
+        <option value="yes"{% if params.problems == "yes" %} selected{% endif %}>With problems</option>
+        <option value="no"{% if params.problems == "no" %} selected{% endif %}>Without problems</option>
+      </select>
+      <button type="submit" class="scr-btn">Filter</button>
+      {% if filtered %}<a href="{% url 'integrations-erpnext-inbox' %}" class="scr-btn-secondary">Clear</a>{% endif %}
+      <span class="scr-toolbar-count">{{ page.paginator.count }} message{{ page.paginator.count|pluralize }}</span>
+    </form>
+
+    <div class="scr-table-scroll scr-sb">
+      <table>
+        <thead>
+          <tr>
+            <th>Message</th>
+            <th>Received</th>
+            <th>Record type</th>
+            <th>ERPNext name</th>
+            <th>Action</th>
+            <th>Modified in ERPNext</th>
+            <th>Problems</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in rows %}
+          <tr class="scr-mon-row" data-scr-href="{% url 'integrations-erpnext-message' m.pk %}">
+            <td><a class="scr-code" href="{% url 'integrations-erpnext-message' m.pk %}">#{{ m.pk }}</a></td>
+            <td><a class="scr-mon-time" href="{% url 'integrations-erpnext-message' m.pk %}">{{ m.received_at|date:"d M Y" }}<span>{{ m.received_at|date:"H:i:s" }}</span></a></td>
+            <td class="scr-state">{{ m.doctype|default:"—" }}</td>
+            <td><div class="scr-contact">{{ m.erp_name|default:"—" }}</div></td>
+            <td>{% if m.action %}<span class="scr-badge scr-badge-{{ m.badge }}"><i></i>{{ m.action|capfirst }}</span>{% else %}<span class="scr-state">—</span>{% endif %}</td>
+            <td class="scr-state">{{ m.erp_modified|default:"—" }}</td>
+            <td>{% if m.problems %}<span class="scr-badge scr-badge-pending"><i></i>{{ m.problems|length }} problem{{ m.problems|length|pluralize }}</span>{% else %}<span class="scr-state">—</span>{% endif %}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7" style="padding:0"><div class="scr-empty"><div><div class="scr-empty-title">{% if filtered %}No messages match{% else %}Nothing received yet{% endif %}</div><p class="scr-empty-sub">{% if filtered %}Change or clear the filters.{% else %}Messages appear here as ERPNext sends them.{% endif %}</p></div></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% include "byky/partials/server_pager.html" %}
+  </div>
+</div>
+{% endblock %}
