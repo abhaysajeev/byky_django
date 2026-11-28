@@ -9,6 +9,7 @@ urlpatterns = [
     path("dashboard/", views.DashboardView.as_view(), name="dashboard"),
     path("dashboard/live/", views.dashboard_live_view, name="dashboard-live"),
     path("dashboard/stations/", views.dashboard_stations_view, name="dashboard-stations"),
+    path("dashboard/privileges/", screens.DashboardPrivilegeView.as_view(), name="dashboard-privileges"),
 
     # Screens
     path("portal/role/list/", screens.RoleListView.as_view(), name="portal-role-list"),

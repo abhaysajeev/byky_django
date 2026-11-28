@@ -304,6 +304,15 @@ class PrivilegeScreenView(PagePermissionMixin, ThemedTemplateView):
         return context
 
 
+class DashboardPrivilegeView(PrivilegeScreenView):
+    """Which roles may open the dashboard (owner, 27 Nov 2026): the shared grid
+    over the General module -- the Dashboard row is the one that matters."""
+
+    page_code = "general.privileges"
+    module_code = "general"
+    module_label = "Dashboard"
+
+
 class SystemPrivilegeView(PrivilegeScreenView):
     """Users & Roles' copy of the shared privilege grid (owner, 3 Nov 2026)."""
 
