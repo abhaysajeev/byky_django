@@ -25,17 +25,24 @@
 
   function chosenType() {
     var on = root.querySelector('[data-rq-type]:checked');
-    return on ? on.value : 'percent';
+    return on ? on.value : 'amount';      /* Amount is the default (client, 28 Nov 2026) */
   }
+
+  /* The value box follows the ticked rule: its label, step, limit and help. */
+  function applyRule() {
+    if (!value) return;
+    var rule = RULES[chosenType()];
+    label.firstChild.textContent = rule.label + ' ';
+    value.step = rule.step;
+    value.placeholder = rule.placeholder;
+    if (rule.max) value.max = rule.max; else value.removeAttribute('max');
+    help.textContent = rule.help;
+  }
+  applyRule();          /* on load too: the company's decimals (CR1) */
 
   root.querySelectorAll('[data-rq-type]').forEach(function (radio) {
     radio.addEventListener('change', function () {
-      var rule = RULES[chosenType()];
-      label.firstChild.textContent = rule.label + ' ';
-      value.step = rule.step;
-      value.placeholder = rule.placeholder;
-      if (rule.max) value.max = rule.max; else value.removeAttribute('max');
-      help.textContent = rule.help;
+      applyRule();
       value.focus();
     });
   });
