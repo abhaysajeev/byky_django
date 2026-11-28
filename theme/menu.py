@@ -94,3 +94,15 @@ def build_menu(user):
         })
 
     return {"menu": items}
+
+
+def first_screen(user):
+    """The URL name of the first link in the user's sidebar, or None -- where
+    `/` sends a role that may not open the dashboard (owner, 27 Nov 2026)."""
+    for item in build_menu(user)["menu"]:
+        if item.get("url"):
+            return item["url"]
+        for sub in item.get("submenu") or ():
+            if sub.get("url"):
+                return sub["url"]
+    return None
