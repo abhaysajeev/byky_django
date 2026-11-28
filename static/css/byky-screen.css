@@ -359,6 +359,9 @@ button.scr-tile.is-active { border-color: #cc0000; box-shadow: 0 0 0 3px rgba(20
 .scr-icon-btn-danger:hover { border-color: #f3c3c5; color: #d81f26; }
 
 .scr-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 64px 24px; }
+/* The title / text / action wrapper is a centred column too: a button in it
+   sat at the left edge of the widest text line, not under the middle. */
+.scr-empty > div { display: flex; flex-direction: column; align-items: center; text-align: center; }
 .scr-empty-ico { width: 52px; height: 52px; border-radius: 16px; background: #f6f5fc; display: grid; place-items: center; }
 .scr-empty-title { font-size: 14px; font-weight: 600; text-align: center; }
 .scr-empty-sub { font-size: 12.5px; color: #9490bb; margin-top: 5px !important; max-width: 44ch; text-align: center; }
