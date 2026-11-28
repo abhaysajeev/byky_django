@@ -145,14 +145,15 @@
       <div class="scr-field">
         <span class="scr-label">Discount as <span class="scr-required">*</span></span>
         <div class="scr-radio-row">
-          <label class="scr-radio-label"><input type="radio" class="scr-radio" name="rq-type" value="percent" checked data-rq-type /> Percentage (%)</label>
-          <label class="scr-radio-label"><input type="radio" class="scr-radio" name="rq-type" value="amount" data-rq-type /> Amount (AED)</label>
+          {# Amount first and preselected (client, 28 Nov 2026). #}
+          <label class="scr-radio-label"><input type="radio" class="scr-radio" name="rq-type" value="amount" checked data-rq-type /> Amount (AED)</label>
+          <label class="scr-radio-label"><input type="radio" class="scr-radio" name="rq-type" value="percent" data-rq-type /> Percentage (%)</label>
         </div>
       </div>
       <div class="scr-field">
-        <label class="scr-label" for="rq-value" data-rq-value-label>Percentage <span class="scr-required">*</span></label>
-        <input id="rq-value" type="number" class="scr-input" min="0.01" max="100" step="0.01" inputmode="decimal" placeholder="0.00" data-rq-value />
-        <p class="scr-help" data-rq-help>Up to 100%, two decimals.</p>
+        <label class="scr-label" for="rq-value" data-rq-value-label>Amount (AED) <span class="scr-required">*</span></label>
+        <input id="rq-value" type="number" class="scr-input" min="0.01" step="0.001" inputmode="decimal" placeholder="0.000" data-rq-value />
+        <p class="scr-help" data-rq-help>AED, up to three decimals.</p>
       </div>
       {% endif %}
       <div class="scr-field">

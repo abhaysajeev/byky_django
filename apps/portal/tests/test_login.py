@@ -17,7 +17,7 @@ from apps.portal.auth import (
     close_sessions_for_user,
     sign_in_web,
 )
-from apps.portal.models import Role
+from apps.portal.models import Page, Role, RolePermission
 from apps.portal.session_models import AppSession, LogoutReason
 from core.enums import Channel
 from core.models import User
@@ -38,6 +38,8 @@ def company(db):
 @pytest.fixture
 def user(company):
     role = Role.objects.create(company=company, name="Administrator")
+    # Every role holds the dashboard after portal/0044 (owner, 27 Nov 2026).
+    RolePermission.objects.create(role=role, page=Page.objects.get(code="general.dashboard"), can_read=True)
     return User.objects.create_user(
         "sara.k", PASSWORD, display_name="Sara K", company=company, role=role,
         allowed_channels=[Channel.WEB],
@@ -323,13 +325,13 @@ def test_next_never_leaves_the_site(client, user, target):
     assert response.url == "/"
 
 
-def test_the_dashboard_is_reachable_with_no_permissions_granted(client, user):
-    """`user`'s role has zero RolePermission rows -- exactly a brand-new role
-    right after account creation, before anyone has ticked a single box.
-    DashboardView carries no `page_code`, so PagePermissionMixin's `has_permission`
-    check never runs for it; only being signed in is required."""
+def test_a_role_with_no_permissions_is_told_so_not_refused(client, user):
+    """A brand-new role with nothing ticked: since Dashboard Privileges (owner,
+    27 Nov 2026) the dashboard is refused like any screen, and `/` says no
+    screen is assigned yet instead of erroring."""
+    RolePermission.objects.filter(role=user.role).delete()
     client.post("/login/", {"username": "sara.k", "password": PASSWORD})
 
-    response = client.get("/dashboard/")
-
-    assert response.status_code == 200
+    assert client.get("/dashboard/").status_code == 403
+    response = client.get("/")
+    assert response.status_code == 200 and b"No screens are assigned to your role yet" in response.content
